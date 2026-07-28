@@ -194,6 +194,7 @@ function buildProps() {
     onAnchorReady: () => {},
     onAnchorSizeChanged: () => {},
     contentInsetEndAdjustment: 0,
+    liveFollowEnabled: true,
     onIsAtEndChange: () => {},
     onManualNavigation: () => {},
   };
@@ -305,6 +306,7 @@ describe("MessagesTimeline", () => {
       resolveTimelineMinimapIndexFromPointer,
       resolveTimelineMinimapInteractiveWidth,
       resolveTimelineMinimapTopPercent,
+      shouldCancelTimelineLiveFollowForWheel,
     } = await import("./MessagesTimeline.logic");
 
     expect(resolveTimelineIsAtEnd({ isNearEnd: true, isAtEnd: false })).toBe(true);
@@ -355,6 +357,16 @@ describe("MessagesTimeline", () => {
     expect(resolveTimelineMinimapInteractiveWidth(0, true)).toBe("22rem");
     expect(resolveTimelineMinimapInteractiveWidth(14, true)).toBe("22rem");
     expect(resolveTimelineMinimapInteractiveWidth(40, true)).toBe("22rem");
+
+    expect(shouldCancelTimelineLiveFollowForWheel({ deltaY: -1, isAtAbsoluteEnd: true })).toBe(
+      true,
+    );
+    expect(shouldCancelTimelineLiveFollowForWheel({ deltaY: 1, isAtAbsoluteEnd: false })).toBe(
+      true,
+    );
+    expect(shouldCancelTimelineLiveFollowForWheel({ deltaY: 1, isAtAbsoluteEnd: true })).toBe(
+      false,
+    );
   });
 
   it("anchors a sent attachment message using its measured height", () => {
@@ -399,7 +411,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('data-maintain-scroll-at-end="enabled"');
     expect(markup).toContain('data-maintain-visible-content-position="object"');
     expect(markup).toContain('data-maintain-visible-content-position-data="true"');
-    expect(markup).toContain('data-maintain-visible-content-position-size="false"');
+    expect(markup).toContain('data-maintain-visible-content-position-size="true"');
     expect(onAnchorReady).toHaveBeenCalledOnce();
     expect(onAnchorReady).toHaveBeenCalledWith(secondEntry.message.id, 1);
     expect(onAnchorSizeChanged).toHaveBeenCalledWith(secondEntry.message.id, 240);
@@ -422,6 +434,20 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-user-message-collapsed="true"');
     expect(markup).toContain('data-user-message-fade="true"');
     expect(markup).toContain('data-user-message-footer="true"');
+  });
+
+  it("stops LegendList end-following after manual navigation", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        liveFollowEnabled={false}
+        timelineEntries={[buildUserTimelineEntry(buildLongUserMessageText())]}
+      />,
+    );
+
+    expect(markup).not.toContain('data-maintain-scroll-at-end="enabled"');
+    expect(markup).toContain('data-maintain-visible-content-position-data="true"');
+    expect(markup).toContain('data-maintain-visible-content-position-size="true"');
   });
 
   it("does not render collapse controls for short user messages", () => {

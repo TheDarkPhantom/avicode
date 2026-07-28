@@ -25,6 +25,16 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   return state?.isNearEnd ?? state?.isAtEnd;
 }
 
+export function shouldCancelTimelineLiveFollowForWheel({
+  deltaY,
+  isAtAbsoluteEnd,
+}: {
+  readonly deltaY: number;
+  readonly isAtAbsoluteEnd: boolean;
+}) {
+  return deltaY < 0 || !isAtAbsoluteEnd;
+}
+
 export function resolveTimelineMinimapHeightStyle(itemCount: number): string {
   const naturalHeight = Math.max(1, (itemCount - 1) * TIMELINE_MINIMAP_ITEM_SPACING);
   return `min(${naturalHeight}px, ${TIMELINE_MINIMAP_MAX_HEIGHT_CSS})`;

@@ -77,6 +77,7 @@ import {
   resolveTimelineMinimapIndexFromPointer,
   resolveTimelineMinimapInteractiveWidth,
   resolveTimelineMinimapTopPercent,
+  shouldCancelTimelineLiveFollowForWheel,
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
@@ -181,7 +182,8 @@ interface MessagesTimelineProps {
   onAnchorReady: (messageId: MessageId, anchorIndex: number) => void;
   onAnchorSizeChanged: (messageId: MessageId, size: number) => void;
   contentInsetEndAdjustment: number;
-  onIsAtEndChange: (isAtEnd: boolean) => void;
+  liveFollowEnabled: boolean;
+  onIsAtEndChange: (isAtEnd: boolean, isAbsoluteEnd: boolean) => void;
   onManualNavigation: () => void;
   hideEmptyPlaceholder?: boolean;
   topFadeEnabled?: boolean;
@@ -216,6 +218,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onAnchorReady,
   onAnchorSizeChanged,
   contentInsetEndAdjustment,
+  liveFollowEnabled,
   onIsAtEndChange,
   onManualNavigation,
   hideEmptyPlaceholder = false,
@@ -360,7 +363,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const state = listRef.current?.getState?.();
     const isAtEnd = resolveTimelineIsAtEnd(state);
     if (isAtEnd !== undefined) {
-      onIsAtEndChange(isAtEnd);
+      onIsAtEndChange(isAtEnd, state?.isAtEnd ?? isAtEnd);
     }
     if (!state || minimapItems.length === 0) {
       return;
@@ -484,7 +487,26 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   return (
     <TimelineRowCtx value={sharedState}>
       <TimelineRowActivityCtx value={activityState}>
-        <div ref={setTimelineViewportElement} className="relative h-full min-h-0">
+        <div
+          ref={setTimelineViewportElement}
+          className="relative h-full min-h-0"
+          onPointerDownCapture={(event) => {
+            if (event.target === listRef.current?.getScrollableNode()) {
+              onManualNavigation();
+            }
+          }}
+          onTouchMoveCapture={onManualNavigation}
+          onWheelCapture={(event) => {
+            if (
+              shouldCancelTimelineLiveFollowForWheel({
+                deltaY: event.deltaY,
+                isAtAbsoluteEnd: listRef.current?.getState?.().isAtEnd ?? false,
+              })
+            ) {
+              onManualNavigation();
+            }
+          }}
+        >
           <LegendList<MessagesTimelineRow>
             ref={listRef}
             data={rows}
@@ -496,7 +518,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
             maintainScrollAtEnd={
-              anchoredEndSpace
+              anchoredEndSpace || !liveFollowEnabled
                 ? false
                 : {
                     animated: false,
@@ -509,7 +531,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             }
             maintainVisibleContentPosition={{
               data: true,
-              size: false,
+              size: true,
             }}
             onScroll={handleScroll}
             className={cn(
