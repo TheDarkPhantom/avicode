@@ -40,32 +40,65 @@
     {
       "id": "branding",
       "owner": "AviCodeBranding",
-      "state": "planned",
-      "requiredFiles": []
+      "state": "active",
+      "requiredFiles": ["assets/prod/logo.svg", "scripts/avicode/export-brand-assets.mjs"],
+      "requiredText": [
+        {
+          "file": "assets/prod/logo.svg",
+          "values": ["#0C0A0A", "#DE5257", "#C99A2E"]
+        }
+      ]
     },
     {
       "id": "identity",
       "owner": "AviCodeIdentity",
-      "state": "planned",
-      "requiredFiles": []
+      "state": "active",
+      "requiredFiles": [
+        "packages/shared/src/avicodeIdentity.ts",
+        "apps/desktop/src/app/LegacyT3Import.ts"
+      ],
+      "requiredText": [
+        {
+          "file": "packages/shared/src/avicodeIdentity.ts",
+          "values": ["com.advisoravi.avicode", "avicode_desktop", "TheDarkPhantom", ".avicode"]
+        }
+      ]
     },
     {
       "id": "document-attachments",
       "owner": "DocumentAttachments",
-      "state": "planned",
-      "requiredFiles": []
+      "state": "active",
+      "requiredFiles": ["apps/web/src/lib/documentAttachments.ts", "docs/DOCUMENT_ATTACHMENTS.md"],
+      "requiredText": [
+        {
+          "file": "packages/contracts/src/orchestration.ts",
+          "values": ["ChatDocumentAttachment", "PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS"]
+        }
+      ]
     },
     {
       "id": "window-title-metadata",
       "owner": "WindowTitleMetadata",
-      "state": "planned",
-      "requiredFiles": []
+      "state": "active",
+      "requiredFiles": ["apps/web/src/lib/windowTitleMetadata.ts"],
+      "requiredText": [
+        {
+          "file": "apps/web/src/lib/windowTitleMetadata.ts",
+          "values": ["repository", "threadTitle", "AVICODE_IDENTITY.productName"]
+        }
+      ]
     },
     {
       "id": "alfred-compatibility",
       "owner": "ALFRED-CODE",
-      "state": "planned",
-      "requiredFiles": []
+      "state": "active",
+      "requiredFiles": ["docs/ALFRED_INTEGRATION.md"],
+      "requiredText": [
+        {
+          "file": "docs/ALFRED_INTEGRATION.md",
+          "values": ["avicode_desktop", "t3code_desktop", "ActivityWatch"]
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,41 @@
+# FUTURE_ENHANCEMENTS — AviCode
+
+Open work and deferred decisions. Structure: **where things stand → what is open → what shipped**.
+
+## Where things stand
+
+AviCode is a personal Windows alpha. Codex and Claude use existing CLI authentication.
+ActivityWatch is authoritative for human time; sessions and GitHub only enrich attribution.
+
+## Worth doing next
+
+1. Use the alpha for real work and fix observed friction.
+2. Add local, opt-in OCR for scanned PDFs.
+3. Add a document preview drawer with page/heading navigation.
+4. Add per-attachment inclusion controls for large extracted documents.
+5. Expand diagnostics with AviCode/upstream commits and ALFRED metadata status.
+
+## Deferred
+
+- Explorer drag progress and cancellation.
+- DOCX, CSV, JSON, and source archives.
+- Encrypted PDF password prompts without persistence.
+- Attachment hashing/deduplication and IndexedDB draft storage.
+- User-selectable ALFRED title templates.
+- Signed public Windows releases and an AviCode website.
+- macOS/Linux branded installers after Windows stabilizes.
+
+## Deliberate limits
+
+- No OCR in v1.
+- 20MB, 250 pages, and 100,000 extracted characters per document.
+- Eight combined attachments per message.
+- No conversation or attachment contents in ALFRED exports or window titles.
+- No automated upstream merge or binary publication.
+
+## Shipped
+
+- 2026-07-28: upstream synchronization and guardrails.
+- 2026-07-28: identity, branding, updater boundary, and T3 import.
+- 2026-07-28: PDF/TXT/Markdown attachments.
+- 2026-07-28: ALFRED metadata and privacy mode.

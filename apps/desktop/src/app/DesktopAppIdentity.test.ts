@@ -26,6 +26,8 @@ const defaultEnvironmentInput = {
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
+const normalizePath = (value: string): string => value.replaceAll("\\", "/");
+
 type TestEnvironmentInput = Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> & {
   readonly env?: Record<string, string | undefined>;
 };
@@ -148,7 +150,10 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
+        assert.equal(
+          normalizePath(userDataPath),
+          "/Users/alice/Library/Application Support/T3 Code (Alpha)",
+        );
       }),
       { legacyPathExists: true },
     ),
@@ -170,10 +175,10 @@ describe("DesktopAppIdentity", () => {
         const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
 
         assert.instanceOf(error, DesktopAppIdentity.DesktopUserDataPathResolutionError);
-        assert.equal(error.legacyPath, legacyPath);
+        assert.equal(normalizePath(error.legacyPath), legacyPath);
         assert.strictEqual(error.cause, cause);
         assert.equal(
-          error.message,
+          normalizePath(error.message),
           `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
         );
       }),
@@ -193,8 +198,8 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        assert.deepEqual(calls.setName, ["T3 Code (Alpha)"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Code (Alpha)");
+        assert.deepEqual(calls.setName, ["AviCode (Alpha)"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "AviCode (Alpha)");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);

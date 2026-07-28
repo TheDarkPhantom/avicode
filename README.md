@@ -1,6 +1,23 @@
-# T3 Code
+# AviCode
 
-T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor, and OpenCode, more coming soon).
+AviCode is Avi's Windows-first coding environment and an independent MIT-licensed fork of
+[T3 Code](https://github.com/pingdotgg/t3code). It has its own identity, `~/.avicode` data,
+`avicode_desktop` sessions, document attachments, and ALFRED metadata. AviCode is not an official
+T3 Tools product and currently has no public installer.
+
+Personal Windows alpha:
+
+```bash
+corepack pnpm install
+corepack pnpm dist:desktop:win:x64
+```
+
+No additional LLM API is needed; AviCode uses the provider CLI authentication you already have.
+
+## Upstream compatibility notes
+
+The sections below are retained from upstream where useful. Do not install an official T3 binary
+expecting it to update AviCode; AviCode updates may only come from `TheDarkPhantom/avicode`.
 
 ## Installation
 

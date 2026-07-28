@@ -16,6 +16,7 @@ import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as LegacyT3Import from "./LegacyT3Import.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
@@ -245,6 +246,7 @@ const startup = Effect.gen(function* () {
     Effect.catchCause((cause) => fatalStartupCause("whenReady", cause)),
   );
   yield* logStartupInfo("app ready");
+  yield* LegacyT3Import.offerLegacyT3Import();
   yield* appIdentity.configure;
   yield* applicationMenu.configure;
   yield* updates.configure;

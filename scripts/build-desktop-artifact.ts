@@ -6,6 +6,7 @@ import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { AVICODE_IDENTITY, formatAviCodeDisplayName } from "@t3tools/shared/avicodeIdentity";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
@@ -35,7 +36,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+const DESKTOP_APP_ID = AVICODE_IDENTITY.appId;
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1315,6 +1316,12 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
 
   const [owner, repo, ...rest] = rawRepo.split("/");
   if (!owner || !repo || rest.length > 0) return undefined;
+  if (
+    owner.toLowerCase() !== AVICODE_IDENTITY.releaseOwner.toLowerCase() ||
+    repo.toLowerCase() !== AVICODE_IDENTITY.releaseRepository.toLowerCase()
+  ) {
+    return undefined;
+  }
 
   return {
     provider: "github",
@@ -1368,8 +1375,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? formatAviCodeDisplayName("Nightly")
+    : (desktopPackageJson.productName ?? AVICODE_IDENTITY.productName);
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -1389,7 +1396,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    executableName: AVICODE_IDENTITY.executableName,
+    artifactName: AVICODE_IDENTITY.artifactName,
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -1428,8 +1436,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: AVICODE_IDENTITY.productName,
+          schemes: [AVICODE_IDENTITY.protocol, AVICODE_IDENTITY.developmentProtocol],
         },
       ],
       ...(macPasskeySigning
@@ -1444,12 +1452,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: AVICODE_IDENTITY.executableName,
       icon: "icons",
       category: "Development",
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: "avicode",
         },
       },
     };
@@ -1754,14 +1762,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageDependencies,
   );
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: "avicode",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
-    author: "T3 Tools",
+    description: "AviCode desktop build",
+    author: AVICODE_IDENTITY.companyName,
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,
