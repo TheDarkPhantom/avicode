@@ -1,0 +1,88 @@
+name: AviCode Guardrails
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  boundaries:
+    name: AviCode boundaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify customization boundaries
+        run: |
+          node --test scripts/avicode/check-upstream-guardrails.node-test.mjs
+          node scripts/avicode/check-upstream-guardrails.mjs
+
+  desktop-smoke:
+    name: AviCode desktop smoke
+    if: startsWith(github.head_ref, 'chore/upstream-sync-') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Install Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Run desktop smoke test
+        run: vp run test:desktop-smoke
+
+  windows-package:
+    name: AviCode Windows x64 package
+    if: startsWith(github.head_ref, 'chore/upstream-sync-') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Install Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Build desktop bundles
+        run: vp run build:desktop
+
+      - name: Build unsigned personal-alpha package
+        run: >
+          vp run dist:desktop:artifact
+          --platform win
+          --target nsis
+          --arch x64
+          --build-version 0.0.0-avicode-ci
+          --skip-build
+
+      - name: Verify package exists
+        shell: pwsh
+        run: |
+          $artifacts = @(Get-ChildItem -Path release -Filter *.exe -File)
+          if ($artifacts.Count -eq 0) {
+            throw "The Windows x64 packaging check produced no installer."
+          }
+          $artifacts | Select-Object Name, Length
