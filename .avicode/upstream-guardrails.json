@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "upstream": {
+    "repository": "pingdotgg/t3code",
+    "branch": "main"
+  },
+  "releaseRepository": "TheDarkPhantom/avicode",
+  "identity": {
+    "productName": "AviCode",
+    "appId": "com.advisoravi.avicode",
+    "protocol": "avicode://",
+    "dataHome": "~/.avicode",
+    "executable": "AviCode.exe",
+    "codexOriginator": "avicode_desktop"
+  },
+  "boundaries": [
+    {
+      "id": "upstream-sync",
+      "owner": "AviCodeIdentity",
+      "state": "active",
+      "requiredFiles": [
+        ".github/workflows/sync-upstream.yml",
+        ".github/workflows/avicode-guardrails.yml",
+        "scripts/avicode/check-upstream-guardrails.mjs",
+        "docs/UPSTREAM_SYNC.md"
+      ],
+      "requiredText": [
+        {
+          "file": ".github/workflows/sync-upstream.yml",
+          "values": [
+            "0 1 * * 1",
+            "pingdotgg/t3code",
+            "git merge --no-ff",
+            "gh pr create",
+            "publish: never"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "branding",
+      "owner": "AviCodeBranding",
+      "state": "planned",
+      "requiredFiles": []
+    },
+    {
+      "id": "identity",
+      "owner": "AviCodeIdentity",
+      "state": "planned",
+      "requiredFiles": []
+    },
+    {
+      "id": "document-attachments",
+      "owner": "DocumentAttachments",
+      "state": "planned",
+      "requiredFiles": []
+    },
+    {
+      "id": "window-title-metadata",
+      "owner": "WindowTitleMetadata",
+      "state": "planned",
+      "requiredFiles": []
+    },
+    {
+      "id": "alfred-compatibility",
+      "owner": "ALFRED-CODE",
+      "state": "planned",
+      "requiredFiles": []
+    }
+  ]
+}

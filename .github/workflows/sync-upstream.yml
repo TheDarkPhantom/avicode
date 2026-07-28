@@ -1,0 +1,197 @@
+name: Sync T3 Code upstream
+
+on:
+  schedule:
+    # Monday 09:00 Asia/Manila (UTC+8, no daylight saving time).
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: avicode-upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: pingdotgg/t3code
+  UPSTREAM_BRANCH: main
+  # Personal-alpha policy: publish: never. This workflow never builds a release.
+  AVICODE_PUBLISH_POLICY: never
+
+jobs:
+  sync:
+    name: Prepare upstream sync PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout AviCode main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure repository
+        run: |
+          git config user.name "avicode-upstream-sync[bot]"
+          git config user.email "avicode-upstream-sync[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream "${UPSTREAM_BRANCH}"
+
+      - id: prepare
+        name: Merge upstream into a review branch
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          upstream_sha="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
+          short_sha="${upstream_sha:0:12}"
+          branch="chore/upstream-sync-$(date -u +%F)"
+
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "$upstream_sha" origin/main; then
+            echo "already_integrated=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream commit $upstream_sha is already present in AviCode main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git switch --force-create "$branch" origin/main
+          if git merge --no-ff --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            git push --force-with-lease origin "HEAD:refs/heads/$branch"
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            echo "Prepared \`$branch\` at upstream commit \`$upstream_sha\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          conflict_file="$RUNNER_TEMP/upstream-conflicts.txt"
+          git diff --name-only --diff-filter=U | sort -u > "$conflict_file"
+          {
+            echo "conflicts<<AVICODE_CONFLICTS"
+            cat "$conflict_file"
+            echo "AVICODE_CONFLICTS"
+          } >> "$GITHUB_OUTPUT"
+          echo "conflicted=true" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Upstream merge blocked"
+            echo
+            echo "Upstream commit: \`$upstream_sha\`"
+            echo
+            echo "Conflicting paths:"
+            echo '```text'
+            cat "$conflict_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          git merge --abort
+
+      - name: Ensure synchronization labels exist
+        if: steps.prepare.outputs.already_integrated != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "upstream-sync" \
+            --color "1D76DB" \
+            --description "Automated synchronization from pingdotgg/t3code" \
+            --force
+          gh label create "upstream-sync-blocked" \
+            --color "B60205" \
+            --description "An upstream synchronization needs manual conflict resolution" \
+            --force
+
+      - name: Open or update conflict issue
+        if: steps.prepare.outputs.conflicted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ steps.prepare.outputs.upstream_sha }}
+          SHORT_SHA: ${{ steps.prepare.outputs.short_sha }}
+          CONFLICTS: ${{ steps.prepare.outputs.conflicts }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="[upstream-sync] Blocked on ${SHORT_SHA}"
+          body_file="$RUNNER_TEMP/upstream-conflict-issue.md"
+          {
+            echo "AviCode could not merge \`${UPSTREAM_REPOSITORY}@${UPSTREAM_SHA}\` automatically."
+            echo
+            echo "Conflicting paths:"
+            echo '```text'
+            printf '%s\n' "$CONFLICTS"
+            echo '```'
+            echo
+            echo "Resolve this on a branch created from AviCode \`main\`, merge the upstream commit with a merge commit, and run the complete AviCode guardrail suite."
+            echo
+            echo "Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "$body_file"
+
+          issue_number="$(
+            gh issue list \
+              --state open \
+              --label upstream-sync-blocked \
+              --search "\"$title\" in:title" \
+              --json number,title \
+              --jq ".[] | select(.title == \"$title\") | .number" |
+              head -n 1
+          )"
+
+          if [[ -n "$issue_number" ]]; then
+            gh issue comment "$issue_number" --body-file "$body_file"
+          else
+            gh issue create \
+              --title "$title" \
+              --label upstream-sync-blocked \
+              --body-file "$body_file"
+          fi
+
+      - name: Open or update review PR
+        if: steps.prepare.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+          UPSTREAM_SHA: ${{ steps.prepare.outputs.upstream_sha }}
+          SHORT_SHA: ${{ steps.prepare.outputs.short_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body_file="$RUNNER_TEMP/upstream-sync-pr.md"
+          {
+            echo "## Upstream synchronization"
+            echo
+            echo "Merges \`${UPSTREAM_REPOSITORY}@${UPSTREAM_SHA}\` into AviCode."
+            echo
+            echo "This PR must remain human-reviewed. It does not publish or release an AviCode binary."
+            echo
+            echo "Before merging, confirm the AviCode guardrails, desktop smoke test, Windows package test, database migrations, document attachments, window-title metadata, and ALFRED compatibility checks."
+          } > "$body_file"
+
+          existing_pr="$(
+            gh pr list \
+              --state open \
+              --head "$BRANCH" \
+              --base main \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [[ -n "$existing_pr" ]]; then
+            gh pr edit "$existing_pr" \
+              --title "chore: sync T3 Code upstream ${SHORT_SHA}" \
+              --body-file "$body_file" \
+              --add-label upstream-sync
+          else
+            gh pr create \
+              --head "$BRANCH" \
+              --base main \
+              --title "chore: sync T3 Code upstream ${SHORT_SHA}" \
+              --body-file "$body_file" \
+              --label upstream-sync
+          fi
+
+          # Deliberately leaves the pull request for human review.
