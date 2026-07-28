@@ -65,6 +65,22 @@
       ]
     },
     {
+      "id": "release-separation",
+      "owner": "AviCodeIdentity",
+      "state": "active",
+      "requiredFiles": [".github/workflows/release.yml", ".github/workflows/deploy-relay.yml"],
+      "requiredText": [
+        {
+          "file": ".github/workflows/release.yml",
+          "values": ["workflow_dispatch:"]
+        },
+        {
+          "file": ".github/workflows/deploy-relay.yml",
+          "values": ["workflow_dispatch:"]
+        }
+      ]
+    },
+    {
       "id": "document-attachments",
       "owner": "DocumentAttachments",
       "state": "active",

@@ -116,6 +116,19 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
     }
   }
 
+  for (const [relativeFile, label] of [
+    [".github/workflows/release.yml", "AviCode release"],
+    [".github/workflows/deploy-relay.yml", "AviCode relay deployment"],
+  ]) {
+    const workflow = NodePath.join(repositoryRoot, ...relativeFile.split("/"));
+    if (!NodeFS.existsSync(workflow)) continue;
+    const triggerSection =
+      NodeFS.readFileSync(workflow, "utf8").split(/\npermissions:/u, 1)[0] ?? "";
+    if (/^\s{2}(?:push|schedule):/mu.test(triggerSection)) {
+      failures.push(`${label} must remain manual-only during the personal alpha.`);
+    }
+  }
+
   return { failures, warnings, activeBoundaries, plannedBoundaries };
 }
 
