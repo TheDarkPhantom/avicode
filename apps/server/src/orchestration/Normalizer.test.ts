@@ -8,7 +8,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 
-import { canonicalizeClientCommandTimestamps } from "./Normalizer.ts";
+import { canonicalizeClientCommandTimestamps, formatDocumentContext } from "./Normalizer.ts";
 
 const clientCreatedAt = "2031-01-01T00:00:00.000Z";
 const serverReceivedAt = "2026-07-18T00:00:00.000Z";
@@ -69,5 +69,19 @@ describe("canonicalizeClientCommandTimestamps", () => {
     }
     expect(result.createdAt).toBe(serverReceivedAt);
     expect(result.bootstrap?.createThread?.createdAt).toBe(serverReceivedAt);
+  });
+});
+
+describe("formatDocumentContext", () => {
+  it("delimits locally extracted document text and escapes metadata", () => {
+    expect(
+      formatDocumentContext({
+        name: 'brief "final".md',
+        mimeType: "text/markdown",
+        text: "# Delivery plan",
+      }),
+    ).toBe(
+      '<avicode_document name="brief &quot;final&quot;.md" mime="text/markdown">\n# Delivery plan\n</avicode_document>',
+    );
   });
 });

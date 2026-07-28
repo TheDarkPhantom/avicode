@@ -7,6 +7,8 @@ import {
   type IsoDateTime,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
+  PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES,
+  PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 
@@ -14,6 +16,18 @@ import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+
+function escapeDocumentAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
+export function formatDocumentContext(input: {
+  readonly name: string;
+  readonly mimeType: string;
+  readonly text: string;
+}): string {
+  return `<avicode_document name="${escapeDocumentAttribute(input.name)}" mime="${escapeDocumentAttribute(input.mimeType)}">\n${input.text}\n</avicode_document>`;
+}
 
 export const canonicalizeClientCommandTimestamps = (
   command: ClientOrchestrationCommand,
@@ -104,10 +118,59 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       return canonicalCommand as OrchestrationCommand;
     }
 
+    const documentContexts: string[] = [];
     const normalizedAttachments = yield* Effect.forEach(
       canonicalCommand.message.attachments,
       (attachment) =>
         Effect.gen(function* () {
+          if (attachment.type === "document") {
+            const text = attachment.extractedText.trim();
+            if (
+              attachment.sizeBytes <= 0 ||
+              attachment.sizeBytes > PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES ||
+              text.length === 0 ||
+              text.length > PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS
+            ) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Document attachment '${attachment.name}' is empty or too large.`,
+              });
+            }
+
+            const attachmentId = createAttachmentId(canonicalCommand.threadId);
+            if (!attachmentId) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: "Failed to create a safe attachment id.",
+              });
+            }
+            const persistedAttachment = {
+              type: "document" as const,
+              id: attachmentId,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              extractedChars: text.length,
+            };
+            const attachmentPath = resolveAttachmentPath({
+              attachmentsDir: serverConfig.attachmentsDir,
+              attachment: persistedAttachment,
+            });
+            if (!attachmentPath) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Failed to resolve persisted path for '${attachment.name}'.`,
+              });
+            }
+            yield* fileSystem.makeDirectory(path.dirname(attachmentPath), { recursive: true });
+            yield* fileSystem.writeFileString(attachmentPath, text);
+            documentContexts.push(
+              formatDocumentContext({
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                text,
+              }),
+            );
+            return persistedAttachment;
+          }
+
           const parsed = parseBase64DataUrl(attachment.dataUrl);
           if (!parsed || !parsed.mimeType.startsWith("image/")) {
             return yield* new OrchestrationDispatchCommandError({
@@ -173,6 +236,10 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       ...canonicalCommand,
       message: {
         ...canonicalCommand.message,
+        text:
+          documentContexts.length === 0
+            ? canonicalCommand.message.text
+            : [canonicalCommand.message.text, ...documentContexts].filter(Boolean).join("\n\n"),
         attachments: normalizedAttachments,
       },
     } satisfies OrchestrationCommand;
