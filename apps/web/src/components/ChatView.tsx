@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  type ClientOrchestrationCommand,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
@@ -163,7 +164,7 @@ import {
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
@@ -257,6 +258,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildThreadTurnInterruptInput,
+  canSubmitComposerSendContext,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
@@ -307,6 +309,7 @@ import {
   serverUpdateGuidance,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
+import { queuedTurnChatMessage, useOfflineTurnOutboxStore } from "../offlineTurnOutboxStore";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -1654,6 +1657,23 @@ function ChatViewContent(props: ChatViewProps) {
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
+  const offlineTurnOutboxItems = useOfflineTurnOutboxStore((state) => state.items);
+  const activeQueuedTurnItems = useMemo(
+    () =>
+      activeThread == null
+        ? []
+        : offlineTurnOutboxItems.filter(
+            (item) =>
+              item.environmentId === activeThread.environmentId &&
+              item.threadId === activeThread.id,
+          ),
+    [activeThread, offlineTurnOutboxItems],
+  );
+  const queuedTurnMessages = useMemo(
+    () => activeQueuedTurnItems.flatMap((item) => queuedTurnChatMessage(item) ?? []),
+    [activeQueuedTurnItems],
+  );
+  const hasQueuedTurn = activeQueuedTurnItems.length > 0;
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
   const activeEnvironmentUnavailable =
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
@@ -1892,8 +1912,10 @@ function ChatViewContent(props: ChatViewProps) {
         icon: <WifiOffIcon />,
         title: `${activeEnvironmentUnavailableState.label}: ${connectionStatusTitle(connection)}`,
         description:
-          connection.error ??
-          "Reconnect this environment before sending messages or running actions.",
+          activeQueuedTurnItems.length > 0
+            ? `${activeQueuedTurnItems.length === 1 ? "A message is" : `${activeQueuedTurnItems.length} messages are`} queued and will send automatically when this environment reconnects.`
+            : (connection.error ??
+              "Messages can be queued while this environment reconnects. Other actions still require a connection."),
         actions: (
           <>
             <Button
@@ -1957,6 +1979,7 @@ function ChatViewContent(props: ChatViewProps) {
     return items;
   }, [
     activeEnvironmentUnavailableState,
+    activeQueuedTurnItems.length,
     handleReconnectActiveEnvironment,
     navigate,
     setDismissedVersionMismatchKey,
@@ -2297,16 +2320,27 @@ function ChatViewContent(props: ChatViewProps) {
             return changed ? { ...message, attachments } : message;
           });
 
-    if (optimisticUserMessages.length === 0) {
+    const localPendingMessages = [...optimisticUserMessages, ...queuedTurnMessages];
+    if (localPendingMessages.length === 0) {
       return serverMessagesWithPreviewHandoff;
     }
     const serverIds = new Set(serverMessagesWithPreviewHandoff.map((message) => message.id));
-    const pendingMessages = optimisticUserMessages.filter((message) => !serverIds.has(message.id));
+    const pendingMessageIds = new Set<MessageId>();
+    const pendingMessages = localPendingMessages.filter((message) => {
+      if (serverIds.has(message.id) || pendingMessageIds.has(message.id)) return false;
+      pendingMessageIds.add(message.id);
+      return true;
+    });
     if (pendingMessages.length === 0) {
       return serverMessagesWithPreviewHandoff;
     }
     return [...serverMessagesWithPreviewHandoff, ...pendingMessages];
-  }, [attachmentPreviewHandoffByMessageId, displayServerMessages, optimisticUserMessages]);
+  }, [
+    attachmentPreviewHandoffByMessageId,
+    displayServerMessages,
+    optimisticUserMessages,
+    queuedTurnMessages,
+  ]);
   const timelineEntries = useMemo(
     () =>
       deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
@@ -4460,7 +4494,7 @@ function ChatViewContent(props: ChatViewProps) {
       !activeThread ||
       isSendBusy ||
       isConnecting ||
-      activeEnvironmentUnavailable ||
+      (activeEnvironmentUnavailable && hasQueuedTurn) ||
       sendInFlightRef.current
     )
       return;
@@ -4469,7 +4503,14 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx?.providerAvailable) return;
+    if (
+      !sendCtx ||
+      !canSubmitComposerSendContext({
+        providerAvailable: sendCtx.providerAvailable,
+        environmentUnavailable: activeEnvironmentUnavailable,
+      })
+    )
+      return;
     const {
       images: composerImages,
       terminalContexts: composerTerminalContexts,
@@ -4681,9 +4722,11 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    promptRef.current = "";
-    clearComposerDraftContent(composerDraftTarget);
-    composerRef.current?.resetCursorState();
+    if (!activeEnvironmentUnavailable) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+    }
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -4710,6 +4753,147 @@ function ChatViewContent(props: ChatViewProps) {
       ctxSelectedModel || activeProject.defaultModelSelection?.model || DEFAULT_MODEL,
       ctxSelectedModelSelection.options,
     );
+
+    if (activeEnvironmentUnavailable) {
+      const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
+      if (turnAttachmentsResult._tag === "Failure") {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageIdForSend),
+        );
+        setThreadError(threadIdForSend, "Could not save the message attachments for retry.");
+        sendInFlightRef.current = false;
+        setDockedDraftHeroThreadKey((currentThreadKey) =>
+          currentThreadKey === activeThreadKey ? null : currentThreadKey,
+        );
+        resetLocalDispatch();
+        return;
+      }
+
+      const queuedCommands: ClientOrchestrationCommand[] = [];
+      if (serverThread) {
+        const metadataUpdate = resolveThreadMetadataUpdateForNextTurn({
+          currentModelSelection: serverThread.modelSelection,
+          ...(ctxSelectedModel ? { nextModelSelection: ctxSelectedModelSelection } : {}),
+          currentBranch: serverThread.branch,
+          ...(localCheckoutBranchMismatch
+            ? { nextBranch: localCheckoutBranchMismatch.currentBranch }
+            : {}),
+        });
+        if (isFirstMessage || metadataUpdate) {
+          queuedCommands.push({
+            type: "thread.meta.update",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            ...(isFirstMessage ? { title } : {}),
+            ...metadataUpdate,
+          });
+        }
+        if (runtimeMode !== serverThread.runtimeMode) {
+          queuedCommands.push({
+            type: "thread.runtime-mode.set",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            runtimeMode,
+            createdAt: messageCreatedAt,
+          });
+        }
+        if (interactionMode !== serverThread.interactionMode) {
+          queuedCommands.push({
+            type: "thread.interaction-mode.set",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            interactionMode,
+            createdAt: messageCreatedAt,
+          });
+        }
+      }
+
+      const bootstrap =
+        isLocalDraftThread || baseBranchForWorktree
+          ? {
+              ...(isLocalDraftThread
+                ? {
+                    createThread: {
+                      projectId: activeProject.id,
+                      title,
+                      modelSelection: threadCreateModelSelection,
+                      runtimeMode,
+                      interactionMode,
+                      branch: activeThreadBranch,
+                      worktreePath: activeThread.worktreePath,
+                      createdAt: activeThread.createdAt,
+                    },
+                  }
+                : {}),
+              ...(baseBranchForWorktree
+                ? {
+                    prepareWorktree: {
+                      projectCwd: activeProject.workspaceRoot,
+                      baseBranch: baseBranchForWorktree,
+                      branch: buildTemporaryWorktreeBranchName(randomHex),
+                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                    },
+                    runSetupScript: true,
+                  }
+                : {}),
+            }
+          : undefined;
+      const startCommandId = newCommandId();
+      queuedCommands.push({
+        type: "thread.turn.start",
+        commandId: startCommandId,
+        threadId: threadIdForSend,
+        message: {
+          messageId: messageIdForSend,
+          role: "user",
+          text: outgoingMessageText,
+          attachments: turnAttachmentsResult.value,
+        },
+        modelSelection: ctxSelectedModelSelection,
+        titleSeed: title,
+        runtimeMode,
+        interactionMode,
+        ...(bootstrap ? { bootstrap } : {}),
+        createdAt: messageCreatedAt,
+      });
+      const queued = useOfflineTurnOutboxStore.getState().enqueue({
+        id: startCommandId,
+        environmentId: activeThread.environmentId,
+        threadId: threadIdForSend,
+        messageId: messageIdForSend,
+        createdAt: messageCreatedAt,
+        commands: queuedCommands,
+      });
+      if (!queued.queued) {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageIdForSend),
+        );
+        setThreadError(
+          threadIdForSend,
+          queued.reason === "already-queued"
+            ? "A message is already queued for this thread."
+            : "Could not save this message locally. It remains in the composer.",
+        );
+        sendInFlightRef.current = false;
+        setDockedDraftHeroThreadKey((currentThreadKey) =>
+          currentThreadKey === activeThreadKey ? null : currentThreadKey,
+        );
+        resetLocalDispatch();
+        return;
+      }
+
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      toastManager.add({
+        type: "success",
+        title: "Message queued",
+        description: `It will send automatically when ${activeEnvironmentUnavailableLabel ?? "the environment"} reconnects.`,
+      });
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+      return;
+    }
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
     // Auto-title from first message
@@ -5835,6 +6019,7 @@ function ChatViewContent(props: ChatViewProps) {
                             isSendBusy={isSendBusy}
                             isPreparingWorktree={isPreparingWorktree}
                             environmentUnavailable={activeEnvironmentUnavailableState}
+                            hasQueuedTurn={hasQueuedTurn}
                             activePendingApproval={activePendingApproval}
                             pendingApprovals={pendingApprovals}
                             pendingUserInputs={pendingUserInputs}

@@ -93,7 +93,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { canSubmitComposerProviderState, ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -431,6 +431,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isSendBusy: boolean;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
+  hasQueuedTurn: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
@@ -463,6 +464,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isSendBusy={props.isSendBusy}
         isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
+        hasQueuedTurn={props.hasQueuedTurn}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
@@ -517,6 +519,27 @@ export interface ChatComposerHandle {
   };
 }
 
+type ComposerProviderSendContext = Pick<
+  ReturnType<ChatComposerHandle["getSendContext"]>,
+  | "selectedPromptEffort"
+  | "selectedModelOptionsForDispatch"
+  | "selectedModelSelection"
+  | "selectedProvider"
+  | "selectedModel"
+  | "selectedProviderModels"
+>;
+
+export function resolveComposerProviderSendContext<T>(input: {
+  readonly current: T;
+  readonly lastAvailable: T | null;
+  readonly providerAvailable: boolean;
+  readonly environmentUnavailable: boolean;
+}): T {
+  return !input.providerAvailable && input.environmentUnavailable
+    ? (input.lastAvailable ?? input.current)
+    : input.current;
+}
+
 // --------------------------------------------------------------------------
 // Props
 // --------------------------------------------------------------------------
@@ -546,6 +569,7 @@ export interface ChatComposerProps {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
   } | null;
+  hasQueuedTurn: boolean;
 
   // Pending approvals / inputs
   activePendingApproval: PendingApproval | null;
@@ -654,6 +678,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     isPreparingWorktree,
     environmentUnavailable,
+    hasQueuedTurn,
     activePendingApproval,
     pendingApprovals,
     pendingUserInputs,
@@ -927,6 +952,36 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
+  const currentProviderSendContext = useMemo<ComposerProviderSendContext>(
+    () => ({
+      selectedPromptEffort,
+      selectedModelOptionsForDispatch,
+      selectedModelSelection,
+      selectedProvider,
+      selectedModel,
+      selectedProviderModels,
+    }),
+    [
+      selectedModel,
+      selectedModelOptionsForDispatch,
+      selectedModelSelection,
+      selectedPromptEffort,
+      selectedProvider,
+      selectedProviderModels,
+    ],
+  );
+  const lastAvailableProviderSendContextRef = useRef<ComposerProviderSendContext | null>(null);
+  useEffect(() => {
+    if (!noProviderAvailable) {
+      lastAvailableProviderSendContextRef.current = currentProviderSendContext;
+    }
+  }, [currentProviderSendContext, noProviderAvailable]);
+  const providerSendContext = resolveComposerProviderSendContext({
+    current: currentProviderSendContext,
+    lastAvailable: lastAvailableProviderSendContextRef.current,
+    providerAvailable: !noProviderAvailable,
+    environmentUnavailable: environmentUnavailable !== null,
+  });
   const selectedModelForPicker = selectedModel;
   // Instance-keyed option list so the picker can show each configured
   // instance (built-in + custom) as a first-class sidebar entry. The
@@ -1274,9 +1329,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isConnecting ||
     noProviderAvailable ||
     projectSelectionRequired ||
-    environmentUnavailable !== null ||
+    hasQueuedTurn ||
     !composerSendState.hasSendableContent;
-  const collapsedComposerPrimaryActionLabel = "Send message";
+  const collapsedComposerPrimaryActionLabel = hasQueuedTurn
+    ? "Message already queued"
+    : environmentUnavailable !== null
+      ? "Queue message until reconnected"
+      : "Send message";
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
 
@@ -1846,7 +1905,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }) => {
-      if (noProviderAvailable) {
+      if (
+        !canSubmitComposerProviderState({
+          providerAvailable: !noProviderAvailable,
+          environmentUnavailable: environmentUnavailable !== null,
+        })
+      ) {
         event?.preventDefault();
         return;
       }
@@ -1855,7 +1919,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         blurMobileComposerAfterSend();
       }
     },
-    [blurMobileComposerAfterSend, noProviderAvailable, onSend, shouldBlurMobileComposerOnSubmit],
+    [
+      blurMobileComposerAfterSend,
+      environmentUnavailable,
+      noProviderAvailable,
+      onSend,
+      shouldBlurMobileComposerOnSubmit,
+    ],
   );
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
@@ -2628,13 +2698,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         elementContexts: composerElementContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
-        selectedPromptEffort,
-        selectedModelOptionsForDispatch,
-        selectedModelSelection,
+        selectedPromptEffort: providerSendContext.selectedPromptEffort,
+        selectedModelOptionsForDispatch: providerSendContext.selectedModelOptionsForDispatch,
+        selectedModelSelection: providerSendContext.selectedModelSelection,
         providerAvailable: !noProviderAvailable,
-        selectedProvider,
-        selectedModel,
-        selectedProviderModels,
+        selectedProvider: providerSendContext.selectedProvider,
+        selectedModel: providerSendContext.selectedModel,
+        selectedProviderModels: providerSendContext.selectedProviderModels,
       }),
     }),
     [
@@ -2656,13 +2726,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacement,
       isComposerModelPickerOpen,
       readComposerSnapshot,
-      selectedModel,
-      selectedModelOptionsForDispatch,
-      selectedModelSelection,
       noProviderAvailable,
-      selectedPromptEffort,
-      selectedProvider,
-      selectedProviderModels,
+      providerSendContext,
     ],
   );
 
@@ -2812,6 +2877,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         noProviderAvailable ||
                         projectSelectionRequired
                       }
+                      hasQueuedTurn={hasQueuedTurn}
                       isPreparingWorktree={false}
                       hasSendableContent={false}
                       preserveComposerFocusOnPointerDown
@@ -3103,6 +3169,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       noProviderAvailable ||
                       projectSelectionRequired
                     }
+                    hasQueuedTurn={hasQueuedTurn}
                     isPreparingWorktree={false}
                     hasSendableContent={false}
                     preserveComposerFocusOnPointerDown
@@ -3235,6 +3302,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     noProviderAvailable ||
                     projectSelectionRequired
                   }
+                  hasQueuedTurn={hasQueuedTurn}
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
                   preserveComposerFocusOnPointerDown={isMobileViewport}
