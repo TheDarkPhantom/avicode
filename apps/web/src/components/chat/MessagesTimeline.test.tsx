@@ -369,6 +369,45 @@ describe("MessagesTimeline", () => {
     );
   });
 
+  it("pins the prompt of the turn currently being read", async () => {
+    const { resolveTimelinePinnedMessageIndex } = await import("./MessagesTimeline.logic");
+
+    // Three prompts at 0-120, 400-520 and 900-1020 in content space.
+    const rows = [
+      { top: 0, height: 120 },
+      { top: 400, height: 120 },
+      { top: 900, height: 120 },
+    ];
+
+    // At the very top nothing has scrolled past, so nothing is pinned.
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows, scrollTop: 0 })).toBeNull();
+    // Still partially visible: the real bubble is enough.
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows, scrollTop: 100 })).toBeNull();
+    // Cleared the top (within the reveal offset) — pin it.
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows, scrollTop: 112 })).toBe(0);
+    // Reading the second turn's answer keeps the second prompt pinned.
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows, scrollTop: 700 })).toBe(1);
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows, scrollTop: 5000 })).toBe(2);
+
+    // A larger offset hands over later, matching the masked top fade.
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 40, rows, scrollTop: 100 })).toBe(0);
+
+    // Unmeasured rows are skipped rather than counted as scrolled past.
+    expect(
+      resolveTimelinePinnedMessageIndex({
+        revealOffset: 8,
+        rows: [
+          { top: 0, height: 120 },
+          { top: null, height: null },
+        ],
+        scrollTop: 700,
+      }),
+    ).toBe(0);
+    expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows: [], scrollTop: 700 })).toBe(
+      null,
+    );
+  });
+
   it("anchors a sent attachment message using its measured height", () => {
     const onAnchorReady = vi.fn();
     const onAnchorSizeChanged = vi.fn();
