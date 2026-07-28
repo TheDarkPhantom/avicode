@@ -85,6 +85,10 @@ Upstream-sync PRs additionally run:
 - the desktop smoke test; and
 - an unsigned Windows x64 packaging test using `--publish never`.
 
+The fork's pull-request CI uses standard GitHub-hosted runners. Upstream's
+private Blacksmith runner labels are intentionally not carried into AviCode's
+required checks because they are unavailable to GitHub forks.
+
 When the remaining boundaries become active, their focused tests must be
 included in the normal CI or in `avicode-guardrails.yml`. ALFRED compatibility
 is implemented and tested in the private `ALFRED-CODE` repository; AviCode
