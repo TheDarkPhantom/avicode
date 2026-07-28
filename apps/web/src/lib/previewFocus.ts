@@ -10,6 +10,11 @@ export function isPreviewFocused(): boolean {
   const activeElement = document.activeElement;
   if (!(activeElement instanceof HTMLElement)) return false;
   if (!activeElement.isConnected) return false;
+  // Every `<webview>` in the app is a preview session surface: they are all
+  // rendered by `ElectronBrowserHost` from `useActivePreviewSessions`, hoisted
+  // to the app root rather than nested in the panel. So the tag check is the
+  // right test for "the embedded page owns focus"; whether the panel is
+  // actually open is gated separately by the `previewOpen` shortcut context.
   if (activeElement.tagName.toLowerCase() === "webview") return true;
   return activeElement.closest("[data-preview-panel-mode]") !== null;
 }

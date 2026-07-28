@@ -72,6 +72,18 @@ describe("ClientSettings sidebar v2", () => {
     const settings = decodeClientSettings({});
     expect(settings.sidebarV2Enabled).toBe(false);
     expect(settings.sidebarAutoSettleAfterDays).toBe(3);
+    expect(settings.sidebarMouseBackForwardNavigation).toBe(false);
+  });
+
+  it("accepts mouse back/forward sidebar navigation patches", () => {
+    expect(
+      decodeClientSettingsPatch({ sidebarMouseBackForwardNavigation: true })
+        .sidebarMouseBackForwardNavigation,
+    ).toBe(true);
+    expect(
+      decodeClientSettingsPatch({ sidebarMouseBackForwardNavigation: false })
+        .sidebarMouseBackForwardNavigation,
+    ).toBe(false);
   });
 
   it("treats settings written before the beta had a per-channel default as unconfigured", () => {

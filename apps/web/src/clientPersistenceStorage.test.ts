@@ -90,4 +90,21 @@ describe("clientPersistenceStorage", () => {
     expect(settings).not.toHaveProperty("chatWordWrap");
     expect(settings).not.toHaveProperty("diffWordWrap");
   });
+
+  it("defaults mouse back/forward sidebar navigation off for legacy blobs", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        timestampFormat: "24-hour",
+      }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+    expect(readBrowserClientSettings()).toEqual(
+      expect.objectContaining({
+        sidebarMouseBackForwardNavigation: false,
+      }),
+    );
+  });
 });

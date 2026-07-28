@@ -42,7 +42,7 @@ export function sanitizePrTitle(raw: string): string {
   return "Update project changes";
 }
 
-/** Normalise a raw thread title to a compact single-line sidebar-safe label. */
+/** Normalise a raw thread title to a compact single-line, title-cased sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
   const normalized = raw
     .trim()
@@ -53,14 +53,26 @@ export function sanitizeThreadTitle(raw: string): string {
     .replace(/\s+/g, " ");
 
   if (!normalized || normalized.trim().length === 0) {
-    return "New thread";
+    return "New Thread";
   }
 
-  if (normalized.length <= 50) {
-    return normalized;
+  const titled = toTitleCaseWords(normalized);
+
+  if (titled.length <= 50) {
+    return titled;
   }
 
-  return `${normalized.slice(0, 47).trimEnd()}...`;
+  return `${titled.slice(0, 47).trimEnd()}...`;
+}
+
+function toTitleCaseWords(value: string): string {
+  const parts: Array<string> = [];
+  for (const part of value.split(/[\s_-]+/g)) {
+    if (part.length > 0) {
+      parts.push(part.charAt(0).toUpperCase() + part.slice(1).toLowerCase());
+    }
+  }
+  return parts.join(" ");
 }
 
 /** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */

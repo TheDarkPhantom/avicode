@@ -5,7 +5,7 @@ import type {
   DesktopPreviewTabState,
 } from "@t3tools/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
 
@@ -27,7 +27,27 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
   return result as Awaited<ReturnType<DesktopBridge["ensureSshEnvironment"]>>;
 }
 
+/**
+ * Whole-window zoom lives in the preload rather than behind IPC: `webFrame` is
+ * available in sandboxed preloads and acts on this renderer directly, so the
+ * renderer can own the shortcut without a main-process round trip. Levels are
+ * clamped to keep the UI usable — Electron itself imposes no bound.
+ */
+const APP_ZOOM_MIN_LEVEL = -5;
+const APP_ZOOM_MAX_LEVEL = 5;
+
+function clampAppZoomLevel(level: number): number {
+  if (!Number.isFinite(level)) return 0;
+  return Math.min(APP_ZOOM_MAX_LEVEL, Math.max(APP_ZOOM_MIN_LEVEL, level));
+}
+
 contextBridge.exposeInMainWorld("desktopBridge", {
+  getAppZoomLevel: () => webFrame.getZoomLevel(),
+  setAppZoomLevel: (level: number) => {
+    const clamped = clampAppZoomLevel(level);
+    webFrame.setZoomLevel(clamped);
+    return clamped;
+  },
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
     if (typeof result !== "object" || result === null) {
@@ -47,6 +67,9 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
+  getLegacyT3ImportStatus: () =>
+    ipcRenderer.invoke(IpcChannels.GET_LEGACY_T3_IMPORT_STATUS_CHANNEL),
+  importLegacyT3Data: () => ipcRenderer.invoke(IpcChannels.IMPORT_LEGACY_T3_DATA_CHANNEL),
   getConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.GET_CONNECTION_CATALOG_CHANNEL),
   setConnectionCatalog: (catalog) =>
     ipcRenderer.invoke(IpcChannels.SET_CONNECTION_CATALOG_CHANNEL, catalog),

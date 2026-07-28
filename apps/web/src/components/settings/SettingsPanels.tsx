@@ -431,6 +431,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.sidebarMouseBackForwardNavigation !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation
+        ? ["Mouse back/forward buttons"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
@@ -481,6 +485,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
       settings.enableProviderUpdateChecks,
+      settings.sidebarMouseBackForwardNavigation,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
@@ -508,6 +513,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      sidebarMouseBackForwardNavigation:
+        DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -783,6 +790,34 @@ export function GeneralSettingsPanel() {
                 });
               }}
               aria-label="Project Grouping"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Mouse back/forward buttons"
+          description="Use mouse back and forward buttons to move through visible sidebar threads instead of browser history."
+          resetAction={
+            settings.sidebarMouseBackForwardNavigation !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation ? (
+              <SettingResetButton
+                label="mouse back/forward buttons"
+                onClick={() =>
+                  updateSettings({
+                    sidebarMouseBackForwardNavigation:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarMouseBackForwardNavigation}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarMouseBackForwardNavigation: Boolean(checked) })
+              }
+              aria-label="Use mouse back and forward buttons for sidebar thread navigation"
             />
           }
         />

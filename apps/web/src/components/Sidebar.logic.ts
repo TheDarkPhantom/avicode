@@ -98,6 +98,9 @@ export interface ThreadStatusPill {
   label:
     | "Working"
     | "Connecting"
+    | "Merging"
+    | "Needs Resume"
+    | "Failed"
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
@@ -110,6 +113,9 @@ export interface ThreadStatusPill {
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
   "Awaiting Input": 4,
+  "Needs Resume": 4,
+  Failed: 4,
+  Merging: 3,
   Working: 3,
   Connecting: 3,
   "Plan Ready": 2,
@@ -127,6 +133,34 @@ type ThreadStatusInput = Pick<
 > & {
   lastVisitedAt?: string | undefined;
 };
+
+const LIMIT_ERROR_PATTERN =
+  /\b(?:429|rate[-\s]?limit|quota|usage limit|limit reached|too many requests|exhausted|over limit|weekly limit|5-hour|five-hour)\b/i;
+
+export function isLikelyLimitError(detail: string | null | undefined): boolean {
+  return typeof detail === "string" && LIMIT_ERROR_PATTERN.test(detail);
+}
+
+type SidebarSourceControlActionState = {
+  readonly isRunning: boolean;
+  readonly operation: string | null;
+  readonly action: string | null;
+};
+
+export function isSidebarMergingSourceControlAction(
+  actionState: SidebarSourceControlActionState,
+): boolean {
+  if (!actionState.isRunning) {
+    return false;
+  }
+  if (actionState.operation === "prepare_pull_request_thread") {
+    return true;
+  }
+  return (
+    actionState.operation === "run_change_request" &&
+    (actionState.action === "create_pr" || actionState.action === "commit_push_pr")
+  );
+}
 
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
@@ -329,6 +363,43 @@ export function resolveAdjacentThreadId<T>(input: {
   return currentIndex < threadIds.length - 1 ? (threadIds[currentIndex + 1] ?? null) : null;
 }
 
+export function threadTraversalDirectionFromMouseButton(
+  button: number,
+): ThreadTraversalDirection | null {
+  if (button === 3) return "previous";
+  if (button === 4) return "next";
+  return null;
+}
+
+export function resolveMouseBackForwardThreadNavigationTarget<T>(input: {
+  enabled: boolean;
+  active: boolean;
+  button: number;
+  threadIds: readonly T[];
+  currentThreadId: T | null;
+}): {
+  shouldPreventDefault: boolean;
+  targetThreadId: T | null;
+} {
+  if (!input.enabled || !input.active) {
+    return { shouldPreventDefault: false, targetThreadId: null };
+  }
+
+  const direction = threadTraversalDirectionFromMouseButton(input.button);
+  if (direction === null) {
+    return { shouldPreventDefault: false, targetThreadId: null };
+  }
+
+  return {
+    shouldPreventDefault: true,
+    targetThreadId: resolveAdjacentThreadId({
+      threadIds: input.threadIds,
+      currentThreadId: input.currentThreadId,
+      direction,
+    }),
+  };
+}
+
 export function shouldNavigateAfterProjectRemoval(input: {
   routeTarget: ThreadRouteTarget | null;
   projectThreads: readonly {
@@ -401,11 +472,17 @@ export function resolveThreadRowClassName(input: {
 // whether it finished, asked a question, or proposed a plan.
 // Unread completion is tracked separately: it describes whether a ready
 // thread needs attention, not what the thread is currently doing.
-export type SidebarV2Status = "approval" | "input" | "working" | "failed" | "ready";
+export type SidebarV2Status =
+  | "approval"
+  | "input"
+  | "needs_resume"
+  | "working"
+  | "failed"
+  | "ready";
 
 type SidebarV2StatusInput = Pick<
   SidebarThreadSummary,
-  "hasPendingApprovals" | "hasPendingUserInput" | "session"
+  "hasPendingApprovals" | "hasPendingUserInput" | "latestTurn" | "session"
 >;
 
 export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2Status {
@@ -415,10 +492,17 @@ export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2S
   if (thread.hasPendingUserInput) {
     return "input";
   }
+  if (
+    thread.session?.status === "interrupted" ||
+    thread.latestTurn?.state === "interrupted" ||
+    (thread.session?.status === "error" && isLikelyLimitError(thread.session.lastError))
+  ) {
+    return "needs_resume";
+  }
   if (thread.session?.status === "running" || thread.session?.status === "starting") {
     return "working";
   }
-  if (thread.session?.status === "error") {
+  if (thread.session?.status === "error" || thread.latestTurn?.state === "error") {
     return "failed";
   }
   return "ready";

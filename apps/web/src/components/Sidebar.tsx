@@ -107,6 +107,7 @@ import { useShortcutModifierState } from "../shortcutModifierState";
 import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useMouseBackForwardThreadNavigation } from "../hooks/useMouseBackForwardThreadNavigation";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -2999,6 +3000,9 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
+  const sidebarMouseBackForwardNavigation = useClientSettings(
+    (s) => s.sidebarMouseBackForwardNavigation,
+  );
   const updateSettings = useUpdateClientSettings();
   const handleNewThread = useNewThreadHandler();
   const { archiveThread, deleteThread } = useThreadActions();
@@ -3397,6 +3401,19 @@ export default function Sidebar() {
       }),
     [prewarmedSidebarThreadKeys],
   );
+  const getSidebarThreadByKey = useCallback(
+    (threadKey: string) => sidebarThreadByKey.get(threadKey),
+    [sidebarThreadByKey],
+  );
+
+  useMouseBackForwardThreadNavigation({
+    enabled: sidebarMouseBackForwardNavigation,
+    active: !isOnSettings,
+    orderedThreadKeys: orderedSidebarThreadKeys,
+    currentThreadKey: routeThreadKey,
+    getThreadByKey: getSidebarThreadByKey,
+    navigateToThread,
+  });
 
   useEffect(() => {
     updateThreadJumpHintsVisibility(shouldShowThreadJumpHintsNow);

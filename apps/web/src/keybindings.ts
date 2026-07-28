@@ -52,6 +52,14 @@ const TERMINAL_DELETE_TO_LINE_START = "\u0015";
 const EVENT_CODE_KEY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   BracketLeft: ["["],
   BracketRight: ["]"],
+  // `Equal`/`Minus` and their numpad twins keep the zoom chords working on
+  // layouts where `event.key` is not literally "=" / "-" (and on the numpad,
+  // where it never is).
+  Equal: ["=", "+"],
+  Minus: ["-", "_"],
+  NumpadAdd: ["+", "="],
+  NumpadSubtract: ["-"],
+  Numpad0: ["0"],
   Digit0: ["0"],
   Digit1: ["1"],
   Digit2: ["2"],

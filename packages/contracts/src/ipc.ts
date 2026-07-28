@@ -975,6 +975,21 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+export const DesktopLegacyT3ImportStatusSchema = Schema.Struct({
+  available: Schema.Boolean,
+  sourcePath: Schema.String,
+  lastImportedAt: Schema.NullOr(Schema.String),
+});
+export type DesktopLegacyT3ImportStatus = typeof DesktopLegacyT3ImportStatusSchema.Type;
+
+export const DesktopLegacyT3ImportResultSchema = Schema.Struct({
+  status: Schema.Literals(["imported", "cancelled", "unavailable", "failed"]),
+  importedAt: Schema.NullOr(Schema.String),
+  backupPath: Schema.NullOr(Schema.String),
+  message: Schema.String,
+});
+export type DesktopLegacyT3ImportResult = typeof DesktopLegacyT3ImportResultSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   // One bootstrap per pool instance currently registered with bootstrap
@@ -984,6 +999,8 @@ export interface DesktopBridge {
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
+  getLegacyT3ImportStatus: () => Promise<DesktopLegacyT3ImportStatus>;
+  importLegacyT3Data: () => Promise<DesktopLegacyT3ImportResult>;
   getConnectionCatalog?: () => Promise<string | null>;
   setConnectionCatalog?: (catalog: string) => Promise<boolean>;
   clearConnectionCatalog?: () => Promise<void>;
