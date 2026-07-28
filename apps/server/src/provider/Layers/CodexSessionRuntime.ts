@@ -149,6 +149,18 @@ export interface CodexSessionRuntimeShape {
     requestId: ApprovalRequestId,
     answers: ProviderUserInputAnswers,
   ) => Effect.Effect<void, CodexSessionRuntimeError>;
+  /**
+   * Pull the account's current plan rate limits on demand.
+   *
+   * The app-server also pushes `account/rateLimits/updated`, but only once a
+   * limit actually moves — a freshly-opened session would otherwise show no
+   * quota until the first turn finished. Optional so test fakes need not
+   * implement it.
+   */
+  readonly readAccountRateLimits?: () => Effect.Effect<
+    EffectCodexSchema.V2GetAccountRateLimitsResponse,
+    CodexSessionRuntimeError
+  >;
   readonly events: Stream.Stream<ProviderEvent, never>;
   readonly close: Effect.Effect<void>;
 }
@@ -1417,6 +1429,7 @@ export const makeCodexSessionRuntime = (
             },
           });
         }),
+      readAccountRateLimits: () => client.request("account/rateLimits/read", undefined),
       events: Stream.fromQueue(events),
       close,
     } satisfies CodexSessionRuntimeShape;

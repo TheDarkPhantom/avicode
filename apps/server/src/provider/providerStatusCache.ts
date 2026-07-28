@@ -69,9 +69,16 @@ export const hydrateCachedProvider = (input: {
     skills: input.cachedProvider.skills,
   };
 
-  return input.cachedProvider.message
-    ? { ...hydratedProvider, message: input.cachedProvider.message }
+  // Carry the cached quota forward so the usage meter has something to show
+  // during the window between boot and the provider's first live rate-limit
+  // report — which, for an idle instance, may never come.
+  const hydratedWithQuota = input.cachedProvider.quota
+    ? { ...hydratedProvider, quota: input.cachedProvider.quota }
     : hydratedProvider;
+
+  return input.cachedProvider.message
+    ? { ...hydratedWithQuota, message: input.cachedProvider.message }
+    : hydratedWithQuota;
 };
 
 /**

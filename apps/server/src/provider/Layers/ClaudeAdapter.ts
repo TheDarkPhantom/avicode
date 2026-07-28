@@ -32,11 +32,15 @@ import {
   ProviderInstanceId,
   type ModelSelection,
   ProviderItemId,
+  type ProviderQuotaSnapshot,
+  type ProviderQuotaWindow,
   type ProviderRuntimeEvent,
   type ProviderRuntimeTurnStatus,
   type ProviderSendTurnInput,
   type ProviderSession,
+  type ProviderTurnUsage,
   type ThreadTokenUsageSnapshot,
+  clampQuotaUsedPercent,
   type ProviderUserInputAnswers,
   type RuntimeContentStreamKind,
   RuntimeItemId,
@@ -61,6 +65,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -210,6 +215,15 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
+  /**
+   * Structured `/usage` data: every plan window at once, plus the plan name.
+   *
+   * The SDK marks this unstable and says the method name will change, so it is
+   * optional, feature-detected, and purely enrichment — the stable
+   * `rate_limit_event` stream remains the primary quota source. Typed loosely
+   * for the same reason; `normalizeClaudeUsageResponse` validates the shape.
+   */
+  readonly usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<unknown>;
   readonly close: () => void;
 }
 
@@ -543,6 +557,224 @@ function normalizeClaudeTaskProgressTokenUsage(
   return {
     ...snapshot,
     ...(toolUses !== undefined ? { toolUses } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+  };
+}
+
+/**
+ * Labels for the plan windows the SDK reports. Kept as a lookup rather than a
+ * closed union so an unrecognized window still renders (as its raw id) instead
+ * of being dropped — Anthropic adds window types without notice.
+ */
+const CLAUDE_QUOTA_WINDOW_LABELS: Record<string, string> = {
+  five_hour: "5-hour",
+  seven_day: "Weekly",
+  seven_day_opus: "Weekly (Opus)",
+  seven_day_sonnet: "Weekly (Sonnet)",
+  seven_day_oauth_apps: "Weekly (apps)",
+  overage: "Overage",
+};
+
+function claudeQuotaWindowLabel(id: string): string {
+  return CLAUDE_QUOTA_WINDOW_LABELS[id] ?? id;
+}
+
+/**
+ * The SDK reports reset times as epoch **seconds**; everything downstream
+ * speaks ISO. Values that are not sane epochs are dropped rather than turned
+ * into 1970.
+ */
+function claudeEpochSecondsToIso(value: unknown): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const instant = DateTime.make(value * 1000);
+  return Option.isNone(instant) ? undefined : DateTime.formatIso(instant.value);
+}
+
+/**
+ * Normalize a `rate_limit_event` into a single-window quota snapshot.
+ *
+ * The SDK pushes one window per event — whichever one just changed — so this
+ * is deliberately a *patch*. `mergeProviderQuotaSnapshots` is what keeps the
+ * 5-hour and weekly readings from overwriting each other.
+ */
+function normalizeClaudeRateLimitEvent(
+  info: unknown,
+  capturedAt: string,
+): ProviderQuotaSnapshot | undefined {
+  if (!info || typeof info !== "object" || Array.isArray(info)) {
+    return undefined;
+  }
+
+  const rateLimit = info as Record<string, unknown>;
+  const id = typeof rateLimit.rateLimitType === "string" ? rateLimit.rateLimitType : undefined;
+  const usedPercent = clampQuotaUsedPercent(rateLimit.utilization);
+  if (id === undefined || usedPercent === null) {
+    return undefined;
+  }
+
+  const resetsAt = claudeEpochSecondsToIso(rateLimit.resetsAt);
+  const exhausted = rateLimit.status === "rejected";
+  const window: ProviderQuotaWindow = {
+    id,
+    label: claudeQuotaWindowLabel(id),
+    usedPercent,
+    ...(resetsAt !== undefined ? { resetsAt } : {}),
+    ...(exhausted ? { exhausted } : {}),
+  };
+
+  const status =
+    rateLimit.status === "rejected"
+      ? ("exhausted" as const)
+      : rateLimit.status === "allowed_warning"
+        ? ("warning" as const)
+        : rateLimit.status === "allowed"
+          ? ("ok" as const)
+          : undefined;
+
+  return {
+    windows: [window],
+    ...(status !== undefined ? { status } : {}),
+    capturedAt,
+  };
+}
+
+/**
+ * Normalize the experimental `/usage` control response, which reports every
+ * window at once (plus the plan name) rather than one at a time.
+ *
+ * Returns undefined when the session has no plan limits at all — API key,
+ * Bedrock and Vertex sessions set `rate_limits_available: false` — so those
+ * instances stay quota-less instead of showing a misleading 0%.
+ */
+function normalizeClaudeUsageResponse(
+  value: unknown,
+  capturedAt: string,
+): ProviderQuotaSnapshot | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const response = value as Record<string, unknown>;
+  if (response.rate_limits_available === false) {
+    return undefined;
+  }
+
+  const rateLimits = response.rate_limits;
+  if (!rateLimits || typeof rateLimits !== "object" || Array.isArray(rateLimits)) {
+    return undefined;
+  }
+
+  const windows: Array<ProviderQuotaWindow> = [];
+  for (const [id, entry] of Object.entries(rateLimits as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const limit = entry as Record<string, unknown>;
+    const usedPercent = clampQuotaUsedPercent(limit.utilization);
+    if (usedPercent === null) {
+      continue;
+    }
+    const resetsAt = typeof limit.resets_at === "string" ? limit.resets_at : undefined;
+    windows.push({
+      id,
+      label: claudeQuotaWindowLabel(id),
+      usedPercent,
+      ...(resetsAt !== undefined ? { resetsAt } : {}),
+    });
+  }
+
+  if (windows.length === 0) {
+    return undefined;
+  }
+
+  const planType =
+    typeof response.subscription_type === "string" && response.subscription_type.trim().length > 0
+      ? response.subscription_type.trim()
+      : undefined;
+
+  return {
+    windows,
+    ...(planType !== undefined ? { planType } : {}),
+    capturedAt,
+  };
+}
+
+/**
+ * Additive per-turn usage, summed across the models the turn touched.
+ *
+ * Deliberately built from `modelUsage` rather than from
+ * `ThreadTokenUsageSnapshot`: the snapshot's `inputTokens`/`outputTokens` are
+ * Claude *context occupancy* (they include the whole re-sent conversation each
+ * turn), so summing them across turns would multiply-count the transcript.
+ * `modelUsage` is the per-turn API accounting and is the only summable source
+ * Claude gives us. It also carries real spend, which no other driver reports.
+ */
+function claudeTurnUsage(result: SDKResultMessage | undefined): ProviderTurnUsage | undefined {
+  const modelUsage = result?.modelUsage;
+  if (!modelUsage || typeof modelUsage !== "object") {
+    return undefined;
+  }
+
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cachedInputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let costUsd = 0;
+  let sawCost = false;
+  let dominantModel: string | undefined;
+  let dominantModelTokens = -1;
+
+  for (const [model, usage] of Object.entries(modelUsage as Record<string, ModelUsage>)) {
+    if (!usage || typeof usage !== "object") {
+      continue;
+    }
+    const modelInput = finiteNonNegativeInteger(usage.inputTokens) ?? 0;
+    const modelOutput = finiteNonNegativeInteger(usage.outputTokens) ?? 0;
+    const modelCacheRead = finiteNonNegativeInteger(usage.cacheReadInputTokens) ?? 0;
+    const modelCacheCreation = finiteNonNegativeInteger(usage.cacheCreationInputTokens) ?? 0;
+
+    inputTokens += modelInput;
+    outputTokens += modelOutput;
+    cachedInputTokens += modelCacheRead;
+    cacheCreationInputTokens += modelCacheCreation;
+
+    if (typeof usage.costUSD === "number" && Number.isFinite(usage.costUSD)) {
+      costUsd += usage.costUSD;
+      sawCost = true;
+    }
+
+    // Attribute the row to whichever model did most of the work; sub-agent
+    // turns legitimately span several models.
+    const modelTokens = modelInput + modelOutput;
+    if (modelTokens > dominantModelTokens) {
+      dominantModelTokens = modelTokens;
+      dominantModel = model;
+    }
+  }
+
+  if (inputTokens + outputTokens + cachedInputTokens + cacheCreationInputTokens === 0 && !sawCost) {
+    return undefined;
+  }
+
+  // Prefer the turn-level cost when present: it accounts for extras (web
+  // search requests and the like) that the per-model rollup omits.
+  const totalCostUsd =
+    typeof result?.total_cost_usd === "number" && Number.isFinite(result.total_cost_usd)
+      ? result.total_cost_usd
+      : sawCost
+        ? costUsd
+        : undefined;
+  const durationMs = finiteNonNegativeInteger(result?.duration_ms);
+
+  return {
+    ...(dominantModel !== undefined ? { model: dominantModel } : {}),
+    inputTokens,
+    ...(cachedInputTokens > 0 ? { cachedInputTokens } : {}),
+    ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
+    outputTokens,
+    ...(totalCostUsd !== undefined ? { costUsd: totalCostUsd } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
   };
 }
@@ -1793,6 +2025,63 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return normalizeClaudeContextUsageApiSnapshot(usage, totalProcessedTokens);
   });
 
+  /**
+   * Pull the full plan-usage picture and emit it as a quota update.
+   *
+   * Enrichment only: `rate_limit_event` already keeps individual windows
+   * current, but it reports one window at a time and only once a window
+   * changes, so a freshly-opened session would show nothing until the first
+   * limit moved. This fills in every window at session start.
+   *
+   * Guarded on every axis because the underlying SDK method is explicitly
+   * unstable — absent method, rejected promise, and unrecognized shape all
+   * degrade to "no quota update" rather than failing the turn.
+   */
+  const emitPlanQuotaSnapshot = Effect.fn("emitPlanQuotaSnapshot")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (!readUsage) {
+      return;
+    }
+
+    const response = yield* Effect.promise(async () => {
+      try {
+        return await readUsage();
+      } catch {
+        return undefined;
+      }
+    });
+    if (response === undefined) {
+      return;
+    }
+
+    const stamp = yield* makeEventStamp();
+    const quota = normalizeClaudeUsageResponse(response, stamp.createdAt);
+    if (!quota) {
+      return;
+    }
+
+    yield* offerRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      ...(context.turnState ? { turnId: context.turnState.turnId } : {}),
+      payload: {
+        rateLimits: response,
+        quota,
+      },
+      providerRefs: nativeProviderRefs(context),
+      raw: {
+        source: "claude.sdk.message" as const,
+        method: "claude/usage",
+        payload: response,
+      },
+    });
+  });
+
   const emitProposedPlanCompleted = Effect.fn("emitProposedPlanCompleted")(function* (
     context: ClaudeSessionContext,
     input: {
@@ -1952,6 +2241,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           }
         : undefined);
 
+    const turnUsage = claudeTurnUsage(result);
+
     const turnState = context.turnState;
     if (!turnState) {
       yield* emitThreadTokenUsage(context, usageSnapshot, {
@@ -1974,6 +2265,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...(typeof result?.total_cost_usd === "number"
             ? { totalCostUsd: result.total_cost_usd }
             : {}),
+          ...(turnUsage ? { turnUsage } : {}),
           ...(errorMessage ? { errorMessage } : {}),
         },
         providerRefs: {},
@@ -2049,6 +2341,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(typeof result?.total_cost_usd === "number"
           ? { totalCostUsd: result.total_cost_usd }
           : {}),
+        ...(turnUsage ? { turnUsage } : {}),
         ...(errorMessage ? { errorMessage } : {}),
       },
       providerRefs: nativeProviderRefs(context),
@@ -2904,11 +3197,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
+      const quota = normalizeClaudeRateLimitEvent(message.rate_limit_info, stamp.createdAt);
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
         payload: {
           rateLimits: message,
+          ...(quota ? { quota } : {}),
         },
       });
       return;
@@ -3710,6 +4005,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           context.streamFiber = undefined;
         }
       });
+
+      // Seed the quota meter with every plan window up front. Forked, because
+      // this is a round-trip to the SDK control channel and a session must not
+      // wait on optional telemetry to become usable.
+      runFork(emitPlanQuotaSnapshot(context));
 
       return {
         ...session,

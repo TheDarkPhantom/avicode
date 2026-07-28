@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
   CommandId,
+  defaultInstanceIdForDriver,
   MessageId,
   type OrchestrationEvent,
   type OrchestrationMessage,
@@ -30,6 +31,7 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
+import { ProviderInstanceUsageRepository } from "../../persistence/Services/ProviderInstanceUsage.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -692,7 +694,56 @@ const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
+  const providerInstanceUsageRepository = yield* ProviderInstanceUsageRepository;
   const serverSettingsService = yield* ServerSettingsService;
+
+  /**
+   * Persist one turn's token/cost usage against the instance that served it.
+   *
+   * Written directly to the repository rather than dispatched as an
+   * orchestration command: usage is accounting, not thread state, so it has no
+   * business in the event log or the projections rebuilt from it.
+   *
+   * Best-effort. A failed usage write must never fail turn ingestion — losing
+   * a usage row costs a line in a report; failing the turn costs the user
+   * their work.
+   */
+  const recordTurnUsage = Effect.fn("recordTurnUsage")(function* (
+    event: ProviderRuntimeEvent & { readonly type: "turn.completed" },
+    now: string,
+  ) {
+    const usage = event.payload.turnUsage;
+    const turnId = event.turnId;
+    if (!usage || turnId === undefined) {
+      return;
+    }
+
+    yield* providerInstanceUsageRepository
+      .record({
+        turnId,
+        threadId: event.threadId,
+        providerInstanceId: event.providerInstanceId ?? defaultInstanceIdForDriver(event.provider),
+        driverKind: event.provider,
+        model: usage.model ?? null,
+        inputTokens: usage.inputTokens,
+        cachedInputTokens: usage.cachedInputTokens ?? 0,
+        cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
+        outputTokens: usage.outputTokens,
+        reasoningOutputTokens: usage.reasoningOutputTokens ?? 0,
+        costUsd: usage.costUsd ?? null,
+        durationMs: usage.durationMs ?? null,
+        createdAt: now,
+      })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider runtime ingestion failed to record turn usage", {
+            eventId: event.eventId,
+            turnId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+  });
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -1361,6 +1412,14 @@ const make = Effect.gen(function* () {
           ? yield* getSourceProposedPlanReferenceForAcceptedTurnStart(thread.id, eventTurnId)
           : null;
 
+      // Record usage for every completed turn the adapter reported it for,
+      // independent of `shouldApplyThreadLifecycle`. That guard exists to stop
+      // a stale turn from clobbering the *session status*; the tokens it burnt
+      // were still spent and still count against the instance.
+      if (event.type === "turn.completed") {
+        yield* recordTurnUsage(event, now);
+      }
+
       if (
         event.type === "session.started" ||
         event.type === "session.state.changed" ||
@@ -1825,6 +1884,11 @@ const make = Effect.gen(function* () {
   } satisfies ProviderRuntimeIngestionShape;
 });
 
+// The usage repository is deliberately *not* provided inward like
+// `ProjectionTurnRepositoryLive`: the WS layer reads the same repository for
+// `server.getProviderUsage`, so it belongs to the composition root
+// (`PersistenceLayerLive`). Declaring it as a requirement also lets tests
+// substitute a spy.
 export const ProviderRuntimeIngestionLive = Layer.effect(
   ProviderRuntimeIngestionService,
   make,

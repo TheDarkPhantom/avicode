@@ -10,6 +10,7 @@
  * @module ProviderServiceLive
  */
 import {
+  defaultInstanceIdForDriver,
   ModelSelection,
   NonNegativeInt,
   ThreadId,
@@ -48,6 +49,7 @@ import {
 import { type ProviderAdapterError, ProviderValidationError } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
+import * as ProviderQuotaTracker from "../Services/ProviderQuotaTracker.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
@@ -212,6 +214,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+  const quotaTracker = yield* ProviderQuotaTracker.ProviderQuotaTracker;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
@@ -227,6 +230,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
     );
 
+  /**
+   * Route quota reports into the tracker.
+   *
+   * Hooked into the single publish funnel rather than into each adapter, so
+   * every path that can carry a quota — streamed notifications and the
+   * session-start seed reads alike — is covered by one call site.
+   *
+   * Events whose adapter could not normalize the raw payload carry no `quota`
+   * and are ignored; the raw blob still reaches the NDJSON log for debugging.
+   */
+  const recordQuotaFromEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> => {
+    if (event.type !== "account.rate-limits.updated") {
+      return Effect.void;
+    }
+    const quota = event.payload.quota;
+    const instanceId = event.providerInstanceId ?? defaultInstanceIdForDriver(event.provider);
+    return quota ? quotaTracker.record({ instanceId, quota }) : Effect.void;
+  };
+
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.succeed(event).pipe(
       Effect.tap((canonicalEvent) =>
@@ -234,6 +256,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ? canonicalEventLogger.write(canonicalEvent, canonicalEvent.threadId)
           : Effect.void,
       ),
+      Effect.tap(recordQuotaFromEvent),
       Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
       Effect.asVoid,
     );

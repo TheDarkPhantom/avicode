@@ -26,6 +26,7 @@ import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   type ProviderInstanceId,
+  type ProviderQuotaSnapshot,
   type ServerProvider,
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
@@ -42,6 +43,7 @@ import * as Semaphore from "effect/Semaphore";
 
 import { ServerConfig } from "../../config.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
+import { ProviderQuotaTracker } from "../Services/ProviderQuotaTracker.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
 import {
   hydrateCachedProvider,
@@ -210,6 +212,7 @@ export const ProviderRegistryLive = Layer.effect(
   ProviderRegistry,
   Effect.gen(function* () {
     const instanceRegistry = yield* ProviderInstanceRegistry;
+    const quotaTracker = yield* ProviderQuotaTracker;
     const config = yield* ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -344,6 +347,25 @@ export const ProviderRegistryLive = Layer.effect(
       };
     });
 
+    /**
+     * Attach the instance's last-known plan quota to a snapshot.
+     *
+     * Drivers do not report quota through their snapshot stream — it arrives
+     * out-of-band on the runtime event bus — so it is stitched on here.
+     *
+     * When the tracker has nothing yet, whatever quota the snapshot already
+     * carries is preserved rather than cleared. That is what lets the value
+     * restored from the on-disk provider status cache survive until the first
+     * live report of the session arrives.
+     */
+    const applyProviderQuota = (
+      quotas: ReadonlyMap<ProviderInstanceId, ProviderQuotaSnapshot>,
+      provider: ServerProvider,
+    ): ServerProvider => {
+      const quota = quotas.get(provider.instanceId);
+      return quota ? { ...provider, quota } : provider;
+    };
+
     const upsertProviders = Effect.fn("upsertProviders")(function* (
       nextProviders: ReadonlyArray<ServerProvider>,
       options?: {
@@ -352,9 +374,16 @@ export const ProviderRegistryLive = Layer.effect(
         readonly replace?: boolean;
       },
     ) {
+      // Read the whole quota map once rather than per provider: the decoration
+      // is pure, and a per-provider effect would add a scheduling hop to every
+      // snapshot upsert on a path that runs on each provider status change.
+      const quotas = yield* quotaTracker.getAll;
       const nextProvidersWithUpdateState = yield* Effect.forEach(
         nextProviders,
-        applyProviderUpdateState,
+        (provider) =>
+          applyProviderUpdateState(provider).pipe(
+            Effect.map((withUpdateState) => applyProviderQuota(quotas, withUpdateState)),
+          ),
         {
           concurrency: "unbounded",
         },
@@ -690,6 +719,23 @@ export const ProviderRegistryLive = Layer.effect(
     yield* Stream.runForEach(
       Stream.fromSubscription(instanceChanges),
       () => syncLiveSourcesAndContinue,
+    ).pipe(Effect.forkScoped);
+
+    // Quota arrives on the runtime event bus, not through any driver's
+    // snapshot stream, so nothing else would ever republish on a quota-only
+    // change. Re-run the affected instance's snapshot through
+    // `upsertProviders`, which re-applies `applyProviderQuota` and publishes
+    // if the result differs.
+    yield* Stream.runForEach(quotaTracker.changes, (instanceId) =>
+      Ref.get(providersRef).pipe(
+        Effect.flatMap((providers) => {
+          const provider = providers.find(
+            (candidate) => snapshotInstanceKey(candidate) === instanceId,
+          );
+          return provider ? upsertProviders([provider]) : Effect.void;
+        }),
+        Effect.ignore,
+      ),
     ).pipe(Effect.forkScoped);
 
     const recoverRefreshFailure = Effect.fn("recoverRefreshFailure")(function* (

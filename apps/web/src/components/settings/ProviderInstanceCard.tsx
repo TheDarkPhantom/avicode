@@ -24,6 +24,7 @@ import {
 } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
+import { formatQuotaSummaryLine } from "../../lib/providerQuota";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
@@ -595,6 +596,17 @@ export function ProviderInstanceCard({
     </p>
   );
 
+  // Absent for drivers that report no plan limits (cursor, grok, opencode) and
+  // for Claude on API-key/Bedrock/Vertex auth. Rendering nothing beats
+  // rendering a 0% that would read as "plenty left".
+  const quotaSummary = formatQuotaSummaryLine(liveProvider?.quota, Date.now());
+  const quotaRowNode = quotaSummary ? (
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-[13px] leading-[1.45] text-muted-foreground/60">
+      <span>Plan usage</span>
+      <span className="tabular-nums">{quotaSummary}</span>
+    </p>
+  ) : null;
+
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
@@ -705,6 +717,7 @@ export function ProviderInstanceCard({
               {titleTailNode}
             </div>
             {authRowNode}
+            {quotaRowNode}
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
             <Button

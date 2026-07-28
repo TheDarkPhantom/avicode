@@ -2001,6 +2001,258 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("normalizes rate_limit_event messages into a typed quota snapshot", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({ threadId: THREAD_ID, input: "hello", attachments: [] });
+
+      // The SDK reports one window per event — whichever just moved — so two
+      // events must accumulate into two windows downstream, not overwrite.
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          rateLimitType: "five_hour",
+          utilization: 24,
+          resetsAt: 1_785_326_400,
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed_warning",
+          rateLimitType: "seven_day_opus",
+          utilization: 91,
+        },
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const quotaEvents = runtimeEvents.filter(
+        (event) => event.type === "account.rate-limits.updated",
+      );
+
+      assert.equal(quotaEvents.length, 2);
+      const first = quotaEvents[0];
+      const second = quotaEvents[1];
+      if (
+        first?.type !== "account.rate-limits.updated" ||
+        second?.type !== "account.rate-limits.updated"
+      ) {
+        assert.fail("expected two account.rate-limits.updated events");
+        return;
+      }
+
+      assert.deepEqual(first.payload.quota?.windows, [
+        {
+          id: "five_hour",
+          label: "5-hour",
+          usedPercent: 24,
+          resetsAt: "2026-07-29T12:00:00.000Z",
+        },
+      ]);
+      assert.equal(first.payload.quota?.status, "ok");
+
+      assert.deepEqual(second.payload.quota?.windows, [
+        { id: "seven_day_opus", label: "Weekly (Opus)", usedPercent: 91 },
+      ]);
+      assert.equal(second.payload.quota?.status, "warning");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("marks a rejected rate limit as exhausted", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 5).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({ threadId: THREAD_ID, input: "hello", attachments: [] });
+
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "rejected",
+          rateLimitType: "seven_day",
+          utilization: 100,
+        },
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const quotaEvent = runtimeEvents.find(
+        (event) => event.type === "account.rate-limits.updated",
+      );
+      if (quotaEvent?.type !== "account.rate-limits.updated") {
+        assert.fail("expected an account.rate-limits.updated event");
+        return;
+      }
+
+      assert.equal(quotaEvent.payload.quota?.status, "exhausted");
+      assert.equal(quotaEvent.payload.quota?.windows[0]?.exhausted, true);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("derives additive per-turn usage from Claude's per-model accounting", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({ threadId: THREAD_ID, input: "hello", attachments: [] });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 8100,
+        duration_api_ms: 7900,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-turn-usage",
+        total_cost_usd: 0.0421,
+        usage: {
+          input_tokens: 4,
+          cache_creation_input_tokens: 100,
+          cache_read_input_tokens: 800,
+          output_tokens: 340,
+        },
+        modelUsage: {
+          "claude-opus-4-6": {
+            inputTokens: 1200,
+            outputTokens: 340,
+            cacheReadInputTokens: 800,
+            cacheCreationInputTokens: 100,
+            costUSD: 0.04,
+            contextWindow: 200000,
+            maxOutputTokens: 64000,
+          },
+          "claude-haiku-4-5": {
+            inputTokens: 30,
+            outputTokens: 10,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            costUSD: 0.002,
+            contextWindow: 200000,
+            maxOutputTokens: 64000,
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const completion = runtimeEvents.find((event) => event.type === "turn.completed");
+      if (completion?.type !== "turn.completed") {
+        assert.fail("expected a turn.completed event");
+        return;
+      }
+
+      assert.deepEqual(completion.payload.turnUsage, {
+        // Attributed to whichever model did most of the work.
+        model: "claude-opus-4-6",
+        inputTokens: 1230,
+        cachedInputTokens: 800,
+        cacheCreationInputTokens: 100,
+        outputTokens: 350,
+        // The turn-level figure wins over the per-model sum (0.042), because
+        // it also covers extras like web search that `modelUsage` omits.
+        costUsd: 0.0421,
+        durationMs: 8100,
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("omits turn usage when Claude reports no per-model accounting", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({ threadId: THREAD_ID, input: "hello", attachments: [] });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 100,
+        duration_api_ms: 90,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-no-model-usage",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        modelUsage: {},
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const completion = runtimeEvents.find((event) => event.type === "turn.completed");
+      if (completion?.type !== "turn.completed") {
+        assert.fail("expected a turn.completed event");
+        return;
+      }
+
+      // No usable accounting means no row, rather than a row of zeroes that
+      // would dilute per-model averages.
+      assert.equal(completion.payload.turnUsage, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("clamps oversized Claude usage to the reported context window", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

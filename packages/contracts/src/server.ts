@@ -19,6 +19,7 @@ import {
 import { EditorId } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { ProviderQuotaSnapshot } from "./providerQuota.ts";
 import { ServerSettings } from "./settings.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
@@ -190,11 +191,66 @@ export const ServerProvider = Schema.Struct({
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+  // Last-known plan rate-limit utilization for this instance, when the driver
+  // reports it. Absent for drivers that report nothing (cursor, grok,
+  // opencode) and for Claude on API-key/Bedrock/Vertex auth, where plan
+  // limits do not apply. Consumers hide the meter rather than render zero.
+  quota: Schema.optionalKey(ProviderQuotaSnapshot),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
 export const ServerProviders = Schema.Array(ServerProvider);
 export type ServerProviders = typeof ServerProviders.Type;
+
+/**
+ * Token/cost totals for one model within a provider instance.
+ *
+ * `costUsd` is null when the driver does not report spend (every driver but
+ * Claude today), which is deliberately distinct from a reported zero.
+ */
+export const ServerProviderUsageModelTotals = Schema.Struct({
+  model: Schema.NullOr(TrimmedNonEmptyString),
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationInputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningOutputTokens: NonNegativeInt,
+  costUsd: Schema.NullOr(Schema.Number),
+});
+export type ServerProviderUsageModelTotals = typeof ServerProviderUsageModelTotals.Type;
+
+/**
+ * Rolled-up usage for one provider instance over the requested window.
+ *
+ * Complements — never replaces — `ServerProvider.quota`: this counts what was
+ * actually spent, the quota reports how much of the plan allowance remains.
+ * Neither can be derived from the other.
+ */
+export const ServerProviderUsage = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  driver: ProviderDriverKind,
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationInputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningOutputTokens: NonNegativeInt,
+  costUsd: Schema.NullOr(Schema.Number),
+  byModel: Schema.Array(ServerProviderUsageModelTotals),
+});
+export type ServerProviderUsage = typeof ServerProviderUsage.Type;
+
+export const ServerProviderUsageInput = Schema.Struct({
+  /** Inclusive lower bound on turn completion time. Omit for all-time totals. */
+  since: Schema.optional(IsoDateTime),
+});
+export type ServerProviderUsageInput = typeof ServerProviderUsageInput.Type;
+
+export const ServerProviderUsageResult = Schema.Struct({
+  instances: Schema.Array(ServerProviderUsage),
+});
+export type ServerProviderUsageResult = typeof ServerProviderUsageResult.Type;
 
 /**
  * Treat the optional `availability` as "available" when absent. This is

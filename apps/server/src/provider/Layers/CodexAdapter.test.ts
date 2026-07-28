@@ -1150,6 +1150,210 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       });
     }),
   );
+
+  it.effect("normalizes account rate limits into a typed quota snapshot", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-codex-rate-limits"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-07-29T12:00:00.000Z",
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            planType: "plus",
+            // Codex reports epoch *seconds*: 1_785_326_400 is
+            // 2026-07-29T12:00:00Z, and +4.5 days is 2026-08-02T12:00:00Z.
+            primary: { usedPercent: 12, resetsAt: 1_785_326_400, windowDurationMins: 300 },
+            secondary: { usedPercent: 62, resetsAt: 1_785_672_000, windowDurationMins: 10_080 },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "account.rate-limits.updated");
+      if (firstEvent.value.type !== "account.rate-limits.updated") {
+        return;
+      }
+
+      NodeAssert.deepEqual(firstEvent.value.payload.quota, {
+        windows: [
+          {
+            id: "primary",
+            label: "5-hour",
+            usedPercent: 12,
+            resetsAt: "2026-07-29T12:00:00.000Z",
+            windowMinutes: 300,
+          },
+          {
+            id: "secondary",
+            label: "Weekly",
+            usedPercent: 62,
+            resetsAt: "2026-08-02T12:00:00.000Z",
+            windowMinutes: 10_080,
+          },
+        ],
+        planType: "plus",
+        status: "ok",
+        capturedAt: "2026-07-29T12:00:00.000Z",
+      });
+    }),
+  );
+
+  it.effect("marks every window exhausted once Codex reports a limit was reached", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-codex-rate-limits-reached"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-07-29T12:00:00.000Z",
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            rateLimitReachedType: "rate_limit_reached",
+            secondary: { usedPercent: 100, windowDurationMins: 10_080 },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "account.rate-limits.updated") {
+        NodeAssert.fail("expected an account.rate-limits.updated event");
+        return;
+      }
+
+      NodeAssert.equal(firstEvent.value.payload.quota?.status, "exhausted");
+      NodeAssert.equal(firstEvent.value.payload.quota?.windows[0]?.exhausted, true);
+    }),
+  );
+
+  it.effect("drops a rate-limit snapshot that reports no usable window", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-codex-rate-limits-empty"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-07-29T12:00:00.000Z",
+        method: "account/rateLimits/updated",
+        payload: { rateLimits: {} },
+      } satisfies ProviderEvent);
+
+      // The raw event still flows for the logs; only the normalized field is
+      // withheld, so the UI hides the meter instead of showing a bogus 0%.
+      const firstEvent = yield* Fiber.join(eventsFiber);
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "account.rate-limits.updated") {
+        NodeAssert.fail("expected an account.rate-limits.updated event");
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.quota, undefined);
+    }),
+  );
+
+  it.effect("derives per-turn usage by differencing Codex's cumulative totals", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(adapter.streamEvents.pipe(Stream.take(4))).pipe(
+        Effect.forkChild,
+      );
+
+      const tokenUsage = (total: {
+        readonly inputTokens: number;
+        readonly outputTokens: number;
+      }) => ({
+        threadId: "thread-1",
+        turnId: "turn-1",
+        tokenUsage: {
+          total: {
+            inputTokens: total.inputTokens,
+            cachedInputTokens: 0,
+            outputTokens: total.outputTokens,
+            reasoningOutputTokens: 0,
+            totalTokens: total.inputTokens + total.outputTokens,
+          },
+          last: {
+            inputTokens: 1,
+            cachedInputTokens: 0,
+            outputTokens: 1,
+            reasoningOutputTokens: 0,
+            totalTokens: 2,
+          },
+          modelContextWindow: 258_400,
+        },
+      });
+
+      const completeTurn = (turnId: string, id: string) => ({
+        id: asEventId(id),
+        kind: "notification" as const,
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId(turnId),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        payload: {
+          threadId: "thread-1",
+          turn: { id: turnId, status: "completed", items: [], durationMs: 4200 },
+        },
+      });
+
+      // Turn one consumes 100/50.
+      yield* runtime.emit({
+        id: asEventId("evt-usage-1"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "thread/tokenUsage/updated",
+        payload: tokenUsage({ inputTokens: 100, outputTokens: 50 }),
+      } satisfies ProviderEvent);
+      yield* runtime.emit(completeTurn("turn-1", "evt-turn-1") satisfies ProviderEvent);
+
+      // Turn two takes the cumulative counter to 250/80 — its own share is
+      // 150/30, which is what the row must record.
+      yield* runtime.emit({
+        id: asEventId("evt-usage-2"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-2"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        method: "thread/tokenUsage/updated",
+        payload: tokenUsage({ inputTokens: 250, outputTokens: 80 }),
+      } satisfies ProviderEvent);
+      yield* runtime.emit(completeTurn("turn-2", "evt-turn-2") satisfies ProviderEvent);
+
+      const events = [...(yield* Fiber.join(eventsFiber))];
+      const completions = events.filter((event) => event.type === "turn.completed");
+
+      NodeAssert.equal(completions.length, 2);
+      NodeAssert.deepEqual(completions[0]?.payload.turnUsage, {
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 4200,
+      });
+      NodeAssert.deepEqual(completions[1]?.payload.turnUsage, {
+        inputTokens: 150,
+        outputTokens: 30,
+        durationMs: 4200,
+      });
+    }),
+  );
 });
 
 const scopedLifecycleRuntimeFactory = makeScopedRuntimeFactory();

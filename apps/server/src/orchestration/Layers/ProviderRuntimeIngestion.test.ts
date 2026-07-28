@@ -45,6 +45,10 @@ import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import {
+  ProviderInstanceUsageRepository,
+  type ProviderInstanceUsageRow,
+} from "../../persistence/Services/ProviderInstanceUsage.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -234,7 +238,21 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provide(RepositoryIdentityResolver.layer),
       Layer.provide(SqlitePersistenceMemory),
     );
+    // A spy rather than the real repository: the SQL itself is covered in
+    // `ProviderInstanceUsage.test.ts`, and what matters here is *which* rows
+    // ingestion decides to write and how it attributes them.
+    const recordedUsage: Array<ProviderInstanceUsageRow> = [];
+    const usageRepositoryLayer = Layer.succeed(ProviderInstanceUsageRepository, {
+      record: (row) =>
+        Effect.sync(() => {
+          recordedUsage.push(row);
+        }),
+      summarize: () => Effect.succeed([]),
+      deleteByThreadId: () => Effect.void,
+    });
+
     const layer = ProviderRuntimeIngestionLive.pipe(
+      Layer.provideMerge(usageRepositoryLayer),
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(SqlitePersistenceMemory),
@@ -316,8 +334,96 @@ describe("ProviderRuntimeIngestion", () => {
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
+      recordedUsage,
     };
   }
+
+  it("records per-turn usage against the event's provider instance", async () => {
+    const harness = await createHarness();
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-usage-turn"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex_work"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-usage-1"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      payload: {
+        state: "completed",
+        turnUsage: {
+          model: "gpt-5-codex",
+          inputTokens: 150,
+          cachedInputTokens: 40,
+          outputTokens: 30,
+          reasoningOutputTokens: 12,
+          durationMs: 4200,
+        },
+      },
+    });
+
+    await harness.drain();
+
+    expect(harness.recordedUsage).toEqual([
+      {
+        turnId: asTurnId("turn-usage-1"),
+        threadId: asThreadId("thread-1"),
+        providerInstanceId: ProviderInstanceId.make("codex_work"),
+        driverKind: ProviderDriverKind.make("codex"),
+        model: "gpt-5-codex",
+        inputTokens: 150,
+        cachedInputTokens: 40,
+        cacheCreationInputTokens: 0,
+        outputTokens: 30,
+        reasoningOutputTokens: 12,
+        // Codex reports no spend; the row records that rather than a fake zero.
+        costUsd: null,
+        durationMs: 4200,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("falls back to the driver's default instance id when the event omits one", async () => {
+    const harness = await createHarness();
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-usage-legacy"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-usage-legacy"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      payload: {
+        state: "completed",
+        turnUsage: { inputTokens: 10, outputTokens: 5 },
+      },
+    });
+
+    await harness.drain();
+
+    // `providerInstanceId` is still optional on the event base during the
+    // driver/instance migration; usage must remain attributable regardless.
+    expect(harness.recordedUsage[0]?.providerInstanceId).toBe("codex");
+  });
+
+  it("writes no usage row for a turn the provider reported no usage for", async () => {
+    const harness = await createHarness();
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-usage-absent"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-usage-absent"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      payload: { state: "completed" },
+    });
+
+    await harness.drain();
+
+    expect(harness.recordedUsage).toEqual([]);
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();

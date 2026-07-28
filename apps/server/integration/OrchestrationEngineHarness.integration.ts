@@ -43,6 +43,8 @@ import {
   NoOpProviderEventLoggers,
   ProviderEventLoggers,
 } from "../src/provider/Layers/ProviderEventLoggers.ts";
+import { ProviderQuotaTrackerLive } from "../src/provider/Layers/ProviderQuotaTracker.ts";
+import { ProviderInstanceUsageRepositoryLive } from "../src/persistence/Layers/ProviderInstanceUsage.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
@@ -377,6 +379,8 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(orchestrationReactorLayer),
       Layer.provideMerge(providerRegistryLayer),
+      Layer.provideMerge(ProviderQuotaTrackerLive),
+      Layer.provideMerge(ProviderInstanceUsageRepositoryLive),
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolver.layer),
       Layer.provideMerge(ServerSettingsService.layerTest()),
