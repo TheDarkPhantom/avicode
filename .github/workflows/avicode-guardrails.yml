@@ -44,7 +44,7 @@ jobs:
         run: vp run build:desktop
 
       - name: Run desktop smoke test
-        run: vp run test:desktop-smoke
+        run: timeout 45s xvfb-run -a vp run test:desktop-smoke
 
   windows-package:
     name: AviCode Windows x64 package
