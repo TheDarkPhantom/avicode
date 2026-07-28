@@ -17,6 +17,7 @@ import {
   NoOpProviderEventLoggers,
   ProviderEventLoggers,
 } from "../src/provider/Layers/ProviderEventLoggers.ts";
+import { ProviderQuotaTrackerLive } from "../src/provider/Layers/ProviderQuotaTracker.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import {
   ProviderService,
@@ -72,6 +73,7 @@ const makeIntegrationFixture = Effect.gen(function* () {
     ServerSettingsService.layerTest(DEFAULT_SERVER_SETTINGS),
     AnalyticsService.layerTest,
     Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers),
+    ProviderQuotaTrackerLive,
   ).pipe(Layer.provide(SqlitePersistenceMemory));
 
   const layer = makeProviderServiceLive().pipe(Layer.provide(shared));

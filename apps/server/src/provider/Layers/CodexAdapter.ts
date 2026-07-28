@@ -11,20 +11,27 @@ import {
   type CanonicalItemType,
   type CanonicalRequestType,
   type CodexSettings,
+  EventId,
   ProviderDriverKind,
   type ProviderEvent,
   ProviderInstanceId,
+  type ProviderQuotaSnapshot,
+  type ProviderQuotaWindow,
   type ProviderRuntimeEvent,
   type ProviderRequestKind,
+  type ProviderTurnUsage,
   type ThreadTokenUsageSnapshot,
   type ProviderUserInputAnswers,
+  clampQuotaUsedPercent,
   RuntimeItemId,
   RuntimeRequestId,
   ProviderApprovalDecision,
   ThreadId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -187,6 +194,190 @@ function normalizeCodexTokenUsage(
       ? { lastReasoningOutputTokens: reasoningOutputTokens }
       : {}),
     compactsAutomatically: true,
+  };
+}
+
+/**
+ * Codex sizes its windows numerically rather than naming them. Map the common
+ * durations to the labels users recognize from `codex /status`, and fall back
+ * to a derived label so an unfamiliar window still renders.
+ */
+function codexQuotaWindowLabel(windowDurationMins: number | null | undefined): string {
+  if (typeof windowDurationMins !== "number" || !Number.isFinite(windowDurationMins)) {
+    return "Usage";
+  }
+  if (windowDurationMins <= 60) {
+    return "Hourly";
+  }
+  if (windowDurationMins <= 60 * 8) {
+    return `${Math.round(windowDurationMins / 60)}-hour`;
+  }
+  if (windowDurationMins <= 60 * 24 * 2) {
+    return "Daily";
+  }
+  if (windowDurationMins <= 60 * 24 * 10) {
+    return "Weekly";
+  }
+  return "Monthly";
+}
+
+/**
+ * Codex reports `resetsAt` as epoch **seconds**.
+ */
+function codexEpochSecondsToIso(value: number | null | undefined): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const instant = DateTime.make(value * 1000);
+  return Option.isNone(instant) ? undefined : DateTime.formatIso(instant.value);
+}
+
+function normalizeCodexQuotaWindow(
+  id: string,
+  window: EffectCodexSchema.V2AccountRateLimitsUpdatedNotification["rateLimits"]["primary"],
+): ProviderQuotaWindow | undefined {
+  if (!window) {
+    return undefined;
+  }
+  const usedPercent = clampQuotaUsedPercent(window.usedPercent);
+  if (usedPercent === null) {
+    return undefined;
+  }
+
+  const resetsAt = codexEpochSecondsToIso(window.resetsAt);
+  const windowMinutes =
+    typeof window.windowDurationMins === "number" && Number.isFinite(window.windowDurationMins)
+      ? Math.max(0, Math.round(window.windowDurationMins))
+      : undefined;
+
+  return {
+    id,
+    label: codexQuotaWindowLabel(window.windowDurationMins),
+    usedPercent,
+    ...(resetsAt !== undefined ? { resetsAt } : {}),
+    ...(windowMinutes !== undefined ? { windowMinutes } : {}),
+  };
+}
+
+/**
+ * Normalize a Codex rate-limit snapshot.
+ *
+ * Unlike Claude, Codex reports every window it knows about on each update, so
+ * this is a complete picture rather than a patch — though the merge downstream
+ * handles either shape.
+ */
+function normalizeCodexRateLimits(
+  rateLimits:
+    | EffectCodexSchema.V2AccountRateLimitsUpdatedNotification["rateLimits"]
+    | EffectCodexSchema.V2GetAccountRateLimitsResponse["rateLimits"]
+    | undefined,
+  capturedAt: string,
+): ProviderQuotaSnapshot | undefined {
+  if (!rateLimits) {
+    return undefined;
+  }
+
+  const windows = [
+    normalizeCodexQuotaWindow("primary", rateLimits.primary),
+    normalizeCodexQuotaWindow("secondary", rateLimits.secondary),
+  ].filter((window): window is ProviderQuotaWindow => window !== undefined);
+
+  if (windows.length === 0) {
+    return undefined;
+  }
+
+  // `rateLimitReachedType` is only populated once something has actually been
+  // hit — every member of the union names a specific exhaustion cause, so its
+  // mere presence is the signal.
+  const exhausted =
+    rateLimits.spendControlReached === true ||
+    (rateLimits.rateLimitReachedType !== undefined && rateLimits.rateLimitReachedType !== null);
+  const planType = trimText(rateLimits.planType);
+
+  return {
+    windows: exhausted ? windows.map((window) => ({ ...window, exhausted: true })) : windows,
+    ...(planType ? { planType } : {}),
+    status: exhausted ? ("exhausted" as const) : ("ok" as const),
+    capturedAt,
+  };
+}
+
+/**
+ * Per-thread baseline for deriving additive per-turn token counts.
+ *
+ * Codex's `tokenUsage.total` is cumulative across the thread, so a turn's own
+ * consumption is the difference between the latest total and the total as of
+ * the previous turn's end. Differencing the cumulative counter — rather than
+ * summing the `last` breakdowns as they stream in — makes the result immune to
+ * both duplicated and dropped notifications.
+ */
+interface CodexUsageBaseline {
+  baseline:
+    | EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification["tokenUsage"]["total"]
+    | undefined;
+  latest:
+    | EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification["tokenUsage"]["total"]
+    | undefined;
+}
+
+function codexUsageField(
+  totals:
+    | EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification["tokenUsage"]["total"]
+    | undefined,
+  field:
+    | "inputTokens"
+    | "cachedInputTokens"
+    | "cacheWriteInputTokens"
+    | "outputTokens"
+    | "reasoningOutputTokens",
+): number {
+  const value = totals?.[field];
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+/**
+ * Difference the cumulative totals into this turn's usage.
+ *
+ * A negative difference means the counter restarted (session resume, thread
+ * compaction); treat the latest reading as the whole turn rather than emitting
+ * a nonsense negative.
+ */
+function codexTurnUsage(state: CodexUsageBaseline): ProviderTurnUsage | undefined {
+  if (!state.latest) {
+    return undefined;
+  }
+
+  const delta = (field: Parameters<typeof codexUsageField>[1]): number => {
+    const current = codexUsageField(state.latest, field);
+    const previous = codexUsageField(state.baseline, field);
+    return current >= previous ? current - previous : current;
+  };
+
+  const inputTokens = delta("inputTokens");
+  const cachedInputTokens = delta("cachedInputTokens");
+  const cacheCreationInputTokens = delta("cacheWriteInputTokens");
+  const outputTokens = delta("outputTokens");
+  const reasoningOutputTokens = delta("reasoningOutputTokens");
+
+  if (
+    inputTokens +
+      cachedInputTokens +
+      cacheCreationInputTokens +
+      outputTokens +
+      reasoningOutputTokens ===
+    0
+  ) {
+    return undefined;
+  }
+
+  // No cost: Codex reports plan utilization but never spend, and inventing a
+  // figure from a local price table would silently drift from real billing.
+  return {
+    inputTokens,
+    ...(cachedInputTokens > 0 ? { cachedInputTokens } : {}),
+    ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
+    outputTokens,
+    ...(reasoningOutputTokens > 0 ? { reasoningOutputTokens } : {}),
   };
 }
 
@@ -497,6 +688,12 @@ function mapItemLifecycle(
 function mapToRuntimeEvents(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
+  /**
+   * Per-session cumulative-token baseline. Optional so the mapper stays
+   * callable as a pure function in tests; when omitted, turns simply carry no
+   * `turnUsage`.
+   */
+  usageBaseline?: CodexUsageBaseline,
 ): ReadonlyArray<ProviderRuntimeEvent> {
   if (event.kind === "error") {
     if (!event.message) {
@@ -737,6 +934,9 @@ function mapToRuntimeEvents(
       EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification,
       event.payload,
     );
+    if (payload && usageBaseline) {
+      usageBaseline.latest = payload.tokenUsage.total;
+    }
     const normalizedUsage = payload ? normalizeCodexTokenUsage(payload.tokenUsage) : undefined;
     if (!normalizedUsage) {
       return [];
@@ -773,12 +973,25 @@ function mapToRuntimeEvents(
       return [];
     }
     const errorMessage = trimText(payload.turn.error?.message);
+    const turnUsage = usageBaseline ? codexTurnUsage(usageBaseline) : undefined;
+    if (usageBaseline) {
+      // Advance the baseline whether or not a delta was produced, so a turn
+      // that reported nothing cannot leak its tokens into the next turn.
+      usageBaseline.baseline = usageBaseline.latest;
+    }
+    const durationMs =
+      typeof payload.turn.durationMs === "number" && Number.isFinite(payload.turn.durationMs)
+        ? Math.max(0, Math.round(payload.turn.durationMs))
+        : undefined;
     return [
       {
         ...runtimeEventBase(event, canonicalThreadId),
         type: "turn.completed",
         payload: {
           state: toTurnStatus(payload.turn.status),
+          ...(turnUsage
+            ? { turnUsage: { ...turnUsage, ...(durationMs !== undefined ? { durationMs } : {}) } }
+            : {}),
           ...(errorMessage ? { errorMessage } : {}),
         },
       },
@@ -1125,15 +1338,21 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "account/rateLimits/updated") {
-    if (!readPayload(EffectCodexSchema.V2AccountRateLimitsUpdatedNotification, event.payload)) {
+    const payload = readPayload(
+      EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
+      event.payload,
+    );
+    if (!payload) {
       return [];
     }
+    const quota = normalizeCodexRateLimits(payload.rateLimits, event.createdAt);
     return [
       {
         type: "account.rate-limits.updated",
         ...runtimeEventBase(event, canonicalThreadId),
         payload: {
           rateLimits: event.payload ?? {},
+          ...(quota ? { quota } : {}),
         },
       },
     ];
@@ -1374,6 +1593,50 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
 
+  /**
+   * Read the account's plan limits once and publish them as a quota update.
+   *
+   * Best-effort by construction: an older app-server that does not implement
+   * `account/rateLimits/read`, an API-key account with no plan limits, or an
+   * unrecognized response shape all end in "no event emitted".
+   */
+  const seedAccountRateLimits = Effect.fn("seedAccountRateLimits")(function* (
+    threadId: ThreadId,
+    runtime: CodexSessionRuntimeShape,
+  ) {
+    if (!runtime.readAccountRateLimits) {
+      return;
+    }
+
+    const response = yield* runtime.readAccountRateLimits().pipe(Effect.option);
+    if (response._tag === "None") {
+      return;
+    }
+
+    const createdAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+    const quota = normalizeCodexRateLimits(response.value.rateLimits, createdAt);
+    if (!quota) {
+      return;
+    }
+
+    yield* Queue.offer(runtimeEventQueue, {
+      type: "account.rate-limits.updated",
+      eventId: EventId.make(yield* crypto.randomUUIDv4),
+      provider: PROVIDER,
+      threadId,
+      createdAt,
+      payload: {
+        rateLimits: response.value,
+        quota,
+      },
+      raw: {
+        source: "codex.app-server.notification",
+        method: "account/rateLimits/read",
+        payload: response.value,
+      },
+    });
+  });
+
   const startSession: CodexAdapterShape["startSession"] = (input) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1447,10 +1710,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ),
         );
 
+        // One baseline per session: the runtime serves a single thread, and
+        // the cumulative token counter it differences is thread-scoped.
+        const usageBaseline: CodexUsageBaseline = { baseline: undefined, latest: undefined };
+
         const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
             yield* writeNativeEvent(event);
-            const runtimeEvents = mapToRuntimeEvents(event, event.threadId);
+            const runtimeEvents = mapToRuntimeEvents(event, event.threadId, usageBaseline);
             if (runtimeEvents.length === 0) {
               yield* Effect.logDebug("ignoring unhandled Codex provider event", {
                 method: event.method,
@@ -1491,6 +1758,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           stopped: false,
         });
         sessionScopeTransferred = true;
+
+        // Seed the quota meter. The app-server pushes
+        // `account/rateLimits/updated` only when a limit actually moves, so
+        // without this a fresh session shows nothing until the first turn
+        // lands. Forked and fully ignored — telemetry never fails a session.
+        yield* Effect.forkIn(
+          seedAccountRateLimits(input.threadId, runtime).pipe(Effect.ignore),
+          sessionScope,
+        );
 
         return started;
       }),

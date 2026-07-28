@@ -82,6 +82,7 @@ import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngi
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
@@ -341,6 +342,7 @@ const buildAppUnderTest = (options?: {
     terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
+    providerInstanceUsage?: Partial<ProviderInstanceUsageRepository["Service"]>;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
     browserTraceCollector?: Partial<BrowserTraceCollector.BrowserTraceCollector["Service"]>;
     serverLifecycleEvents?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
@@ -680,6 +682,12 @@ const buildAppUnderTest = (options?: {
             retain: Effect.void,
             registerTerminalProcesses: () => Effect.void,
             unregisterTerminal: () => Effect.void,
+          }),
+          Layer.mock(ProviderInstanceUsageRepository)({
+            record: () => Effect.void,
+            summarize: () => Effect.succeed([]),
+            deleteByThreadId: () => Effect.void,
+            ...options?.layers?.providerInstanceUsage,
           }),
         ),
       ),

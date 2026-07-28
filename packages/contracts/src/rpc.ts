@@ -118,6 +118,8 @@ import {
   ServerConfig,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
+  ServerProviderUsageInput,
+  ServerProviderUsageResult,
   ServerLifecycleStreamEvent,
   ServerRemoveKeybindingInput,
   ServerRemoveKeybindingResult,
@@ -211,6 +213,7 @@ export const WS_METHODS = {
   serverUpdateServer: "server.updateServer",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
+  serverGetProviderUsage: "server.getProviderUsage",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -287,6 +290,20 @@ export const WsServerUpdateServerRpc = Rpc.make(WS_METHODS.serverUpdateServer, {
   payload: ServerSelfUpdateInput,
   success: ServerSelfUpdateResult,
   error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
+});
+
+/**
+ * Token/cost totals per provider instance.
+ *
+ * Request/response rather than a stream: this backs the quota popover's detail
+ * section and any future usage page, both of which read on open. The
+ * always-visible meter needs no RPC — it rides `ServerProvider.quota` on the
+ * existing config push stream.
+ */
+export const WsServerGetProviderUsageRpc = Rpc.make(WS_METHODS.serverGetProviderUsage, {
+  payload: ServerProviderUsageInput,
+  success: ServerProviderUsageResult,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
@@ -706,6 +723,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateServerRpc,
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
+  WsServerGetProviderUsageRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

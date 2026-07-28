@@ -5,6 +5,7 @@ import type {
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
   ProviderInteractionMode,
+  ProviderQuotaSnapshot,
   ResolvedKeybindingsConfig,
   RuntimeMode,
   ScopedThreadRef,
@@ -106,6 +107,7 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
+import { ProviderQuotaMeter } from "./ProviderQuotaMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -205,6 +207,7 @@ import {
   deriveLatestContextWindowSnapshot,
   formatProviderDisplayName,
 } from "../../lib/contextWindow";
+import { selectProviderInstanceLabel, selectProviderQuota } from "../../lib/providerQuota";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -412,6 +415,8 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   compact: boolean;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   activeThreadProviderDisplayName: string | null;
+  activeProviderQuota: ProviderQuotaSnapshot | null;
+  activeProviderInstanceLabel: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -439,6 +444,12 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         <ContextWindowMeter
           usage={props.activeContextWindow}
           providerDisplayName={props.activeThreadProviderDisplayName}
+        />
+      ) : null}
+      {props.activeProviderQuota ? (
+        <ProviderQuotaMeter
+          quota={props.activeProviderQuota}
+          instanceLabel={props.activeProviderInstanceLabel}
         />
       ) : null}
       {props.isPreparingWorktree ? (
@@ -1009,6 +1020,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return formatProviderDisplayName(activeThreadModelSelection.instanceId);
   }, [providerStatuses, activeThreadModelSelection]);
+
+  // ------------------------------------------------------------------
+  // Provider plan quota
+  // ------------------------------------------------------------------
+  // Keyed on `threadProvider` — the session's instance first — rather than on
+  // `activeThreadProviderDisplayName`, which resolves through the model
+  // selection and collapses to a per-driver name. Two instances of one driver
+  // have separate allowances, so they must not share a reading.
+  const activeProviderQuota = useMemo(
+    () => selectProviderQuota(providerStatuses, threadProvider),
+    [providerStatuses, threadProvider],
+  );
+  const activeProviderInstanceLabel = useMemo(
+    () => selectProviderInstanceLabel(providerStatuses, threadProvider),
+    [providerStatuses, threadProvider],
+  );
 
   // ------------------------------------------------------------------
   // Composer-local state
@@ -3262,6 +3289,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}
                   activeThreadProviderDisplayName={activeThreadProviderDisplayName}
+                  activeProviderQuota={activeProviderQuota}
+                  activeProviderInstanceLabel={activeProviderInstanceLabel}
                   pendingAction={pendingPrimaryAction}
                   isRunning={phase === "running"}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}

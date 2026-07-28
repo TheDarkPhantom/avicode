@@ -95,6 +95,24 @@ export function deriveLatestContextWindowSnapshot(
   return null;
 }
 
+/**
+ * Format a 0-100 percentage for a meter.
+ *
+ * Shared by the context-window and quota meters so the two rings sitting side
+ * by side never disagree about how a number is written. Sub-10% keeps one
+ * decimal, because "0%" and "0.4%" are meaningfully different when you are
+ * watching an allowance drain.
+ */
+export function formatPercentage(value: number | null): string | null {
+  if (value === null || !Number.isFinite(value)) {
+    return null;
+  }
+  if (value < 10) {
+    return `${value.toFixed(1).replace(/\.0$/, "")}%`;
+  }
+  return `${Math.round(value)}%`;
+}
+
 export function formatContextWindowTokens(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return "0";

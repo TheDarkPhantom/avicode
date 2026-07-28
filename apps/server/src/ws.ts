@@ -81,6 +81,8 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
+import { rollUpProviderUsage } from "./provider/providerUsageRollup.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -313,6 +315,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.serverUpdateServer, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpsertKeybinding, AuthOrchestrationOperateScope],
   [WS_METHODS.serverRemoveKeybinding, AuthOrchestrationOperateScope],
+  [WS_METHODS.serverGetProviderUsage, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetSettings, AuthOrchestrationReadScope],
   [WS_METHODS.serverUpdateSettings, AuthOrchestrationOperateScope],
   [WS_METHODS.serverDiscoverSourceControl, AuthOrchestrationReadScope],
@@ -432,6 +435,7 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const providerInstanceUsage = yield* ProviderInstanceUsageRepository;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -1519,6 +1523,23 @@ const makeWsRpcLayer = (
               return { keybindings: keybindingsConfig, issues: [] };
             }),
             { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverGetProviderUsage]: ({ since }) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetProviderUsage,
+            providerInstanceUsage.summarize(since === undefined ? {} : { since }).pipe(
+              Effect.map((totals) => ({ instances: rollUpProviderUsage(totals) })),
+              // Usage reporting must not be able to take down a read of the
+              // rest of the server; an unreadable table reports no usage.
+              Effect.catchCause((cause) =>
+                Effect.logWarning("failed to summarize provider usage", {
+                  cause: Cause.pretty(cause),
+                }).pipe(Effect.as({ instances: [] })),
+              ),
+            ),
+            {
+              "rpc.aggregate": "server",
+            },
           ),
         [WS_METHODS.serverGetSettings]: (_input) =>
           observeRpcEffect(

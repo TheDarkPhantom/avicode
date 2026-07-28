@@ -14,6 +14,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderQuotaSnapshot, ProviderTurnUsage } from "./providerQuota.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -365,6 +366,13 @@ const TurnCompletedPayload = Schema.Struct({
   usage: Schema.optional(Schema.Unknown),
   modelUsage: Schema.optional(UnknownRecordSchema),
   totalCostUsd: Schema.optional(Schema.Number),
+  /**
+   * Adapter-normalized additive usage for this turn. Distinct from the raw
+   * `usage`/`modelUsage` blobs above, whose shape is provider-specific, and
+   * from `ThreadTokenUsageSnapshot`, whose fields are not summable across
+   * providers. This is the field usage accounting reads.
+   */
+  turnUsage: Schema.optional(ProviderTurnUsage),
   errorMessage: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnCompletedPayload = typeof TurnCompletedPayload.Type;
@@ -535,7 +543,13 @@ const AccountUpdatedPayload = Schema.Struct({
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
+  /** Raw provider payload, retained verbatim for the NDJSON logs and debugging. */
   rateLimits: Schema.Unknown,
+  /**
+   * Adapter-normalized view of the same data. Optional because the raw field
+   * predates it and older servers/log replays carry only `rateLimits`.
+   */
+  quota: Schema.optional(ProviderQuotaSnapshot),
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 
