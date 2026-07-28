@@ -5,7 +5,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
-import * as NodePath from "node:path";
 
 import type * as Electron from "electron";
 
@@ -26,6 +25,8 @@ const defaultEnvironmentInput = {
   resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
+
+const normalizePath = (value: string): string => value.replaceAll("\\", "/");
 
 type TestEnvironmentInput = Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> & {
   readonly env?: Record<string, string | undefined>;
@@ -150,8 +151,8 @@ describe("DesktopAppIdentity", () => {
         const userDataPath = yield* identity.resolveUserDataPath;
 
         assert.equal(
-          userDataPath,
-          NodePath.join("/Users/alice/Library/Application Support", "T3 Code (Alpha)"),
+          normalizePath(userDataPath),
+          "/Users/alice/Library/Application Support/T3 Code (Alpha)",
         );
       }),
       { legacyPathExists: true },
@@ -159,7 +160,7 @@ describe("DesktopAppIdentity", () => {
   );
 
   it.effect("preserves failures while inspecting the legacy userData path", () => {
-    const legacyPath = NodePath.join("/Users/alice/Library/Application Support", "T3 Code (Alpha)");
+    const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
@@ -174,10 +175,10 @@ describe("DesktopAppIdentity", () => {
         const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
 
         assert.instanceOf(error, DesktopAppIdentity.DesktopUserDataPathResolutionError);
-        assert.equal(error.legacyPath, legacyPath);
+        assert.equal(normalizePath(error.legacyPath), legacyPath);
         assert.strictEqual(error.cause, cause);
         assert.equal(
-          error.message,
+          normalizePath(error.message),
           `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
         );
       }),
