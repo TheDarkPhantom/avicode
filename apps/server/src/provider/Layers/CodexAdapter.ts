@@ -29,7 +29,9 @@ import {
   ThreadId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -226,8 +228,8 @@ function codexEpochSecondsToIso(value: number | null | undefined): string | unde
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return undefined;
   }
-  const date = new Date(value * 1000);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  const instant = DateTime.make(value * 1000);
+  return Option.isNone(instant) ? undefined : DateTime.formatIso(instant.value);
 }
 
 function normalizeCodexQuotaWindow(
@@ -1611,9 +1613,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       return;
     }
 
-    const createdAt = new Date(
-      yield* Effect.clockWith((clock) => clock.currentTimeMillis),
-    ).toISOString();
+    const createdAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
     const quota = normalizeCodexRateLimits(response.value.rateLimits, createdAt);
     if (!quota) {
       return;

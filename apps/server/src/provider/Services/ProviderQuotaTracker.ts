@@ -62,4 +62,4 @@ export interface ProviderQuotaTrackerShape {
 export class ProviderQuotaTracker extends Context.Service<
   ProviderQuotaTracker,
   ProviderQuotaTrackerShape
->()("t3/provider/Services/ProviderQuotaTracker/ProviderQuotaTracker") {}
+>()("t3/provider/Services/ProviderQuotaTracker") {}
