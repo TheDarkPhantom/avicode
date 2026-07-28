@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   formatShortcutLabel,
+  isAppZoomShortcut,
   isChatNewShortcut,
   isChatNewLocalShortcut,
   isDiffToggleShortcut,
@@ -759,6 +760,132 @@ describe("terminalNavigationShortcutData", () => {
         "MacIntel",
       ),
     );
+  });
+});
+
+describe("app zoom shortcuts", () => {
+  // Mirrors DEFAULT_KEYBINDINGS ordering: app zoom first, preview zoom after,
+  // so the backwards scan lets preview win only while it owns focus.
+  const ZOOM_BINDINGS = compile([
+    { shortcut: modShortcut("="), command: "app.zoomIn" },
+    { shortcut: modShortcut("=", { shiftKey: true }), command: "app.zoomIn" },
+    { shortcut: modShortcut("-"), command: "app.zoomOut" },
+    { shortcut: modShortcut("0"), command: "app.resetZoom" },
+    {
+      shortcut: modShortcut("="),
+      command: "preview.zoomIn",
+      whenAst: whenAnd(whenIdentifier("previewFocus"), whenIdentifier("previewOpen")),
+    },
+    {
+      shortcut: modShortcut("-"),
+      command: "preview.zoomOut",
+      whenAst: whenAnd(whenIdentifier("previewFocus"), whenIdentifier("previewOpen")),
+    },
+    {
+      shortcut: modShortcut("0"),
+      command: "preview.resetZoom",
+      whenAst: whenAnd(whenIdentifier("previewFocus"), whenIdentifier("previewOpen")),
+    },
+  ]);
+
+  const linux = { platform: "Linux" } as const;
+
+  it("zooms the window when the preview does not own focus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "=", ctrlKey: true }), ZOOM_BINDINGS, linux),
+      "app.zoomIn",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "-", ctrlKey: true }), ZOOM_BINDINGS, linux),
+      "app.zoomOut",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "0", ctrlKey: true }), ZOOM_BINDINGS, linux),
+      "app.resetZoom",
+    );
+  });
+
+  it("keeps zooming the window while a terminal has focus", () => {
+    // The regression this guards: xterm consumed the chord, so zoom died
+    // whenever the terminal was focused.
+    const context = { context: { terminalFocus: true, terminalOpen: true }, ...linux };
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "=", ctrlKey: true }), ZOOM_BINDINGS, context),
+      "app.zoomIn",
+    );
+    assert.isTrue(isAppZoomShortcut(event({ key: "-", ctrlKey: true }), ZOOM_BINDINGS, context));
+  });
+
+  it("defers to preview zoom only when the preview is focused and open", () => {
+    const focusedAndOpen = {
+      context: { previewFocus: true, previewOpen: true },
+      ...linux,
+    };
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "=", ctrlKey: true }), ZOOM_BINDINGS, focusedAndOpen),
+      "preview.zoomIn",
+    );
+
+    // Focused but closed, and open but unfocused, both fall through to the app.
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "=", ctrlKey: true }), ZOOM_BINDINGS, {
+        context: { previewFocus: true, previewOpen: false },
+        ...linux,
+      }),
+      "app.zoomIn",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "=", ctrlKey: true }), ZOOM_BINDINGS, {
+        context: { previewFocus: false, previewOpen: true },
+        ...linux,
+      }),
+      "app.zoomIn",
+    );
+  });
+
+  it("matches Ctrl+Shift+= , the chord a US layout emits for Ctrl plus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "+", code: "Equal", ctrlKey: true, shiftKey: true }),
+        ZOOM_BINDINGS,
+        linux,
+      ),
+      "app.zoomIn",
+    );
+  });
+
+  it("matches via key code when event.key is not the literal character", () => {
+    // Non-US layouts report a different `key` for the same physical key, and
+    // the numpad never reports "=" at all.
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "Dead", code: "Equal", ctrlKey: true }),
+        ZOOM_BINDINGS,
+        linux,
+      ),
+      "app.zoomIn",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "Subtract", code: "NumpadSubtract", ctrlKey: true }),
+        ZOOM_BINDINGS,
+        linux,
+      ),
+      "app.zoomOut",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "+", code: "NumpadAdd", ctrlKey: true }),
+        ZOOM_BINDINGS,
+        linux,
+      ),
+      "app.zoomIn",
+    );
+  });
+
+  it("does not treat unrelated chords as zoom", () => {
+    assert.isFalse(isAppZoomShortcut(event({ key: "j", ctrlKey: true }), ZOOM_BINDINGS, linux));
+    assert.isFalse(isAppZoomShortcut(event({ key: "=" }), ZOOM_BINDINGS, linux));
   });
 });
 

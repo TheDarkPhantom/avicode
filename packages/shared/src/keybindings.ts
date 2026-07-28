@@ -28,7 +28,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   // Whole-window zoom. Unconditional, so it keeps working in the terminal and
-  // in webviews that are not the preview panel. `mod+shift+=` is the chord a US
+  // anywhere the preview does not own focus. `mod+shift+=` is the chord a US
   // layout actually produces for "Ctrl +"; the old `mod++` rule was unreachable
   // because it parsed to shiftKey:false while the real event carries shift.
   { key: "mod+=", command: "app.zoomIn" },
@@ -39,8 +39,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
   // Registered after the app-zoom rules on purpose: `resolveShortcutCommand`
-  // scans backwards, so these win whenever the preview panel genuinely owns
-  // focus and is open, and fall through to app zoom otherwise.
+  // scans backwards, so these win whenever the preview genuinely owns focus and
+  // its panel is open, and fall through to whole-window zoom otherwise.
   { key: "mod+=", command: "preview.zoomIn", when: "previewFocus && previewOpen" },
   { key: "mod+shift+=", command: "preview.zoomIn", when: "previewFocus && previewOpen" },
   { key: "mod+-", command: "preview.zoomOut", when: "previewFocus && previewOpen" },

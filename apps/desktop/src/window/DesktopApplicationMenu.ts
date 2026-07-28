@@ -181,9 +181,13 @@ export const make = Effect.gen(function* () {
           { role: "forceReload" },
           { role: "toggleDevTools" },
           { type: "separator" },
+          // The renderer owns these chords (`app.zoomIn` / `app.zoomOut` /
+          // `app.resetZoom`) so they survive focus contexts that consume the
+          // key before a menu accelerator would ever fire. The visible items
+          // stay for discoverability; the hidden `CmdOrCtrl+Plus` duplicate is
+          // gone because hidden items' accelerators are unreliable on Windows.
           { role: "resetZoom" },
           { role: "zoomIn", accelerator: "CmdOrCtrl+=" },
-          { role: "zoomIn", accelerator: "CmdOrCtrl+Plus", visible: false },
           { role: "zoomOut" },
           { type: "separator" },
           { role: "togglefullscreen" },

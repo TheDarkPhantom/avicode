@@ -30,8 +30,8 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
 /**
  * Whole-window zoom lives in the preload rather than behind IPC: `webFrame` is
  * available in sandboxed preloads and acts on this renderer directly, so the
- * renderer can own the shortcut without a main-process round trip. Levels are
- * clamped to keep the UI usable — Electron itself imposes no bound.
+ * renderer owns the shortcut without a main-process round trip. Electron itself
+ * imposes no bound on the level, so clamp to keep the UI usable.
  */
 const APP_ZOOM_MIN_LEVEL = -5;
 const APP_ZOOM_MAX_LEVEL = 5;

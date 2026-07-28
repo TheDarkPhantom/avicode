@@ -51,14 +51,10 @@ export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMA
  * Whole-window zoom, distinct from `preview.*` zoom which only scales the
  * embedded preview page. These are handled in the renderer rather than left to
  * the Electron menu roles: on Windows/Linux a menu accelerator is only
- * dispatched when the page leaves the key unhandled, so anything that calls
- * `preventDefault()` (the preview panel, xterm) silently kills app zoom.
+ * dispatched when the page leaves the key unhandled, so anything calling
+ * `preventDefault()` first (the preview panel, xterm) silently kills app zoom.
  */
-export const APP_ZOOM_KEYBINDING_COMMANDS = [
-  "app.zoomIn",
-  "app.zoomOut",
-  "app.resetZoom",
-] as const;
+export const APP_ZOOM_KEYBINDING_COMMANDS = ["app.zoomIn", "app.zoomOut", "app.resetZoom"] as const;
 export type AppZoomKeybindingCommand = (typeof APP_ZOOM_KEYBINDING_COMMANDS)[number];
 
 const STATIC_KEYBINDING_COMMANDS = [

@@ -14,7 +14,60 @@ const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"))
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
 
 beforeEach(() => {
-  useRightPanelStore.setState({ byThreadKey: {} });
+  useRightPanelStore.setState({
+    byThreadKey: {},
+    visibilityPreference: { isOpen: false, preferredKind: null },
+  });
+});
+
+describe("right panel visibility preference", () => {
+  it("carries an open panel to a thread that has never opened one", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().adoptVisibilityPreference(refB);
+
+    const stateB = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB);
+    expect(stateB.isOpen).toBe(true);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBe("diff");
+  });
+
+  it("carries a closed panel across threads", () => {
+    useRightPanelStore.getState().open(refB, "diff");
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().close(refA);
+
+    useRightPanelStore.getState().adoptVisibilityPreference(refB);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB).isOpen,
+    ).toBe(false);
+  });
+
+  it("reopens the target thread's own surfaces rather than the source thread's", () => {
+    // refB already has a files surface; adopting an open preference whose
+    // preferred kind is `diff` must not replace it.
+    useRightPanelStore.getState().open(refB, "files");
+    useRightPanelStore.getState().close(refB);
+    useRightPanelStore.getState().open(refA, "diff");
+
+    useRightPanelStore.getState().adoptVisibilityPreference(refB);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBe("files");
+  });
+
+  it("does not carry surface kinds another thread cannot recreate", () => {
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+    useRightPanelStore.getState().adoptVisibilityPreference(refB);
+
+    // The preference is open, but `file` is thread-bound, so refB gets no
+    // surface invented for it.
+    const stateB = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB);
+    expect(stateB.surfaces).toEqual([]);
+  });
+
+  it("leaves a thread alone when it already matches the preference", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    const before = useRightPanelStore.getState().byThreadKey;
+    useRightPanelStore.getState().adoptVisibilityPreference(refA);
+    expect(useRightPanelStore.getState().byThreadKey).toBe(before);
+  });
 });
 
 describe("rightPanelStore", () => {

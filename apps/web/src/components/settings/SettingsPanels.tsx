@@ -442,6 +442,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Auto-open task panel"]
         : []),
+      ...(settings.rightPanelFollowsThreads !== DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads
+        ? ["Side panel across chats"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -474,6 +477,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     [
       isTextGenerationModelDirty,
       settings.autoOpenPlanSidebar,
+      settings.rightPanelFollowsThreads,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
@@ -516,6 +520,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarMouseBackForwardNavigation:
         DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+      rightPanelFollowsThreads: DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -886,6 +891,33 @@ export function GeneralSettingsPanel() {
                 updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
               }
               aria-label="Hide whitespace changes by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Keep the side panel open across chats"
+          description="Carry the right panel's open or closed state between threads. Its contents stay per-thread — switching reopens that thread's own diff, files, or preview."
+          resetAction={
+            settings.rightPanelFollowsThreads !==
+            DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads ? (
+              <SettingResetButton
+                label="side panel across chats"
+                onClick={() =>
+                  updateSettings({
+                    rightPanelFollowsThreads: DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.rightPanelFollowsThreads}
+              onCheckedChange={(checked) =>
+                updateSettings({ rightPanelFollowsThreads: Boolean(checked) })
+              }
+              aria-label="Keep the side panel open across chats"
             />
           }
         />

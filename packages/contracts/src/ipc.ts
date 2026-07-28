@@ -991,6 +991,10 @@ export const DesktopLegacyT3ImportResultSchema = Schema.Struct({
 export type DesktopLegacyT3ImportResult = typeof DesktopLegacyT3ImportResultSchema.Type;
 
 export interface DesktopBridge {
+  // Whole-window zoom, applied to this renderer via `webFrame` in the preload.
+  // `setAppZoomLevel` returns the level actually applied after clamping.
+  getAppZoomLevel: () => number;
+  setAppZoomLevel: (level: number) => number;
   getAppBranding: () => DesktopAppBranding | null;
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).

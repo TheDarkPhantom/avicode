@@ -52,9 +52,9 @@ const TERMINAL_DELETE_TO_LINE_START = "\u0015";
 const EVENT_CODE_KEY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   BracketLeft: ["["],
   BracketRight: ["]"],
-  // `Equal`/`Minus` and their numpad twins keep the zoom chords working on
-  // layouts where `event.key` is not literally "=" / "-" (and on the numpad,
-  // where it never is).
+  // `Equal`/`Minus` and their numpad twins keep the zoom chords matching on
+  // layouts where `event.key` is not literally "=" / "-", and on the numpad
+  // where it never is.
   Equal: ["=", "+"],
   Minus: ["-", "_"],
   NumpadAdd: ["+", "="],
@@ -401,6 +401,20 @@ export function isDiffToggleShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return matchesCommandShortcut(event, keybindings, "diff.toggle", options);
+}
+
+/**
+ * Whole-window zoom must escape surfaces that otherwise consume every
+ * unrecognised chord — notably xterm, which swallowed Ctrl+= / Ctrl+- and left
+ * zoom dead while a terminal had focus.
+ */
+export function isAppZoomShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  const command = resolveShortcutCommand(event, keybindings, options);
+  return command === "app.zoomIn" || command === "app.zoomOut" || command === "app.resetZoom";
 }
 
 export function isPreviewToggleShortcut(
