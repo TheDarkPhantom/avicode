@@ -35,6 +35,54 @@ export function shouldCancelTimelineLiveFollowForWheel({
   return deltaY < 0 || !isAtAbsoluteEnd;
 }
 
+/**
+ * How far past the viewport top a user message must travel before its pinned
+ * copy takes over. With the top fade on, the last rows under the header are
+ * already masked out, so the handoff happens deeper to avoid showing the
+ * message twice.
+ */
+export const TIMELINE_PINNED_MESSAGE_REVEAL_OFFSET = 8;
+export const TIMELINE_PINNED_MESSAGE_FADED_REVEAL_OFFSET = 40;
+
+export interface TimelinePinnedRowMetrics {
+  readonly top: number | null;
+  readonly height: number | null;
+}
+
+/**
+ * VS Code-style sticky scroll for the thread: while a turn's prompt is scrolled
+ * off the top, keep it pinned so it stays readable next to the answer. Rows
+ * arrive in document order, so the last one whose bottom has cleared the
+ * viewport top belongs to the turn currently being read.
+ */
+export function resolveTimelinePinnedMessageIndex({
+  revealOffset,
+  rows,
+  scrollTop,
+}: {
+  readonly revealOffset: number;
+  readonly rows: ReadonlyArray<TimelinePinnedRowMetrics>;
+  readonly scrollTop: number;
+}): number | null {
+  const threshold = scrollTop + revealOffset;
+  let pinnedIndex: number | null = null;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    // Rows LegendList has not measured yet carry no geometry; skip them rather
+    // than treating an unknown position as "scrolled past".
+    if (!row || row.top === null) {
+      continue;
+    }
+    if (row.top + Math.max(0, row.height ?? 0) > threshold) {
+      break;
+    }
+    pinnedIndex = index;
+  }
+
+  return pinnedIndex;
+}
+
 export function resolveTimelineMinimapHeightStyle(itemCount: number): string {
   const naturalHeight = Math.max(1, (itemCount - 1) * TIMELINE_MINIMAP_ITEM_SPACING);
   return `min(${naturalHeight}px, ${TIMELINE_MINIMAP_MAX_HEIGHT_CSS})`;
