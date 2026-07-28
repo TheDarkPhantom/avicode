@@ -1,15 +1,15 @@
-import * as FS from "node:fs";
-import * as Path from "node:path";
-import * as URL from "node:url";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
-const scriptDirectory = Path.dirname(URL.fileURLToPath(import.meta.url));
-export const defaultRepositoryRoot = Path.resolve(scriptDirectory, "../..");
+const scriptDirectory = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+export const defaultRepositoryRoot = NodePath.resolve(scriptDirectory, "../..");
 
 const manifestPath = (repositoryRoot) =>
-  Path.join(repositoryRoot, ".avicode", "upstream-guardrails.json");
+  NodePath.join(repositoryRoot, ".avicode", "upstream-guardrails.json");
 
 function readJson(path) {
-  return JSON.parse(FS.readFileSync(path, "utf8"));
+  return JSON.parse(NodeFS.readFileSync(path, "utf8"));
 }
 
 function normalizedRelativePath(value) {
@@ -21,7 +21,7 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
   const warnings = [];
   const manifestFile = manifestPath(repositoryRoot);
 
-  if (!FS.existsSync(manifestFile)) {
+  if (!NodeFS.existsSync(manifestFile)) {
     return {
       failures: [".avicode/upstream-guardrails.json is missing."],
       warnings,
@@ -74,8 +74,8 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
 
     activeBoundaries.push(boundary.id);
     for (const relativeFile of boundary.requiredFiles ?? []) {
-      const file = Path.resolve(repositoryRoot, relativeFile);
-      if (!FS.existsSync(file)) {
+      const file = NodePath.resolve(repositoryRoot, relativeFile);
+      if (!NodeFS.existsSync(file)) {
         failures.push(
           `${boundary.id}: required file ${normalizedRelativePath(relativeFile)} is missing.`,
         );
@@ -83,9 +83,9 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
     }
 
     for (const requirement of boundary.requiredText ?? []) {
-      const file = Path.resolve(repositoryRoot, requirement.file);
-      if (!FS.existsSync(file)) continue;
-      const contents = FS.readFileSync(file, "utf8");
+      const file = NodePath.resolve(repositoryRoot, requirement.file);
+      if (!NodeFS.existsSync(file)) continue;
+      const contents = NodeFS.readFileSync(file, "utf8");
       for (const value of requirement.values ?? []) {
         if (!contents.includes(value)) {
           failures.push(
@@ -102,9 +102,9 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
     );
   }
 
-  const syncWorkflow = Path.join(repositoryRoot, ".github", "workflows", "sync-upstream.yml");
-  if (FS.existsSync(syncWorkflow)) {
-    const contents = FS.readFileSync(syncWorkflow, "utf8");
+  const syncWorkflow = NodePath.join(repositoryRoot, ".github", "workflows", "sync-upstream.yml");
+  if (NodeFS.existsSync(syncWorkflow)) {
+    const contents = NodeFS.readFileSync(syncWorkflow, "utf8");
     const forbidden = [
       ["gh pr merge", "The upstream workflow must never merge its own pull request."],
       ["--auto", "The upstream workflow must never enable auto-merge."],
@@ -129,7 +129,10 @@ export function formatGuardrailResult(result) {
   return lines.join("\n");
 }
 
-if (process.argv[1] && Path.resolve(process.argv[1]) === URL.fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  NodePath.resolve(process.argv[1]) === NodeURL.fileURLToPath(import.meta.url)
+) {
   const result = checkUpstreamGuardrails();
   process.stdout.write(`${formatGuardrailResult(result)}\n`);
   if (result.failures.length > 0) process.exitCode = 1;
