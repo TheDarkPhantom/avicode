@@ -101,3 +101,18 @@ NodeTest.test("rejects identity or update-repository drift", () => {
   NodeAssert.ok(result.failures.some((failure) => failure.includes("appId")));
   NodeAssert.ok(result.failures.some((failure) => failure.includes("release repository")));
 });
+
+NodeTest.test("rejects automatic release and relay deployment triggers", () => {
+  const root = fixture();
+  NodeFS.writeFileSync(
+    NodePath.join(root, ".github", "workflows", "release.yml"),
+    "on:\n  schedule:\n    - cron: '0 * * * *'\npermissions:\n  contents: write\n",
+  );
+  NodeFS.writeFileSync(
+    NodePath.join(root, ".github", "workflows", "deploy-relay.yml"),
+    "on:\n  push:\n    branches: [main]\npermissions:\n  contents: read\n",
+  );
+  const result = checkUpstreamGuardrails(root);
+  NodeAssert.ok(result.failures.some((failure) => failure.includes("release")));
+  NodeAssert.ok(result.failures.some((failure) => failure.includes("relay deployment")));
+});
