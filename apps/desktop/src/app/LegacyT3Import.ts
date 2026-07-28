@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Copy-only migration runs before the backend opens SQLite.
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
@@ -29,7 +29,7 @@ export function makeLegacyT3ImportPlan(input: {
 
 async function exists(path: string): Promise<boolean> {
   try {
-    await NodeFS.access(path);
+    await NodeFSP.access(path);
     return true;
   } catch {
     return false;
@@ -41,8 +41,8 @@ async function recordDecision(
   decision: "imported" | "fresh",
   source: string,
 ): Promise<void> {
-  await NodeFS.mkdir(NodePath.dirname(markerPath), { recursive: true });
-  await NodeFS.writeFile(
+  await NodeFSP.mkdir(NodePath.dirname(markerPath), { recursive: true });
+  await NodeFSP.writeFile(
     markerPath,
     `${JSON.stringify({ schema: 1, decision, source }, null, 2)}\n`,
     "utf8",
@@ -93,12 +93,12 @@ export const offerLegacyT3Import = Effect.fn("avicode.legacyT3Import.offer")(fun
 
   const failure = yield* Effect.promise(async () => {
     try {
-      await NodeFS.mkdir(environment.stateDir, { recursive: true });
+      await NodeFSP.mkdir(environment.stateDir, { recursive: true });
       const sourceDir = NodePath.dirname(plan.legacyDatabase);
       for (const file of DATABASE_FILES) {
         const source = NodePath.join(sourceDir, file);
         if (await exists(source)) {
-          await NodeFS.copyFile(source, NodePath.join(environment.stateDir, file));
+          await NodeFSP.copyFile(source, NodePath.join(environment.stateDir, file));
         }
       }
       await recordDecision(plan.markerPath, "imported", sourceDir);

@@ -1,9 +1,12 @@
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 import sharp from "sharp";
 
-const repoRoot = NodePath.resolve(NodePath.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../..",
+);
 const source = NodePath.join(repoRoot, "assets/prod/logo.svg");
 const sizes = [16, 24, 32, 48, 64, 128, 180, 256, 512, 1024];
 
@@ -46,7 +49,7 @@ outputs.set("assets/prod/t3-black-web-favicon.ico", ico);
 outputs.set("assets/prod/t3-black-windows.ico", ico);
 
 for (const [relativePath, contents] of outputs) {
-  await NodeFS.writeFile(NodePath.join(repoRoot, relativePath), contents);
+  await NodeFSP.writeFile(NodePath.join(repoRoot, relativePath), contents);
 }
 
 console.log(`Updated ${outputs.size} AviCode brand assets.`);
