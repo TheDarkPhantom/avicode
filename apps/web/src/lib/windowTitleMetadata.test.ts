@@ -9,12 +9,12 @@ describe("windowTitleMetadata", () => {
         threadTitle: "Integrate Tasks with Omnidash Kanban Board",
         private: false,
       }),
-    ).toBe("advisor-os — Integrate Tasks with Omnidash Kanban Board — AviCode");
+    ).toBe("advisor-os — Integrate Tasks with Omnidash Kanban Board — Avi Code");
   });
 
   it("hides metadata in privacy mode", () => {
     expect(
       formatThreadWindowTitle({ repository: "private-repo", threadTitle: "Secret", private: true }),
-    ).toBe("AviCode");
+    ).toBe("Avi Code");
   });
 });

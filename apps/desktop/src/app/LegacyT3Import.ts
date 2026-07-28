@@ -68,10 +68,10 @@ export const offerLegacyT3Import = Effect.fn("avicode.legacyT3Import.offer")(fun
 
   const choice = yield* dialog.showMessageBox({
     type: "question",
-    title: "Bring your T3 Code workspace into AviCode?",
-    message: "AviCode found an existing T3 Code workspace.",
+    title: "Bring your T3 Code workspace into Avi Code?",
+    message: "Avi Code found an existing T3 Code workspace.",
     detail:
-      "Import copies your local projects, threads, and settings into AviCode. T3 Code is not changed or deleted. Close T3 Code before importing for the safest database snapshot.",
+      "Import copies your local projects, threads, and settings into Avi Code. T3 Code is not changed or deleted. Close T3 Code before importing for the safest database snapshot.",
     buttons: ["Import", "Start Fresh", "Not Now"],
     defaultId: 0,
     cancelId: 2,
@@ -86,7 +86,7 @@ export const offerLegacyT3Import = Effect.fn("avicode.legacyT3Import.offer")(fun
       ),
     );
     if (failure) {
-      yield* dialog.showErrorBox("AviCode could not save your choice", failure);
+      yield* dialog.showErrorBox("Avi Code could not save your choice", failure);
     }
     return;
   }
@@ -109,8 +109,8 @@ export const offerLegacyT3Import = Effect.fn("avicode.legacyT3Import.offer")(fun
   });
   if (failure) {
     yield* dialog.showErrorBox(
-      "AviCode could not import T3 Code",
-      `Your T3 Code data was not changed. AviCode will offer the import again next launch.\n\n${failure}`,
+      "Avi Code could not import T3 Code",
+      `Your T3 Code data was not changed. Avi Code will offer the import again next launch.\n\n${failure}`,
     );
   }
 });

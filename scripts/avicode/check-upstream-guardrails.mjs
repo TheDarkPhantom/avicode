@@ -16,6 +16,17 @@ function normalizedRelativePath(value) {
   return value.replaceAll("\\", "/");
 }
 
+function sourceFilesUnder(directory) {
+  if (!NodeFS.existsSync(directory)) return [];
+  return NodeFS.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = NodePath.join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFilesUnder(path);
+    return /\.(?:ts|tsx)$/u.test(entry.name) && !/\.test\.(?:ts|tsx)$/u.test(entry.name)
+      ? [path]
+      : [];
+  });
+}
+
 export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) {
   const failures = [];
   const warnings = [];
@@ -33,7 +44,7 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
   const manifest = readJson(manifestFile);
   const identity = manifest.identity ?? {};
   const expectedIdentity = {
-    productName: "AviCode",
+    productName: "Avi Code",
     appId: "com.advisoravi.avicode",
     protocol: "avicode://",
     dataHome: "~/.avicode",
@@ -126,6 +137,30 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
       NodeFS.readFileSync(workflow, "utf8").split(/\npermissions:/u, 1)[0] ?? "";
     if (/^\s{2}(?:push|schedule):/mu.test(triggerSection)) {
       failures.push(`${label} must remain manual-only during the personal alpha.`);
+    }
+  }
+
+  const legacyT3CopyAllowlist = new Set([
+    "apps/desktop/src/app/DesktopEnvironment.ts",
+    "apps/desktop/src/app/LegacyT3Import.ts",
+  ]);
+  for (const sourceRoot of [
+    "apps/web/src",
+    "apps/desktop/src",
+    "apps/server/src",
+    "packages/contracts/src",
+    "packages/shared/src",
+  ]) {
+    for (const file of sourceFilesUnder(NodePath.join(repositoryRoot, ...sourceRoot.split("/")))) {
+      const relativeFile = normalizedRelativePath(NodePath.relative(repositoryRoot, file));
+      if (
+        !legacyT3CopyAllowlist.has(relativeFile) &&
+        NodeFS.readFileSync(file, "utf8").includes("T3 Code")
+      ) {
+        failures.push(
+          `Visible upstream brand reference found in ${relativeFile}; use Avi Code or explicitly allowlist compatibility copy.`,
+        );
+      }
     }
   }
 

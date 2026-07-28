@@ -1,109 +1,59 @@
-# AviCode
+# Avi Code
 
-AviCode is Avi's Windows-first coding environment and an independent MIT-licensed fork of
-[T3 Code](https://github.com/pingdotgg/t3code). It has its own identity, `~/.avicode` data,
-`avicode_desktop` sessions, document attachments, and ALFRED metadata. AviCode is not an official
-T3 Tools product and currently has no public installer.
+Avi Code is Advisor Avi's Windows-first agentic coding environment. It combines Codex and Claude
+workflows with local PDF, TXT, and Markdown attachments, repository/thread window metadata, and
+privacy-safe ALFRED time attribution.
 
-Personal Windows alpha:
+It uses the provider CLI authentication already present on the machine; no additional LLM API is
+required.
+
+## Personal alpha
+
+Install dependencies and build the Windows x64 installer:
 
 ```bash
 corepack pnpm install
 corepack pnpm dist:desktop:win:x64
 ```
 
-No additional LLM API is needed; AviCode uses the provider CLI authentication you already have.
+The application has its own identity and storage:
 
-## Upstream compatibility notes
+- Display name: **Avi Code**
+- Application ID: `com.advisoravi.avicode`
+- Executable: `AviCode.exe`
+- Protocol: `avicode://`
+- Data home: `~/.avicode`
+- Session originator: `avicode_desktop`
+- Update repository: `TheDarkPhantom/avicode`
 
-The sections below are retained from upstream where useful. Do not install an official T3 binary
-expecting it to update AviCode; AviCode updates may only come from `TheDarkPhantom/avicode`.
-
-## Installation
-
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, and OpenCode.
-> Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `cursor-agent login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-
-### Run without installing
-
-```bash
-npx t3@latest
-```
-
-Tip: Use `npx t3@latest --help` for the full CLI reference.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-```bash
-yay -S t3code-bin
-```
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are not accepting contributions yet.
-
-There's no public docs site yet, checkout the miscellaneous markdown files in [docs](./docs).
+Official upstream binaries cannot update or replace Avi Code.
 
 ## Documentation
 
-- [Getting started](./docs/getting-started/quick-start.md)
-- [Remote access](./docs/user/remote-access.md)
-- [Keeping T3 Code in sync](./docs/user/server-updates.md)
+- [Development TODO](./TODO.md)
+- [Future enhancements](./FUTURE_ENHANCEMENTS.md)
+- [Document attachments](./docs/DOCUMENT_ATTACHMENTS.md)
+- [ALFRED integration](./docs/ALFRED_INTEGRATION.md)
+- [Importing legacy T3 data](./docs/T3_IMPORT.md)
+- [Upstream synchronization](./docs/UPSTREAM_SYNC.md)
 - [Architecture overview](./docs/architecture/overview.md)
-- [Provider guides](./docs/providers/codex.md)
-- [Operations](./docs/operations/ci.md)
-- [Reference](./docs/reference/encyclopedia.md)
 
-## If you REALLY want to contribute still.... read this first
+## Upstream attribution
 
-### Install `vp`
+Avi Code is an independent MIT-licensed fork of
+[T3 Code](https://github.com/pingdotgg/t3code), not an official T3 Tools product. Invisible package
+identifiers are retained where necessary for upstream compatibility. Product branding, desktop
+identity, user data, releases, and added features remain owned by Avi Code.
 
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
+See [UPSTREAM_SYNC.md](./docs/UPSTREAM_SYNC.md) for the human-reviewed update process.
 
-#### macOS / Linux
+## Development
 
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
+The monorepo uses Vite+. Install the `vp` command, then install dependencies:
 
 ```bash
 irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
 vp i
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before changing the codebase.

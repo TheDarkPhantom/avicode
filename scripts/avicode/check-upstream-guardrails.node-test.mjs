@@ -29,7 +29,7 @@ function fixture() {
       upstream: { repository: "pingdotgg/t3code", branch: "main" },
       releaseRepository: "TheDarkPhantom/avicode",
       identity: {
-        productName: "AviCode",
+        productName: "Avi Code",
         appId: "com.advisoravi.avicode",
         protocol: "avicode://",
         dataHome: "~/.avicode",
@@ -100,6 +100,19 @@ NodeTest.test("rejects identity or update-repository drift", () => {
   const result = checkUpstreamGuardrails(root);
   NodeAssert.ok(result.failures.some((failure) => failure.includes("appId")));
   NodeAssert.ok(result.failures.some((failure) => failure.includes("release repository")));
+});
+
+NodeTest.test("rejects visible upstream branding in product source", () => {
+  const root = fixture();
+  const sourceDirectory = NodePath.join(root, "apps", "web", "src");
+  NodeFS.mkdirSync(sourceDirectory, { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(sourceDirectory, "UpstreamBrand.tsx"),
+    'export const label = "T3 Code";\n',
+  );
+
+  const result = checkUpstreamGuardrails(root);
+  NodeAssert.ok(result.failures.some((failure) => failure.includes("UpstreamBrand.tsx")));
 });
 
 NodeTest.test("rejects automatic release and relay deployment triggers", () => {
