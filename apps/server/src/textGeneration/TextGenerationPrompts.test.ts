@@ -190,6 +190,12 @@ describe("sanitizeThreadTitle", () => {
   it("falls back to a title-cased default when the input is empty", () => {
     expect(sanitizeThreadTitle("   ")).toBe("New Thread");
   });
+
+  it("preserves acronyms and internal punctuation while title-casing words", () => {
+    expect(sanitizeThreadTitle("fix AVI-ROG and OAuth reconnects")).toBe(
+      "Fix AVI-ROG And OAuth Reconnects",
+    );
+  });
 });
 
 describe("normalizeCliError", () => {

@@ -527,11 +527,7 @@ describe("threadTraversalDirectionFromMouseButton", () => {
 });
 
 describe("resolveMouseBackForwardThreadNavigationTarget", () => {
-  const threads = [
-    ThreadId.make("thread-1"),
-    ThreadId.make("thread-2"),
-    ThreadId.make("thread-3"),
-  ];
+  const threads = [ThreadId.make("thread-1"), ThreadId.make("thread-2"), ThreadId.make("thread-3")];
 
   it("resolves enabled mouse history buttons against the visible sidebar order", () => {
     expect(

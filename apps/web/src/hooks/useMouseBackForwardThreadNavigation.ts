@@ -17,14 +17,8 @@ export function useMouseBackForwardThreadNavigation<
   getThreadByKey: (threadKey: string) => TThread | undefined;
   navigateToThread: (threadRef: ScopedThreadRef) => void;
 }): void {
-  const {
-    active,
-    currentThreadKey,
-    enabled,
-    getThreadByKey,
-    navigateToThread,
-    orderedThreadKeys,
-  } = input;
+  const { active, currentThreadKey, enabled, getThreadByKey, navigateToThread, orderedThreadKeys } =
+    input;
 
   useEffect(() => {
     if (!enabled || !active) {

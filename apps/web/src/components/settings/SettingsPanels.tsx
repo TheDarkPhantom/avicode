@@ -517,8 +517,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
-      sidebarMouseBackForwardNavigation:
-        DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
+      sidebarMouseBackForwardNavigation: DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       rightPanelFollowsThreads: DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
