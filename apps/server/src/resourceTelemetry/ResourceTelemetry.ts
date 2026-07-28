@@ -141,7 +141,8 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
   const mutex = yield* Semaphore.make(1);
   const changes = yield* PubSub.sliding<ResourceTelemetrySnapshot>(8);
   const initialReadAt = yield* DateTime.now;
-  const initialDesktop = yield* desktopReceiver.latest;
+  const desktopSubscription = yield* desktopReceiver.subscribe;
+  const initialDesktop = desktopSubscription.latest;
   if (Option.isSome(initialDesktop)) {
     yield* nativeClient
       .setExternalProcesses([{ pid: initialDesktop.value.electronPid }])
@@ -311,7 +312,7 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
       return yield* rebuild({ desktopSnapshot: snapshot, updatePrevious: false, publish: live });
     });
 
-  yield* desktopReceiver.changes.pipe(
+  yield* desktopSubscription.changes.pipe(
     Stream.runForEach((snapshot) => ingestDesktop(snapshot)),
     Effect.forkScoped,
   );

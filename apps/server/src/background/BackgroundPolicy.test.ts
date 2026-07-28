@@ -130,6 +130,31 @@ describe("BackgroundPolicy", () => {
     }).pipe(Effect.provide(makeLayer(constrainedHostPower))),
   );
 
+  it.effect("host suspension disables scoped and opportunistic work", () =>
+    Effect.gen(function* () {
+      const policy = yield* BackgroundPolicy.BackgroundPolicy;
+      yield* policy.reportClientActivity(
+        AuthSessionId.make("session-1"),
+        RpcClientId.make(1),
+        makeReport(),
+      );
+
+      const snapshot = yield* policy.snapshot;
+      assert.equal(snapshot.activeForegroundLeaseCount, 1);
+      assert.equal(snapshot.shouldRunOpportunisticWork, false);
+      assert.equal(yield* policy.hasDemand({ type: "vcs-status", cwd: "/repo" }), true);
+      assert.equal(yield* policy.shouldRunScopeWork({ type: "vcs-status", cwd: "/repo" }), false);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          ...nominalHostPower,
+          suspended: true,
+          stale: false,
+        }),
+      ),
+    ),
+  );
+
   it.effect("keeps background demand visible while preventing scoped work", () =>
     Effect.gen(function* () {
       const policy = yield* BackgroundPolicy.BackgroundPolicy;

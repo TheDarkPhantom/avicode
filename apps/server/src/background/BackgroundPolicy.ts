@@ -83,6 +83,7 @@ function isHostConstrained(
 ): boolean {
   if (hostPower.stale) return false;
   if (
+    hostPower.suspended ||
     (settings.pauseWhenHostLocked && hostPower.locked === "true") ||
     hasThermalPressure(hostPower)
   ) {
@@ -236,6 +237,9 @@ export const make = Effect.fn("background.policy.make")(function* () {
   );
 
   yield* Stream.runForEach(hostPowerMonitor.streamChanges, () => publishSnapshot).pipe(
+    Effect.forkScoped,
+  );
+  yield* Stream.runForEach(serverSettings.streamChanges, () => publishSnapshot).pipe(
     Effect.forkScoped,
   );
 

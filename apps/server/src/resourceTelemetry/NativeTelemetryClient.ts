@@ -293,6 +293,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
   const healthChanges = yield* PubSub.sliding<NativeTelemetryClientHealth>(4);
   const retryQueue = yield* Queue.sliding<void>(1);
   const commandMutex = yield* Semaphore.make(1);
+  const controlMutex = yield* Semaphore.make(1);
   const currentHealth = Effect.all([Ref.get(state), Ref.get(collectionControl)]).pipe(
     Effect.map(([current, control]) => toHealth(current, control.sampleIntervalMs)),
   );
@@ -367,6 +368,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
             lastSampleAt: Option.some(sampledAt),
             lastError: Option.none(),
           }));
+          yield* publishHealth;
           yield* PubSub.publish(snapshots, event);
           if (event.requestId) {
             const deferred = yield* Ref.modify(pendingSamples, (pending) => {
@@ -390,6 +392,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
               lastSampleAt: Option.some(DateTime.makeUnsafe(latestSnapshot.sampledAtUnixMs)),
               lastError: Option.none(),
             }));
+            yield* publishHealth;
           }
           const completed = yield* Ref.modify(pendingHistories, (pending) => {
             const request = pending.get(event.requestId);
@@ -653,7 +656,10 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     "resourceTelemetry.nativeTelemetryClient.applyCollectionControl",
   )(function* (previous: CollectionControl, next: CollectionControl) {
     const current = yield* Ref.get(state);
-    if (Option.isSome(current.handle) && current.status === "healthy") {
+    if (
+      Option.isSome(current.handle) &&
+      (current.status === "healthy" || current.status === "degraded")
+    ) {
       if (previous.sampleIntervalMs !== next.sampleIntervalMs) {
         yield* writeCommand(current.handle.value, {
           version: RESOURCE_MONITOR_PROTOCOL_VERSION,
@@ -677,31 +683,37 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
   });
 
   const setHostPowerState: NativeTelemetryClientShape["setHostPowerState"] = (hostPower) =>
-    Effect.gen(function* () {
-      const [previous, next] = yield* Ref.modify(collectionControl, (current) => {
-        const updated: CollectionControl = {
-          ...current,
-          hostPower,
-          sampleIntervalMs: resolveNativeSampleIntervalMs(hostPower, current.liveSubscriberCount),
-        };
-        return [[current, updated] as const, updated];
-      });
-      yield* applyCollectionControl(previous, next);
-    });
+    controlMutex.withPermits(1)(
+      Effect.gen(function* () {
+        const [previous, next] = yield* Ref.modify(collectionControl, (current) => {
+          const updated: CollectionControl = {
+            ...current,
+            hostPower,
+            sampleIntervalMs: resolveNativeSampleIntervalMs(hostPower, current.liveSubscriberCount),
+          };
+          return [[current, updated] as const, updated];
+        });
+        yield* applyCollectionControl(previous, next);
+      }),
+    );
 
   const changeLiveSubscriberCount = Effect.fn(
     "resourceTelemetry.nativeTelemetryClient.changeLiveSubscriberCount",
   )(function* (delta: 1 | -1) {
-    const [previous, next] = yield* Ref.modify(collectionControl, (current) => {
-      const liveSubscriberCount = Math.max(0, current.liveSubscriberCount + delta);
-      const updated: CollectionControl = {
-        ...current,
-        liveSubscriberCount,
-        sampleIntervalMs: resolveNativeSampleIntervalMs(current.hostPower, liveSubscriberCount),
-      };
-      return [[current, updated] as const, updated];
-    });
-    yield* applyCollectionControl(previous, next);
+    yield* controlMutex.withPermits(1)(
+      Effect.gen(function* () {
+        const [previous, next] = yield* Ref.modify(collectionControl, (current) => {
+          const liveSubscriberCount = Math.max(0, current.liveSubscriberCount + delta);
+          const updated: CollectionControl = {
+            ...current,
+            liveSubscriberCount,
+            sampleIntervalMs: resolveNativeSampleIntervalMs(current.hostPower, liveSubscriberCount),
+          };
+          return [[current, updated] as const, updated];
+        });
+        yield* applyCollectionControl(previous, next);
+      }),
+    );
   });
 
   const liveSnapshots = Stream.unwrap(

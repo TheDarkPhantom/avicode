@@ -47,6 +47,10 @@ export interface DesktopTelemetryPublisherShape {
   readonly changes: Stream.Stream<DesktopHostTelemetrySnapshot>;
   readonly encoded: Stream.Stream<Uint8Array>;
   readonly handleControl: (message: DesktopTelemetryControlMessage) => Effect.Effect<void>;
+  readonly handleControlForSource: (
+    sourceId: string,
+    message: DesktopTelemetryControlMessage,
+  ) => Effect.Effect<void>;
 }
 
 export class DesktopTelemetryPublisher extends Context.Service<
@@ -115,6 +119,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const powerEvents = yield* Queue.unbounded<PowerEvent>();
   const sampleTriggers = yield* Queue.sliding<void>(1);
   const diagnosticsDemand = yield* Ref.make(false);
+  const diagnosticsDemandSources = yield* Ref.make<ReadonlySet<string>>(new Set());
   const latest = yield* Ref.make(Option.none<DesktopHostTelemetrySnapshot>());
   const changes = yield* PubSub.sliding<DesktopHostTelemetrySnapshot>(8);
   const sequence = yield* Ref.make(0);
@@ -218,31 +223,49 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     }
   }).pipe(Effect.forkScoped);
 
-  const handleControl: DesktopTelemetryPublisherShape["handleControl"] = (message) => {
+  const handleControlForSource: DesktopTelemetryPublisherShape["handleControlForSource"] = (
+    sourceId,
+    message,
+  ) => {
     switch (message.type) {
       case "setDiagnosticsDemand":
-        return Ref.getAndSet(diagnosticsDemand, message.enabled).pipe(
-          Effect.flatMap((previous) =>
-            previous === message.enabled
+        return Ref.modify(diagnosticsDemandSources, (sources) => {
+          const next = new Set(sources);
+          if (message.enabled) {
+            next.add(sourceId);
+          } else {
+            next.delete(sourceId);
+          }
+          return [next.size > 0, next] as const;
+        }).pipe(
+          Effect.flatMap((enabled) =>
+            Ref.getAndSet(diagnosticsDemand, enabled).pipe(
+              Effect.map((previous) => [previous, enabled] as const),
+            ),
+          ),
+          Effect.flatMap(([previous, enabled]) =>
+            previous === enabled
               ? Effect.void
               : Queue.offer(sampleTriggers, undefined).pipe(Effect.asVoid),
           ),
         );
     }
   };
+  const handleControl: DesktopTelemetryPublisherShape["handleControl"] = (message) =>
+    handleControlForSource("legacy", message);
 
-  const snapshots = Stream.concat(
-    Stream.unwrap(
-      Ref.get(latest).pipe(
-        Effect.map(
-          Option.match({
-            onNone: () => Stream.empty,
-            onSome: Stream.make,
-          }),
-        ),
-      ),
-    ),
-    Stream.fromPubSub(changes),
+  const snapshots = Stream.unwrap(
+    Effect.gen(function* () {
+      const subscription = yield* PubSub.subscribe(changes);
+      const initial = yield* Ref.get(latest);
+      return Stream.concat(
+        Option.match(initial, {
+          onNone: () => Stream.empty,
+          onSome: Stream.make,
+        }),
+        Stream.fromSubscription(subscription),
+      );
+    }),
   );
   const encoded = Stream.concat(
     Stream.make({
@@ -258,6 +281,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     changes: Stream.fromPubSub(changes),
     encoded,
     handleControl,
+    handleControlForSource,
   });
 });
 

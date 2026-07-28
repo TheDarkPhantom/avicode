@@ -72,7 +72,8 @@ function canSignalCategory(category: ResourceTelemetryProcessCategory): boolean 
 
 export const make = Effect.fn("makeProcessDiagnostics")(function* () {
   const telemetry = yield* ResourceTelemetry.ResourceTelemetry;
-  const read: ProcessDiagnosticsShape["read"] = telemetry.latest.pipe(
+  const refreshedTelemetry = telemetry.refresh.pipe(Effect.catch(() => telemetry.latest));
+  const read: ProcessDiagnosticsShape["read"] = refreshedTelemetry.pipe(
     Effect.map((snapshot) => {
       const processes = snapshot.processes
         .filter((entry) => entry.identity.pid !== process.pid)
@@ -113,7 +114,7 @@ export const make = Effect.fn("makeProcessDiagnostics")(function* () {
           message: Option.some("Refusing to signal the T3 server process."),
         };
       }
-      const current = yield* telemetry.latest;
+      const current = yield* refreshedTelemetry;
       const selected = current.processes.find(
         (entry) =>
           entry.identity.pid === input.pid && entry.identity.startTimeMs === input.startTimeMs,
@@ -136,52 +137,34 @@ export const make = Effect.fn("makeProcessDiagnostics")(function* () {
           message: Option.some(`Process ${input.pid} is not a signalable T3 backend descendant.`),
         };
       }
-      return yield* telemetry
-        .validateProcessIdentity({
-          pid: input.pid,
-          startTimeMs: input.startTimeMs,
-        })
-        .pipe(
-          Effect.flatMap((valid) =>
-            valid
-              ? Effect.void
-              : Effect.fail(
-                  new ProcessIdentityChanged({
-                    pid: input.pid,
-                    startTimeMs: input.startTimeMs,
-                  }),
-                ),
-          ),
-          Effect.flatMap(() =>
-            Effect.try({
-              try: () => {
-                process.kill(input.pid, input.signal);
-                return {
-                  pid: input.pid,
-                  signal: input.signal,
-                  signaled: true,
-                  message: Option.none(),
-                };
-              },
-              catch: (cause) =>
-                new ProcessSignalFailed({
-                  pid: input.pid,
-                  signal: input.signal,
-                  cause,
-                }),
-            }),
-          ),
-          Effect.catch((error) =>
-            Effect.succeed({
-              pid: input.pid,
-              signal: input.signal,
-              signaled: false,
-              message: Option.some(
-                error instanceof Error ? error.message : "Failed to signal process.",
-              ),
-            }),
-          ),
-        );
+      return yield* Effect.try({
+        try: () => {
+          process.kill(input.pid, input.signal);
+          return {
+            pid: input.pid,
+            signal: input.signal,
+            signaled: true,
+            message: Option.none(),
+          };
+        },
+        catch: (cause) =>
+          new ProcessSignalFailed({
+            pid: input.pid,
+            signal: input.signal,
+            cause,
+          }),
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.succeed({
+            pid: input.pid,
+            signal: input.signal,
+            signaled: false,
+            message: Option.some(
+              error instanceof Error ? error.message : "Failed to signal process.",
+            ),
+          }),
+        ),
+      );
     },
   );
 
