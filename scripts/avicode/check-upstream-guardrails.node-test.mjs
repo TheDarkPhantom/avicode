@@ -3,10 +3,7 @@ import * as FS from "node:fs";
 import * as OS from "node:os";
 import * as Path from "node:path";
 import { afterEach, test } from "node:test";
-import {
-  checkUpstreamGuardrails,
-  defaultRepositoryRoot,
-} from "./check-upstream-guardrails.mjs";
+import { checkUpstreamGuardrails, defaultRepositoryRoot } from "./check-upstream-guardrails.mjs";
 
 const temporaryDirectories = [];
 

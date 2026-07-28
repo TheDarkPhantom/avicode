@@ -51,13 +51,13 @@ unresolved branch and never modifies `main`.
 `.avicode/upstream-guardrails.json` is the machine-readable registry for the
 fork's customization boundaries:
 
-| Owner | Responsibility |
-| --- | --- |
-| `AviCodeBranding` | Name, palette, typography, icons, About attribution, and visible copy |
-| `AviCodeIdentity` | App ID, executable, protocol, data directories, update repository, and upstream workflow |
-| `DocumentAttachments` | PDF/TXT/Markdown contracts, extraction, storage, provider normalization, and UI |
-| `WindowTitleMetadata` | Repository/thread title behavior and its privacy preference |
-| `ALFRED-CODE` | Sanitized AviCode session export and ALFRED correlation |
+| Owner                 | Responsibility                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `AviCodeBranding`     | Name, palette, typography, icons, About attribution, and visible copy                    |
+| `AviCodeIdentity`     | App ID, executable, protocol, data directories, update repository, and upstream workflow |
+| `DocumentAttachments` | PDF/TXT/Markdown contracts, extraction, storage, provider normalization, and UI          |
+| `WindowTitleMetadata` | Repository/thread title behavior and its privacy preference                              |
+| `ALFRED-CODE`         | Sanitized AviCode session export and ALFRED correlation                                  |
 
 The synchronization boundary is active now. The other boundaries are marked
 `planned` because their base AviCode implementations have not landed yet.

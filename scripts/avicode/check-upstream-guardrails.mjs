@@ -47,7 +47,10 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
     }
   }
 
-  if (manifest.upstream?.repository !== "pingdotgg/t3code" || manifest.upstream?.branch !== "main") {
+  if (
+    manifest.upstream?.repository !== "pingdotgg/t3code" ||
+    manifest.upstream?.branch !== "main"
+  ) {
     failures.push("The authoritative upstream must remain pingdotgg/t3code main.");
   }
   if (manifest.releaseRepository !== "TheDarkPhantom/avicode") {
@@ -73,7 +76,9 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
     for (const relativeFile of boundary.requiredFiles ?? []) {
       const file = Path.resolve(repositoryRoot, relativeFile);
       if (!FS.existsSync(file)) {
-        failures.push(`${boundary.id}: required file ${normalizedRelativePath(relativeFile)} is missing.`);
+        failures.push(
+          `${boundary.id}: required file ${normalizedRelativePath(relativeFile)} is missing.`,
+        );
       }
     }
 

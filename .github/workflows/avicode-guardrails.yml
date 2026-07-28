@@ -18,7 +18,7 @@ jobs:
 
       - name: Verify customization boundaries
         run: |
-          node --test scripts/avicode/check-upstream-guardrails.test.mjs
+          node --test scripts/avicode/check-upstream-guardrails.node-test.mjs
           node scripts/avicode/check-upstream-guardrails.mjs
 
   desktop-smoke:
@@ -86,4 +86,3 @@ jobs:
             throw "The Windows x64 packaging check produced no installer."
           }
           $artifacts | Select-Object Name, Length
-
