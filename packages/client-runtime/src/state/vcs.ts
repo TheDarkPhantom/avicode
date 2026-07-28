@@ -23,7 +23,9 @@ import { followStreamInEnvironment } from "./runtime.ts";
 import { vcsCommandConcurrency, vcsCommandScheduler } from "./vcsCommandScheduler.ts";
 
 const OFFLINE_BRANCH_LIST_LIMIT = 100;
-const VCS_REFS_REVALIDATE_INTERVAL = "5 seconds";
+const VCS_REFS_REVALIDATE_INTERVAL_MS = 30_000;
+const VCS_REFS_MAX_FAILURE_BACKOFF_MS = 5 * 60_000;
+const VCS_REFS_CACHE_IDLE_TTL_MS = 5 * 60_000;
 
 function canUseVcsRefsCache(input: VcsListRefsInput): boolean {
   return (
@@ -33,6 +35,15 @@ function canUseVcsRefsCache(input: VcsListRefsInput): boolean {
     input.refKind === undefined &&
     input.limit === OFFLINE_BRANCH_LIST_LIMIT
   );
+}
+
+export function vcsRefsIdleTtl(input: VcsListRefsInput): number {
+  return canUseVcsRefsCache(input) ? VCS_REFS_CACHE_IDLE_TTL_MS : 0;
+}
+
+export function vcsRefsRefreshDelayMs(consecutiveFailures: number): number {
+  const exponent = Math.min(Math.max(consecutiveFailures - 1, 0), 4);
+  return Math.min(VCS_REFS_REVALIDATE_INTERVAL_MS * 2 ** exponent, VCS_REFS_MAX_FAILURE_BACKOFF_MS);
 }
 
 /**
@@ -107,11 +118,18 @@ export const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChange
     Stream.switchMap((generation) =>
       generation === null
         ? Stream.empty
-        : Stream.tick(VCS_REFS_REVALIDATE_INTERVAL).pipe(
-            Stream.mapEffect(
-              () =>
-                refresh().pipe(
-                  Effect.map(Option.some),
+        : Stream.paginate(
+            {
+              delayMs: 0,
+              consecutiveFailures: 0,
+            },
+            (pollState) =>
+              Effect.gen(function* () {
+                if (pollState.delayMs > 0) {
+                  yield* Effect.sleep(pollState.delayMs);
+                }
+                const attempt = yield* refresh().pipe(
+                  Effect.map((refs) => ({ _tag: "Success", refs }) as const),
                   Effect.catch((error) =>
                     Effect.logWarning("Could not refresh Git refs.").pipe(
                       Effect.annotateLogs({
@@ -119,18 +137,28 @@ export const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChange
                         cwd: input.cwd,
                         ...safeErrorLogAttributes(error),
                       }),
-                      Effect.as(Option.none<VcsListRefsResult>()),
+                      Effect.as({ _tag: "Failure" } as const),
                     ),
                   ),
-                ),
-              { concurrency: 1 },
-            ),
-            Stream.filterMap((refs) =>
-              Option.match(refs, {
-                onNone: () => Result.failVoid,
-                onSome: Result.succeed,
+                );
+                if (attempt._tag === "Success") {
+                  return [
+                    [attempt.refs],
+                    Option.some({
+                      delayMs: VCS_REFS_REVALIDATE_INTERVAL_MS,
+                      consecutiveFailures: 0,
+                    }),
+                  ] as const;
+                }
+                const consecutiveFailures = pollState.consecutiveFailures + 1;
+                return [
+                  [],
+                  Option.some({
+                    delayMs: vcsRefsRefreshDelayMs(consecutiveFailures),
+                    consecutiveFailures,
+                  }),
+                ] as const;
               }),
-            ),
           ),
     ),
   );
@@ -151,7 +179,7 @@ export function createVcsEnvironmentAtoms<R, E>(
       return runtime
         .atom(cachedVcsRefsChanges(environmentId, input))
         .pipe(
-          Atom.setIdleTTL(5 * 60_000),
+          Atom.setIdleTTL(vcsRefsIdleTtl(input)),
           Atom.withLabel(`environment-data:vcs:list-refs:${environmentId}:${inputKey}`),
         );
     }),
@@ -165,6 +193,7 @@ export function createVcsEnvironmentAtoms<R, E>(
     listRefs,
     status: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:vcs:status",
+      idleTtlMs: 0,
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.subscribeVcsStatus>) =>
         subscribe(WS_METHODS.subscribeVcsStatus, input).pipe(
           Stream.mapAccum(

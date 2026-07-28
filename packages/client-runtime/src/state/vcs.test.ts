@@ -18,7 +18,7 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { makeCachedVcsRefsChanges } from "./vcs.ts";
+import { makeCachedVcsRefsChanges, vcsRefsIdleTtl, vcsRefsRefreshDelayMs } from "./vcs.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -89,6 +89,22 @@ function cacheWithRefs(refs: Option.Option<VcsListRefsResult>) {
 }
 
 describe("cached VCS refs", () => {
+  it("disposes filtered and paginated ref pollers as soon as they become idle", () => {
+    expect(vcsRefsIdleTtl({ cwd: "/repo", limit: 100 })).toBe(5 * 60_000);
+    expect(vcsRefsIdleTtl({ cwd: "/repo", query: "release", limit: 100 })).toBe(0);
+    expect(vcsRefsIdleTtl({ cwd: "/repo", cursor: 100, limit: 100 })).toBe(0);
+    expect(vcsRefsIdleTtl({ cwd: "/repo", refKind: "local", limit: 100 })).toBe(0);
+  });
+
+  it("caps consecutive ref refresh failures at a five-minute backoff", () => {
+    expect(vcsRefsRefreshDelayMs(1)).toBe(30_000);
+    expect(vcsRefsRefreshDelayMs(2)).toBe(60_000);
+    expect(vcsRefsRefreshDelayMs(3)).toBe(120_000);
+    expect(vcsRefsRefreshDelayMs(4)).toBe(240_000);
+    expect(vcsRefsRefreshDelayMs(5)).toBe(300_000);
+    expect(vcsRefsRefreshDelayMs(100)).toBe(300_000);
+  });
+
   it.effect("loads an unfiltered branch list without a connection", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -155,13 +171,13 @@ describe("cached VCS refs", () => {
         }
         expect(yield* Ref.get(calls)).toBe(1);
 
-        yield* TestClock.adjust("5 seconds");
+        yield* TestClock.adjust("30 seconds");
         expect(Option.getOrThrow(yield* Fiber.join(fiber))).toEqual(LIVE_REFS);
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );
 
-  it.effect("revalidates connected refs every five seconds", () =>
+  it.effect("revalidates connected refs every thirty seconds", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const calls = yield* Ref.make(0);
@@ -193,8 +209,55 @@ describe("cached VCS refs", () => {
         }
         expect(yield* Ref.get(calls)).toBe(1);
 
-        yield* TestClock.adjust("5 seconds");
+        yield* TestClock.adjust("30 seconds");
         expect(Array.from(yield* Fiber.join(fiber))).toEqual([CACHED_REFS, LIVE_REFS]);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("backs off consecutive live refresh failures", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calls = yield* Ref.make(0);
+        const client = {
+          [WS_METHODS.vcsListRefs]: () =>
+            Ref.update(calls, (count) => count + 1).pipe(
+              Effect.andThen(Effect.fail({ _tag: "TestVcsRefsError" } as const)),
+            ),
+        } as unknown as WsRpcProtocolClient;
+        const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+          target: TARGET,
+          state: yield* SubscriptionRef.make(CONNECTED_CONNECTION_STATE),
+          session: yield* SubscriptionRef.make(Option.some(session(client))),
+          prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+          connect: Effect.void,
+          disconnect: Effect.void,
+          retryNow: Effect.void,
+        } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+        const polling = Stream.unwrap(
+          makeCachedVcsRefsChanges({ cwd: "/repo", limit: 100 }).pipe(
+            Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+            Effect.provideService(Persistence.EnvironmentCacheStore, cacheWithRefs(Option.none())),
+          ),
+        ).pipe(Stream.runDrain);
+        const fiber = yield* Effect.forkChild(polling);
+
+        for (let attempt = 0; attempt < 100 && (yield* Ref.get(calls)) < 1; attempt += 1) {
+          yield* Effect.yieldNow;
+        }
+        expect(yield* Ref.get(calls)).toBe(1);
+
+        yield* TestClock.adjust("29 seconds");
+        expect(yield* Ref.get(calls)).toBe(1);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Ref.get(calls)).toBe(2);
+
+        yield* TestClock.adjust("59 seconds");
+        expect(yield* Ref.get(calls)).toBe(2);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Ref.get(calls)).toBe(3);
+
+        yield* Fiber.interrupt(fiber);
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );
