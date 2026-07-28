@@ -38,6 +38,22 @@ const makeNonRepositoryHandle = () =>
     getOutputFd: () => Stream.empty,
   });
 
+const stdoutForRefSnapshotCommand = (args: ReadonlyArray<string>): string => {
+  const command = args.join(" ");
+  if (command === "branch --no-color --no-column") return "* main\n  release\n";
+  if (command === "branch --no-color --no-column --remotes") {
+    return "  origin/main\n  origin/release\n";
+  }
+  if (command === "remote") return "origin\n";
+  if (command === "symbolic-ref refs/remotes/origin/HEAD") {
+    return "refs/remotes/origin/main\n";
+  }
+  if (command.startsWith("for-each-ref ")) {
+    return "main\t2\nrelease\t1\norigin/main\t2\norigin/release\t1\n";
+  }
+  return "";
+};
+
 const makeTmpDir = (
   prefix = "git-vcs-driver-test-",
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem | Scope.Scope> =>
@@ -131,6 +147,87 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
       { args: ["rev-parse", "--abbrev-ref", "HEAD"], lcAll: "C" },
       { args: ["branch", "--no-color", "--no-column"], lcAll: "C" },
     ]);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("coalesces ref snapshots and limits ref-related Git subprocess concurrency", () => {
+  const commands: Array<ReadonlyArray<string>> = [];
+  let active = 0;
+  let maxActive = 0;
+  const spawner = ChildProcessSpawner.make((command) =>
+    Effect.sync(() => {
+      if (!ChildProcess.isStandardCommand(command)) {
+        return assert.fail("expected a standard Git command");
+      }
+      const args = [...command.args];
+      commands.push(args);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      return ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(commands.length),
+        exitCode: Effect.yieldNow.pipe(
+          Effect.as(ChildProcessSpawner.ExitCode(0)),
+          Effect.ensuring(
+            Effect.sync(() => {
+              active -= 1;
+            }),
+          ),
+        ),
+        isRunning: Effect.succeed(true),
+        kill: () => Effect.void,
+        unref: Effect.succeed(Effect.void),
+        stdin: Sink.drain,
+        stdout: Stream.encodeText(Stream.make(stdoutForRefSnapshotCommand(args))),
+        stderr: Stream.empty,
+        all: Stream.empty,
+        getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty,
+      });
+    }),
+  );
+  const nodeServicesLayer = Layer.merge(
+    NodeServices.layer,
+    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+  );
+  const layer = GitVcsDriver.layer.pipe(
+    Layer.provide(ServerConfigLayer),
+    Layer.provideMerge(nodeServicesLayer),
+  );
+
+  return Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const cwd = "/repo/coalesced";
+    const [filtered, remoteOnly] = yield* Effect.all(
+      [
+        driver.listRefs({ cwd, query: "release" }),
+        driver.listRefs({
+          cwd,
+          includeMatchingRemoteRefs: true,
+          refKind: "remote",
+        }),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    assert.deepStrictEqual(
+      filtered.refs.map((ref) => ref.name),
+      ["release"],
+    );
+    assert.deepStrictEqual(
+      remoteOnly.refs.map((ref) => ref.name),
+      ["origin/main", "origin/release"],
+    );
+    assert.equal(
+      commands.filter((args) => args.join(" ") === "branch --no-color --no-column").length,
+      1,
+    );
+    assert.equal(commands.length, 6);
+
+    yield* Effect.all(
+      ["/repo/a", "/repo/b", "/repo/c"].map((repoCwd) => driver.listRefs({ cwd: repoCwd })),
+      { concurrency: "unbounded" },
+    );
+    assert.isAtMost(maxActive, 4);
   }).pipe(Effect.provide(layer));
 });
 
@@ -639,6 +736,21 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           refs.refs.find((refName) => refName.name === "feature/renamed")?.current,
           true,
         );
+      }),
+    );
+
+    it.effect("invalidates a cached ref snapshot after a successful mutation", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const before = yield* driver.listRefs({ cwd });
+        assert.isFalse(before.refs.some((ref) => ref.name === "feature/cache-invalidation"));
+
+        yield* driver.createRef({ cwd, refName: "feature/cache-invalidation" });
+        const after = yield* driver.listRefs({ cwd });
+        assert.isTrue(after.refs.some((ref) => ref.name === "feature/cache-invalidation"));
       }),
     );
 

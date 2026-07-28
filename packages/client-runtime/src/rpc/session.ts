@@ -1,8 +1,10 @@
 import { type ServerConfig, WS_METHODS } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
@@ -21,6 +23,21 @@ import {
 } from "../connection/model.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
+const HEARTBEAT_INTERVAL = "15 seconds";
+const MAX_MISSED_PONGS = 3;
+
+interface HeartbeatDiagnostic {
+  readonly lastPingAtMs: number | null;
+  readonly lastPongAtMs: number | null;
+  readonly timedOutAtMs: number | null;
+}
+
+interface SocketCloseDiagnostic {
+  readonly bufferedAmount: number;
+  readonly code: number;
+  readonly extensions: string;
+  readonly wasClean: boolean;
+}
 
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
@@ -75,29 +92,111 @@ export const make = Effect.gen(function* () {
 
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
+    const connectedAtMs = yield* Clock.currentTimeMillis;
+    const heartbeatDiagnostic = yield* Ref.make<HeartbeatDiagnostic>({
+      lastPingAtMs: null,
+      lastPongAtMs: null,
+      timedOutAtMs: null,
+    });
+    let socketCloseDiagnostic: SocketCloseDiagnostic | null = null;
+    let socketErrorObserved = false;
+    const diagnosticWebSocketConstructor = (url: string, protocols?: string | Array<string>) => {
+      const socket = webSocketConstructor(url, protocols);
+      socket.addEventListener(
+        "close",
+        (event) => {
+          socketCloseDiagnostic = {
+            bufferedAmount: socket.bufferedAmount,
+            code: event.code,
+            extensions: socket.extensions,
+            wasClean: event.wasClean,
+          };
+        },
+        { once: true },
+      );
+      socket.addEventListener(
+        "error",
+        () => {
+          socketErrorObserved = true;
+        },
+        { once: true },
+      );
+      return socket;
+    };
     const hooks = RpcClient.ConnectionHooks.of({
       onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
-      onDisconnect: Deferred.isDone(connected).pipe(
-        Effect.flatMap((wasConnected) =>
-          Deferred.fail(
-            disconnected,
-            new ConnectionTransientErrorClass({
-              reason: "transport",
-              detail: wasConnected
+      onDisconnect: Effect.gen(function* () {
+        const wasConnected = yield* Deferred.isDone(connected);
+        const now = yield* Clock.currentTimeMillis;
+        const heartbeat = yield* Ref.get(heartbeatDiagnostic);
+        const timedOut = heartbeat.timedOutAtMs !== null;
+        if (wasConnected) {
+          yield* Effect.logWarning("Environment WebSocket disconnected.").pipe(
+            Effect.annotateLogs({
+              "environment.id": connection.environmentId,
+              "environment.label": connection.label,
+              "websocket.session_lifetime_ms": now - connectedAtMs,
+              "websocket.close_code": socketCloseDiagnostic?.code ?? "unavailable",
+              "websocket.close_clean": socketCloseDiagnostic?.wasClean ?? "unavailable",
+              "websocket.buffered_amount": socketCloseDiagnostic?.bufferedAmount ?? "unavailable",
+              "websocket.extensions": socketCloseDiagnostic?.extensions ?? "",
+              "websocket.error_observed": socketErrorObserved,
+              "websocket.heartbeat_timeout": timedOut,
+              "websocket.last_ping_at_ms": heartbeat.lastPingAtMs ?? "unavailable",
+              "websocket.last_pong_at_ms": heartbeat.lastPongAtMs ?? "unavailable",
+            }),
+          );
+        }
+        yield* Deferred.fail(
+          disconnected,
+          new ConnectionTransientErrorClass({
+            reason: timedOut ? "timeout" : "transport",
+            detail: timedOut
+              ? `${connection.label} timed out waiting for a heartbeat response.`
+              : wasConnected
                 ? `${connection.label} disconnected.`
                 : `${connection.label} could not establish a WebSocket connection.`,
-            }),
-          ),
+          }),
+        );
+      }).pipe(Effect.asVoid),
+      onPing: Clock.currentTimeMillis.pipe(
+        Effect.flatMap((lastPingAtMs) =>
+          Ref.update(heartbeatDiagnostic, (current) => ({ ...current, lastPingAtMs })),
         ),
-        Effect.asVoid,
       ),
+      onPong: Clock.currentTimeMillis.pipe(
+        Effect.flatMap((lastPongAtMs) =>
+          Ref.update(heartbeatDiagnostic, (current) => ({ ...current, lastPongAtMs })),
+        ),
+      ),
+      onPingTimeout: Effect.gen(function* () {
+        const timedOutAtMs = yield* Clock.currentTimeMillis;
+        const heartbeat = yield* Ref.updateAndGet(heartbeatDiagnostic, (current) => ({
+          ...current,
+          timedOutAtMs,
+        }));
+        yield* Effect.logWarning("Environment WebSocket heartbeat timed out.").pipe(
+          Effect.annotateLogs({
+            "environment.id": connection.environmentId,
+            "environment.label": connection.label,
+            "websocket.ping_interval_ms": 15_000,
+            "websocket.max_missed_pongs": MAX_MISSED_PONGS,
+            "websocket.last_ping_at_ms": heartbeat.lastPingAtMs ?? "unavailable",
+            "websocket.last_pong_at_ms": heartbeat.lastPongAtMs ?? "unavailable",
+          }),
+        );
+      }),
     });
     const socketLayer = Socket.layerWebSocket(connection.socketUrl, {
       openTimeout: SOCKET_OPEN_TIMEOUT,
-    }).pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, webSocketConstructor)));
+    }).pipe(
+      Layer.provide(Layer.succeed(Socket.WebSocketConstructor, diagnosticWebSocketConstructor)),
+    );
     const protocolLayer = Layer.effect(
       RpcClient.Protocol,
       RpcClient.makeProtocolSocket({
+        maxMissedPongs: MAX_MISSED_PONGS,
+        pingInterval: HEARTBEAT_INTERVAL,
         retryTransientErrors: false,
         retryPolicy: Schedule.recurs(0),
       }),
