@@ -71,6 +71,7 @@ import {
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
+  resolveTimelinePinnedMessageIndex,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapHeightStyle,
   resolveTimelineMinimapHitStripWidth,
@@ -81,7 +82,10 @@ import {
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
+  TIMELINE_PINNED_MESSAGE_FADED_REVEAL_OFFSET,
+  TIMELINE_PINNED_MESSAGE_REVEAL_OFFSET,
   type TimelineLatestTurn,
+  type TimelinePinnedRowMetrics,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -334,6 +338,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
+  const [pinnedMessageIndex, setPinnedMessageIndex] = useState<number | null>(null);
   const handleAnchorReady = useCallback(
     (info: { anchorIndex: number | undefined }) => {
       if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -359,6 +364,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       : undefined;
   }, [anchorMessageId, handleAnchorReady, handleAnchorSizeChanged, rows]);
 
+  const pinnedRevealOffset = topFadeEnabled
+    ? TIMELINE_PINNED_MESSAGE_FADED_REVEAL_OFFSET
+    : TIMELINE_PINNED_MESSAGE_REVEAL_OFFSET;
+
   const handleScroll = useCallback(() => {
     const state = listRef.current?.getState?.();
     const isAtEnd = resolveTimelineIsAtEnd(state);
@@ -366,20 +375,24 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onIsAtEndChange(isAtEnd, state?.isAtEnd ?? isAtEnd);
     }
     if (!state || minimapItems.length === 0) {
+      setPinnedMessageIndex(null);
       return;
     }
 
     const scrollTop = state.scroll ?? 0;
     const scrollBottom = scrollTop + (state.scrollLength ?? 0);
+    const pinnedRowMetrics: TimelinePinnedRowMetrics[] = [];
 
     for (const item of minimapItems) {
+      const rowTop = resolveTimelineRowTop(state, item.rowIndex);
+      const rowHeight = resolveTimelineRowHeight(state, item.rowIndex);
+      pinnedRowMetrics.push({ top: rowTop, height: rowHeight });
+
       const strip = minimapStripMap.get(item.id);
       if (!strip) {
         continue;
       }
 
-      const rowTop = resolveTimelineRowTop(state, item.rowIndex);
-      const rowHeight = resolveTimelineRowHeight(state, item.rowIndex);
       const inView =
         rowTop !== null &&
         rowTop < scrollBottom &&
@@ -387,7 +400,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
       strip.dataset.inView = inView ? "true" : "false";
     }
-  }, [listRef, minimapItems, minimapStripMap, onIsAtEndChange]);
+
+    const nextPinnedIndex = resolveTimelinePinnedMessageIndex({
+      revealOffset: pinnedRevealOffset,
+      rows: pinnedRowMetrics,
+      scrollTop,
+    });
+    setPinnedMessageIndex((current) => (current === nextPinnedIndex ? current : nextPinnedIndex));
+  }, [listRef, minimapItems, minimapStripMap, onIsAtEndChange, pinnedRevealOffset]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(handleScroll);
@@ -458,6 +478,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       latestTurnId: latestTurn?.turnId ?? null,
     }),
     [activeTurnInProgress, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
+  );
+
+  const pinnedMessageItem =
+    pinnedMessageIndex === null ? null : (minimapItems[pinnedMessageIndex] ?? null);
+
+  const jumpToTimelineItem = useCallback(
+    (item: TimelineMinimapItem) => {
+      onManualNavigation();
+      void listRef.current?.scrollToIndex({
+        index: item.rowIndex,
+        animated: true,
+        viewOffset: 24,
+      });
+    },
+    [listRef, onManualNavigation],
   );
 
   // Stable renderItem — no closure deps. Row components read shared state
@@ -541,20 +576,20 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             ListHeaderComponent={topFadeEnabled ? TIMELINE_LIST_FADE_HEADER : TIMELINE_LIST_HEADER}
             ListFooterComponent={TIMELINE_LIST_FOOTER}
           />
+          {pinnedMessageItem ? (
+            <TimelinePinnedUserMessage
+              item={pinnedMessageItem}
+              onSelect={jumpToTimelineItem}
+              topFadeEnabled={topFadeEnabled}
+            />
+          ) : null}
           <TimelineMinimap
             items={minimapItems}
             bottomInset={contentInsetEndAdjustment}
             hasPersistentGutter={minimapHasPersistentGutter}
             hitStripWidth={minimapHitStripWidth}
             stripMap={minimapStripMap}
-            onSelect={(item) => {
-              onManualNavigation();
-              void listRef.current?.scrollToIndex({
-                index: item.rowIndex,
-                animated: true,
-                viewOffset: 24,
-              });
-            }}
+            onSelect={jumpToTimelineItem}
           />
         </div>
       </TimelineRowActivityCtx>
@@ -638,6 +673,49 @@ function resolveTimelineRowTop(state: TimelinePositionState, rowIndex: number) {
 function resolveTimelineRowHeight(state: TimelinePositionState, rowIndex: number) {
   const height = state.sizeAtIndex?.(rowIndex);
   return typeof height === "number" && Number.isFinite(height) ? height : null;
+}
+
+/**
+ * Sticky scroll for the thread: once a prompt scrolls off the top, a compact
+ * copy stays pinned over the timeline so the question stays visible next to the
+ * answer. Clicking it jumps back to the message itself.
+ */
+function TimelinePinnedUserMessage({
+  item,
+  onSelect,
+  topFadeEnabled,
+}: {
+  item: TimelineMinimapItem;
+  onSelect: (item: TimelineMinimapItem) => void;
+  topFadeEnabled: boolean;
+}) {
+  const label = item.userText ?? "User message";
+
+  return (
+    <div
+      className={cn(
+        // Mirrors the list's own horizontal padding and centered content column
+        // so the pill lands exactly above the bubble it stands in for.
+        "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3 sm:px-5",
+        topFadeEnabled ? "top-1.5" : "top-1",
+      )}
+      data-testid="timeline-pinned-user-message"
+    >
+      <div className="flex w-full max-w-3xl justify-end">
+        <button
+          aria-label={`Jump to message: ${label}`}
+          className="pointer-events-auto flex min-w-0 max-w-[80%] cursor-pointer items-center gap-2 rounded-xl border border-border/40 bg-accent/90 px-3 py-1.5 text-left text-sm shadow-md shadow-black/10 backdrop-blur-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          data-timeline-pinned-message-id={item.id}
+          onClick={() => onSelect(item)}
+          title={label}
+          type="button"
+        >
+          <MessageCircleIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-50" />
+          <span className="min-w-0 truncate">{label}</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
