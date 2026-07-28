@@ -7,7 +7,7 @@
  * standalone Electron launcher).
  */
 export const AVICODE_IDENTITY = Object.freeze({
-  productName: "AviCode",
+  productName: "Avi Code",
   companyName: "Advisor Avi",
   appId: "com.advisoravi.avicode",
   developmentAppId: "com.advisoravi.avicode.dev",

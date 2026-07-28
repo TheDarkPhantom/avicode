@@ -548,7 +548,7 @@ export function AppearanceSettingsPanel() {
       <SettingsSection title="Appearance">
         <SettingsRow
           title="Private window titles"
-          description="Hide repository and thread names from AviCode's native title. Leave this off for ALFRED thread-aware time attribution."
+          description="Hide repository and thread names from Avi Code's native title. Leave this off for ALFRED thread-aware time attribution."
           control={
             <Switch
               checked={windowTitlePrivate}
@@ -562,7 +562,7 @@ export function AppearanceSettingsPanel() {
         />
         <SettingsRow
           title="Theme"
-          description="Choose how AviCode looks across the app."
+          description="Choose how Avi Code looks across the app."
           resetAction={
             theme !== "system" ? (
               <SettingResetButton label="theme" onClick={() => setTheme("system")} />

@@ -6,7 +6,7 @@
   },
   "releaseRepository": "TheDarkPhantom/avicode",
   "identity": {
-    "productName": "AviCode",
+    "productName": "Avi Code",
     "appId": "com.advisoravi.avicode",
     "protocol": "avicode://",
     "dataHome": "~/.avicode",

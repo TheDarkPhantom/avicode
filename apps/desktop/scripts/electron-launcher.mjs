@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "AviCode (Dev)" instead of "electron".
+// This file mostly exists because we want dev mode to say "Avi Code (Dev)" instead of "electron".
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -15,7 +15,7 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "AviCode (Dev)" : "AviCode (Alpha)";
+export const APP_DISPLAY_NAME = isDevelopment ? "Avi Code (Dev)" : "Avi Code (Alpha)";
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.advisoravi.avicode.dev.${devBundleIdSuffix || "local"}`
   : "com.advisoravi.avicode";

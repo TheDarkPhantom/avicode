@@ -1,10 +1,10 @@
-# FUTURE_ENHANCEMENTS — AviCode
+# FUTURE_ENHANCEMENTS — Avi Code
 
 Open work and deferred decisions. Structure: **where things stand → what is open → what shipped**.
 
 ## Where things stand
 
-AviCode is a personal Windows alpha. Codex and Claude use existing CLI authentication.
+Avi Code is a personal Windows alpha. Codex and Claude use existing CLI authentication.
 ActivityWatch is authoritative for human time; sessions and GitHub only enrich attribution.
 
 ## Worth doing next
@@ -13,7 +13,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 2. Add local, opt-in OCR for scanned PDFs.
 3. Add a document preview drawer with page/heading navigation.
 4. Add per-attachment inclusion controls for large extracted documents.
-5. Expand diagnostics with AviCode/upstream commits and ALFRED metadata status.
+5. Expand diagnostics with Avi Code/upstream commits and ALFRED metadata status.
 
 ## Deferred
 
@@ -22,7 +22,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.
-- Signed public Windows releases and an AviCode website.
+- Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
 
 ## Deliberate limits
