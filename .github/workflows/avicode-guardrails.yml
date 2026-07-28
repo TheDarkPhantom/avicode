@@ -40,6 +40,9 @@ jobs:
       - name: Install Electron runtime
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      - name: Build desktop bundles
+        run: vp run build:desktop
+
       - name: Run desktop smoke test
         run: vp run test:desktop-smoke
 
