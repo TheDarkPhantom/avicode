@@ -15,6 +15,7 @@ import {
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildThreadTurnInterruptInput,
+  canSubmitComposerSendContext,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -84,6 +85,26 @@ const readySession = {
   lastError: null,
   updatedAt: "2026-03-29T00:00:10.000Z",
 };
+
+describe("canSubmitComposerSendContext", () => {
+  it("uses the cached provider selection while the environment is disconnected", () => {
+    expect(
+      canSubmitComposerSendContext({
+        providerAvailable: false,
+        environmentUnavailable: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("still requires a live provider while connected", () => {
+    expect(
+      canSubmitComposerSendContext({
+        providerAvailable: false,
+        environmentUnavailable: false,
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("resolveThreadMetadataUpdateForNextTurn", () => {
   const modelSelection = {
