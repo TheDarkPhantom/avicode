@@ -140,7 +140,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             message: "the lint job is red",
             modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-mock-alt"),
           });
-          expect(generated.title).toBe("Investigate failing CI");
+          expect(generated.title).toBe("Investigate Failing CI");
         }),
     ),
   );
