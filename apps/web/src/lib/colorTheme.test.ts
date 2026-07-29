@@ -1,8 +1,8 @@
 // This suite reads the CSS and HTML on disk to guard the palette against
 // drift, so it needs the raw node builtins rather than Effect's FileSystem.
 // @effect-diagnostics nodeBuiltinImport:off
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -15,9 +15,12 @@ import {
   parseColorThemeId,
 } from "./colorTheme";
 
-const WEB_ROOT = join(import.meta.dirname, "..", "..");
-const themeCss = readFileSync(join(WEB_ROOT, "src", "styles", "colorThemes.css"), "utf8");
-const indexHtml = readFileSync(join(WEB_ROOT, "index.html"), "utf8");
+const WEB_ROOT = NodePath.join(import.meta.dirname, "..", "..");
+const themeCss = NodeFS.readFileSync(
+  NodePath.join(WEB_ROOT, "src", "styles", "colorThemes.css"),
+  "utf8",
+);
+const indexHtml = NodeFS.readFileSync(NodePath.join(WEB_ROOT, "index.html"), "utf8");
 
 const NON_DEFAULT_THEMES = COLOR_THEMES.filter((theme) => theme.id !== DEFAULT_COLOR_THEME);
 
