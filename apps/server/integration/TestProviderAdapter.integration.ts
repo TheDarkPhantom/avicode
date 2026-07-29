@@ -483,6 +483,22 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       });
     };
 
+    // Avi Code addition: conversation branching. Returns a deterministic
+    // provider thread id derived from the source thread and branch point so
+    // tests can assert which turn a fork was taken at.
+    const forkThread: ProviderAdapterShape<ProviderAdapterError>["forkThread"] = (
+      sourceThreadId,
+      lastTurnId,
+    ) => {
+      const state = sessions.get(sourceThreadId);
+      if (!state) {
+        return missingSessionEffect(provider, sourceThreadId);
+      }
+      return Effect.succeed({
+        providerThreadId: `${sourceThreadId}:fork:${lastTurnId ?? "root"}`,
+      });
+    };
+
     const stopAll: ProviderAdapterShape<ProviderAdapterError>["stopAll"] = () =>
       Effect.sync(() => {
         sessions.clear();
@@ -503,6 +519,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       hasSession,
       readThread,
       rollbackThread,
+      forkThread,
       stopAll,
       streamEvents: Stream.fromQueue(runtimeEvents),
     };

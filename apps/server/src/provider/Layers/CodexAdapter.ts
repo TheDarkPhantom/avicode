@@ -1873,6 +1873,20 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       })),
     );
 
+  // Avi Code addition: conversation branching. Forks the SOURCE thread's live
+  // provider session; the branch thread has no session of its own yet and will
+  // resume the returned provider thread id on first use.
+  const forkThread: CodexAdapterShape["forkThread"] = (sourceThreadId, lastTurnId) =>
+    requireSession(sourceThreadId).pipe(
+      Effect.flatMap((session) => session.runtime.forkThread(lastTurnId)),
+      Effect.mapError((cause) =>
+        cause._tag === "ProviderAdapterSessionNotFoundError"
+          ? cause
+          : mapCodexRuntimeError(sourceThreadId, "thread/fork", cause),
+      ),
+      Effect.map((providerThreadId) => ({ providerThreadId })),
+    );
+
   const rollbackThread: CodexAdapterShape["rollbackThread"] = (threadId, numTurns) => {
     if (!Number.isInteger(numTurns) || numTurns < 1) {
       return Effect.fail(
@@ -1985,6 +1999,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     interruptTurn,
     readThread,
     rollbackThread,
+    forkThread,
     respondToRequest,
     respondToUserInput,
     stopSession,

@@ -943,6 +943,116 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    // Avi Code addition: branch a conversation at an earlier user message.
+    // Emits against the NEW thread id so the branch is its own aggregate, then
+    // starts a turn there. The source thread is left completely untouched —
+    // that is what makes this the non-destructive counterpart to
+    // thread.checkpoint.revert.
+    case "thread.fork": {
+      const sourceThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (readModel.threads.some((thread) => thread.id === command.forkThreadId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.forkThreadId}' already exists; fork target must be a fresh thread id.`,
+        });
+      }
+      const forkPointIndex = sourceThread.messages.findIndex(
+        (message) => message.id === command.forkPointMessageId,
+      );
+      if (forkPointIndex === -1) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Message '${command.forkPointMessageId}' does not exist on thread '${command.threadId}'.`,
+        });
+      }
+      const forkPointMessage = sourceThread.messages[forkPointIndex];
+      if (forkPointMessage?.role !== "user") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Message '${command.forkPointMessageId}' is not a user message; only user messages can be branched.`,
+        });
+      }
+      // Pin the inherited prefix now. Resolving it at fork time keeps replays
+      // deterministic even if the source thread is later reverted.
+      const inheritedMessageIds = sourceThread.messages
+        .slice(0, forkPointIndex)
+        .map((message) => message.id);
+      const forkedEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.forkThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.forked",
+        payload: {
+          threadId: command.forkThreadId,
+          projectId: sourceThread.projectId,
+          forkedFrom: {
+            threadId: command.threadId,
+            messageId: command.forkPointMessageId,
+          },
+          title: sourceThread.title,
+          modelSelection: command.modelSelection ?? sourceThread.modelSelection,
+          runtimeMode: command.runtimeMode,
+          interactionMode: command.interactionMode,
+          // Branching never touches the working tree, so the branch shares the
+          // source thread's git branch and worktree.
+          branch: sourceThread.branch,
+          worktreePath: sourceThread.worktreePath,
+          inheritedMessageIds,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.forkThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: forkedEvent.eventId,
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.forkThreadId,
+          messageId: command.message.messageId,
+          role: "user",
+          text: command.message.text,
+          attachments: command.message.attachments,
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.forkThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: userMessageEvent.eventId,
+        type: "thread.turn-start-requested",
+        payload: {
+          threadId: command.forkThreadId,
+          messageId: command.message.messageId,
+          ...(command.modelSelection !== undefined
+            ? { modelSelection: command.modelSelection }
+            : {}),
+          runtimeMode: command.runtimeMode,
+          interactionMode: command.interactionMode,
+          createdAt: command.createdAt,
+        },
+      };
+      return [forkedEvent, userMessageEvent, turnStartRequestedEvent];
+    }
+
     case "thread.session.stop": {
       yield* requireThread({
         readModel,
