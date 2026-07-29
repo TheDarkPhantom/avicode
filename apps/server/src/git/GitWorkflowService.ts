@@ -2,6 +2,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+
 import {
   GitManagerError,
   GitCommandError,
@@ -29,6 +31,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as GitManager from "./GitManager.ts";
+import { repositoryLockKey, withRepositoryLock } from "./RepositoryActionLock.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -134,6 +137,10 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  // Read once here so the lock-key helper stays a pure function: the key must
+  // fold case on the case-insensitive hosts (Windows, macOS) and must not on
+  // Linux, and tests provide this reference explicitly.
+  const hostPlatform = yield* HostProcessPlatform;
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -157,7 +164,31 @@ export const make = Effect.gen(function* () {
         detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
       });
     }
+    // Returned rather than discarded so callers that mutate the repository can
+    // derive its lock key from the identity this resolve already paid for.
+    return handle;
   });
+
+  /**
+   * Routes a repository-MUTATING workflow: same driver check as
+   * `routeGitManager`, plus the repository's single permit held for the whole
+   * run. Concurrent agents finishing at once would otherwise interleave their
+   * commit / push / open-PR / auto-merge sequences on one repository.
+   */
+  const routeSerializedGitManager =
+    <Input extends { readonly cwd: string }, Output>(
+      operation: string,
+      run: (input: Input) => Effect.Effect<Output, GitManagerServiceError>,
+    ) =>
+    (input: Input) =>
+      ensureGit(operation, input.cwd).pipe(
+        Effect.flatMap((handle) =>
+          withRepositoryLock(
+            repositoryLockKey(handle.repository, { platform: hostPlatform }),
+            run(input),
+          ),
+        ),
+      );
 
   const ensureGitCommand = Effect.fn("GitWorkflowService.ensureGitCommand")(function* (
     operation: string,
@@ -277,15 +308,25 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
       ),
+    // Every stacked action mutates: commit, push, create_pr, commit_push,
+    // commit_push_pr, auto_merge. Serialized as a whole rather than per phase,
+    // because the damage comes from two agents interleaving phases.
     runStackedAction: (input, options) =>
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
-        Effect.andThen(gitManager.runStackedAction(input, options)),
+        Effect.flatMap((handle) =>
+          withRepositoryLock(
+            repositoryLockKey(handle.repository, { platform: hostPlatform }),
+            gitManager.runStackedAction(input, options),
+          ),
+        ),
       ),
+    // Read-only: resolving a PR never touches the repository, so it must not
+    // queue behind an agent that is mid-merge.
     resolvePullRequest: routeGitManager(
       "GitWorkflowService.resolvePullRequest",
       gitManager.resolvePullRequest,
     ),
-    preparePullRequestThread: routeGitManager(
+    preparePullRequestThread: routeSerializedGitManager(
       "GitWorkflowService.preparePullRequestThread",
       gitManager.preparePullRequestThread,
     ),
