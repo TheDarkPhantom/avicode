@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import { type ScopedThreadRef, type T3ProjectAutoMerge } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -95,6 +95,7 @@ interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
   draftId?: DraftId;
+  autoMergePolicy: T3ProjectAutoMerge | null;
 }
 
 interface PendingDefaultBranchAction {
@@ -134,6 +135,10 @@ interface RunGitActionWithToastInput {
   featureBranch?: boolean;
   progressToastId?: GitActionToastId;
   filePaths?: string[];
+  autoMerge?: {
+    promotionRefs: string[];
+    requireFinalApproval: boolean;
+  };
 }
 
 const GIT_STATUS_WINDOW_REFRESH_DEBOUNCE_MS = 250;
@@ -971,6 +976,7 @@ export default function GitActionsControl({
   gitCwd,
   activeThreadRef,
   draftId,
+  autoMergePolicy,
 }: GitActionsControlProps) {
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -1149,11 +1155,48 @@ export default function GitActionsControl({
     () => buildMenuItems(gitStatusForActions, isGitActionRunning, hasPrimaryRemote),
     [gitStatusForActions, hasPrimaryRemote, isGitActionRunning],
   );
-  const quickAction = useMemo(
-    () =>
-      resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultRef, hasPrimaryRemote),
-    [gitStatusForActions, hasPrimaryRemote, isDefaultRef, isGitActionRunning],
-  );
+  const threadHasWorktree =
+    (activeServerThread?.worktreePath ?? activeDraftThread?.worktreePath ?? null) !== null;
+  const quickAction = useMemo(() => {
+    if (
+      autoMergePolicy &&
+      threadHasWorktree &&
+      gitStatusForActions?.refName &&
+      !isDefaultRef &&
+      hasPrimaryRemote
+    ) {
+      const hasWork =
+        gitStatusForActions.hasWorkingTreeChanges ||
+        gitStatusForActions.aheadCount > 0 ||
+        (gitStatusForActions.aheadOfDefaultCount ?? 0) > 0;
+      return hasWork
+        ? ({
+            label: "Auto merge",
+            disabled: isGitActionRunning,
+            kind: "run_action",
+            action: "auto_merge",
+          } satisfies GitQuickAction)
+        : ({
+            label: "Auto merge",
+            disabled: true,
+            kind: "show_hint",
+            hint: "Branch is up to date. No action needed.",
+          } satisfies GitQuickAction);
+    }
+    return resolveQuickAction(
+      gitStatusForActions,
+      isGitActionRunning,
+      isDefaultRef,
+      hasPrimaryRemote,
+    );
+  }, [
+    autoMergePolicy,
+    gitStatusForActions,
+    hasPrimaryRemote,
+    isDefaultRef,
+    isGitActionRunning,
+    threadHasWorktree,
+  ]);
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
     : null;
@@ -1254,12 +1297,16 @@ export default function GitActionsControl({
       featureBranch = false,
       progressToastId,
       filePaths,
+      autoMerge,
     }: RunGitActionWithToastInput) => {
       const actionStatus = statusOverride ?? gitStatusForActions;
       const actionBranch = actionStatus?.refName ?? null;
       const actionIsDefaultBranch = featureBranch ? false : isDefaultRef;
       const actionCanCommit =
-        action === "commit" || action === "commit_push" || action === "commit_push_pr";
+        action === "commit" ||
+        action === "commit_push" ||
+        action === "commit_push_pr" ||
+        action === "auto_merge";
       const includesCommit =
         actionCanCommit &&
         (action === "commit" || !!actionStatus?.hasWorkingTreeChanges || featureBranch);
@@ -1394,6 +1441,7 @@ export default function GitActionsControl({
         ...(commitMessage ? { commitMessage } : {}),
         ...(featureBranch ? { featureBranch } : {}),
         ...(filePaths ? { filePaths } : {}),
+        ...(autoMerge ? { autoMerge } : {}),
         onProgress: applyProgressEvent,
       });
 
@@ -1583,7 +1631,17 @@ export default function GitActionsControl({
       return;
     }
     if (quickAction.action) {
-      void runGitActionWithToast({ action: quickAction.action });
+      void runGitActionWithToast({
+        action: quickAction.action,
+        ...(quickAction.action === "auto_merge" && autoMergePolicy
+          ? {
+              autoMerge: {
+                promotionRefs: [...(autoMergePolicy.promotionRefs ?? ["main"])],
+                requireFinalApproval: autoMergePolicy.requireMainApproval ?? false,
+              },
+            }
+          : {}),
+      });
     }
   };
 

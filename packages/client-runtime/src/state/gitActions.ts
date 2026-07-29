@@ -41,7 +41,7 @@ export type DefaultBranchConfirmableAction =
 
 export type GitActionRequestInput = Pick<
   GitRunStackedActionInput,
-  "action" | "commitMessage" | "featureBranch" | "filePaths"
+  "action" | "commitMessage" | "featureBranch" | "filePaths" | "autoMerge"
 >;
 
 export function buildGitActionProgressStages(input: {
@@ -65,6 +65,14 @@ export function buildGitActionProgressStages(input: {
   }
   if (input.action === "create_pr") {
     return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
+  }
+  if (input.action === "auto_merge") {
+    const commitStages = input.hasWorkingTreeChanges
+      ? input.hasCustomCommitMessage
+        ? ["Committing..."]
+        : ["Generating commit message...", "Committing..."]
+      : [];
+    return [...branchStages, ...commitStages, pushStage, ...prStages, "Merging promotions..."];
   }
 
   const shouldIncludeCommitStages = input.action === "commit" || input.hasWorkingTreeChanges;
