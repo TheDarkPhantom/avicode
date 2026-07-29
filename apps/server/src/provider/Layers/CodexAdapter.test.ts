@@ -1208,6 +1208,61 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("normalizes a real captured Codex rate-limit payload", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      // Captured verbatim from a live session's provider log. Two details a
+      // hand-written fixture missed: `secondary` is null (only one window is
+      // reported), and `primary` is a *weekly* window — the slot name carries
+      // no duration meaning, which is why the label is derived from
+      // `windowDurationMins` instead.
+      yield* runtime.emit({
+        id: asEventId("evt-codex-rate-limits-real"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-07-29T12:00:00.000Z",
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            credits: { balance: "0", hasCredits: false, unlimited: false },
+            individualLimit: null,
+            limitId: "codex",
+            limitName: null,
+            planType: "plus",
+            primary: { resetsAt: 1_785_875_443, usedPercent: 48, windowDurationMins: 10_080 },
+            rateLimitReachedType: null,
+            secondary: null,
+            spendControlReached: null,
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "account.rate-limits.updated") {
+        NodeAssert.fail("expected an account.rate-limits.updated event");
+        return;
+      }
+
+      NodeAssert.deepEqual(firstEvent.value.payload.quota, {
+        windows: [
+          {
+            id: "primary",
+            label: "Weekly",
+            usedPercent: 48,
+            resetsAt: "2026-08-04T20:30:43.000Z",
+            windowMinutes: 10_080,
+          },
+        ],
+        planType: "plus",
+        status: "ok",
+        capturedAt: "2026-07-29T12:00:00.000Z",
+      });
+    }),
+  );
+
   it.effect("marks every window exhausted once Codex reports a limit was reached", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
