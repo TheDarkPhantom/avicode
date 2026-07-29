@@ -2,6 +2,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+
 import {
   GitManagerError,
   GitCommandError,
@@ -135,6 +137,10 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  // Read once here so the lock-key helper stays a pure function: the key must
+  // fold case on the case-insensitive hosts (Windows, macOS) and must not on
+  // Linux, and tests provide this reference explicitly.
+  const hostPlatform = yield* HostProcessPlatform;
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -177,7 +183,10 @@ export const make = Effect.gen(function* () {
     (input: Input) =>
       ensureGit(operation, input.cwd).pipe(
         Effect.flatMap((handle) =>
-          withRepositoryLock(repositoryLockKey(handle.repository), run(input)),
+          withRepositoryLock(
+            repositoryLockKey(handle.repository, { platform: hostPlatform }),
+            run(input),
+          ),
         ),
       );
 
@@ -306,7 +315,7 @@ export const make = Effect.gen(function* () {
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
         Effect.flatMap((handle) =>
           withRepositoryLock(
-            repositoryLockKey(handle.repository),
+            repositoryLockKey(handle.repository, { platform: hostPlatform }),
             gitManager.runStackedAction(input, options),
           ),
         ),

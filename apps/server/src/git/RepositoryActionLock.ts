@@ -62,7 +62,10 @@ export function repositoryLockKey(
     readonly metadataPath: string | null;
     readonly rootPath: string;
   },
-  options?: { readonly platform?: NodeJS.Platform },
+  // Required rather than defaulted from `process.platform`: this module stays
+  // pure, and the caller already sits in Effect where `HostProcessPlatform`
+  // supplies the host platform (and lets tests provide it explicitly).
+  options: { readonly platform: NodeJS.Platform },
 ): string {
   const metadataPath = repository.metadataPath;
   // `rev-parse --git-common-dir` may answer relatively (plain ".git" from the
@@ -79,8 +82,7 @@ export function repositoryLockKey(
   const normalized = normalizePathKey(raw);
   // Windows and macOS default to case-insensitive filesystems, where two
   // spellings of one path are one repository and must not buy two permits.
-  const platform = options?.platform ?? process.platform;
-  return platform === "linux" ? normalized : normalized.toLowerCase();
+  return options.platform === "linux" ? normalized : normalized.toLowerCase();
 }
 
 /**
