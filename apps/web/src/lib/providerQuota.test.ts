@@ -7,6 +7,9 @@ import {
   formatResetsIn,
   isQuotaAlarming,
   orderQuotaWindows,
+  quotaRemainingColor,
+  quotaRemainingGradient,
+  quotaRemainingPercent,
   selectProviderInstanceLabel,
   selectProviderQuota,
 } from "./providerQuota";
@@ -118,7 +121,7 @@ describe("orderQuotaWindows", () => {
 });
 
 describe("formatQuotaSummaryLine", () => {
-  it("names the window that will bite first", () => {
+  it("names the window that will bite first, phrased as remaining", () => {
     expect(
       formatQuotaSummaryLine(
         quota([
@@ -127,18 +130,55 @@ describe("formatQuotaSummaryLine", () => {
         ]),
         NOW,
       ),
-    ).toBe("Weekly 62% · resets in 3d 4h");
+    ).toBe("Weekly 38% left · resets in 3d 4h");
   });
 
   it("omits the reset clause when the provider did not report one", () => {
     expect(formatQuotaSummaryLine(quota([{ id: "a", label: "Weekly", usedPercent: 5 }]), NOW)).toBe(
-      "Weekly 5%",
+      "Weekly 95% left",
     );
   });
 
   it("returns null when there is no quota to summarize", () => {
     expect(formatQuotaSummaryLine(null, NOW)).toBeNull();
     expect(formatQuotaSummaryLine(quota([]), NOW)).toBeNull();
+  });
+});
+
+describe("quotaRemainingPercent", () => {
+  it.each([
+    [0, 100],
+    [62, 38],
+    [100, 0],
+  ])("turns %s%% used into %s%% remaining", (used, expected) => {
+    expect(quotaRemainingPercent({ id: "a", label: "a", usedPercent: used })).toBe(expected);
+  });
+});
+
+describe("quota colour ramp", () => {
+  it("is bright green when full and bright red when empty", () => {
+    expect(quotaRemainingColor(100)).toBe("hsl(140.0 90% 50%)");
+    expect(quotaRemainingColor(0)).toBe("hsl(0.0 90% 50%)");
+  });
+
+  it("passes through yellow rather than brown in the midrange", () => {
+    // A straight green→red RGB blend muddies here; sweeping hue keeps it clean.
+    const hue = Number(/hsl\(([\d.]+)/.exec(quotaRemainingColor(43))?.[1]);
+    expect(hue).toBeGreaterThan(55);
+    expect(hue).toBeLessThan(65);
+  });
+
+  it("descends monotonically from green to red", () => {
+    const hues = [100, 75, 50, 25, 0].map((remaining) =>
+      Number(/hsl\(([\d.]+)/.exec(quotaRemainingColor(remaining))?.[1]),
+    );
+    expect(hues).toEqual([...hues].sort((left, right) => right - left));
+  });
+
+  it("builds a vertical gradient sharing the level's hue", () => {
+    const gradient = quotaRemainingGradient(100);
+    expect(gradient).toContain("linear-gradient(to bottom");
+    expect(gradient.match(/hsl\(140\.0/g)).toHaveLength(2);
   });
 });
 
