@@ -25,6 +25,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Colour theme selection is per-browser localStorage, so it does not sync across devices the way
   `ClientSettings` does. Moving it into `ClientSettingsSchema` needs a pre-paint story first —
   client settings hydrate asynchronously, which would repaint the app a frame after load.
+- The Avi Code Shortcuts tab is component state, so it is not deep-linkable and resets when you
+  leave the page. A search param would fix it, but `/settings/avicode` is a fork-owned route whose
+  params upstream does not know about.
+- The Shortcuts tab's "Built in" list is hand-maintained (`AviCodeShortcuts.logic.ts`) because those
+  chords are wired into components rather than declared anywhere enumerable. It can drift from the
+  code; each entry names its implementation file so the list can be re-checked.
 - Explorer drag progress and cancellation.
 - DOCX, CSV, JSON, and source archives.
 - Encrypted PDF password prompts without persistence.

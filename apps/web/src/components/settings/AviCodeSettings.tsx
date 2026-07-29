@@ -57,6 +57,8 @@ import {
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
+import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -446,7 +448,10 @@ function resultToast(result: DesktopLegacyT3ImportResult) {
   );
 }
 
+type AviCodeSettingsTab = "settings" | "shortcuts";
+
 export function AviCodeSettings() {
+  const [tab, setTab] = useState<AviCodeSettingsTab>("settings");
   const [status, setStatus] = useState<DesktopLegacyT3ImportStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
@@ -504,51 +509,77 @@ export function AviCodeSettings() {
 
   return (
     <SettingsPageContainer>
-      <ColorThemeSettings />
-      <SidebarLayoutSettings />
-      <NotificationSettings />
-      <TimeLoggingSettings />
-      <ChatListSettings />
-      <ProjectIsolationSettings />
+      {/*
+       * Avi Code addition. Two views on one page: the fork's settings, and a
+       * read-only shortcut reference. The reference is deliberately not a
+       * sidebar entry — upstream owns that nav list, and the Keybindings page
+       * already sits there as the editor.
+       */}
+      <ToggleGroup
+        className="self-start"
+        variant="outline"
+        size="xs"
+        value={[tab]}
+        onValueChange={(value) => {
+          const next = value[0];
+          if (next === "settings" || next === "shortcuts") setTab(next);
+        }}
+      >
+        <ToggleGroupItem value="settings">Settings</ToggleGroupItem>
+        <ToggleGroupItem value="shortcuts">Shortcuts</ToggleGroupItem>
+      </ToggleGroup>
 
-      <VoiceSettingsSection />
+      {tab === "shortcuts" ? <AviCodeShortcutsPanel /> : null}
 
-      <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
-        <SettingsRow
-          title="Import from T3 Code"
-          description="Refresh Avi Code with the latest projects, threads, messages, and attachments from your local T3 Code workspace."
-          status={
-            canImport
-              ? legacyT3ImportStatusDescription(status)
-              : "Available in the Avi Code desktop app."
-          }
-          control={
-            <Button
-              size="sm"
-              disabled={!canImport || isLoading || isImporting || status?.available !== true}
-              onClick={() => void importLatest()}
-            >
-              {isImporting ? (
-                <LoaderIcon className="size-4 animate-spin" />
-              ) : (
-                <RefreshCwIcon className="size-4" />
-              )}
-              {isImporting ? "Importing…" : "Import latest"}
-            </Button>
-          }
-        />
-      </SettingsSection>
+      {tab !== "settings" ? null : (
+        <>
+          <ColorThemeSettings />
+          <SidebarLayoutSettings />
+          <NotificationSettings />
+          <TimeLoggingSettings />
+          <ChatListSettings />
+          <ProjectIsolationSettings />
 
-      <SettingsSection title="Import safety" icon={<DatabaseBackupIcon className="size-5" />}>
-        <SettingsRow
-          title="Avi Code data is backed up first"
-          description="The import replaces Avi Code’s conversation database with a consistent T3 Code snapshot. Provider instances and other Avi Code settings stay unchanged. A timestamped backup is created before replacement."
-        />
-        <SettingsRow
-          title="Active turns"
-          description="Finish active Claude or Codex turns before importing. The local Avi Code backend restarts automatically after the snapshot is installed."
-        />
-      </SettingsSection>
+          <VoiceSettingsSection />
+
+          <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
+            <SettingsRow
+              title="Import from T3 Code"
+              description="Refresh Avi Code with the latest projects, threads, messages, and attachments from your local T3 Code workspace."
+              status={
+                canImport
+                  ? legacyT3ImportStatusDescription(status)
+                  : "Available in the Avi Code desktop app."
+              }
+              control={
+                <Button
+                  size="sm"
+                  disabled={!canImport || isLoading || isImporting || status?.available !== true}
+                  onClick={() => void importLatest()}
+                >
+                  {isImporting ? (
+                    <LoaderIcon className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCwIcon className="size-4" />
+                  )}
+                  {isImporting ? "Importing…" : "Import latest"}
+                </Button>
+              }
+            />
+          </SettingsSection>
+
+          <SettingsSection title="Import safety" icon={<DatabaseBackupIcon className="size-5" />}>
+            <SettingsRow
+              title="Avi Code data is backed up first"
+              description="The import replaces Avi Code’s conversation database with a consistent T3 Code snapshot. Provider instances and other Avi Code settings stay unchanged. A timestamped backup is created before replacement."
+            />
+            <SettingsRow
+              title="Active turns"
+              description="Finish active Claude or Codex turns before importing. The local Avi Code backend restarts automatically after the snapshot is installed."
+            />
+          </SettingsSection>
+        </>
+      )}
     </SettingsPageContainer>
   );
 }
