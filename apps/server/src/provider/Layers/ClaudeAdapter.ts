@@ -219,10 +219,12 @@ interface ClaudeSessionContext {
    * runtime captured at session start instead — the same `runFork` the stream
    * fiber and deferred resolutions already use.
    *
-   * Failures are discarded by construction: this is for background telemetry,
-   * which must never take down the session that spawned it.
+   * Generic in the error type rather than taking `unknown`, so callers keep a
+   * typed error channel right up to the point this discards it. Failures are
+   * dropped by construction: this is background telemetry, which must never
+   * take down the session that spawned it.
    */
-  readonly forkDetached: (effect: Effect.Effect<void, unknown>) => void;
+  readonly forkDetached: <E>(effect: Effect.Effect<void, E>) => void;
   stopped: boolean;
 }
 
