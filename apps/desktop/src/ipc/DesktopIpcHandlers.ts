@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
+import { getLegacyT3ImportStatus, importLegacyT3Data } from "./methods/legacyT3Import.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
@@ -55,6 +56,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
+  yield* ipc.handle(getLegacyT3ImportStatus);
+  yield* ipc.handle(importLegacyT3Data);
   yield* ipc.handle(getConnectionCatalog);
   yield* ipc.handle(setConnectionCatalog);
   yield* ipc.handle(clearConnectionCatalog);

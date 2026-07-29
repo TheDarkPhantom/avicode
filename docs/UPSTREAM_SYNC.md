@@ -69,6 +69,16 @@ tests. From that point, deleting or bypassing the feature fails the required
 This avoids claiming that an absent feature passed a regression test while
 still making enforcement part of the feature's definition of done.
 
+### Connection-stability divergence
+
+AviCode intentionally does not apply the
+`@effect/platform-node@4.0.0-beta.102` patch that enables WebSocket
+`permessage-deflate`. That post-stable upstream change compressed even small
+RPC control frames and could delay heartbeat Pong frames behind zlib work.
+Keep the Node patched-dependency entry disabled during upstream synchronization
+unless a later Effect release exposes a configuration that preserves
+uncompressed control traffic. The Bun patch is independent and remains active.
+
 ## Required verification
 
 All PRs run the lightweight boundary checker:

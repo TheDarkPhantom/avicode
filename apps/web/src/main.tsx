@@ -11,6 +11,7 @@ import "@fontsource/jetbrains-mono/500.css";
 import "@xterm/xterm/css/xterm.css";
 import "./index.css";
 
+import { restorePersistedAppZoomLevel } from "./appZoom";
 import { isElectron } from "./env";
 import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
@@ -29,6 +30,9 @@ const router = getRouter(history);
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
   syncDocumentWindowControlsOverlayClass();
+  // Electron resets the frame to 100% on every load, so the persisted level has
+  // to be re-applied before first paint to avoid a visible resize.
+  restorePersistedAppZoomLevel();
 }
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;

@@ -416,7 +416,7 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
 
-          expect(generated.title).toBe("Investigate websocket reconnect regressions aft...");
+          expect(generated.title).toBe("Investigate Websocket Reconnect Regressions Aft...");
         }),
     ),
   );
@@ -436,7 +436,7 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
 
-          expect(generated.title).toBe("New thread");
+          expect(generated.title).toBe("New Thread");
         }),
     ),
   );
@@ -456,7 +456,7 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
 
-          expect(generated.title).toBe("hello world");
+          expect(generated.title).toBe("Hello World");
         }),
     ),
   );

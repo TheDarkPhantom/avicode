@@ -26,6 +26,7 @@ type SocketEvent = {
   readonly data?: unknown;
   readonly reason?: string;
   readonly type: SocketEventType;
+  readonly wasClean?: boolean;
 };
 type SocketListener = (event: SocketEvent) => void;
 
@@ -36,6 +37,8 @@ class TestWebSocket {
   static readonly CLOSED = 3;
 
   readyState = TestWebSocket.CONNECTING;
+  bufferedAmount = 0;
+  extensions = "";
   readonly sent: string[] = [];
   readonly url: string;
   private readonly listeners = new Map<SocketEventType, Set<SocketListener>>();
@@ -63,7 +66,7 @@ class TestWebSocket {
       return;
     }
     this.readyState = TestWebSocket.CLOSED;
-    this.emit("close", { code, reason, type: "close" });
+    this.emit("close", { code, reason, type: "close", wasClean: code === 1000 });
   }
 
   open() {
@@ -191,6 +194,14 @@ const awaitRequest = Effect.fn("TestRpcSessionFactory.awaitRequest")(function* (
   }
   return yield* Effect.die(new Error("Expected the RPC protocol to send a request."));
 });
+
+const countSentMessages = (socket: TestWebSocket, tag: string) =>
+  socket.sent.filter((message) => {
+    const decoded = decodeJson(message);
+    return typeof decoded === "object" && decoded !== null && "_tag" in decoded
+      ? decoded._tag === tag
+      : false;
+  }).length;
 
 const completeInitialConfig = Effect.fn("TestRpcSessionFactory.completeInitialConfig")(function* (
   socket: TestWebSocket,
@@ -348,5 +359,83 @@ describe("RpcSessionFactory", () => {
       });
       expect(sockets[0]?.readyState).toBe(TestWebSocket.CLOSED);
     }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("times out after three consecutive missed heartbeat responses", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const closedFiber = yield* Effect.forkChild(Effect.flip(session.closed));
+        yield* TestClock.adjust("15 seconds");
+        expect(countSentMessages(socket, "Ping")).toBe(1);
+
+        yield* TestClock.adjust("45 seconds");
+        const error = yield* Fiber.join(closedFiber);
+        expect(error).toBeInstanceOf(ConnectionTransientError);
+        expect(error).toMatchObject({
+          reason: "timeout",
+          message: "Test environment timed out waiting for a heartbeat response.",
+        });
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("recovers when a Pong arrives before the missed-heartbeat budget expires", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const closedFiber = yield* Effect.forkChild(session.closed);
+        yield* TestClock.adjust("30 seconds");
+        expect(countSentMessages(socket, "Ping")).toBe(2);
+        socket.serverMessage(encodeJson({ _tag: "Pong" }));
+        yield* Effect.yieldNow;
+
+        yield* TestClock.adjust("45 seconds");
+        expect(closedFiber.pollUnsafe()).toBeUndefined();
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("treats any decoded inbound RPC frame as proof of liveness", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const closedFiber = yield* Effect.forkChild(session.closed);
+        yield* TestClock.adjust("45 seconds");
+        expect(countSentMessages(socket, "Ping")).toBe(3);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Exit",
+            requestId: "unowned-request",
+            exit: { _tag: "Success", value: {} },
+          }),
+        );
+        yield* Effect.yieldNow;
+
+        yield* TestClock.adjust("45 seconds");
+        expect(closedFiber.pollUnsafe()).toBeUndefined();
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
   );
 });

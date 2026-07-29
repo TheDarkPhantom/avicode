@@ -14,6 +14,7 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
+  resolveMouseBackForwardThreadNavigationTarget,
   resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarV2Status,
@@ -22,6 +23,7 @@ import {
   formatWorkingDurationLabel,
   shouldNavigateAfterProjectRemoval,
   shouldClearThreadSelectionOnMouseDown,
+  threadTraversalDirectionFromMouseButton,
   sortLogicalProjectsForSidebar,
   sortSettledThreadsForSidebarV2,
   sortThreadsForSidebarV2,
@@ -514,6 +516,92 @@ describe("resolveAdjacentThreadId", () => {
   });
 });
 
+describe("threadTraversalDirectionFromMouseButton", () => {
+  it("maps mouse history buttons to sidebar traversal directions", () => {
+    expect(threadTraversalDirectionFromMouseButton(3)).toBe("previous");
+    expect(threadTraversalDirectionFromMouseButton(4)).toBe("next");
+    expect(threadTraversalDirectionFromMouseButton(0)).toBeNull();
+    expect(threadTraversalDirectionFromMouseButton(1)).toBeNull();
+    expect(threadTraversalDirectionFromMouseButton(2)).toBeNull();
+  });
+});
+
+describe("resolveMouseBackForwardThreadNavigationTarget", () => {
+  const threads = [ThreadId.make("thread-1"), ThreadId.make("thread-2"), ThreadId.make("thread-3")];
+
+  it("resolves enabled mouse history buttons against the visible sidebar order", () => {
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: true,
+        active: true,
+        button: 3,
+        threadIds: threads,
+        currentThreadId: threads[1] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: true, targetThreadId: threads[0] });
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: true,
+        active: true,
+        button: 4,
+        threadIds: threads,
+        currentThreadId: threads[1] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: true, targetThreadId: threads[2] });
+  });
+
+  it("does not intercept when disabled, inactive, or not a mouse history button", () => {
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: false,
+        active: true,
+        button: 3,
+        threadIds: threads,
+        currentThreadId: threads[1] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: false, targetThreadId: null });
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: true,
+        active: false,
+        button: 3,
+        threadIds: threads,
+        currentThreadId: threads[1] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: false, targetThreadId: null });
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: true,
+        active: true,
+        button: 0,
+        threadIds: threads,
+        currentThreadId: threads[1] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: false, targetThreadId: null });
+  });
+
+  it("intercepts history buttons at list boundaries without navigating", () => {
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: true,
+        active: true,
+        button: 3,
+        threadIds: threads,
+        currentThreadId: threads[0] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: true, targetThreadId: null });
+    expect(
+      resolveMouseBackForwardThreadNavigationTarget({
+        enabled: true,
+        active: true,
+        button: 4,
+        threadIds: threads,
+        currentThreadId: threads[2] ?? null,
+      }),
+    ).toEqual({ shouldPreventDefault: true, targetThreadId: null });
+  });
+});
+
 describe("getVisibleSidebarThreadIds", () => {
   it("returns only the rendered visible thread order across projects", () => {
     expect(
@@ -598,7 +686,7 @@ describe("resolveSidebarV2Status", () => {
     updatedAt: "2026-03-09T10:00:00.000Z",
   };
 
-  const idle = { hasPendingApprovals: false, hasPendingUserInput: false };
+  const idle = { hasPendingApprovals: false, hasPendingUserInput: false, latestTurn: null };
 
   it("prioritizes approval over a running session", () => {
     expect(resolveSidebarV2Status({ ...idle, hasPendingApprovals: true, session })).toBe(

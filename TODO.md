@@ -13,6 +13,8 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Remove active T3 wordmarks and visible upstream product copy from desktop/web surfaces.
 - [x] Guard user-facing source against accidental T3 branding during upstream sync.
 - [x] Copy-only first-launch T3 import with Import, Start Fresh, and Not Now choices.
+- [x] Repeatable Settings → Avi Code import with online snapshot, attachment copy, backup, and
+      backend restart.
 - [x] PDF, TXT, and Markdown extraction and attachment metadata.
 - [x] Repository/thread native window titles and privacy mode.
 - [x] ALFRED-safe session metadata.

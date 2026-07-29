@@ -22,6 +22,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.
+- Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
 
@@ -39,3 +40,4 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-28: identity, branding, updater boundary, and T3 import.
 - 2026-07-28: PDF/TXT/Markdown attachments.
 - 2026-07-28: ALFRED metadata and privacy mode.
+- 2026-07-29: repeatable, backed-up T3 workspace refresh from Avi Code settings.

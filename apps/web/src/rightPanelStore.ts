@@ -40,7 +40,7 @@ export type RightPanelSurface =
   | { id: "plan"; kind: "plan" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 7;
+const RIGHT_PANEL_STORAGE_VERSION = 8;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -48,8 +48,41 @@ export interface ThreadRightPanelState {
   surfaces: RightPanelSurface[];
 }
 
+/**
+ * The last deliberate open/close the user performed, carried across threads so
+ * the panel can follow them when `rightPanelFollowsThreads` is enabled.
+ *
+ * Only the visibility flag and a *reproducible* surface kind travel. Surfaces
+ * themselves are inherently thread-scoped — a file path, terminal session, or
+ * preview tab from one thread is meaningless in another — so a thread adopting
+ * the preference opens its own instance of `preferredKind` instead.
+ */
+export interface RightPanelVisibilityPreference {
+  isOpen: boolean;
+  preferredKind: RightPanelFollowKind | null;
+}
+
+/**
+ * Surface kinds a different thread can recreate from nothing. `file` and
+ * `terminal` are excluded because they are bound to a path or session id.
+ */
+export const RIGHT_PANEL_FOLLOW_KINDS = ["diff", "files", "plan", "preview"] as const;
+export type RightPanelFollowKind = (typeof RIGHT_PANEL_FOLLOW_KINDS)[number];
+
+function isFollowKind(kind: RightPanelKind): kind is RightPanelFollowKind {
+  return (RIGHT_PANEL_FOLLOW_KINDS as readonly RightPanelKind[]).includes(kind);
+}
+
+const DEFAULT_VISIBILITY_PREFERENCE: RightPanelVisibilityPreference = {
+  isOpen: false,
+  preferredKind: null,
+};
+
 interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
+  visibilityPreference: RightPanelVisibilityPreference;
+  /** Applies the carried preference to `ref`. No-op when they already agree. */
+  adoptVisibilityPreference: (ref: ScopedThreadRef) => void;
   open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
@@ -148,11 +181,43 @@ const updateThread = (
   return { ...byThreadKey, [threadKey]: next };
 };
 
+function visibilityPreferenceFrom(state: ThreadRightPanelState): RightPanelVisibilityPreference {
+  const active = state.surfaces.find((surface) => surface.id === state.activeSurfaceId);
+  return {
+    isOpen: state.isOpen,
+    preferredKind: active && isFollowKind(active.kind) ? active.kind : null,
+  };
+}
+
+/**
+ * Runs a thread mutation and records the resulting visibility as the preference
+ * to carry. Used by the mutators that represent a deliberate open/close, so
+ * incidental changes (a terminal split, a file reveal) do not rewrite it.
+ */
+function updateThreadAndRememberVisibility(
+  state: RightPanelStoreState,
+  ref: ScopedThreadRef,
+  updater: (current: ThreadRightPanelState) => ThreadRightPanelState,
+): Pick<RightPanelStoreState, "byThreadKey" | "visibilityPreference"> {
+  const threadKey = scopedThreadKey(ref);
+  const byThreadKey = updateThread(state.byThreadKey, threadKey, updater);
+  return {
+    byThreadKey,
+    visibilityPreference: visibilityPreferenceFrom(byThreadKey[threadKey] ?? EMPTY_THREAD_STATE),
+  };
+}
+
 function normalizeRevealLine(line: number | undefined): number | null {
   if (line === undefined || !Number.isFinite(line)) return null;
   return Math.max(1, Math.trunc(line));
 }
 
+/**
+ * Only rewrites `byThreadKey`. `visibilityPreference` is deliberately absent:
+ * zustand shallow-merges the migration result over the initial state, so a
+ * store upgrading from an older version simply starts from the default
+ * preference, and at the current version this function does not run at all.
+ */
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
 } {
@@ -239,29 +304,30 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
   persist(
     (set) => ({
       byThreadKey: {},
+      visibilityPreference: DEFAULT_VISIBILITY_PREFERENCE,
       open: (ref, kind) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) => {
             if (kind === "preview") {
               const existing = current.surfaces.find((surface) => surface.kind === "preview");
               return upsertSurface(current, existing ?? browserSurface(null));
             }
             return upsertSurface(current, singletonSurface(kind));
           }),
-        })),
+        ),
       openBrowser: (ref, tabId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) => {
             const surface = browserSurface(tabId);
             const withoutPlaceholder = tabId
               ? current.surfaces.filter((entry) => entry.id !== "browser:new")
               : current.surfaces;
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
           }),
-        })),
+        ),
       openFile: (ref, relativePath, line) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) => {
             const withoutStandaloneExplorer = current.surfaces.filter(
               (surface) => surface.kind !== "files",
             );
@@ -285,13 +351,13 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : [...withoutStandaloneExplorer, surface],
             };
           }),
-        })),
+        ),
       openTerminal: (ref, terminalId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) =>
             upsertSurface(current, terminalSurface(terminalId)),
           ),
-        })),
+        ),
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => ({
@@ -485,21 +551,21 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           ),
         })),
       close: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) =>
             current.isOpen ? { ...current, isOpen: false } : current,
           ),
-        })),
+        ),
       toggleVisibility: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => ({
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) => ({
             ...current,
             isOpen: !current.isOpen,
           })),
-        })),
+        ),
       toggle: (ref, kind) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) => {
             const active = current.surfaces.find(
               (surface) => surface.id === current.activeSurfaceId,
             );
@@ -512,7 +578,36 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }
             return upsertSurface(current, singletonSurface(kind));
           }),
-        })),
+        ),
+      adoptVisibilityPreference: (ref) =>
+        set((state) => {
+          const preference = state.visibilityPreference;
+          const threadKey = scopedThreadKey(ref);
+          const current = state.byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
+          if (current.isOpen === preference.isOpen) return state;
+
+          if (!preference.isOpen) {
+            return {
+              byThreadKey: updateThread(state.byThreadKey, threadKey, (thread) => ({
+                ...thread,
+                isOpen: false,
+              })),
+            };
+          }
+
+          // Opening: reuse whatever this thread already had, and only fall back
+          // to the carried kind when it has no surfaces of its own to show.
+          return {
+            byThreadKey: updateThread(state.byThreadKey, threadKey, (thread) => {
+              if (thread.surfaces.length > 0) return { ...thread, isOpen: true };
+              if (preference.preferredKind === null) return thread;
+              if (preference.preferredKind === "preview") {
+                return upsertSurface(thread, browserSurface(null));
+              }
+              return upsertSurface(thread, singletonSurface(preference.preferredKind));
+            }),
+          };
+        }),
       removeThread: (ref) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -527,7 +622,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ byThreadKey: state.byThreadKey }),
+      partialize: (state) => ({
+        byThreadKey: state.byThreadKey,
+        visibilityPreference: state.visibilityPreference,
+      }),
       migrate: migratePersistedRightPanelState,
     },
   ),

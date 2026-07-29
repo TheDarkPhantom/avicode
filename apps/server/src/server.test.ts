@@ -3089,7 +3089,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("negotiates permessage-deflate with clients that offer it", () =>
+  it.effect("does not negotiate permessage-deflate with clients that offer it", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
@@ -3107,10 +3107,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           (socket) => Effect.sync(() => socket.close()),
         );
 
-      const compressed = yield* openSocket(true);
-      // The ws client records the negotiated extension only when the server's
-      // 101 response accepted the offer.
-      assert.include(compressed.extensions, "permessage-deflate");
+      const compressionOffered = yield* openSocket(true);
+      // The stable server behavior leaves compression disabled even when the
+      // client offers it, keeping control frames out of the zlib send queue.
+      assert.notInclude(compressionOffered.extensions, "permessage-deflate");
 
       const plain = yield* openSocket(false);
       assert.notInclude(plain.extensions, "permessage-deflate");

@@ -11,7 +11,13 @@ export function isWindowTitlePrivacyEnabled(): boolean {
 
 export function setWindowTitlePrivacyEnabled(enabled: boolean): void {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(WINDOW_TITLE_PRIVACY_KEY, enabled ? "1" : "0");
+  try {
+    localStorage.setItem(WINDOW_TITLE_PRIVACY_KEY, enabled ? "1" : "0");
+  } catch {
+    // Blocked or full storage throws synchronously out of the click handler
+    // that calls this. Losing the preference beats tearing down the React tree,
+    // so apply the change for this session and move on.
+  }
   window.dispatchEvent(new CustomEvent(WINDOW_TITLE_PRIVACY_EVENT));
 }
 

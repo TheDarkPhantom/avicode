@@ -1500,6 +1500,19 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
+  // When enabled, the right panel follows the user between threads instead of
+  // each thread remembering its own visibility.
+  const rightPanelFollowsThreads = useClientSettings(
+    (settings) => settings.rightPanelFollowsThreads,
+  );
+  useEffect(() => {
+    if (!rightPanelFollowsThreads || !activeThreadRef) return;
+    useRightPanelStore.getState().adoptVisibilityPreference(activeThreadRef);
+    // activeThreadRef is intentionally omitted; it is a fresh object each
+    // render, and activeThreadKey already identifies the thread. Including it
+    // would re-adopt the preference on every render and fight manual toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThreadKey, rightPanelFollowsThreads]);
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewMiniPlayer = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayer(state.byThreadKey, activeThreadRef),

@@ -153,6 +153,7 @@ describe("buildThreadTitlePrompt", () => {
 
     expect(result.prompt).toContain("User message:");
     expect(result.prompt).toContain("Investigate reconnect regressions after session restore");
+    expect(result.prompt).toContain("Use Title Case: capitalize each word.");
     expect(result.prompt).not.toContain("Attachment metadata:");
   });
 
@@ -178,12 +179,22 @@ describe("buildThreadTitlePrompt", () => {
 });
 
 describe("sanitizeThreadTitle", () => {
-  it("truncates long titles with the shared sidebar-safe limit", () => {
+  it("title-cases and truncates long titles with the shared sidebar-safe limit", () => {
     expect(
       sanitizeThreadTitle(
         '  "Reconnect failures after restart because the session state does not recover"  ',
       ),
-    ).toBe("Reconnect failures after restart because the se...");
+    ).toBe("Reconnect Failures After Restart Because The Se...");
+  });
+
+  it("falls back to a title-cased default when the input is empty", () => {
+    expect(sanitizeThreadTitle("   ")).toBe("New Thread");
+  });
+
+  it("preserves acronyms and internal punctuation while title-casing words", () => {
+    expect(sanitizeThreadTitle("fix AVI-ROG and OAuth reconnects")).toBe(
+      "Fix AVI-ROG And OAuth Reconnects",
+    );
   });
 });
 
