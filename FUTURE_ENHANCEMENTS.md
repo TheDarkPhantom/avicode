@@ -42,3 +42,4 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-28: ALFRED metadata and privacy mode.
 - 2026-07-29: repeatable, backed-up T3 workspace refresh from Avi Code settings.
 - 2026-07-29: timestamped provider authentication transition auditing.
+- 2026-07-29: visible working-tree file count with one-click access to the changes panel.
