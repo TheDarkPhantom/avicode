@@ -184,6 +184,8 @@ import {
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
+  Link2Icon,
+  SearchIcon,
   SparklesIcon,
   XIcon,
 } from "lucide-react";
@@ -511,6 +513,7 @@ export interface ChatComposerHandle {
     elementContexts: ElementContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
+    threadContextIds: ThreadId[];
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
@@ -557,6 +560,13 @@ export interface ChatComposerProps {
   activeThreadId: ThreadId | null;
   activeThreadEnvironmentId: EnvironmentId | undefined;
   activeThread: Thread | undefined;
+  threadContextCandidates: ReadonlyArray<{
+    threadId: ThreadId;
+    title: string;
+    projectTitle: string;
+    updatedAt: string;
+    archived: boolean;
+  }>;
   isServerThread: boolean;
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
@@ -672,6 +682,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
+    threadContextCandidates,
     isServerThread: _isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
@@ -745,9 +756,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerElementContexts = composerDraft.elementContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
+  const composerThreadContextIds = composerDraft.threadContextIds;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
+  const setComposerDraftThreadContextIds = useComposerDraftStore(
+    (store) => store.setThreadContextIds,
+  );
+  const [threadContextPickerOpen, setThreadContextPickerOpen] = useState(false);
+  const [threadContextSearch, setThreadContextSearch] = useState("");
+  const filteredThreadContextCandidates = useMemo(() => {
+    const query = threadContextSearch.trim().toLocaleLowerCase();
+    return threadContextCandidates
+      .filter((candidate) => !composerThreadContextIds.includes(candidate.threadId))
+      .filter(
+        (candidate) =>
+          query.length === 0 ||
+          candidate.title.toLocaleLowerCase().includes(query) ||
+          candidate.projectTitle.toLocaleLowerCase().includes(query),
+      )
+      .slice(0, 30);
+  }, [composerThreadContextIds, threadContextCandidates, threadContextSearch]);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -2702,6 +2731,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         elementContexts: composerElementContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
+        threadContextIds: composerThreadContextIds,
         selectedPromptEffort: providerSendContext.selectedPromptEffort,
         selectedModelOptionsForDispatch: providerSendContext.selectedModelOptionsForDispatch,
         selectedModelSelection: providerSendContext.selectedModelSelection,
@@ -2723,6 +2753,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerElementContextsRef,
       composerPreviewAnnotations,
       composerReviewComments,
+      composerThreadContextIds,
       isConnecting,
       isComposerApprovalState,
       pendingUserInputs.length,
@@ -2991,6 +3022,41 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
               pendingUserInputs.length === 0 &&
+              composerThreadContextIds.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2 px-3" aria-label="Referenced threads">
+                  {composerThreadContextIds.map((threadId) => {
+                    const candidate = threadContextCandidates.find(
+                      (entry) => entry.threadId === threadId,
+                    );
+                    return (
+                      <span
+                        key={threadId}
+                        className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/50 py-1 pl-2.5 pr-1 text-xs"
+                      >
+                        <Link2Icon className="size-3.5 shrink-0" />
+                        <span className="truncate">{candidate?.title ?? threadId}</span>
+                        <button
+                          type="button"
+                          className="rounded-full p-1 hover:bg-muted"
+                          aria-label={`Remove ${candidate?.title ?? threadId}`}
+                          onClick={() =>
+                            setComposerDraftThreadContextIds(
+                              composerDraftTarget,
+                              composerThreadContextIds.filter((id) => id !== threadId),
+                            )
+                          }
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+            {!isComposerCollapsedMobile &&
+              !isComposerApprovalState &&
+              pendingUserInputs.length === 0 &&
               composerPreviewAnnotations.length > 0 && (
                 <ComposerPreviewAnnotationCards
                   annotations={composerPreviewAnnotations}
@@ -3209,6 +3275,80 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="relative shrink-0">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <ComposerControl
+                          type="button"
+                          aria-label="Reference threads"
+                          aria-expanded={threadContextPickerOpen}
+                          onClick={() => setThreadContextPickerOpen((open) => !open)}
+                        />
+                      }
+                    >
+                      <ComposerControlIcon icon={Link2Icon} />
+                      <span className="sr-only sm:not-sr-only">Threads</span>
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">Reference another thread</TooltipPopup>
+                  </Tooltip>
+                  {threadContextPickerOpen ? (
+                    <div className="absolute bottom-full left-0 z-50 mb-2 w-80 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
+                      <div className="flex items-center gap-2 border-b px-3">
+                        <SearchIcon className="size-4 text-muted-foreground" />
+                        <input
+                          autoFocus
+                          value={threadContextSearch}
+                          onChange={(event) => setThreadContextSearch(event.target.value)}
+                          placeholder="Search threads or projects"
+                          aria-label="Search threads"
+                          className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
+                        />
+                      </div>
+                      <div className="max-h-72 overflow-y-auto p-1">
+                        {filteredThreadContextCandidates.length === 0 ? (
+                          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                            No matching threads
+                          </p>
+                        ) : (
+                          filteredThreadContextCandidates.map((candidate) => (
+                            <button
+                              key={candidate.threadId}
+                              type="button"
+                              className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                              onClick={() => {
+                                if (composerThreadContextIds.length >= 5) {
+                                  toastManager.add({
+                                    type: "error",
+                                    title: "You can reference up to 5 threads.",
+                                  });
+                                  return;
+                                }
+                                setComposerDraftThreadContextIds(composerDraftTarget, [
+                                  ...composerThreadContextIds,
+                                  candidate.threadId,
+                                ]);
+                                setThreadContextPickerOpen(false);
+                                setThreadContextSearch("");
+                              }}
+                            >
+                              <Link2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium">
+                                  {candidate.title}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {candidate.projectTitle}
+                                  {candidate.archived ? " · Archived" : ""}
+                                </span>
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
                 {noProviderAvailable ? (
                   <Button
                     type="button"

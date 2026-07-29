@@ -58,6 +58,7 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  Link2Icon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -1001,6 +1002,16 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   return (
     <div className="group flex flex-col items-end gap-1">
       <div className="relative max-w-[80%] rounded-2xl bg-accent p-3">
+        {(row.message.threadContext?.length ?? 0) > 0 ? (
+          <div
+            className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+            title={row.message.threadContext?.map((reference) => reference.threadId).join(", ")}
+          >
+            <Link2Icon className="size-3.5" />
+            Context from {row.message.threadContext?.length}{" "}
+            {row.message.threadContext?.length === 1 ? "thread" : "threads"}
+          </div>
+        ) : null}
         {userDocuments.length > 0 && (
           <div className="mb-2 flex max-w-[420px] flex-wrap gap-2">
             {userDocuments.map((document) => (

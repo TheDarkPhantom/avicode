@@ -1768,3 +1768,26 @@ describe("createDebouncedStorage", () => {
     expect(base.setItem).toHaveBeenCalledWith("key", "v2");
   });
 });
+
+describe("composerDraftStore thread context references", () => {
+  const targetRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-context-target"));
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("deduplicates, caps, persists, and clears selected thread ids", () => {
+    const ids = Array.from({ length: 7 }, (_, index) => ThreadId.make(`thread-context-${index}`));
+    const store = useComposerDraftStore.getState();
+    store.setThreadContextIds(targetRef, [ids[0]!, ids[0]!, ...ids.slice(1)]);
+
+    expect(useComposerDraftStore.getState().getComposerDraft(targetRef)?.threadContextIds).toEqual(
+      ids.slice(0, 5),
+    );
+
+    useComposerDraftStore.getState().clearComposerContent(targetRef);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(targetRef)?.threadContextIds ?? [],
+    ).toEqual([]);
+  });
+});
