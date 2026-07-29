@@ -1,9 +1,16 @@
 import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@t3tools/contracts";
 import {
+  MAX_SIDEBAR_FLAT_THREAD_COUNT,
+  MIN_SIDEBAR_FLAT_THREAD_COUNT,
+  type SidebarFlatThreadCount,
+  type SidebarThreadGrouping,
+} from "@t3tools/contracts/settings";
+import {
   BellRingIcon,
   DatabaseBackupIcon,
   EyeOffIcon,
   LoaderIcon,
+  PanelLeftIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
   SparklesIcon,
@@ -23,9 +30,110 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../ui/number-field";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+
+const SIDEBAR_THREAD_GROUPING_LABELS: Record<SidebarThreadGrouping, string> = {
+  project: "Group by project",
+  flat: "Flat, by activity",
+};
+
+function SidebarLayoutSettings() {
+  const threadGrouping = useClientSettings<SidebarThreadGrouping>(
+    (settings) => settings.sidebarThreadGrouping,
+  );
+  const flatThreadCount = useClientSettings<SidebarFlatThreadCount>(
+    (settings) => settings.sidebarFlatThreadCount,
+  );
+  const updateSettings = useUpdateClientSettings();
+  const isFlat = threadGrouping === "flat";
+
+  const handleFlatThreadCountChange = useCallback(
+    (nextValue: number | null) => {
+      if (nextValue === null) return;
+      const clamped = Math.min(
+        MAX_SIDEBAR_FLAT_THREAD_COUNT,
+        Math.max(MIN_SIDEBAR_FLAT_THREAD_COUNT, nextValue),
+      ) as SidebarFlatThreadCount;
+      if (clamped !== flatThreadCount) {
+        updateSettings({ sidebarFlatThreadCount: clamped });
+      }
+    },
+    [flatThreadCount, updateSettings],
+  );
+
+  return (
+    <SettingsSection title="Sidebar layout" icon={<PanelLeftIcon className="size-5" />}>
+      <SettingsRow
+        title="Thread list"
+        description="Group by project keeps the two-level tree, where a chat only moves within its project's block. Flat drops the grouping and orders every chat against every other by recent activity, so the ctrl+1…ctrl+9 jump shortcuts land on your most recently used chats regardless of project."
+        control={
+          <Select
+            value={threadGrouping}
+            onValueChange={(value) => {
+              updateSettings({ sidebarThreadGrouping: value as SidebarThreadGrouping });
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-48" aria-label="Sidebar thread list layout">
+              <SelectValue>{SIDEBAR_THREAD_GROUPING_LABELS[threadGrouping]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="project">
+                {SIDEBAR_THREAD_GROUPING_LABELS.project}
+              </SelectItem>
+              <SelectItem hideIndicator value="flat">
+                {SIDEBAR_THREAD_GROUPING_LABELS.flat}
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+      {isFlat ? (
+        <SettingsRow
+          title="Visible threads"
+          description="How many chats the flat list shows before the “Show more” row. The chat you're currently in always stays visible, even when it falls past this cutoff."
+          control={
+            <NumberField
+              aria-label="Visible thread count"
+              className="w-28 gap-0"
+              max={MAX_SIDEBAR_FLAT_THREAD_COUNT}
+              min={MIN_SIDEBAR_FLAT_THREAD_COUNT}
+              onValueChange={handleFlatThreadCountChange}
+              size="sm"
+              step={1}
+              value={flatThreadCount}
+            >
+              <NumberFieldGroup className="h-8 rounded-md">
+                <NumberFieldDecrement
+                  aria-label="Decrease visible thread count"
+                  className="px-2 [&_svg]:size-3.5"
+                />
+                <NumberFieldInput
+                  aria-label="Visible thread count"
+                  className="h-8 w-10 grow-0 px-0 text-xs leading-8"
+                  inputMode="numeric"
+                />
+                <NumberFieldIncrement
+                  aria-label="Increase visible thread count"
+                  className="px-2 [&_svg]:size-3.5"
+                />
+              </NumberFieldGroup>
+            </NumberField>
+          }
+        />
+      ) : null}
+    </SettingsSection>
+  );
+}
 
 function NotificationSettings() {
   const notificationSoundEnabled = useClientSettings(
@@ -263,6 +371,7 @@ export function AviCodeSettings() {
 
   return (
     <SettingsPageContainer>
+      <SidebarLayoutSettings />
       <NotificationSettings />
       <TimeLoggingSettings />
       <ChatListSettings />

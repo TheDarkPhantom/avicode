@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   archiveSelectedThreadEntries,
+  buildFlatSidebarThreadList,
   buildMultiSelectThreadContextMenuItems,
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
@@ -1510,5 +1511,114 @@ describe("sortLogicalProjectsForSidebar", () => {
         (project) => project.projectKey,
       ),
     ).toEqual(["logical-newer", "logical-older"]);
+  });
+});
+
+describe("buildFlatSidebarThreadList", () => {
+  const thread = (input: {
+    id: string;
+    project: string;
+    latestUserMessageAt: string;
+    archivedAt?: string | null;
+  }) => ({
+    id: input.id,
+    project: input.project,
+    archivedAt: input.archivedAt ?? null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: input.latestUserMessageAt,
+    latestUserMessageAt: input.latestUserMessageAt,
+  });
+  const build = (
+    threads: ReturnType<typeof thread>[],
+    overrides: { limit?: number; activeThreadKey?: string | null } = {},
+  ) =>
+    buildFlatSidebarThreadList({
+      threads,
+      sortOrder: "updated_at" as const,
+      limit: overrides.limit ?? 10,
+      activeThreadKey: overrides.activeThreadKey ?? null,
+      getThreadKey: (entry) => entry.id,
+    });
+
+  it("interleaves threads from different projects by activity", () => {
+    const result = build([
+      thread({
+        id: "alpha-old",
+        project: "alpha",
+        latestUserMessageAt: "2026-03-09T08:00:00.000Z",
+      }),
+      thread({ id: "beta-new", project: "beta", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+      thread({
+        id: "alpha-new",
+        project: "alpha",
+        latestUserMessageAt: "2026-03-09T11:00:00.000Z",
+      }),
+      thread({ id: "beta-old", project: "beta", latestUserMessageAt: "2026-03-09T09:00:00.000Z" }),
+    ]);
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual([
+      "beta-new",
+      "alpha-new",
+      "beta-old",
+      "alpha-old",
+    ]);
+    expect(result.hasOverflowingThreads).toBe(false);
+  });
+
+  it("drops archived threads", () => {
+    const result = build([
+      thread({ id: "live", project: "alpha", latestUserMessageAt: "2026-03-09T08:00:00.000Z" }),
+      thread({
+        id: "archived",
+        project: "alpha",
+        latestUserMessageAt: "2026-03-09T12:00:00.000Z",
+        archivedAt: "2026-03-09T13:00:00.000Z",
+      }),
+    ]);
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["live"]);
+  });
+
+  it("caps the list and reports the remainder as hidden", () => {
+    const result = build(
+      [
+        thread({ id: "first", project: "a", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+        thread({ id: "second", project: "b", latestUserMessageAt: "2026-03-09T11:00:00.000Z" }),
+        thread({ id: "third", project: "c", latestUserMessageAt: "2026-03-09T10:00:00.000Z" }),
+      ],
+      { limit: 2 },
+    );
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["first", "second"]);
+    expect(result.hiddenThreads.map((entry) => entry.id)).toEqual(["third"]);
+    expect(result.hasOverflowingThreads).toBe(true);
+  });
+
+  it("keeps the active thread rendered even when the cap would hide it", () => {
+    const result = build(
+      [
+        thread({ id: "first", project: "a", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+        thread({ id: "second", project: "b", latestUserMessageAt: "2026-03-09T11:00:00.000Z" }),
+        thread({ id: "stale", project: "c", latestUserMessageAt: "2026-03-01T10:00:00.000Z" }),
+      ],
+      { limit: 2, activeThreadKey: "stale" },
+    );
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["first", "second", "stale"]);
+    expect(result.hiddenThreads).toHaveLength(0);
+    expect(result.hasOverflowingThreads).toBe(true);
+  });
+
+  it("does not duplicate the active thread when it is already visible", () => {
+    const result = build(
+      [
+        thread({ id: "first", project: "a", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+        thread({ id: "second", project: "b", latestUserMessageAt: "2026-03-09T11:00:00.000Z" }),
+      ],
+      { limit: 1, activeThreadKey: "first" },
+    );
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["first"]);
+    expect(result.hiddenThreads.map((entry) => entry.id)).toEqual(["second"]);
   });
 });
