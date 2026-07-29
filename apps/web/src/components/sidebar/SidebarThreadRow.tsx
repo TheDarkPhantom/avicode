@@ -13,6 +13,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
+import { useClientSettings } from "../../hooks/useSettings";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import { useProject } from "../../state/entities";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
@@ -37,6 +38,7 @@ import {
   ThreadWorktreeIndicator,
 } from "../ThreadStatusIndicators";
 import { resolveThreadRowClassName, resolveThreadStatusPill } from "../Sidebar.logic";
+import { ThreadModelBadge } from "./ThreadModelBadge";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarMenuSubButton, SidebarMenuSubItem } from "../ui/sidebar";
@@ -121,6 +123,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     threadId: thread.id,
   });
   const isMobile = useIsMobile();
+  const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const discoveredPorts = useThreadDiscoveredPorts({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -444,7 +447,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               </TooltipPopup>
             </Tooltip>
           )}
-          {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          {threadStatus && <ThreadStatusLabel status={threadStatus} compact={!showStatusLabels} />}
+          <ThreadModelBadge thread={thread} className="inline-flex shrink-0" />
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}

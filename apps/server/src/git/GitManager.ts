@@ -472,8 +472,13 @@ interface CommitAndBranchSuggestion {
 
 function isCommitAction(
   action: GitStackedAction,
-): action is "commit" | "commit_push" | "commit_push_pr" {
-  return action === "commit" || action === "commit_push" || action === "commit_push_pr";
+): action is "commit" | "commit_push" | "commit_push_pr" | "auto_merge" {
+  return (
+    action === "commit" ||
+    action === "commit_push" ||
+    action === "commit_push_pr" ||
+    action === "auto_merge"
+  );
 }
 
 function formatCommitMessage(subject: string, body: string): string {
@@ -1435,7 +1440,7 @@ export const make = Effect.gen(function* () {
   const runCommitStep = Effect.fn("runCommitStep")(function* (
     settings: SourceControlTextGenerationSettings,
     cwd: string,
-    action: "commit" | "commit_push" | "commit_push_pr",
+    action: "commit" | "commit_push" | "commit_push_pr" | "auto_merge",
     branch: string | null,
     commitMessage?: string,
     preResolvedSuggestion?: CommitAndBranchSuggestion,
@@ -1550,6 +1555,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     fallbackBranch: string | null,
     emit: GitActionProgressEmitter,
+    baseBranchOverride?: string,
   ) {
     const provider = yield* sourceControlProvider(cwd);
     const terms = getChangeRequestTerminologyForKind(provider.kind);
@@ -1587,7 +1593,9 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext);
+    const baseBranch =
+      baseBranchOverride ??
+      (yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext));
     yield* emit({
       kind: "phase_started",
       phase: "pr",
@@ -1661,6 +1669,97 @@ export const make = Effect.gen(function* () {
       headBranch: created.headRefName,
       title: created.title,
     };
+  });
+
+  const runAutoMergePromotions = Effect.fn("runAutoMergePromotions")(function* (input: {
+    cwd: string;
+    initialHead: string;
+    initialPr: {
+      status: "created" | "opened_existing";
+      number?: number;
+      baseBranch?: string;
+      headBranch?: string;
+    };
+    promotionRefs: ReadonlyArray<string>;
+    requireFinalApproval: boolean;
+    emit: GitActionProgressEmitter;
+  }) {
+    const provider = yield* sourceControlProvider(input.cwd);
+    let sourceRef = input.initialHead;
+    let changeRequestNumber = input.initialPr.number;
+
+    for (let index = 0; index < input.promotionRefs.length; index += 1) {
+      const targetRef = input.promotionRefs[index]!;
+      const isFinal = index === input.promotionRefs.length - 1;
+
+      if (index > 0) {
+        yield* input.emit({
+          kind: "phase_started",
+          phase: "pr",
+          label: `Creating promotion PR to ${targetRef}...`,
+        });
+        const bodyFile = path.join(
+          tempDir,
+          `t3code-promotion-body-${process.pid}-${yield* randomUUIDv4(input.cwd)}.md`,
+        );
+        yield* fileSystem
+          .writeFileString(
+            bodyFile,
+            `Promotes \`${sourceRef}\` to \`${targetRef}\` through the repository Auto merge policy.\n`,
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitManagerError({
+                  operation: "runStackedAction",
+                  cwd: input.cwd,
+                  detail: "Failed to write promotion pull request body.",
+                  cause,
+                }),
+            ),
+          );
+        yield* provider
+          .createChangeRequest({
+            cwd: input.cwd,
+            baseRefName: targetRef,
+            headSelector: sourceRef,
+            title: `Promote ${sourceRef} to ${targetRef}`,
+            bodyFile,
+          })
+          .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.catch(() => Effect.void))));
+        const matches = yield* provider.listChangeRequests({
+          cwd: input.cwd,
+          headSelector: sourceRef,
+          state: "open",
+          limit: 20,
+        });
+        changeRequestNumber = matches.find((item) => item.baseRefName === targetRef)?.number;
+      }
+
+      if (isFinal && input.requireFinalApproval) {
+        return { awaitingApproval: true, targetRef };
+      }
+      if (changeRequestNumber === undefined) {
+        return yield* new GitManagerError({
+          operation: "runStackedAction",
+          cwd: input.cwd,
+          detail: `Created a change request to ${targetRef}, but could not resolve it for merging.`,
+        });
+      }
+      yield* input.emit({
+        kind: "phase_started",
+        phase: "merge",
+        label: `Merging into ${targetRef}...`,
+      });
+      yield* provider.mergeChangeRequest({
+        cwd: input.cwd,
+        reference: String(changeRequestNumber),
+      });
+      sourceRef = targetRef;
+      changeRequestNumber = undefined;
+    }
+
+    return { awaitingApproval: false, targetRef: input.promotionRefs.at(-1)! };
   });
 
   const localStatus: GitManager["Service"]["localStatus"] = Effect.fn("localStatus")(
@@ -1941,9 +2040,21 @@ export const make = Effect.gen(function* () {
           input.action === "push" ||
           input.action === "commit_push" ||
           input.action === "commit_push_pr" ||
+          input.action === "auto_merge" ||
           (input.action === "create_pr" &&
             (!initialStatus.hasUpstream || initialStatus.aheadCount > 0));
-        const wantsPr = input.action === "create_pr" || input.action === "commit_push_pr";
+        const wantsPr =
+          input.action === "create_pr" ||
+          input.action === "commit_push_pr" ||
+          input.action === "auto_merge";
+
+        if (input.action === "auto_merge" && !input.autoMerge) {
+          return yield* new GitManagerError({
+            operation: "runStackedAction",
+            cwd: input.cwd,
+            detail: "This repository does not have an Auto merge policy.",
+          });
+        }
 
         if (input.featureBranch && !wantsCommit) {
           return yield* new GitManagerError({
@@ -1965,6 +2076,7 @@ export const make = Effect.gen(function* () {
           ...(wantsCommit ? (["commit"] as const) : []),
           ...(wantsPush ? (["push"] as const) : []),
           ...(wantsPr ? (["pr"] as const) : []),
+          ...(input.action === "auto_merge" ? (["merge"] as const) : []),
         ];
 
         yield* progress.emit({
@@ -2090,18 +2202,52 @@ export const make = Effect.gen(function* () {
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
                 Effect.flatMap(() =>
-                  runPrStep(textGenerationSettings, input.cwd, currentBranch, progress.emit),
+                  runPrStep(
+                    textGenerationSettings,
+                    input.cwd,
+                    currentBranch,
+                    progress.emit,
+                    input.action === "auto_merge" ? input.autoMerge?.promotionRefs[0] : undefined,
+                  ),
                 ),
               )
           : { status: "skipped_not_requested" as const };
 
-        const toast = yield* buildCompletionToast(input.cwd, {
+        const promotion =
+          input.action === "auto_merge" &&
+          (pr.status === "created" || pr.status === "opened_existing") &&
+          currentBranch
+            ? yield* runAutoMergePromotions({
+                cwd: input.cwd,
+                initialHead: currentBranch,
+                initialPr: pr,
+                promotionRefs: input.autoMerge!.promotionRefs,
+                requireFinalApproval: input.autoMerge!.requireFinalApproval,
+                emit: progress.emit,
+              })
+            : null;
+
+        const baseToast = yield* buildCompletionToast(input.cwd, {
           action: input.action,
           branch: branchStep,
           commit,
           push,
           pr,
         });
+        const toast =
+          promotion === null
+            ? baseToast
+            : promotion.awaitingApproval
+              ? {
+                  title: `Ready for approval into ${promotion.targetRef}`,
+                  description: "The final pull request is open and has not been merged.",
+                  cta: baseToast.cta,
+                }
+              : {
+                  title: `Auto merged into ${promotion.targetRef}`,
+                  description: "All configured promotion pull requests were merged.",
+                  cta: { kind: "none" as const },
+                };
 
         const result = {
           action: input.action,

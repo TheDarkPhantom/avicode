@@ -99,6 +99,27 @@ export const ClientSettingsSchema = Schema.Struct({
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
   ),
+  // Avi Code addition. Plays a short chime when a thread enters a state that
+  // waits on the user — the same states the sidebar labels Pending Approval,
+  // Waiting, and Completed/Done. Opt-in: a browser tab that makes noise
+  // without being asked to is worse than a missed notification.
+  notificationSoundEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Avi Code additions. Keep the dense chat list scannable and let custom
+  // provider instances use a memorable one- or two-character client badge.
+  aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  aviCodeProviderBadgeLabels: Schema.Record(
+    ProviderInstanceId,
+    Schema.String.check(Schema.isMaxLength(2)),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Provider instances can represent separate client
+  // credentials, so carrying the last-picked instance across unrelated
+  // projects can cross an account boundary. Keep the upstream/global sticky
+  // behaviour by default and let users opt into concrete-project isolation.
+  projectScopedProviderSelectionEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
   // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
@@ -655,6 +676,12 @@ export const ClientSettingsPatch = Schema.Struct({
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
+  aviCodeProviderBadgeLabels: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
+  ),
+  projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

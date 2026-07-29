@@ -944,7 +944,7 @@ describe("resolveThreadStatusPill", () => {
           hasPendingUserInput: true,
         },
       }),
-    ).toMatchObject({ label: "Awaiting Input", pulse: false });
+    ).toMatchObject({ label: "Waiting", pulse: false });
   });
 
   it("falls back to working when the thread is actively running without blockers", () => {

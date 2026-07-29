@@ -103,7 +103,7 @@ export interface ThreadStatusPill {
     | "Failed"
     | "Completed"
     | "Pending Approval"
-    | "Awaiting Input"
+    | "Waiting"
     | "Plan Ready";
   colorClass: string;
   dotClass: string;
@@ -112,7 +112,7 @@ export interface ThreadStatusPill {
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
-  "Awaiting Input": 4,
+  Waiting: 4,
   "Needs Resume": 4,
   Failed: 4,
   Merging: 3,
@@ -684,7 +684,7 @@ export function resolveThreadStatusPill(input: {
 
   if (thread.hasPendingUserInput) {
     return {
-      label: "Awaiting Input",
+      label: "Waiting",
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
       pulse: false,
