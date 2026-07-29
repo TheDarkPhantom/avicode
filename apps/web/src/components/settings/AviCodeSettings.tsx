@@ -10,6 +10,7 @@ import {
   DatabaseBackupIcon,
   EyeOffIcon,
   LoaderIcon,
+  PaletteIcon,
   PanelLeftIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
@@ -19,7 +20,16 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { useColorTheme } from "../../hooks/useColorTheme";
 import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { useTheme } from "../../hooks/useTheme";
+import {
+  COLOR_THEMES,
+  type ColorThemeDefinition,
+  DEFAULT_COLOR_THEME,
+  findColorTheme,
+  isColorThemeId,
+} from "../../lib/colorTheme";
 import { previewNotificationChime } from "../../lib/notificationChime";
 import {
   isWindowTitlePrivacyEnabled,
@@ -40,7 +50,84 @@ import {
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
+
+/**
+ * Avi Code addition. The colour theme is a fork feature, so its UI lives here
+ * rather than on the upstream Appearance panel — that panel keeps owning the
+ * light/dark/system switch, which this is orthogonal to.
+ */
+function ColorThemeSwatch({
+  colorTheme,
+  mode,
+}: {
+  colorTheme: ColorThemeDefinition;
+  mode: "light" | "dark";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-3 shrink-0 rounded-full border border-black/15 dark:border-white/20"
+      style={{ backgroundColor: colorTheme.swatch[mode] }}
+    />
+  );
+}
+
+function ColorThemeSettings() {
+  const { colorTheme, setColorTheme } = useColorTheme();
+  const { resolvedTheme } = useTheme();
+  const selected = findColorTheme(colorTheme);
+
+  return (
+    <SettingsSection title="Appearance" icon={<PaletteIcon className="size-5" />}>
+      <SettingsRow
+        title="Colour theme"
+        description="Repaints the whole app — surfaces, borders, and accents. This is independent of the Light/Dark/System switch on the Appearance page: every theme ships both a light and a dark palette, so the mode you picked there still decides which one you see."
+        status={selected.description}
+        resetAction={
+          colorTheme === DEFAULT_COLOR_THEME ? null : (
+            <SettingResetButton
+              label="colour theme"
+              onClick={() => setColorTheme(DEFAULT_COLOR_THEME)}
+            />
+          )
+        }
+        control={
+          <Select
+            value={colorTheme}
+            onValueChange={(value) => {
+              if (isColorThemeId(value)) setColorTheme(value);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-48" aria-label="Colour theme">
+              <SelectValue>
+                <span className="flex items-center gap-2">
+                  <ColorThemeSwatch colorTheme={selected} mode={resolvedTheme} />
+                  {selected.label}
+                </span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {COLOR_THEMES.map((option) => (
+                <SelectItem hideIndicator key={option.id} value={option.id}>
+                  <span className="flex items-center gap-2">
+                    <ColorThemeSwatch colorTheme={option} mode={resolvedTheme} />
+                    {option.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
+    </SettingsSection>
+  );
+}
 
 const SIDEBAR_THREAD_GROUPING_LABELS: Record<SidebarThreadGrouping, string> = {
   project: "Group by project",
@@ -371,6 +458,7 @@ export function AviCodeSettings() {
 
   return (
     <SettingsPageContainer>
+      <ColorThemeSettings />
       <SidebarLayoutSettings />
       <NotificationSettings />
       <TimeLoggingSettings />

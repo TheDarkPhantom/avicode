@@ -17,6 +17,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Colour themes do not reach three surfaces that are still hardcoded to a binary light/dark:
+  the desktop native window chrome (`DesktopWindow.ts` — background `#0a0a0a`/`#ffffff` and the
+  titlebar symbol colours), the Shiki/diff highlighting themes (`diffRendering.ts` is fixed to
+  `pierre-light`/`pierre-dark`), and the decorative art in `index.css` (stage blueprint, glass
+  shells, `--ultrathink-spectrum`), which stays oxblood-tuned under every palette.
+- Colour theme selection is per-browser localStorage, so it does not sync across devices the way
+  `ClientSettings` does. Moving it into `ClientSettingsSchema` needs a pre-paint story first —
+  client settings hydrate asynchronously, which would repaint the app a frame after load.
 - Explorer drag progress and cancellation.
 - DOCX, CSV, JSON, and source archives.
 - Encrypted PDF password prompts without persistence.
@@ -50,3 +58,5 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-29: visible working-tree file count with one-click access to the changes panel.
 - 2026-07-29: explicit cross-thread transcript context with source provenance.
 - 2026-07-29: opt-in per-project provider/model memory and proactive credential usage checks.
+- 2026-07-29: selectable colour themes (Oxblood, Midnight, Forest, Violet, Graphite), each with a
+  light and a dark palette, orthogonal to the Light/Dark/System switch.
