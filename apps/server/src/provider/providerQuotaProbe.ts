@@ -1,4 +1,6 @@
 import type { ProviderQuotaSnapshot, ProviderQuotaWindow } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 
 function clampUsedPercent(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value)
@@ -8,7 +10,8 @@ function clampUsedPercent(value: unknown): number | null {
 
 function resetEpochSecondsToIso(value: unknown): string | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
-  return new Date(value * 1_000).toISOString();
+  const instant = DateTime.make(value * 1_000);
+  return Option.isNone(instant) ? undefined : DateTime.formatIso(instant.value);
 }
 
 function codexWindowLabel(minutes: unknown): string {

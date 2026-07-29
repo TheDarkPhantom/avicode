@@ -734,7 +734,7 @@ const probeClaudeCapabilities = (
       claudeSettings.binaryPath,
       claudeEnvironment,
     );
-    return yield* Effect.tryPromise(async () => {
+    const initialized = yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
         // Never yield — we only need initialization data, not a conversation.
         // This prevents any prompt from reaching the Anthropic API.
@@ -750,43 +750,40 @@ const probeClaudeCapabilities = (
         }),
       });
       const init = await q.initializationResult();
-      let usageResponse: unknown;
-      // Avi Code addition. Use the SDK control channel only; the never-yielding
-      // prompt above guarantees this cannot submit user content to Anthropic.
-      if (q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) {
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        try {
-          usageResponse = await Promise.race([
-            q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
-            new Promise<undefined>((resolve) => {
-              timeout = setTimeout(() => resolve(undefined), USAGE_PROBE_TIMEOUT_MS);
-            }),
-          ]);
-        } catch {
-          // Usage is best-effort. Account identity and model discovery remain
-          // useful even when an older Claude CLI rejects this control request.
-        } finally {
-          if (timeout) clearTimeout(timeout);
-        }
-      }
-      const account = init.account as
-        | {
-            readonly email?: string;
-            readonly subscriptionType?: string;
-            readonly tokenSource?: string;
-            readonly apiProvider?: string;
-          }
-        | undefined;
-      const quota = normalizeClaudeProbeQuota(usageResponse, new Date().toISOString());
-      return {
-        email: account?.email,
-        subscriptionType: account?.subscriptionType,
-        tokenSource: account?.tokenSource,
-        apiProvider: account?.apiProvider,
-        slashCommands: parseClaudeInitializationCommands(init.commands),
-        ...(quota ? { quota } : {}),
-      } satisfies ClaudeCapabilitiesProbe;
+      return { q, init };
     });
+    const { q, init } = initialized;
+    let usageResponse: unknown;
+    const readUsage = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    // Avi Code addition. Use the SDK control channel only; the never-yielding
+    // prompt above guarantees this cannot submit user content to Anthropic.
+    if (readUsage) {
+      const usageResult = yield* Effect.tryPromise(() => readUsage.call(q)).pipe(
+        Effect.timeoutOption(USAGE_PROBE_TIMEOUT_MS),
+        // Usage is best-effort. Account identity and model discovery remain
+        // useful even when an older Claude CLI rejects this control request.
+        Effect.orElseSucceed(() => Option.none()),
+      );
+      usageResponse = Option.getOrUndefined(usageResult);
+    }
+    const account = init.account as
+      | {
+          readonly email?: string;
+          readonly subscriptionType?: string;
+          readonly tokenSource?: string;
+          readonly apiProvider?: string;
+        }
+      | undefined;
+    const capturedAt = DateTime.formatIso(yield* DateTime.now);
+    const quota = normalizeClaudeProbeQuota(usageResponse, capturedAt);
+    return {
+      email: account?.email,
+      subscriptionType: account?.subscriptionType,
+      tokenSource: account?.tokenSource,
+      apiProvider: account?.apiProvider,
+      slashCommands: parseClaudeInitializationCommands(init.commands),
+      ...(quota ? { quota } : {}),
+    } satisfies ClaudeCapabilitiesProbe;
   }).pipe(
     Effect.ensuring(
       Effect.sync(() => {

@@ -123,6 +123,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         },
         workspaceCwd,
       );
+      assert.ok(capabilities?.quota);
 
       assert.deepEqual(capabilities, {
         email: "dev@example.com",
@@ -146,7 +147,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
             },
           ],
           planType: "pro",
-          capturedAt: capabilities?.quota?.capturedAt,
+          capturedAt: capabilities.quota.capturedAt,
         },
       });
 

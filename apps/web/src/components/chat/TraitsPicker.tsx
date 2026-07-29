@@ -519,7 +519,7 @@ export const TraitsPicker = memo(function TraitsPicker({
           onPromptChange={onPromptChange}
           modelOptions={modelOptions}
           allowPromptInjectedEffort={allowPromptInjectedEffort}
-          stickyScopeKey={stickyScopeKey}
+          {...(stickyScopeKey !== undefined ? { stickyScopeKey } : {})}
           {...persistence}
         />
       </MenuPopup>

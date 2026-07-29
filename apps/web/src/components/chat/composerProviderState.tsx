@@ -115,7 +115,7 @@ function renderTraitsControl(
       modelOptions={modelOptions}
       prompt={prompt}
       onPromptChange={onPromptChange}
-      stickyScopeKey={stickyScopeKey}
+      {...(stickyScopeKey !== undefined ? { stickyScopeKey } : {})}
     />
   );
 }

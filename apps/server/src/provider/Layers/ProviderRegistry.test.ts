@@ -105,7 +105,7 @@ type TestClaudeCapabilities = {
   readonly tokenSource: string | undefined;
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
-  readonly quota?: ServerProvider["quota"];
+  readonly quota?: NonNullable<ServerProvider["quota"]>;
 };
 
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {

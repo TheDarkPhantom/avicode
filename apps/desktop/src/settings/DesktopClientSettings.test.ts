@@ -24,6 +24,7 @@ const clientSettings: ClientSettings = {
   favorites: [],
   glassOpacity: 80,
   notificationSoundEnabled: false,
+  projectScopedProviderSelectionEnabled: false,
   providerModelPreferences: {},
   rightPanelFollowsThreads: false,
   sidebarAutoSettleAfterDays: 3,
