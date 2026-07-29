@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildDeepgramSocketUrl } from "./deepgramUrl.ts";
+import { buildDeepgramSocketProtocols, buildDeepgramSocketUrl } from "./deepgramUrl.ts";
 import {
   applyDeepgramResult,
   emptyTranscript,
@@ -159,7 +159,12 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       const { accessToken } = await optionsRef.current.requestToken();
       if (cancelledRef.current) return;
 
-      const socket = new WebSocket(buildDeepgramSocketUrl({ accessToken }));
+      // Avi Code addition: browsers cannot set Deepgram's Authorization header.
+      // Authenticate the temporary JWT with the documented Bearer subprotocol.
+      const socket = new WebSocket(
+        buildDeepgramSocketUrl({}),
+        buildDeepgramSocketProtocols(accessToken),
+      );
       socketRef.current = socket;
 
       socket.onopen = () => {
