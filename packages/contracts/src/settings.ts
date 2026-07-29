@@ -21,6 +21,29 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// Avi Code addition. "project" is the upstream two-level tree: projects sort by
+// their newest thread, threads sort within their project, so a thread can never
+// rise above its project's block. "flat" drops the grouping entirely and sorts
+// every thread against every other by `sidebarThreadSortOrder`, which is what
+// makes the ctrl+1…ctrl+9 jump slots track the globally most recent threads
+// instead of whichever rows happen to sit at the top of each expanded project.
+export const SidebarThreadGrouping = Schema.Literals(["project", "flat"]);
+export type SidebarThreadGrouping = typeof SidebarThreadGrouping.Type;
+export const DEFAULT_SIDEBAR_THREAD_GROUPING: SidebarThreadGrouping = "project";
+
+// The flat list has no per-project "show more" to spread rows across, so it
+// needs a much higher ceiling than SidebarThreadPreviewCount's per-project 15.
+export const MIN_SIDEBAR_FLAT_THREAD_COUNT = 5;
+export const MAX_SIDEBAR_FLAT_THREAD_COUNT = 100;
+export const SidebarFlatThreadCount = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_SIDEBAR_FLAT_THREAD_COUNT,
+    maximum: MAX_SIDEBAR_FLAT_THREAD_COUNT,
+  }),
+);
+export type SidebarFlatThreadCount = typeof SidebarFlatThreadCount.Type;
+export const DEFAULT_SIDEBAR_FLAT_THREAD_COUNT: SidebarFlatThreadCount = 20;
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -126,6 +149,12 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
+  ),
+  sidebarThreadGrouping: SidebarThreadGrouping.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_GROUPING)),
+  ),
+  sidebarFlatThreadCount: SidebarFlatThreadCount.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_FLAT_THREAD_COUNT)),
   ),
   sidebarV2Enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Whether `sidebarV2Enabled` reflects an explicit choice in Settings → Beta.
@@ -657,6 +686,8 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  sidebarThreadGrouping: Schema.optionalKey(SidebarThreadGrouping),
+  sidebarFlatThreadCount: Schema.optionalKey(SidebarFlatThreadCount),
   sidebarV2Enabled: Schema.optionalKey(Schema.Boolean),
   sidebarV2ConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
