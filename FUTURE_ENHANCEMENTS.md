@@ -22,6 +22,8 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.
+- Explicit project-to-provider credential pinning; the shipped isolation mode learns each project's
+  last selection.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
@@ -47,3 +49,4 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-29: timestamped provider authentication transition auditing.
 - 2026-07-29: visible working-tree file count with one-click access to the changes panel.
 - 2026-07-29: explicit cross-thread transcript context with source provenance.
+- 2026-07-29: opt-in per-project provider/model memory and proactive credential usage checks.

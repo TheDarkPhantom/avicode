@@ -105,6 +105,7 @@ type TestClaudeCapabilities = {
   readonly tokenSource: string | undefined;
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly quota?: NonNullable<ServerProvider["quota"]>;
 };
 
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
@@ -312,6 +313,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           const status = yield* checkCodexProviderStatus(defaultCodexSettings, () =>
             Effect.succeed(
               makeCodexProbeSnapshot({
+                quota: {
+                  windows: [{ id: "primary", label: "5-hour", usedPercent: 84 }],
+                  capturedAt: "2026-07-29T12:00:00.000Z",
+                },
                 skills: [
                   {
                     name: "github:gh-fix-ci",
@@ -331,6 +336,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           assert.strictEqual(status.auth.type, "chatgpt");
           assert.strictEqual(status.auth.label, "ChatGPT Pro 20x Subscription");
           assert.strictEqual(status.auth.email, "test@example.com");
+          assert.strictEqual(status.quota?.windows[0]?.usedPercent, 84);
           assert.deepStrictEqual(status.models, [
             {
               slug: "gpt-live-codex",
@@ -1807,11 +1813,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
-            claudeCapabilities(),
+            claudeCapabilities({
+              quota: {
+                windows: [{ id: "five_hour", label: "5-hour", usedPercent: 73 }],
+                capturedAt: "2026-07-29T12:00:00.000Z",
+              },
+            }),
           );
           assert.strictEqual(status.status, "ready");
           assert.strictEqual(status.installed, true);
           assert.strictEqual(status.auth.status, "authenticated");
+          assert.strictEqual(status.quota?.windows[0]?.usedPercent, 73);
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {

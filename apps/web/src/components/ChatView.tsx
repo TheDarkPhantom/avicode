@@ -29,6 +29,7 @@ import {
 import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
   parseScopedThreadKey,
+  scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
@@ -1152,6 +1153,9 @@ function ChatViewContent(props: ChatViewProps) {
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
+    reportFailure: false,
+  });
+  const refreshProviderUsage = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
@@ -5846,11 +5850,16 @@ function ChatViewContent(props: ChatViewProps) {
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
       );
-      setStickyComposerModelSelection(nextModelSelection);
+      const stickyScopeKey =
+        settings.projectScopedProviderSelectionEnabled && activeProject
+          ? scopedProjectKey(scopeProjectRef(activeProject.environmentId, activeProject.id))
+          : null;
+      setStickyComposerModelSelection(nextModelSelection, stickyScopeKey);
       scheduleComposerFocus();
     },
     [
       activeThread,
+      activeProject,
       lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
@@ -5858,6 +5867,15 @@ function ChatViewContent(props: ChatViewProps) {
       providerStatuses,
       settings,
     ],
+  );
+  const onRefreshProviderUsage = useCallback(
+    async (instanceId: ProviderInstanceId): Promise<void> => {
+      await refreshProviderUsage({
+        environmentId,
+        input: { instanceId },
+      });
+    },
+    [environmentId, refreshProviderUsage],
   );
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
@@ -6262,6 +6280,13 @@ function ChatViewContent(props: ChatViewProps) {
                             activeThreadActivities={activeThread?.activities}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
+                            providerSelectionScopeKey={
+                              settings.projectScopedProviderSelectionEnabled && activeProject
+                                ? scopedProjectKey(
+                                    scopeProjectRef(activeProject.environmentId, activeProject.id),
+                                  )
+                                : null
+                            }
                             keybindings={keybindings}
                             terminalOpen={Boolean(terminalUiState.terminalOpen)}
                             gitCwd={gitCwd}
@@ -6285,6 +6310,7 @@ function ChatViewContent(props: ChatViewProps) {
                               onChangeActivePendingUserInputCustomAnswer
                             }
                             onProviderModelSelect={onProviderModelSelect}
+                            onRefreshProviderUsage={onRefreshProviderUsage}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}

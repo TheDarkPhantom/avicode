@@ -5,6 +5,7 @@ import {
   EyeOffIcon,
   LoaderIcon,
   RefreshCwIcon,
+  ShieldCheckIcon,
   SparklesIcon,
   TagsIcon,
 } from "lucide-react";
@@ -150,6 +151,34 @@ function ChatListSettings() {
   );
 }
 
+function ProjectIsolationSettings() {
+  const projectScopedProviderSelectionEnabled = useClientSettings(
+    (settings) => settings.projectScopedProviderSelectionEnabled,
+  );
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="Project isolation" icon={<ShieldCheckIcon className="size-5" />}>
+      <SettingsRow
+        title="Remember provider credentials per project"
+        description="Keeps each project’s last selected provider instance and model separate. Use this when provider instances represent different clients or accounts, so starting a chat in one project cannot inherit another project’s Claude or Codex credentials."
+        status="Off by default. Existing global model-picker behavior stays unchanged until you enable this."
+        control={
+          <Switch
+            checked={projectScopedProviderSelectionEnabled}
+            onCheckedChange={(checked) => {
+              updateSettings({
+                projectScopedProviderSelectionEnabled: Boolean(checked),
+              });
+            }}
+            aria-label="Remember provider credentials per project"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
 export function legacyT3ImportStatusDescription(
   status: DesktopLegacyT3ImportStatus | null,
 ): string {
@@ -237,6 +266,7 @@ export function AviCodeSettings() {
       <NotificationSettings />
       <TimeLoggingSettings />
       <ChatListSettings />
+      <ProjectIsolationSettings />
 
       <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
         <SettingsRow
