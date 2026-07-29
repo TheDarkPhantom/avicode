@@ -89,6 +89,8 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import { VoiceTokenRequestError } from "@t3tools/contracts";
+import { createVoiceToken } from "./voice/VoiceTokenService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -1554,6 +1556,19 @@ const makeWsRpcLayer = (
               .pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
             {
               "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.voiceCreateToken]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceCreateToken,
+            // Reads the materialized settings so the plaintext key is present;
+            // the redacted copy sent to clients always has it blank.
+            serverSettings.getSettings.pipe(
+              Effect.mapError((cause) => new VoiceTokenRequestError({ cause })),
+              Effect.flatMap((settings) => createVoiceToken(settings.voice.deepgramApiKey)),
+            ),
+            {
+              "rpc.aggregate": "voice",
             },
           ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>

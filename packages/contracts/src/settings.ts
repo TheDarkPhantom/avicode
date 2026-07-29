@@ -464,6 +464,17 @@ export const ObservabilitySettings = Schema.Struct({
 });
 export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 
+// Voice dictation (Deepgram). The API key follows the same convention as
+// sensitive provider environment variables: the plaintext lives in the
+// server secret store, never in settings.json and never on the wire. The
+// client only ever sees `deepgramApiKeyRedacted: true`, meaning "a key is
+// stored" — see redactServerSettingsForClient in apps/server/src/serverSettings.ts.
+export const VoiceSettings = Schema.Struct({
+  deepgramApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
+});
+export type VoiceSettings = typeof VoiceSettings.Type;
+
 export const SourceControlWritingStyleMode = Schema.Literals([
   "repo_conventions",
   "conventional_commits",
@@ -536,6 +547,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -650,6 +662,16 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),
       otlpMetricsUrl: Schema.optionalKey(TrimmedString),
+    }),
+  ),
+  // `deepgramApiKeyRedacted: false` is how the client says "this is a fresh
+  // plaintext value, replace the stored secret" (including clearing it with an
+  // empty string). Omitting it leaves the stored secret untouched. Mirrors the
+  // `valueRedacted` handshake on provider environment variables.
+  voice: Schema.optionalKey(
+    Schema.Struct({
+      deepgramApiKey: Schema.optionalKey(TrimmedString),
+      deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   providers: Schema.optionalKey(

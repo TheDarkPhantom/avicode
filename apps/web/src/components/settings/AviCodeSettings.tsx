@@ -10,6 +10,7 @@ import {
   DatabaseBackupIcon,
   EyeOffIcon,
   LoaderIcon,
+  MicIcon,
   PaletteIcon,
   PanelLeftIcon,
   RefreshCwIcon,
@@ -21,7 +22,12 @@ import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useColorTheme } from "../../hooks/useColorTheme";
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  usePrimarySettings,
+  useUpdateClientSettings,
+  useUpdatePrimarySettings,
+} from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import {
   COLOR_THEMES,
@@ -30,6 +36,7 @@ import {
   findColorTheme,
   isColorThemeId,
 } from "../../lib/colorTheme";
+import { DraftInput } from "../ui/draft-input";
 import { previewNotificationChime } from "../../lib/notificationChime";
 import {
   isWindowTitlePrivacyEnabled,
@@ -374,6 +381,45 @@ function ProjectIsolationSettings() {
   );
 }
 
+function VoiceSettingsSection() {
+  // Unlike the rest of this page, the Deepgram key is a *server* setting: the
+  // plaintext has to stay on the server so it is never shipped to the browser.
+  const voice = usePrimarySettings((settings) => settings.voice);
+  const updateSettings = useUpdatePrimarySettings();
+  const hasStoredKey = voice.deepgramApiKeyRedacted === true;
+
+  return (
+    <SettingsSection title="Voice" icon={<MicIcon className="size-5" />}>
+      <SettingsRow
+        title="Deepgram API key"
+        description="Enables the microphone button in the chat composer, so you can dictate a prompt instead of typing it. Get a key at console.deepgram.com."
+        status={
+          hasStoredKey
+            ? "A key is stored. It is kept on the server and is never sent to the browser — the app requests a short-lived token for each recording."
+            : "Dictation is off until a key is set."
+        }
+        control={
+          <DraftInput
+            className="w-full sm:w-80"
+            value={hasStoredKey ? "" : voice.deepgramApiKey}
+            // `deepgramApiKeyRedacted: false` marks this as a fresh plaintext,
+            // which is what tells the server to replace the stored secret.
+            // Committing an empty value clears it.
+            onCommit={(deepgramApiKey) => {
+              updateSettings({ voice: { deepgramApiKey, deepgramApiKeyRedacted: false } });
+            }}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={hasStoredKey ? "Stored key - enter a new value to replace" : "Paste key"}
+            aria-label="Deepgram API key"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
 export function legacyT3ImportStatusDescription(
   status: DesktopLegacyT3ImportStatus | null,
 ): string {
@@ -464,6 +510,8 @@ export function AviCodeSettings() {
       <TimeLoggingSettings />
       <ChatListSettings />
       <ProjectIsolationSettings />
+
+      <VoiceSettingsSection />
 
       <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
         <SettingsRow
