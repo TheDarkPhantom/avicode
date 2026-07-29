@@ -162,8 +162,9 @@ it.layer(NodeServices.layer)("thread.fork decider", (it) => {
         }),
       );
       const forked = events[0];
-      expect((forked?.payload as { inheritedMessageIds: ReadonlyArray<string> }).inheritedMessageIds)
-        .toEqual([MessageId.make("user-1"), MessageId.make("assistant-1")]);
+      expect(
+        (forked?.payload as { inheritedMessageIds: ReadonlyArray<string> }).inheritedMessageIds,
+      ).toEqual([MessageId.make("user-1"), MessageId.make("assistant-1")]);
     }),
   );
 
@@ -175,8 +176,9 @@ it.layer(NodeServices.layer)("thread.fork decider", (it) => {
           readModel: makeReadModel(),
         }),
       );
-      expect((events[0]?.payload as { inheritedMessageIds: ReadonlyArray<string> }).inheritedMessageIds)
-        .toEqual([]);
+      expect(
+        (events[0]?.payload as { inheritedMessageIds: ReadonlyArray<string> }).inheritedMessageIds,
+      ).toEqual([]);
     }),
   );
 

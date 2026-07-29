@@ -1685,16 +1685,16 @@ export function makeOpenCodeAdapter(
     // Avi Code addition: conversation branching. OpenCode's session.revert is
     // destructive in place and there is no branch primitive, so fail rather
     // than silently reverting the source conversation.
-    const forkThread: OpenCodeAdapterShape["forkThread"] = Effect.fn("forkThread")(function* (
-      sourceThreadId,
-    ) {
-      yield* ensureSessionContext(sessions, sourceThreadId);
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "thread/fork",
-        detail: "OpenCode sessions do not support conversation branching yet.",
-      });
-    });
+    const forkThread: OpenCodeAdapterShape["forkThread"] = Effect.fn("forkThread")(
+      function* (sourceThreadId) {
+        yield* ensureSessionContext(sessions, sourceThreadId);
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/fork",
+          detail: "OpenCode sessions do not support conversation branching yet.",
+        });
+      },
+    );
 
     const stopAll: OpenCodeAdapterShape["stopAll"] = () =>
       Effect.gen(function* () {

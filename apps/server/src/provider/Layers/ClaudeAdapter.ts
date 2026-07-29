@@ -4249,17 +4249,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   // resolve `lastTurnId` -> uuid here and call `forkSession`. Falling back to a
   // full-transcript fork would silently branch at the wrong point, which is
   // worse than a clear error.
-  const forkThread: ClaudeAdapterShape["forkThread"] = Effect.fn("forkThread")(function* (
-    sourceThreadId,
-  ) {
-    yield* requireSession(sourceThreadId);
-    return yield* new ProviderAdapterRequestError({
-      provider: PROVIDER,
-      method: "thread/fork",
-      detail:
-        "Claude sessions do not support conversation branching yet: per-turn transcript message ids are not tracked.",
-    });
-  });
+  const forkThread: ClaudeAdapterShape["forkThread"] = Effect.fn("forkThread")(
+    function* (sourceThreadId) {
+      yield* requireSession(sourceThreadId);
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "thread/fork",
+        detail:
+          "Claude sessions do not support conversation branching yet: per-turn transcript message ids are not tracked.",
+      });
+    },
+  );
 
   const respondToRequest: ClaudeAdapterShape["respondToRequest"] = Effect.fn("respondToRequest")(
     function* (threadId, requestId, decision) {
