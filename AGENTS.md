@@ -13,6 +13,42 @@
   - Subagents must not independently launch dev servers or repeat integrated client verification unless their delegated task explicitly requires it.
   - Stop dev servers, watchers, and other long-running verification processes when the focused verification is complete.
 
+## Git Workflow
+
+Feature work does not land directly on `main`. Follow this for every non-trivial change unless Avi
+says otherwise:
+
+1. Branch off `main`: `git checkout -b <type>/<slug>` — `feat/`, `fix/`, `chore/`, `docs/`.
+2. Commit on the branch. Stage the files you actually changed — never `git add -A`. This working
+   tree routinely holds unrelated work in flight.
+3. `git push -u origin HEAD`, then `gh pr create` against `main`. `gh` is authenticated for
+   `TheDarkPhantom/avicode`.
+4. **Merge commits, not squash** — `gh pr merge --merge --delete-branch`. Every PR so far landed as
+   a merge commit; don't switch styles mid-history.
+5. Sync local: `git checkout main && git pull --ff-only`, then confirm `git rev-parse main origin/main`
+   agree. That checkout aborts on a dirty tree _after_ the remote merge already landed, so local
+   `main` goes stale silently while the PR reads as merged.
+
+Keep PRs small and focused. `.github/workflows/pr-size.yml` labels every PR `size:XS`…`size:XXL`
+from its non-test diff, so scope creep shows up on the PR itself.
+
+`origin` is the fork (`TheDarkPhantom/avicode`); `upstream` is `pingdotgg/t3code`. Never push to
+`upstream`.
+
+### Shipping is the default
+
+When a chunk of work is finished and verified, carry it to `main` without being asked. Stopping at
+"want me to commit?" is noise. Ask only when the change is genuinely ambiguous or Avi said to hold.
+
+## Planning Documents
+
+- `TODO.md` — the prioritized roadmap. Read it before starting work; tick items and refresh the
+  **Last updated** line when they land.
+- `FUTURE_ENHANCEMENTS.md` — after finishing a feature, review it for natural extensions and record
+  any limitation hit while building.
+
+Both are hand-maintained and are this repo's only running record of intent — there is no changelog.
+
 ## Avi Code Fork Conventions
 
 This repo is a fork. Upstream keeps changing, and every Avi Code addition that lands in a shared
@@ -30,6 +66,15 @@ file is a future merge conflict. Keep the fork's surface area small and easy to 
 - Settings still live in the shared `ClientSettingsSchema` (`packages/contracts/src/settings.ts`);
   only the _UI_ is isolated. Give fork-added keys distinct names so they don't collide with a future
   upstream key.
+
+## Parallel Agent Isolation
+
+- Every agent that edits files must work in its own linked git worktree. Agents must not share a checkout; concurrent edits to the same working tree clash and silently overwrite each other.
+- Create the worktree from the target base branch before making any change, and do all reads, edits, installs, and verification inside it.
+- Read-only agents (search, exploration, review) may share the primary checkout. If an agent starts read-only and then needs to write, move it into a worktree first.
+- Do not hand two agents the same worktree, even for tasks that look disjoint. One worktree, one agent, one task.
+- Each worktree gets its own gitignored `.t3` dev state and its own preferred port offsets, so isolated agents also avoid dev-server and database collisions (see Dev Servers).
+- Remove the worktree once its work is merged or abandoned. Leftover worktrees keep stale `.t3` state and port reservations alive.
 
 ## Dev Servers
 
