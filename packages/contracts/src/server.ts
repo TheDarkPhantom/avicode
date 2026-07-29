@@ -16,7 +16,7 @@ import {
   KeybindingWhen,
   ResolvedKeybindingsConfig,
 } from "./keybindings.ts";
-import { EditorId } from "./editor.ts";
+import { EditorDiscoveryStatus, EditorId } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ProviderQuotaSnapshot } from "./providerQuota.ts";
@@ -472,6 +472,12 @@ export const ServerConfig = Schema.Struct({
   issues: ServerConfigIssues,
   providers: ServerProviders,
   availableEditors: Schema.Array(EditorId),
+  /**
+   * Discovery runs in the background, so a snapshot taken during server startup
+   * can carry an empty `availableEditors` while the scan is still `pending`.
+   * Absent on servers predating background discovery; treat that as `ready`.
+   */
+  editorDiscoveryStatus: Schema.optionalKey(EditorDiscoveryStatus),
   observability: ServerObservability,
   settings: ServerSettings,
   /** Whether shell subscriptions can emit an opt-in catch-up completion marker. */
@@ -531,6 +537,13 @@ export const ServerConfigSettingsUpdatedPayload = Schema.Struct({
 });
 export type ServerConfigSettingsUpdatedPayload = typeof ServerConfigSettingsUpdatedPayload.Type;
 
+export const ServerConfigAvailableEditorsUpdatedPayload = Schema.Struct({
+  availableEditors: Schema.Array(EditorId),
+  editorDiscoveryStatus: EditorDiscoveryStatus,
+});
+export type ServerConfigAvailableEditorsUpdatedPayload =
+  typeof ServerConfigAvailableEditorsUpdatedPayload.Type;
+
 export const ServerConfigStreamSnapshotEvent = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("snapshot"),
@@ -562,11 +575,20 @@ export const ServerConfigStreamSettingsUpdatedEvent = Schema.Struct({
 export type ServerConfigStreamSettingsUpdatedEvent =
   typeof ServerConfigStreamSettingsUpdatedEvent.Type;
 
+export const ServerConfigStreamAvailableEditorsUpdatedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("availableEditorsUpdated"),
+  payload: ServerConfigAvailableEditorsUpdatedPayload,
+});
+export type ServerConfigStreamAvailableEditorsUpdatedEvent =
+  typeof ServerConfigStreamAvailableEditorsUpdatedEvent.Type;
+
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
   ServerConfigStreamProviderStatusesEvent,
   ServerConfigStreamSettingsUpdatedEvent,
+  ServerConfigStreamAvailableEditorsUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 

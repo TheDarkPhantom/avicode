@@ -35,6 +35,7 @@ interface ChatHeaderProps {
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
+  editorDiscoveryPending: boolean;
   rightPanelOpen: boolean;
   gitCwd: string | null;
   onOpenChanges: () => void;
@@ -72,6 +73,7 @@ export const ChatHeader = memo(function ChatHeader({
   preferredScriptId,
   keybindings,
   availableEditors,
+  editorDiscoveryPending,
   rightPanelOpen,
   gitCwd,
   onOpenChanges,
@@ -163,6 +165,7 @@ export const ChatHeader = memo(function ChatHeader({
             environmentId={activeThreadEnvironmentId}
             keybindings={keybindings}
             availableEditors={availableEditors}
+            editorDiscoveryPending={editorDiscoveryPending}
             openInCwd={openInCwd}
           />
         )}
