@@ -318,6 +318,52 @@ export function orderItemsByPreferredIds<TItem, TId>(input: {
   return [...ordered, ...remaining];
 }
 
+/** Avi Code addition: the flat sidebar's row list.
+ *
+ * Unlike the grouped tree there is no per-project "show more", so the cap is a
+ * single global one. The active thread is always appended when the cap would
+ * have cut it, otherwise navigating to an older chat (via the palette, a link,
+ * or back/forward) would leave the sidebar with no highlighted row. */
+export function buildFlatSidebarThreadList<
+  TThread extends { readonly id: string; readonly archivedAt: string | null } & ThreadSortInput,
+>(input: {
+  threads: readonly TThread[];
+  sortOrder: SidebarThreadSortOrder;
+  limit: number;
+  activeThreadKey: string | null;
+  getThreadKey: (thread: TThread) => string;
+}): {
+  renderedThreads: TThread[];
+  hiddenThreads: TThread[];
+  hasOverflowingThreads: boolean;
+} {
+  const { activeThreadKey, getThreadKey, limit, sortOrder, threads } = input;
+  const sorted = sortThreads(
+    threads.filter((thread) => thread.archivedAt === null),
+    sortOrder,
+  );
+  const hasOverflowingThreads = sorted.length > limit;
+  if (!hasOverflowingThreads) {
+    return { renderedThreads: sorted, hiddenThreads: [], hasOverflowingThreads: false };
+  }
+
+  const visible = sorted.slice(0, limit);
+  const hidden = sorted.slice(limit);
+  const activeIndex =
+    activeThreadKey === null
+      ? -1
+      : hidden.findIndex((thread) => getThreadKey(thread) === activeThreadKey);
+  if (activeIndex === -1) {
+    return { renderedThreads: visible, hiddenThreads: hidden, hasOverflowingThreads: true };
+  }
+
+  return {
+    renderedThreads: [...visible, hidden[activeIndex]!],
+    hiddenThreads: hidden.filter((_, index) => index !== activeIndex),
+    hasOverflowingThreads: true,
+  };
+}
+
 export function getVisibleSidebarThreadIds<TThreadId>(
   renderedProjects: readonly {
     shouldShowThreadPanel?: boolean;
