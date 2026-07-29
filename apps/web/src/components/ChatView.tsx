@@ -100,6 +100,8 @@ import { useUiStateStore } from "../uiStateStore";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
+  buildPlanReviewPrompt,
+  buildPlanReviewThreadTitle,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
 import {
@@ -5565,6 +5567,152 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
+  const onReviewPlanWithCodex = useCallback(async () => {
+    if (
+      !activeThread ||
+      !activeProject ||
+      !activeProposedPlan ||
+      !isServerThread ||
+      isSendBusy ||
+      isConnecting ||
+      activeEnvironmentUnavailable ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+
+    const codexProvider = providerStatuses.find(
+      (provider) =>
+        provider.driver === "codex" &&
+        provider.enabled &&
+        provider.status === "ready" &&
+        provider.availability !== "unavailable",
+    );
+    const codexModel = codexProvider?.models[0]?.slug;
+    if (!codexProvider || !codexModel) {
+      toastManager.add({
+        type: "error",
+        title: "Codex is unavailable",
+        description: "Enable a ready Codex provider with at least one model to review this plan.",
+      });
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    const nextThreadId = newThreadId();
+    const planMarkdown = activeProposedPlan.planMarkdown;
+    const reviewPrompt = buildPlanReviewPrompt(planMarkdown);
+    const nextThreadTitle = truncate(buildPlanReviewThreadTitle(planMarkdown));
+    const reviewModelSelection: ModelSelection = {
+      instanceId: codexProvider.instanceId,
+      model: codexModel,
+    };
+
+    sendInFlightRef.current = true;
+    beginLocalDispatch({ preparingWorktree: false });
+    const finish = () => {
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+    };
+
+    const createResult = await createThread({
+      environmentId,
+      input: {
+        threadId: nextThreadId,
+        projectId: activeProject.id,
+        title: nextThreadTitle,
+        modelSelection: reviewModelSelection,
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+        branch: activeThreadBranch,
+        worktreePath: activeThread.worktreePath,
+        createdAt,
+      },
+    });
+    let failure: AtomCommandResult<unknown, unknown> | null =
+      createResult._tag === "Failure" ? createResult : null;
+
+    if (failure === null) {
+      const startResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text: reviewPrompt,
+            attachments: [],
+          },
+          modelSelection: reviewModelSelection,
+          titleSeed: nextThreadTitle,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+          createdAt,
+        },
+      });
+      failure = startResult._tag === "Failure" ? startResult : null;
+    }
+
+    if (failure === null) {
+      const startedResult = await settlePromise(() =>
+        waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+      );
+      failure = startedResult._tag === "Failure" ? startedResult : null;
+    }
+
+    if (failure === null) {
+      const navigateResult = await settlePromise(() =>
+        navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: activeThread.environmentId,
+            threadId: nextThreadId,
+          },
+        }),
+      );
+      failure = navigateResult._tag === "Failure" ? navigateResult : null;
+    }
+
+    if (failure !== null) {
+      const cleanupResult = await deleteThread({
+        environmentId,
+        input: { threadId: nextThreadId },
+      });
+      if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+        console.warn(
+          "Failed to clean up plan review thread after start failure.",
+          squashAtomCommandFailure(cleanupResult),
+        );
+      }
+      if (!isAtomCommandInterrupted(failure)) {
+        const error = squashAtomCommandFailure(failure);
+        toastManager.add({
+          type: "error",
+          title: "Could not start Codex review",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+    }
+    finish();
+  }, [
+    activeEnvironmentUnavailable,
+    activeProject,
+    activeProposedPlan,
+    activeThread,
+    activeThreadBranch,
+    beginLocalDispatch,
+    createThread,
+    deleteThread,
+    environmentId,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    navigate,
+    providerStatuses,
+    resetLocalDispatch,
+    startThreadTurn,
+  ]);
+
   const getModelDisabledReason = useCallback(
     (instanceId: ProviderInstanceId, model: string): string | null => {
       if (!activeThread) {
@@ -6069,6 +6217,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onReviewPlanWithCodex={onReviewPlanWithCodex}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption

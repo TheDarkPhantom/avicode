@@ -31,6 +31,7 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onReviewPlanWithCodex: () => void;
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -103,6 +104,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
+  onReviewPlanWithCodex,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -221,6 +223,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             <ChevronDownIcon className="size-3.5" />
           </MenuTrigger>
           <MenuPopup align="end" side="top">
+            <MenuItem
+              disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+              onClick={() => void onReviewPlanWithCodex()}
+            >
+              Review with Codex
+            </MenuItem>
             <MenuItem
               disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
               onClick={() => void onImplementPlanInNewThread()}
