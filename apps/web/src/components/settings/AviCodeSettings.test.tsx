@@ -17,5 +17,6 @@ describe("AviCodeSettings", () => {
     expect(markup).toContain("Import from T3 Code");
     expect(markup).toContain("Avi Code data is backed up first");
     expect(markup).toContain("Import latest");
+    expect(markup).toContain("Available in the Avi Code desktop app.");
   });
 });

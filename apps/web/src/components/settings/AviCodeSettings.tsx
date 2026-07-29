@@ -37,9 +37,12 @@ export function AviCodeSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
+  const canImport =
+    typeof bridge?.getLegacyT3ImportStatus === "function" &&
+    typeof bridge.importLegacyT3Data === "function";
 
   const refreshStatus = useCallback(async () => {
-    if (!bridge?.getLegacyT3ImportStatus) {
+    if (!canImport) {
       setIsLoading(false);
       return;
     }
@@ -57,7 +60,7 @@ export function AviCodeSettings() {
     } finally {
       setIsLoading(false);
     }
-  }, [bridge]);
+  }, [bridge, canImport]);
 
   useEffect(() => {
     void refreshStatus();
@@ -91,11 +94,15 @@ export function AviCodeSettings() {
         <SettingsRow
           title="Import from T3 Code"
           description="Refresh Avi Code with the latest projects, threads, messages, and attachments from your local T3 Code workspace."
-          status={legacyT3ImportStatusDescription(status)}
+          status={
+            canImport
+              ? legacyT3ImportStatusDescription(status)
+              : "Available in the Avi Code desktop app."
+          }
           control={
             <Button
               size="sm"
-              disabled={!bridge || isLoading || isImporting || status?.available !== true}
+              disabled={!canImport || isLoading || isImporting || status?.available !== true}
               onClick={() => void importLatest()}
             >
               {isImporting ? (
