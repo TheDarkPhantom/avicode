@@ -600,6 +600,41 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            forkParentThreadId: null,
+            forkPointMessageId: null,
+            latestTurnId: null,
+            createdAt: event.payload.createdAt,
+            updatedAt: event.payload.updatedAt,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            snoozedUntil: null,
+            snoozedAt: null,
+            latestUserMessageAt: null,
+            pendingApprovalCount: 0,
+            pendingUserInputCount: 0,
+            hasActionableProposedPlan: 0,
+            deletedAt: null,
+          });
+          return;
+
+        // Avi Code addition: a conversation branch materialises as its own
+        // thread row. Identical to thread.created except it carries the
+        // lineage back to the thread and message it branched from, and it
+        // inherits the parent's branch/worktree because branching is
+        // conversation-only and never touches the working tree.
+        case "thread.forked":
+          yield* projectionThreadRepository.upsert({
+            threadId: event.payload.threadId,
+            projectId: event.payload.projectId,
+            title: event.payload.title,
+            modelSelection: event.payload.modelSelection,
+            runtimeMode: event.payload.runtimeMode,
+            interactionMode: event.payload.interactionMode,
+            branch: event.payload.branch,
+            worktreePath: event.payload.worktreePath,
+            forkParentThreadId: event.payload.forkedFrom.threadId,
+            forkPointMessageId: event.payload.forkedFrom.messageId,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,

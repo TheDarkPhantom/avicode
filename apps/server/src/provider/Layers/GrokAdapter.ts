@@ -1414,6 +1414,18 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         });
       });
 
+    // Avi Code addition: conversation branching. Grok ACP has no fork
+    // primitive, so fail loudly rather than branching into an empty thread.
+    const forkThread: GrokAdapterShape["forkThread"] = (sourceThreadId) =>
+      Effect.gen(function* () {
+        yield* requireSession(sourceThreadId);
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/fork",
+          detail: "Grok ACP sessions do not support conversation branching yet.",
+        });
+      });
+
     const stopSession: GrokAdapterShape["stopSession"] = (threadId) =>
       withThreadLock(
         threadId,
@@ -1452,6 +1464,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
       interruptTurn,
       readThread,
       rollbackThread,
+      forkThread,
       respondToRequest,
       respondToUserInput,
       stopSession,

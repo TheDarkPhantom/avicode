@@ -193,6 +193,15 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       Effect.succeed({ threadId, turns: [] }),
   );
 
+  // Avi Code addition: conversation branching.
+  const forkThread = vi.fn(
+    (
+      sourceThreadId: ThreadId,
+      lastTurnId: TurnId | null,
+    ): Effect.Effect<{ providerThreadId: string }, ProviderAdapterError> =>
+      Effect.succeed({ providerThreadId: `${sourceThreadId}:fork:${lastTurnId ?? "root"}` }),
+  );
+
   const stopAll = vi.fn(
     (): Effect.Effect<void, ProviderAdapterError> =>
       Effect.sync(() => {
@@ -215,6 +224,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     hasSession,
     readThread,
     rollbackThread,
+    forkThread,
     stopAll,
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
@@ -250,6 +260,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     hasSession,
     readThread,
     rollbackThread,
+    forkThread,
     stopAll,
   };
 }

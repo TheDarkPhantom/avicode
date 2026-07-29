@@ -4235,6 +4235,32 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
   );
 
+  // Avi Code addition: conversation branching.
+  //
+  // NOT YET IMPLEMENTED, deliberately failing rather than degrading. The SDK
+  // supports this well — `forkSession(sessionId, { upToMessageId })`, or
+  // `query({ resume, forkSession: true, resumeSessionAt })` — but both address
+  // the branch point by *transcript message UUID*, and we only retain
+  // `context.lastAssistantUuid` for the most recent turn. Branching at an
+  // arbitrary earlier turn needs a per-turn uuid.
+  //
+  // To finish: record `message.uuid` onto the turn record where
+  // `context.lastAssistantUuid` is assigned (see handleAssistantMessage), then
+  // resolve `lastTurnId` -> uuid here and call `forkSession`. Falling back to a
+  // full-transcript fork would silently branch at the wrong point, which is
+  // worse than a clear error.
+  const forkThread: ClaudeAdapterShape["forkThread"] = Effect.fn("forkThread")(function* (
+    sourceThreadId,
+  ) {
+    yield* requireSession(sourceThreadId);
+    return yield* new ProviderAdapterRequestError({
+      provider: PROVIDER,
+      method: "thread/fork",
+      detail:
+        "Claude sessions do not support conversation branching yet: per-turn transcript message ids are not tracked.",
+    });
+  });
+
   const respondToRequest: ClaudeAdapterShape["respondToRequest"] = Effect.fn("respondToRequest")(
     function* (threadId, requestId, decision) {
       const context = yield* requireSession(threadId);
@@ -4323,6 +4349,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     interruptTurn,
     readThread,
     rollbackThread,
+    forkThread,
     respondToRequest,
     respondToUserInput,
     stopSession,

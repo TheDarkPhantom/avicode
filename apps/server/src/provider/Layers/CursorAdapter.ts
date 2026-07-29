@@ -1129,6 +1129,18 @@ export function makeCursorAdapter(
         return { threadId, turns: ctx.turns };
       });
 
+    // Avi Code addition: conversation branching. Cursor ACP exposes no fork
+    // primitive, so fail rather than branching into a context-free thread.
+    const forkThread: CursorAdapterShape["forkThread"] = (sourceThreadId) =>
+      Effect.gen(function* () {
+        yield* requireSession(sourceThreadId);
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/fork",
+          detail: "Cursor ACP sessions do not support conversation branching yet.",
+        });
+      });
+
     const stopSession: CursorAdapterShape["stopSession"] = (threadId) =>
       withThreadLock(
         threadId,
@@ -1170,6 +1182,7 @@ export function makeCursorAdapter(
       interruptTurn,
       readThread,
       rollbackThread,
+      forkThread,
       respondToRequest,
       respondToUserInput,
       stopSession,

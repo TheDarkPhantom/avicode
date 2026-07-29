@@ -18,6 +18,7 @@ import {
   ThreadArchivedPayload,
   ThreadCreatedPayload,
   ThreadDeletedPayload,
+  ThreadForkedPayload,
   ThreadInteractionModeSetPayload,
   ThreadMetaUpdatedPayload,
   ThreadProposedPlanUpsertedPayload,
@@ -295,6 +296,57 @@ export function projectEvent(
             snoozedUntil: null,
             snoozedAt: null,
             deletedAt: null,
+            messages: [],
+            activities: [],
+            checkpoints: [],
+            session: null,
+          },
+          event.type,
+          "thread",
+        );
+        const existing = nextBase.threads.find((entry) => entry.id === thread.id);
+        return {
+          ...nextBase,
+          threads: existing
+            ? nextBase.threads.map((entry) => (entry.id === thread.id ? thread : entry))
+            : [...nextBase.threads, thread],
+        };
+      });
+
+    // Avi Code addition: materialise a conversation branch as its own thread in
+    // the read model. Without this the turn-start that immediately follows the
+    // fork would fail requireThread against an unknown thread id.
+    case "thread.forked":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadForkedPayload,
+          event.payload,
+          event.type,
+          "payload",
+        );
+        const thread: OrchestrationThread = yield* decodeForEvent(
+          OrchestrationThread,
+          {
+            id: payload.threadId,
+            projectId: payload.projectId,
+            title: payload.title,
+            modelSelection: payload.modelSelection,
+            runtimeMode: payload.runtimeMode,
+            interactionMode: payload.interactionMode,
+            branch: payload.branch,
+            worktreePath: payload.worktreePath,
+            forkedFrom: payload.forkedFrom,
+            latestTurn: null,
+            createdAt: payload.createdAt,
+            updatedAt: payload.updatedAt,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            snoozedUntil: null,
+            snoozedAt: null,
+            deletedAt: null,
+            // The inherited prefix deliberately stays owned by the source
+            // thread; only messages produced on this branch live here.
             messages: [],
             activities: [],
             checkpoints: [],

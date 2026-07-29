@@ -42,6 +42,17 @@ export interface ProviderThreadSnapshot {
   readonly turns: ReadonlyArray<ProviderThreadTurnSnapshot>;
 }
 
+/**
+ * Avi Code addition: result of branching a provider thread.
+ *
+ * `providerThreadId` is the backend's id for the new branch (a Codex thread id,
+ * a Claude session id). Callers persist it as the branch thread's resume cursor
+ * so its first session resumes the already-forked history.
+ */
+export interface ProviderForkResult {
+  readonly providerThreadId: string;
+}
+
 export interface ProviderAdapterShape<TError> {
   /**
    * Provider kind implemented by this adapter.
@@ -113,6 +124,21 @@ export interface ProviderAdapterShape<TError> {
     threadId: ThreadId,
     numTurns: number,
   ) => Effect.Effect<ProviderThreadSnapshot, TError>;
+
+  /**
+   * Avi Code addition: branch a provider thread at an earlier point.
+   *
+   * Keeps turns up to and including `lastTurnId` (or nothing, when null) and
+   * returns the new provider-side thread/session id. The source thread is left
+   * untouched — this is the non-destructive counterpart to `rollbackThread`.
+   *
+   * Adapters whose backend cannot branch should fail rather than silently
+   * degrading to a fresh, context-free thread.
+   */
+  readonly forkThread: (
+    sourceThreadId: ThreadId,
+    lastTurnId: TurnId | null,
+  ) => Effect.Effect<ProviderForkResult, TError>;
 
   /**
    * Stop all sessions owned by this adapter.

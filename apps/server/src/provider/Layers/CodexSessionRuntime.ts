@@ -141,6 +141,17 @@ export interface CodexSessionRuntimeShape {
   readonly rollbackThread: (
     numTurns: number,
   ) => Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
+  /**
+   * Avi Code addition: branch this provider thread, keeping turns up to and
+   * including `lastTurnId` and dropping everything after. Returns the new
+   * provider thread id, which the caller stores as the branch's resume cursor.
+   *
+   * Unlike `rollbackThread` this leaves the current thread untouched, and it
+   * does not go through the deprecated `thread/rollback` RPC.
+   */
+  readonly forkThread: (
+    lastTurnId: TurnId | null,
+  ) => Effect.Effect<string, CodexSessionRuntimeError>;
   readonly respondToRequest: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -1360,6 +1371,18 @@ export const makeCodexSessionRuntime = (
         });
         return parseThreadSnapshot(response);
       }),
+      // Avi Code addition: conversation branching.
+      forkThread: (lastTurnId) =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          const response = yield* client.request("thread/fork", {
+            threadId: providerThreadId,
+            // Omitted entirely (rather than null) when branching at the very
+            // first turn, so the fork copies nothing but the thread config.
+            ...(lastTurnId === null ? {} : { lastTurnId: String(lastTurnId) }),
+          });
+          return response.thread.id;
+        }),
       rollbackThread: (numTurns) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;

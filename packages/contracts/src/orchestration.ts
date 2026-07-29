@@ -300,6 +300,18 @@ const SourceProposedPlanReference = Schema.Struct({
   planId: OrchestrationProposedPlanId,
 });
 
+// Avi Code addition: conversation branching. A thread that was forked from an
+// earlier point in another thread records its origin here. `messageId` is the
+// user message that was edited (or retried) to create the branch; the fork
+// inherits every message *before* it. Threads are the storage unit for a
+// branch, but the UI stitches a fork family back together into one
+// conversation, so this is the only link between them.
+export const ThreadForkOrigin = Schema.Struct({
+  threadId: ThreadId,
+  messageId: MessageId,
+});
+export type ThreadForkOrigin = typeof ThreadForkOrigin.Type;
+
 export const OrchestrationSessionStatus = Schema.Literals([
   "idle",
   "starting",
@@ -395,6 +407,9 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Avi Code addition: null/absent for a root thread, set for a conversation
+  // branch. Optional so payloads from servers without branching still decode.
+  forkedFrom: Schema.optional(Schema.NullOr(ThreadForkOrigin)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -451,6 +466,10 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Avi Code addition: the sidebar hides threads with a non-null forkedFrom so
+  // a fork family reads as a single conversation entry. Optional so payloads
+  // from servers without branching still decode.
+  forkedFrom: Schema.optional(Schema.NullOr(ThreadForkOrigin)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -787,6 +806,53 @@ const ThreadCheckpointRevertCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+// Avi Code addition: branch a conversation at an earlier user message.
+// This is the non-destructive sibling of thread.checkpoint.revert — rather than
+// truncating this thread in place, it opens a new thread seeded with every
+// message before `forkPointMessageId` and starts a turn there with `message`.
+// Deliberately does NOT touch the working tree or git checkpoints: branching is
+// a conversation-only operation, so both branches keep sharing one worktree.
+const ThreadForkFields = {
+  type: Schema.Literal("thread.fork"),
+  commandId: CommandId,
+  // The thread being branched from. May itself be a branch.
+  threadId: ThreadId,
+  // Client-minted id for the branch, so the UI can navigate optimistically.
+  forkThreadId: ThreadId,
+  // The user message being edited or retried. Everything strictly before it is
+  // inherited; it and everything after it are not.
+  forkPointMessageId: MessageId,
+  modelSelection: Schema.optional(ModelSelection),
+  createdAt: IsoDateTime,
+} as const;
+
+const ThreadForkCommand = Schema.Struct({
+  ...ThreadForkFields,
+  message: Schema.Struct({
+    messageId: MessageId,
+    role: Schema.Literal("user"),
+    text: Schema.String,
+    attachments: Schema.Array(ChatAttachment),
+  }),
+  runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+});
+export type ThreadForkCommand = typeof ThreadForkCommand.Type;
+
+const ClientThreadForkCommand = Schema.Struct({
+  ...ThreadForkFields,
+  message: Schema.Struct({
+    messageId: MessageId,
+    role: Schema.Literal("user"),
+    text: Schema.String,
+    attachments: Schema.Array(UploadChatAttachment),
+  }),
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+});
+
 const ThreadSessionStopCommand = Schema.Struct({
   type: Schema.Literal("thread.session.stop"),
   commandId: CommandId,
@@ -814,6 +880,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
+  ThreadForkCommand,
   ThreadSessionStopCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
@@ -839,6 +906,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
+  ClientThreadForkCommand,
   ThreadSessionStopCommand,
 ]);
 export type ClientOrchestrationCommand = typeof ClientOrchestrationCommand.Type;
@@ -947,6 +1015,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.user-input-response-requested",
   "thread.checkpoint-revert-requested",
   "thread.reverted",
+  "thread.forked",
   "thread.session-stop-requested",
   "thread.session-set",
   "thread.proposed-plan-upserted",
@@ -1126,6 +1195,26 @@ export const ThreadRevertedPayload = Schema.Struct({
   turnCount: NonNegativeInt,
 });
 
+// Avi Code addition: emitted against the NEW thread (aggregateId = forkThreadId)
+// so the branch materialises as its own aggregate. `inheritedMessageIds` is the
+// exact prefix copied from the source thread, resolved by the decider at fork
+// time so the projection never has to re-derive "everything before the fork
+// point" — replays stay deterministic even if the source thread later changes.
+export const ThreadForkedPayload = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  forkedFrom: ThreadForkOrigin,
+  title: TrimmedNonEmptyString,
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  inheritedMessageIds: Schema.Array(MessageId),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
 export const ThreadSessionStopRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   createdAt: IsoDateTime,
@@ -1283,6 +1372,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.reverted"),
     payload: ThreadRevertedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.forked"),
+    payload: ThreadForkedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

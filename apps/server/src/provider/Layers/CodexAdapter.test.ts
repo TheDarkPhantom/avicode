@@ -103,6 +103,11 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
       }),
   );
 
+  // Avi Code addition: conversation branching.
+  public readonly forkThreadImpl = vi.fn(
+    (_lastTurnId: TurnId | null): Promise<string> => Promise.resolve("provider-thread-fork-1"),
+  );
+
   public readonly respondToRequestImpl = vi.fn(
     (_requestId: ApprovalRequestId, _decision: ProviderApprovalDecision): Promise<void> =>
       Promise.resolve(undefined),
@@ -139,6 +144,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   rollbackThread(numTurns: number) {
     return Effect.promise(() => this.rollbackThreadImpl(numTurns));
+  }
+
+  forkThread(lastTurnId: TurnId | null) {
+    return Effect.promise(() => this.forkThreadImpl(lastTurnId));
   }
 
   respondToRequest(requestId: ApprovalRequestId, decision: ProviderApprovalDecision) {

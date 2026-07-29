@@ -23,6 +23,7 @@ import {
   type OrchestrationThreadShell,
   ModelSelection,
   ProjectId,
+  ThreadForkOrigin,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
@@ -224,6 +225,22 @@ function mapSessionRow(
     lastError: row.lastError,
     updatedAt: row.updatedAt,
   };
+}
+
+/**
+ * Avi Code addition: rebuild the conversation-branch origin from its two
+ * nullable columns. They are written as a pair, but a partially-populated row
+ * (an interrupted migration, a hand-edited db) degrades to a root thread rather
+ * than producing a half-built origin the client would have to defend against.
+ */
+function mapForkOrigin(row: {
+  readonly forkParentThreadId: ThreadId | null;
+  readonly forkPointMessageId: MessageId | null;
+}): ThreadForkOrigin | null {
+  if (row.forkParentThreadId === null || row.forkPointMessageId === null) {
+    return null;
+  }
+  return { threadId: row.forkParentThreadId, messageId: row.forkPointMessageId };
 }
 
 function mapProjectShellRow(
@@ -1203,6 +1220,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 interactionMode: row.interactionMode,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
+                forkedFrom: mapForkOrigin(row),
                 latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
@@ -1405,6 +1423,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
+                  forkedFrom: mapForkOrigin(row),
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
@@ -1538,6 +1557,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       interactionMode: row.interactionMode,
                       branch: row.branch,
                       worktreePath: row.worktreePath,
+                      forkedFrom: mapForkOrigin(row),
                       latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                       createdAt: row.createdAt,
                       updatedAt: row.updatedAt,
@@ -1676,6 +1696,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
+                  forkedFrom: mapForkOrigin(row),
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
@@ -1920,6 +1941,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
+        forkedFrom: mapForkOrigin(threadRow.value),
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
@@ -2018,6 +2040,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
+        forkedFrom: mapForkOrigin(threadRow.value),
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
