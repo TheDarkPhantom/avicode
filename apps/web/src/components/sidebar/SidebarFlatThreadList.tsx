@@ -36,7 +36,14 @@ import type { SidebarThreadHandlers } from "./useSidebarThreadHandlers";
 
 export interface SidebarFlatThreadListProps {
   threads: readonly SidebarThreadSummary[];
-  projectLabelByThreadKey: ReadonlyMap<string, string>;
+  projectIdentityByThreadKey: ReadonlyMap<
+    string,
+    {
+      environmentId: SidebarThreadSummary["environmentId"];
+      cwd: string;
+      label: string;
+    }
+  >;
   threadSortOrder: SidebarThreadSortOrder;
   flatThreadCount: number;
   isListExpanded: boolean;
@@ -89,7 +96,7 @@ export const SidebarFlatThreadList = memo(function SidebarFlatThreadList(
     expandList,
     flatThreadCount,
     isListExpanded,
-    projectLabelByThreadKey,
+    projectIdentityByThreadKey,
     threadHandlers,
     threadJumpLabelByKey,
     threadSortOrder,
@@ -134,7 +141,7 @@ export const SidebarFlatThreadList = memo(function SidebarFlatThreadList(
             key={threadKey}
             thread={thread}
             projectCwd={null}
-            projectLabel={projectLabelByThreadKey.get(threadKey) ?? null}
+            projectIdentity={projectIdentityByThreadKey.get(threadKey) ?? null}
             orderedProjectThreadKeys={orderedThreadKeys}
             isActive={activeRouteThreadKey === threadKey}
             jumpLabel={threadJumpLabelByKey.get(threadKey) ?? null}

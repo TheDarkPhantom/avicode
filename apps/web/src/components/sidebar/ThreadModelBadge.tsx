@@ -52,8 +52,9 @@ export const ThreadModelBadge = memo(function ThreadModelBadge({
           displayName={configuredBadge || provider.displayName}
           accentColor={provider.accentColor}
           showBadge
-          iconClassName="size-3.5"
-          badgeClassName="h-3.5 min-w-3.5 text-[8px]"
+          className="size-4.5"
+          iconClassName="size-4.5"
+          badgeClassName="-right-1 -bottom-1 h-3 min-w-3 px-0.5 text-[7px]"
           indicatorBackground="var(--sidebar)"
         />
       </TooltipTrigger>
