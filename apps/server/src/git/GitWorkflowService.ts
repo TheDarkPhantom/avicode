@@ -29,6 +29,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as GitManager from "./GitManager.ts";
+import { repositoryLockKey, withRepositoryLock } from "./RepositoryActionLock.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -157,7 +158,28 @@ export const make = Effect.gen(function* () {
         detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
       });
     }
+    // Returned rather than discarded so callers that mutate the repository can
+    // derive its lock key from the identity this resolve already paid for.
+    return handle;
   });
+
+  /**
+   * Routes a repository-MUTATING workflow: same driver check as
+   * `routeGitManager`, plus the repository's single permit held for the whole
+   * run. Concurrent agents finishing at once would otherwise interleave their
+   * commit / push / open-PR / auto-merge sequences on one repository.
+   */
+  const routeSerializedGitManager =
+    <Input extends { readonly cwd: string }, Output>(
+      operation: string,
+      run: (input: Input) => Effect.Effect<Output, GitManagerServiceError>,
+    ) =>
+    (input: Input) =>
+      ensureGit(operation, input.cwd).pipe(
+        Effect.flatMap((handle) =>
+          withRepositoryLock(repositoryLockKey(handle.repository), run(input)),
+        ),
+      );
 
   const ensureGitCommand = Effect.fn("GitWorkflowService.ensureGitCommand")(function* (
     operation: string,
@@ -277,15 +299,25 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
       ),
+    // Every stacked action mutates: commit, push, create_pr, commit_push,
+    // commit_push_pr, auto_merge. Serialized as a whole rather than per phase,
+    // because the damage comes from two agents interleaving phases.
     runStackedAction: (input, options) =>
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
-        Effect.andThen(gitManager.runStackedAction(input, options)),
+        Effect.flatMap((handle) =>
+          withRepositoryLock(
+            repositoryLockKey(handle.repository),
+            gitManager.runStackedAction(input, options),
+          ),
+        ),
       ),
+    // Read-only: resolving a PR never touches the repository, so it must not
+    // queue behind an agent that is mid-merge.
     resolvePullRequest: routeGitManager(
       "GitWorkflowService.resolvePullRequest",
       gitManager.resolvePullRequest,
     ),
-    preparePullRequestThread: routeGitManager(
+    preparePullRequestThread: routeSerializedGitManager(
       "GitWorkflowService.preparePullRequestThread",
       gitManager.preparePullRequestThread,
     ),
