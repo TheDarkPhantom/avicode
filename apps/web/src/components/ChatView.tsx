@@ -172,6 +172,7 @@ import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useWindowActive } from "../hooks/useWindowActive";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
@@ -1203,6 +1204,7 @@ function ChatViewContent(props: ChatViewProps) {
   const activeThreadLastVisitedAt = useUiStateStore(
     (store) => store.threadLastVisitedAtById[routeThreadKey],
   );
+  const windowActive = useWindowActive();
   const settings = useEnvironmentSettings(environmentId);
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
@@ -1861,6 +1863,14 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   useEffect(() => {
+    // Only the window the user is actually looking at marks the open thread
+    // read. Turn completions stream in over the websocket whether or not the
+    // app is focused, so without this an agent finishing while the user is in
+    // their editor would mark its own work seen and the sidebar's Completed /
+    // Done indicator would never appear for a thread that needs review. The
+    // effect re-runs on refocus, so returning to a still-open thread clears
+    // the indicator exactly as before.
+    if (!windowActive) return;
     if (!serverThread?.id) return;
     const threadUpdatedAt = Date.parse(serverThread.updatedAt);
     if (Number.isNaN(threadUpdatedAt)) return;
@@ -1877,6 +1887,7 @@ function ChatViewContent(props: ChatViewProps) {
     serverThread?.environmentId,
     serverThread?.id,
     serverThread?.updatedAt,
+    windowActive,
   ]);
 
   const selectedProviderByThreadId = composerActiveProvider ?? null;
