@@ -389,6 +389,9 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
         ),
       );
     }
+    if (args[0] === "pr" && args[1] === "merge") {
+      return Effect.succeed(fakeGhOutput(""));
+    }
 
     if (args[0] === "pr" && args[1] === "view") {
       const pullRequest: FakePullRequest = scenario.pullRequest ?? {
@@ -531,6 +534,17 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             input.bodyFile,
           ],
         }).pipe(Effect.asVoid),
+      mergePullRequest: (input) =>
+        execute({
+          cwd: input.cwd,
+          args: [
+            "pr",
+            "merge",
+            input.reference,
+            "--merge",
+            ...(input.deleteBranch ? ["--delete-branch"] : []),
+          ],
+        }).pipe(Effect.asVoid),
       getDefaultBranch: (input) =>
         execute({
           cwd: input.cwd,
@@ -581,11 +595,15 @@ function runStackedAction(
   manager: GitManager.GitManager["Service"],
   input: {
     cwd: string;
-    action: "commit" | "push" | "create_pr" | "commit_push" | "commit_push_pr";
+    action: "commit" | "push" | "create_pr" | "commit_push" | "commit_push_pr" | "auto_merge";
     actionId?: string;
     commitMessage?: string;
     featureBranch?: boolean;
     filePaths?: readonly string[];
+    autoMerge?: {
+      promotionRefs: readonly string[];
+      requireFinalApproval: boolean;
+    };
   },
   options?: Parameters<GitManager.GitManager["Service"]["runStackedAction"]>[1],
 ) {
@@ -4008,6 +4026,50 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           label: "Creating pull request...",
         }),
       ]);
+    }),
+  );
+
+  it.effect("auto merges a worktree branch into the configured solo target", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-auto-merge-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      yield* configureRemote(repoDir, "origin", originDir, "origin");
+      yield* runGit(repoDir, ["checkout", "-b", "feature/auto-merge"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "auto-merge.txt"), "ready\n");
+      yield* runGit(repoDir, ["add", "auto-merge.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Ready to merge"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/auto-merge"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            "feature/auto-merge": JSON.stringify([
+              {
+                number: 246,
+                title: "Ready to merge",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/246",
+                baseRefName: "main",
+                headRefName: "feature/auto-merge",
+                state: "OPEN",
+              },
+            ]),
+          },
+        },
+      });
+
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "auto_merge",
+        autoMerge: {
+          promotionRefs: ["main"],
+          requireFinalApproval: false,
+        },
+      });
+
+      expect(result.toast.title).toBe("Auto merged into main");
+      expect(ghCalls).toContain("pr merge 246 --merge");
     }),
   );
 });

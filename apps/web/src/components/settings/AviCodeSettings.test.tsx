@@ -14,6 +14,8 @@ describe("AviCodeSettings", () => {
     ).toContain("Ready to import");
 
     const markup = renderToStaticMarkup(<AviCodeSettings />);
+    expect(markup).toContain("Remember provider credentials per project");
+    expect(markup).toContain("Off by default");
     expect(markup).toContain("Import from T3 Code");
     expect(markup).toContain("Avi Code data is backed up first");
     expect(markup).toContain("Import latest");

@@ -14,6 +14,20 @@ export { mostConstrainedQuotaWindow };
  * rather than one crying wolf before the other.
  */
 export const QUOTA_WARNING_PERCENT = 90;
+export const PROVIDER_QUOTA_REFRESH_MAX_AGE_MS = 5 * 60 * 1_000;
+
+export function shouldRefreshProviderQuota(
+  quota: ProviderQuotaSnapshot | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!quota || quota.windows.length === 0) return true;
+  const capturedAt = Date.parse(quota.capturedAt);
+  return (
+    !Number.isFinite(capturedAt) ||
+    capturedAt > now ||
+    now - capturedAt >= PROVIDER_QUOTA_REFRESH_MAX_AGE_MS
+  );
+}
 
 /**
  * Resolve the quota to display for a thread.
@@ -124,6 +138,13 @@ export function isQuotaAlarming(
  * a bar that drains reads as depletion without needing a label.
  */
 export function quotaRemainingPercent(window: ProviderQuotaWindow): number {
+  // A provider rejection is authoritative. Utilization is often rounded or
+  // sampled just before enforcement, so an exhausted window can still arrive
+  // as 99% used. Calling that "1% left" contradicts the provider and the
+  // request failure the person just saw.
+  if (window.exhausted === true) {
+    return 0;
+  }
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
 }
 

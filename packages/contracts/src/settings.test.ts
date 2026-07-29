@@ -18,7 +18,9 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
-    expect(decodeClientSettings({}).wordWrap).toBe(true);
+    const settings = decodeClientSettings({});
+    expect(settings.wordWrap).toBe(true);
+    expect(settings.projectScopedProviderSelectionEnabled).toBe(false);
   });
 
   it("ignores obsolete wrapping preferences", () => {
@@ -120,6 +122,29 @@ describe("ClientSettings sidebar v2", () => {
   it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {
     expect(() => decodeClientSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
+  });
+});
+
+describe("ClientSettings Avi Code chat badges", () => {
+  it("shows concise status labels by default and defaults badge overrides empty", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.aviCodeSidebarShowStatusLabels).toBe(true);
+    expect(settings.aviCodeProviderBadgeLabels).toEqual({});
+  });
+
+  it("accepts one- or two-character provider badge overrides", () => {
+    const patch = decodeClientSettingsPatch({
+      aviCodeSidebarShowStatusLabels: false,
+      aviCodeProviderBadgeLabels: { claude: "L", codex: "CO" },
+    });
+    expect(patch.aviCodeSidebarShowStatusLabels).toBe(false);
+    expect(patch.aviCodeProviderBadgeLabels).toEqual({ claude: "L", codex: "CO" });
+  });
+
+  it("rejects provider badge overrides longer than two characters", () => {
+    expect(() =>
+      decodeClientSettingsPatch({ aviCodeProviderBadgeLabels: { claude: "CLA" } }),
+    ).toThrow();
   });
 });
 

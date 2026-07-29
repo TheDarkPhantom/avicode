@@ -104,10 +104,6 @@ import {
 } from "./settingsLayout";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  isWindowTitlePrivacyEnabled,
-  setWindowTitlePrivacyEnabled,
-} from "../../lib/windowTitleMetadata";
 
 const THEME_OPTIONS = [
   {
@@ -543,7 +539,6 @@ export function AppearanceSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const [windowTitlePrivate, setWindowTitlePrivate] = useState(isWindowTitlePrivacyEnabled);
   const environmentStageLabel = useEnvironmentStageLabel();
   const showEnvironmentIdentification =
     resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null;
@@ -557,20 +552,6 @@ export function AppearanceSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection title="Appearance">
-        <SettingsRow
-          title="Private window titles"
-          description="Hide repository and thread names from Avi Code's native title. Leave this off for ALFRED thread-aware time attribution."
-          control={
-            <Switch
-              checked={windowTitlePrivate}
-              aria-label="Private window titles"
-              onCheckedChange={(checked) => {
-                setWindowTitlePrivacyEnabled(checked);
-                setWindowTitlePrivate(checked);
-              }}
-            />
-          }
-        />
         <SettingsRow
           title="Theme"
           description="Choose how Avi Code looks across the app."

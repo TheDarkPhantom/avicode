@@ -89,6 +89,14 @@ function unsupportedProvider(
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.headSelector),
         detail: `No ${kind} source control provider is registered.`,
       }),
+    mergeChangeRequest: (input) =>
+      new SourceControlProviderError({
+        provider: kind,
+        operation: "mergeChangeRequest",
+        cwd: input.cwd,
+        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
+        detail: `Auto merge is not supported by the ${kind} provider.`,
+      }),
     getRepositoryCloneUrls: (input) =>
       new SourceControlProviderError({
         provider: kind,
@@ -171,6 +179,11 @@ function bindProviderContext(
       }),
     createChangeRequest: (input) =>
       provider.createChangeRequest({
+        ...input,
+        context: input.context ?? context,
+      }),
+    mergeChangeRequest: (input) =>
+      provider.mergeChangeRequest({
         ...input,
         context: input.context ?? context,
       }),

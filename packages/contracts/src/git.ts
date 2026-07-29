@@ -14,9 +14,10 @@ export const GitStackedAction = Schema.Literals([
   "create_pr",
   "commit_push",
   "commit_push_pr",
+  "auto_merge",
 ]);
 export type GitStackedAction = typeof GitStackedAction.Type;
-export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr"]);
+export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr", "merge"]);
 export type GitActionProgressPhase = typeof GitActionProgressPhase.Type;
 export const GitActionProgressKind = Schema.Literals([
   "action_started",
@@ -117,6 +118,15 @@ export const GitRunStackedActionInput = Schema.Struct({
   featureBranch: Schema.optional(Schema.Boolean),
   filePaths: Schema.optional(
     Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
+  ),
+  autoMerge: Schema.optional(
+    Schema.Struct({
+      promotionRefs: Schema.Array(TrimmedNonEmptyStringSchema).check(
+        Schema.isMinLength(1),
+        Schema.isMaxLength(3),
+      ),
+      requireFinalApproval: Schema.Boolean,
+    }),
   ),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;

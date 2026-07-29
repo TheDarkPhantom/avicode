@@ -21,11 +21,17 @@ describe("T3ProjectFile", () => {
         },
         { name: "Test", command: "pnpm test" },
       ],
+      autoMerge: {
+        mode: "collaborative",
+        promotionRefs: ["avi-dev", "staging", "main"],
+        requireMainApproval: true,
+      },
     });
 
     expect(decoded.iconPath).toBe("assets/logo.svg");
     expect(decoded.scripts).toHaveLength(2);
     expect(decoded.scripts?.[1]).toEqual({ name: "Test", command: "pnpm test" });
+    expect(decoded.autoMerge?.promotionRefs).toEqual(["avi-dev", "staging", "main"]);
   });
 
   it("decodes an empty object and ignores unknown fields", () => {
@@ -51,5 +57,21 @@ describe("T3ProjectFile", () => {
     expect(() =>
       decode({ scripts: [{ name: "Dev", command: "pnpm dev", icon: "rocket" }] }),
     ).toThrow();
+  });
+
+  it("rejects empty or excessively long promotion chains", () => {
+    expect(() => decode({ autoMerge: { mode: "solo", promotionRefs: [] } })).toThrow();
+    expect(() =>
+      decode({
+        autoMerge: {
+          mode: "collaborative",
+          promotionRefs: ["avi-dev", "review", "staging", "main"],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("allows a concise solo policy that defaults to main in the client", () => {
+    expect(decode({ autoMerge: { mode: "solo" } }).autoMerge).toEqual({ mode: "solo" });
   });
 });

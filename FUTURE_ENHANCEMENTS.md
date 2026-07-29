@@ -22,6 +22,8 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.
+- Explicit project-to-provider credential pinning; the shipped isolation mode learns each project's
+  last selection.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
@@ -31,6 +33,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - No OCR in v1.
 - 20MB, 250 pages, and 100,000 extracted characters per document.
 - Eight combined attachments per message.
+- Five explicit thread references and 100,000 serialized context characters per turn.
 - No conversation or attachment contents in ALFRED exports or window titles.
 - No automated upstream merge or binary publication.
 
@@ -41,3 +44,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-28: PDF/TXT/Markdown attachments.
 - 2026-07-28: ALFRED metadata and privacy mode.
 - 2026-07-29: repeatable, backed-up T3 workspace refresh from Avi Code settings.
+- 2026-07-29: native repository/thread titles fixed for ActivityWatch and ALFRED attribution.
+- 2026-07-29: per-chat provider/model badges, custom client initials, and compact status labels.
+- 2026-07-29: timestamped provider authentication transition auditing.
+- 2026-07-29: visible working-tree file count with one-click access to the changes panel.
+- 2026-07-29: explicit cross-thread transcript context with source provenance.
+- 2026-07-29: opt-in per-project provider/model memory and proactive credential usage checks.
