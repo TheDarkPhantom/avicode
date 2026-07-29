@@ -8,5 +8,8 @@
       "icon": "configure",
       "runOnWorktreeCreate": true
     }
-  ]
+  ],
+  "autoMerge": {
+    "mode": "solo"
+  }
 }

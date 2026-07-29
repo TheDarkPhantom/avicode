@@ -124,6 +124,13 @@ export function isQuotaAlarming(
  * a bar that drains reads as depletion without needing a label.
  */
 export function quotaRemainingPercent(window: ProviderQuotaWindow): number {
+  // A provider rejection is authoritative. Utilization is often rounded or
+  // sampled just before enforcement, so an exhausted window can still arrive
+  // as 99% used. Calling that "1% left" contradicts the provider and the
+  // request failure the person just saw.
+  if (window.exhausted === true) {
+    return 0;
+  }
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
 }
 

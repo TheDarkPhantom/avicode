@@ -21,6 +21,7 @@ const clientSettings: ClientSettings = {
   environmentIdentificationMode: "artwork",
   favorites: [],
   glassOpacity: 80,
+  notificationSoundEnabled: false,
   providerModelPreferences: {},
   rightPanelFollowsThreads: false,
   sidebarAutoSettleAfterDays: 3,

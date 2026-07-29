@@ -153,6 +153,17 @@ describe("quotaRemainingPercent", () => {
   ])("turns %s%% used into %s%% remaining", (used, expected) => {
     expect(quotaRemainingPercent({ id: "a", label: "a", usedPercent: used })).toBe(expected);
   });
+
+  it("shows nothing left when the provider rejects below a rounded 100%", () => {
+    expect(
+      quotaRemainingPercent({
+        id: "five_hour",
+        label: "5-hour",
+        usedPercent: 99,
+        exhausted: true,
+      }),
+    ).toBe(0);
+  });
 });
 
 describe("quota colour ramp", () => {

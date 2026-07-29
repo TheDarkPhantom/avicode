@@ -17,9 +17,11 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
       backend restart.
 - [x] PDF, TXT, and Markdown extraction and attachment metadata.
 - [x] Repository/thread native window titles and privacy mode.
+- [x] Header indicator for working-tree changed-file counts with one-click diff access.
 - [x] ALFRED-safe session metadata.
 - [x] Human-reviewed weekly upstream synchronization.
 - [x] Manual-only release and relay workflows; merging `main` cannot publish or deploy.
+- [x] Persistent per-instance provider authentication transition audit log.
 
 ## Personal alpha verification
 
