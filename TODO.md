@@ -21,6 +21,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] ALFRED-safe session metadata.
 - [x] Human-reviewed weekly upstream synchronization.
 - [x] Manual-only release and relay workflows; merging `main` cannot publish or deploy.
+- [x] Persistent per-instance provider authentication transition audit log.
 
 ## Personal alpha verification
 
