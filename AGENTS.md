@@ -13,6 +13,24 @@
   - Subagents must not independently launch dev servers or repeat integrated client verification unless their delegated task explicitly requires it.
   - Stop dev servers, watchers, and other long-running verification processes when the focused verification is complete.
 
+## Avi Code Fork Conventions
+
+This repo is a fork. Upstream keeps changing, and every Avi Code addition that lands in a shared
+file is a future merge conflict. Keep the fork's surface area small and easy to find.
+
+- Any new user-facing setting added by this fork must be surfaced on the **Avi Code settings page**
+  (`apps/web/src/components/settings/AviCodeSettings.tsx`, route `settings.avicode.tsx`) — never on
+  the upstream General/Appearance/Beta panels. Upstream can rewrite those panels freely without
+  touching ours.
+- Prefer new files under a fork-owned directory (e.g. `components/sidebar/`) over inline additions
+  to large upstream files. When an upstream file must change, keep the edit to a thin branch or a
+  single call site rather than interleaved logic.
+- Comment fork-specific behaviour with a short "Avi Code addition" note explaining the upstream
+  behaviour it replaces, so a merge conflict is resolvable without re-deriving the intent.
+- Settings still live in the shared `ClientSettingsSchema` (`packages/contracts/src/settings.ts`);
+  only the _UI_ is isolated. Give fork-added keys distinct names so they don't collide with a future
+  upstream key.
+
 ## Dev Servers
 
 - In a linked git worktree, dev state defaults to that worktree's gitignored `.t3`. This deliberately outranks an ambient `T3CODE_HOME`, which could otherwise select the installed app's live `~/.t3/userdata` database. An explicit `--home-dir` still wins.

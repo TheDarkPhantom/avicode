@@ -21,6 +21,29 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// Avi Code addition. "project" is the upstream two-level tree: projects sort by
+// their newest thread, threads sort within their project, so a thread can never
+// rise above its project's block. "flat" drops the grouping entirely and sorts
+// every thread against every other by `sidebarThreadSortOrder`, which is what
+// makes the ctrl+1…ctrl+9 jump slots track the globally most recent threads
+// instead of whichever rows happen to sit at the top of each expanded project.
+export const SidebarThreadGrouping = Schema.Literals(["project", "flat"]);
+export type SidebarThreadGrouping = typeof SidebarThreadGrouping.Type;
+export const DEFAULT_SIDEBAR_THREAD_GROUPING: SidebarThreadGrouping = "project";
+
+// The flat list has no per-project "show more" to spread rows across, so it
+// needs a much higher ceiling than SidebarThreadPreviewCount's per-project 15.
+export const MIN_SIDEBAR_FLAT_THREAD_COUNT = 5;
+export const MAX_SIDEBAR_FLAT_THREAD_COUNT = 100;
+export const SidebarFlatThreadCount = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_SIDEBAR_FLAT_THREAD_COUNT,
+    maximum: MAX_SIDEBAR_FLAT_THREAD_COUNT,
+  }),
+);
+export type SidebarFlatThreadCount = typeof SidebarFlatThreadCount.Type;
+export const DEFAULT_SIDEBAR_FLAT_THREAD_COUNT: SidebarFlatThreadCount = 20;
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -76,6 +99,27 @@ export const ClientSettingsSchema = Schema.Struct({
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
   ),
+  // Avi Code addition. Plays a short chime when a thread enters a state that
+  // waits on the user — the same states the sidebar labels Pending Approval,
+  // Waiting, and Completed/Done. Opt-in: a browser tab that makes noise
+  // without being asked to is worse than a missed notification.
+  notificationSoundEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Avi Code additions. Keep the dense chat list scannable and let custom
+  // provider instances use a memorable one- or two-character client badge.
+  aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  aviCodeProviderBadgeLabels: Schema.Record(
+    ProviderInstanceId,
+    Schema.String.check(Schema.isMaxLength(2)),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Provider instances can represent separate client
+  // credentials, so carrying the last-picked instance across unrelated
+  // projects can cross an account boundary. Keep the upstream/global sticky
+  // behaviour by default and let users opt into concrete-project isolation.
+  projectScopedProviderSelectionEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
   // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
@@ -101,6 +145,10 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Carry the right panel's open/closed state across threads instead of
+  // remembering it per thread. Surfaces stay thread-scoped either way — only
+  // visibility, and a reproducible surface kind, follow.
+  rightPanelFollowsThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
@@ -111,6 +159,9 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  sidebarMouseBackForwardNavigation: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
@@ -119,6 +170,12 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
+  ),
+  sidebarThreadGrouping: SidebarThreadGrouping.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_GROUPING)),
+  ),
+  sidebarFlatThreadCount: SidebarFlatThreadCount.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_FLAT_THREAD_COUNT)),
   ),
   sidebarV2Enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Whether `sidebarV2Enabled` reflects an explicit choice in Settings → Beta.
@@ -619,6 +676,12 @@ export const ClientSettingsPatch = Schema.Struct({
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
+  aviCodeProviderBadgeLabels: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
+  ),
+  projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
@@ -640,14 +703,18 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  rightPanelFollowsThreads: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
+  sidebarMouseBackForwardNavigation: Schema.optionalKey(Schema.Boolean),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  sidebarThreadGrouping: Schema.optionalKey(SidebarThreadGrouping),
+  sidebarFlatThreadCount: Schema.optionalKey(SidebarFlatThreadCount),
   sidebarV2Enabled: Schema.optionalKey(Schema.Boolean),
   sidebarV2ConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),

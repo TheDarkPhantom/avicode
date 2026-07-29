@@ -83,6 +83,7 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useMouseBackForwardThreadNavigation } from "../hooks/useMouseBackForwardThreadNavigation";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
@@ -91,7 +92,7 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
-import { vcsEnvironment } from "../state/vcs";
+import { vcsActionManager, vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -108,6 +109,7 @@ import {
   formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
+  isSidebarMergingSourceControlAction,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveAdjacentThreadId,
@@ -447,47 +449,13 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
-  const topStatus =
-    status === "working"
-      ? {
-          label: "Working",
-          icon: "working" as const,
-          className:
-            "animate-sidebar-working-text text-sky-600 motion-reduce:animate-none dark:text-sky-400",
-        }
-      : status === "approval"
-        ? {
-            label: "Approval",
-            icon: null,
-            className: "text-amber-700 dark:text-amber-300",
-          }
-        : status === "input"
-          ? {
-              label: "Input",
-              icon: null,
-              className: "text-indigo-600 dark:text-indigo-300",
-            }
-          : status === "failed"
-            ? {
-                label: "Failed",
-                icon: null,
-                className: "text-red-700 dark:text-red-300",
-              }
-            : isWoke
-              ? {
-                  label: "Woke",
-                  icon: "woke" as const,
-                  className: "text-amber-700 dark:text-amber-300",
-                }
-              : isUnread
-                ? {
-                    label: "Done",
-                    icon: "done" as const,
-                    className: "text-emerald-700 dark:text-emerald-300",
-                  }
-                : null;
-
   const gitCwd = thread.worktreePath ?? props.projectCwd;
+  const vcsActionState = useAtomValue(
+    vcsActionManager.stateAtom({
+      environmentId: thread.environmentId,
+      cwd: gitCwd,
+    }),
+  );
   const gitStatus = useEnvironmentQuery(
     (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
@@ -517,6 +485,70 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
 
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
+  const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
+  const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
+  const providerBadgeLabel = badgeLabels[modelInstanceId]?.trim().toUpperCase();
+  const effectiveStatus = status;
+  const isMerging = isSidebarMergingSourceControlAction(vcsActionState);
+  const topStatus =
+    effectiveStatus === "needs_resume"
+      ? {
+          label: "Needs Resume",
+          icon: "needs_resume" as const,
+          chip: false,
+          className: "text-orange-700 dark:text-orange-300",
+        }
+      : effectiveStatus === "failed"
+        ? {
+            label: "Failed",
+            icon: "failed" as const,
+            chip: false,
+            className: "text-red-700 dark:text-red-300",
+          }
+        : effectiveStatus === "approval"
+          ? {
+              label: "Approval",
+              icon: null,
+              chip: false,
+              className: "text-amber-700 dark:text-amber-300",
+            }
+          : effectiveStatus === "input"
+            ? {
+                label: "Waiting",
+                icon: null,
+                chip: false,
+                className: "text-indigo-600 dark:text-indigo-300",
+              }
+            : isMerging || prState === "merged" || prState === "closed"
+              ? {
+                  label: "Merging",
+                  icon: "merging" as const,
+                  chip: false,
+                  className: "text-teal-700 dark:text-teal-300",
+                }
+              : effectiveStatus === "working"
+                ? {
+                    label: "Working",
+                    icon: "working" as const,
+                    chip: false,
+                    className:
+                      "animate-sidebar-working-text text-sky-600 motion-reduce:animate-none dark:text-sky-400",
+                  }
+                : isWoke
+                  ? {
+                      label: "Woke",
+                      icon: "woke" as const,
+                      chip: false,
+                      className: "text-amber-700 dark:text-amber-300",
+                    }
+                  : isUnread
+                    ? {
+                        label: "Done",
+                        icon: "done" as const,
+                        chip: true,
+                        className: "text-emerald-700 dark:text-emerald-300",
+                      }
+                    : null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
@@ -524,6 +556,25 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
     : thread.modelSelection.model;
+  const modelBadge = driverKind ? (
+    <span
+      className="inline-flex shrink-0 items-center opacity-70"
+      aria-label={`${providerEntry?.displayName ?? modelInstanceId} · ${modelLabel}`}
+    >
+      <ProviderInstanceIcon
+        driverKind={driverKind}
+        displayName={
+          providerBadgeLabel ||
+          providerEntry?.displayName ||
+          thread.session?.providerName ||
+          modelInstanceId
+        }
+        accentColor={providerEntry?.accentColor}
+        showBadge
+        iconClassName="size-3.5"
+      />
+    </span>
+  ) : null;
 
   const isRemote =
     props.currentEnvironmentId !== null && thread.environmentId !== props.currentEnvironmentId;
@@ -695,7 +746,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 ? "text-foreground"
                 : shouldRecede
                   ? "text-muted-foreground/80"
-                  : status === "failed"
+                  : effectiveStatus === "failed"
                     ? "text-foreground/95"
                     : "text-foreground/90",
             )
@@ -769,6 +820,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 fallbackIcon={MessageSquareIcon}
               />
             </span>
+            {modelBadge}
             {title}
             {/* The PR badge stays outside the hover-fading slot: it must
               remain visible AND clickable while the row is hovered. Only
@@ -892,20 +944,31 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 font-medium",
+                        topStatus.chip &&
+                          "rounded-full border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] leading-none shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]",
                         topStatus.className,
                       )}
                     >
                       {topStatus.icon === "working" ? (
                         <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
                       ) : topStatus.icon === "done" ? (
-                        <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
+                        <CircleCheckIcon
+                          aria-hidden
+                          className={cn("shrink-0", topStatus.chip ? "size-3" : "size-4")}
+                        />
+                      ) : topStatus.icon === "needs_resume" || topStatus.icon === "failed" ? (
+                        <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
+                      ) : topStatus.icon === "merging" ? (
+                        <GitBranchIcon aria-hidden className="size-4 shrink-0" />
                       ) : topStatus.icon === "woke" ? (
                         <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
-                      ) : null}
+                      ) : (
+                        <span aria-hidden className="size-2 rounded-full bg-current" />
+                      )}
                       {/* The label alone is the live region: a role="status"
                           wrapper around the ticking duration would make
                           screen readers announce every second. */}
-                      <span role="status">{topStatus.label}</span>
+                      {showStatusLabels ? <span role="status">{topStatus.label}</span> : null}
                       {status === "working" ? (
                         <span aria-hidden>
                           <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
@@ -968,15 +1031,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                     <ServerIcon aria-hidden className="size-3.5" />
                   </span>
                 ) : null}
-                {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center opacity-60">
-                    <ProviderInstanceIcon
-                      driverKind={driverKind}
-                      displayName={thread.session?.providerName ?? modelInstanceId}
-                      iconClassName="size-3.5"
-                    />
-                  </span>
-                ) : null}
+                {modelBadge}
               </span>
             </div>
           </div>
@@ -1007,6 +1062,9 @@ export default function SidebarV2() {
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
+  const sidebarMouseBackForwardNavigation = useClientSettings(
+    (s) => s.sidebarMouseBackForwardNavigation,
+  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const { settleThread, unsettleThread, snoozeThread, unsnoozeThread, deleteThread } =
     useThreadActions();
@@ -1602,6 +1660,19 @@ export default function SidebarV2() {
     },
     [clearSelection, isMobile, router, setOpenMobile, setSelectionAnchor],
   );
+  const getThreadByKey = useCallback(
+    (threadKey: string) => threadByKey.get(threadKey),
+    [threadByKey],
+  );
+
+  useMouseBackForwardThreadNavigation({
+    enabled: sidebarMouseBackForwardNavigation,
+    active: true,
+    orderedThreadKeys,
+    currentThreadKey: routeThreadKey,
+    getThreadByKey,
+    navigateToThread,
+  });
 
   const [renamingThreadKey, setRenamingThreadKey] = useState<string | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");

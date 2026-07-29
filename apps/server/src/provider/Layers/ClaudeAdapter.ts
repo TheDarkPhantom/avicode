@@ -206,6 +206,25 @@ interface ClaudeSessionContext {
   lastKnownTotalProcessedTokens: number | undefined;
   lastAssistantUuid: string | undefined;
   lastThreadStartedId: string | undefined;
+  /**
+   * Guards against overlapping plan-usage control reads, which can be
+   * triggered by both session init and turn completion.
+   */
+  planQuotaReadInFlight: boolean;
+  /**
+   * Fork background work from a message handler.
+   *
+   * Handlers run outside any scope, so `Effect.forkScoped` here would leak a
+   * `Scope` requirement into every public adapter method. This closes over the
+   * runtime captured at session start instead — the same `runFork` the stream
+   * fiber and deferred resolutions already use.
+   *
+   * Generic in the error type rather than taking `unknown`, so callers keep a
+   * typed error channel right up to the point this discards it. Failures are
+   * dropped by construction: this is background telemetry, which must never
+   * take down the session that spawned it.
+   */
+  readonly forkDetached: <E>(effect: Effect.Effect<void, E>) => void;
   stopped: boolean;
 }
 
@@ -2028,39 +2047,92 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   /**
    * Pull the full plan-usage picture and emit it as a quota update.
    *
-   * Enrichment only: `rate_limit_event` already keeps individual windows
-   * current, but it reports one window at a time and only once a window
-   * changes, so a freshly-opened session would show nothing until the first
-   * limit moved. This fills in every window at session start.
+   * This is the *primary* quota source for Claude, not merely enrichment.
+   * `rate_limit_event` looks like it should be enough, but in practice its
+   * `utilization` field is optional and frequently absent — real events arrive
+   * carrying only `{status, resetsAt, rateLimitType}`, which cannot fill a
+   * percentage meter. This control request is what actually returns
+   * utilization, and for every window at once rather than one at a time.
    *
-   * Guarded on every axis because the underlying SDK method is explicitly
-   * unstable — absent method, rejected promise, and unrecognized shape all
-   * degrade to "no quota update" rather than failing the turn.
+   * Every failure is logged. The underlying SDK method is explicitly marked
+   * unstable, so it may vanish or change shape without notice; when that
+   * happens the meter simply goes quiet, and a silent no-op would leave no way
+   * to tell that apart from "the account has no plan limits".
    */
   const emitPlanQuotaSnapshot = Effect.fn("emitPlanQuotaSnapshot")(function* (
     context: ClaudeSessionContext,
+    trigger: "session.init" | "turn.completed",
   ) {
-    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
-    if (!readUsage) {
+    if (!context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) {
+      yield* Effect.logDebug("claude.quota.read.unavailable", {
+        threadId: context.session.threadId,
+        trigger,
+        reason: "SDK query exposes no usage_EXPERIMENTAL_* method",
+      });
       return;
     }
 
-    const response = yield* Effect.promise(async () => {
+    // Overlapping reads would race to publish the same snapshot; the later
+    // trigger wins nothing and costs a control round-trip.
+    if (context.planQuotaReadInFlight) {
+      return;
+    }
+    context.planQuotaReadInFlight = true;
+
+    const outcome = yield* Effect.promise(async () => {
       try {
-        return await readUsage();
-      } catch {
-        return undefined;
+        // Invoked on `context.query` rather than through a extracted
+        // reference: the SDK's control methods are `this`-bound, and calling a
+        // detached reference throws — which the catch below would then report
+        // as an unavailable API rather than a coding error. `getContextUsage`
+        // above is called the same way for the same reason.
+        return {
+          ok: true as const,
+          response:
+            await context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?.(),
+        };
+      } catch (cause) {
+        return { ok: false as const, cause };
       }
-    });
-    if (response === undefined) {
+    }).pipe(Effect.ensuring(Effect.sync(() => (context.planQuotaReadInFlight = false))));
+
+    if (!outcome.ok) {
+      yield* Effect.logWarning("claude.quota.read.failed", {
+        threadId: context.session.threadId,
+        trigger,
+        cause: outcome.cause instanceof Error ? outcome.cause.message : String(outcome.cause),
+      });
       return;
     }
 
     const stamp = yield* makeEventStamp();
-    const quota = normalizeClaudeUsageResponse(response, stamp.createdAt);
+    const quota = normalizeClaudeUsageResponse(outcome.response, stamp.createdAt);
     if (!quota) {
+      // Not an error on its own: API-key, Bedrock and Vertex sessions have no
+      // plan limits and legitimately report none. Logged at debug with the
+      // discriminating fields so the two cases stay tellable apart.
+      const record =
+        outcome.response && typeof outcome.response === "object"
+          ? (outcome.response as Record<string, unknown>)
+          : undefined;
+      yield* Effect.logDebug("claude.quota.read.empty", {
+        threadId: context.session.threadId,
+        trigger,
+        rateLimitsAvailable: record?.rate_limits_available ?? null,
+        subscriptionType: record?.subscription_type ?? null,
+        rateLimitKeys:
+          record?.rate_limits && typeof record.rate_limits === "object"
+            ? Object.keys(record.rate_limits as Record<string, unknown>)
+            : null,
+      });
       return;
     }
+
+    yield* Effect.logDebug("claude.quota.read.ok", {
+      threadId: context.session.threadId,
+      trigger,
+      windows: quota.windows.map((window) => `${window.id}:${window.usedPercent}%`),
+    });
 
     yield* offerRuntimeEvent({
       type: "account.rate-limits.updated",
@@ -2070,14 +2142,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       threadId: context.session.threadId,
       ...(context.turnState ? { turnId: context.turnState.turnId } : {}),
       payload: {
-        rateLimits: response,
+        rateLimits: outcome.response,
         quota,
       },
       providerRefs: nativeProviderRefs(context),
       raw: {
         source: "claude.sdk.message" as const,
         method: "claude/usage",
-        payload: response,
+        payload: outcome.response,
       },
     });
   });
@@ -2357,6 +2429,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(status === "failed" && errorMessage ? { lastError: errorMessage } : {}),
     };
     yield* updateResumeCursor(context);
+
+    // A finished turn is exactly when the plan allowance has moved, so refresh
+    // it here too. The tracker discards materially-identical snapshots, so a
+    // turn that shifted nothing costs one control read and no downstream churn.
+    yield* Effect.sync(() =>
+      context.forkDetached(emitPlanQuotaSnapshot(context, "turn.completed")),
+    );
   });
 
   const handleStreamEvent = Effect.fn("handleStreamEvent")(function* (
@@ -2898,6 +2977,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             config: message as Record<string, unknown>,
           },
         });
+        // `init` is the first point at which the SDK control channel is
+        // usable, so this is where the quota meter gets seeded. Forked: a
+        // control round-trip must not delay handling the message stream.
+        yield* Effect.sync(() =>
+          context.forkDetached(emitPlanQuotaSnapshot(context, "session.init")),
+        );
         return;
       case "status":
         yield* offerRuntimeEvent({
@@ -3933,6 +4018,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastKnownTotalProcessedTokens: undefined,
         lastAssistantUuid: resumeState?.resumeSessionAt,
         lastThreadStartedId: undefined,
+        planQuotaReadInFlight: false,
+        forkDetached: (effect) => {
+          runFork(Effect.ignore(effect));
+        },
         stopped: false,
       };
       yield* Ref.set(contextRef, context);
@@ -4006,10 +4095,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         }
       });
 
-      // Seed the quota meter with every plan window up front. Forked, because
-      // this is a round-trip to the SDK control channel and a session must not
-      // wait on optional telemetry to become usable.
-      runFork(emitPlanQuotaSnapshot(context));
+      // Quota is seeded from the `system:init` message rather than here: the
+      // control channel is not ready at this point, so a read fired now
+      // rejects and the meter stays empty for the whole session.
 
       return {
         ...session,

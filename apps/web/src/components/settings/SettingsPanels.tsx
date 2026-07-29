@@ -104,10 +104,6 @@ import {
 } from "./settingsLayout";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  isWindowTitlePrivacyEnabled,
-  setWindowTitlePrivacyEnabled,
-} from "../../lib/windowTitleMetadata";
 
 const THEME_OPTIONS = [
   {
@@ -431,12 +427,19 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.sidebarMouseBackForwardNavigation !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation
+        ? ["Mouse back/forward buttons"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Auto-open task panel"]
+        : []),
+      ...(settings.rightPanelFollowsThreads !== DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads
+        ? ["Side panel across chats"]
         : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
@@ -470,6 +473,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     [
       isTextGenerationModelDirty,
       settings.autoOpenPlanSidebar,
+      settings.rightPanelFollowsThreads,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
@@ -481,6 +485,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
       settings.enableProviderUpdateChecks,
+      settings.sidebarMouseBackForwardNavigation,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
@@ -508,7 +513,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      sidebarMouseBackForwardNavigation: DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+      rightPanelFollowsThreads: DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -532,7 +539,6 @@ export function AppearanceSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const [windowTitlePrivate, setWindowTitlePrivate] = useState(isWindowTitlePrivacyEnabled);
   const environmentStageLabel = useEnvironmentStageLabel();
   const showEnvironmentIdentification =
     resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null;
@@ -546,20 +552,6 @@ export function AppearanceSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection title="Appearance">
-        <SettingsRow
-          title="Private window titles"
-          description="Hide repository and thread names from Avi Code's native title. Leave this off for ALFRED thread-aware time attribution."
-          control={
-            <Switch
-              checked={windowTitlePrivate}
-              aria-label="Private window titles"
-              onCheckedChange={(checked) => {
-                setWindowTitlePrivacyEnabled(checked);
-                setWindowTitlePrivate(checked);
-              }}
-            />
-          }
-        />
         <SettingsRow
           title="Theme"
           description="Choose how Avi Code looks across the app."
@@ -788,6 +780,34 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Mouse back/forward buttons"
+          description="Use mouse back and forward buttons to move through visible sidebar threads instead of browser history."
+          resetAction={
+            settings.sidebarMouseBackForwardNavigation !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation ? (
+              <SettingResetButton
+                label="mouse back/forward buttons"
+                onClick={() =>
+                  updateSettings({
+                    sidebarMouseBackForwardNavigation:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarMouseBackForwardNavigation,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarMouseBackForwardNavigation}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarMouseBackForwardNavigation: Boolean(checked) })
+              }
+              aria-label="Use mouse back and forward buttons for sidebar thread navigation"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Time format"
           description="System default follows your browser or OS clock preference."
           resetAction={
@@ -851,6 +871,33 @@ export function GeneralSettingsPanel() {
                 updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
               }
               aria-label="Hide whitespace changes by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Keep the side panel open across chats"
+          description="Carry the right panel's open or closed state between threads. Its contents stay per-thread — switching reopens that thread's own diff, files, or preview."
+          resetAction={
+            settings.rightPanelFollowsThreads !==
+            DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads ? (
+              <SettingResetButton
+                label="side panel across chats"
+                onClick={() =>
+                  updateSettings({
+                    rightPanelFollowsThreads: DEFAULT_UNIFIED_SETTINGS.rightPanelFollowsThreads,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.rightPanelFollowsThreads}
+              onCheckedChange={(checked) =>
+                updateSettings({ rightPanelFollowsThreads: Boolean(checked) })
+              }
+              aria-label="Keep the side panel open across chats"
             />
           }
         />

@@ -143,6 +143,7 @@ export function checkUpstreamGuardrails(repositoryRoot = defaultRepositoryRoot) 
   const legacyT3CopyAllowlist = new Set([
     "apps/desktop/src/app/DesktopEnvironment.ts",
     "apps/desktop/src/app/LegacyT3Import.ts",
+    "apps/web/src/components/settings/AviCodeSettings.tsx",
   ]);
   for (const sourceRoot of [
     "apps/web/src",

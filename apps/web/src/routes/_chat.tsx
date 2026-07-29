@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
+import { adjustAppZoomLevel, isAppZoomSupported, resetAppZoomLevel } from "../appZoom";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useClientSettings, useSidebarV2Enabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
@@ -10,6 +11,7 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
+import { ThreadAttentionChime } from "../components/ThreadAttentionChime";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
@@ -66,6 +68,23 @@ function ChatRouteGlobalShortcuts() {
           previewOpen,
         },
       });
+
+      // Handled ahead of the command-palette bail-out: whole-window zoom is a
+      // shell-level action and should work from any focus context, including
+      // while the palette is open.
+      if (
+        (command === "app.zoomIn" || command === "app.zoomOut" || command === "app.resetZoom") &&
+        isAppZoomSupported()
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (command === "app.resetZoom") {
+          resetAppZoomLevel();
+        } else {
+          adjustAppZoomLevel(command === "app.zoomIn" ? 1 : -1);
+        }
+        return;
+      }
 
       if (isCommandPaletteOpen()) {
         return;
@@ -178,6 +197,7 @@ function ChatRouteLayout() {
   return (
     <>
       <ChatRouteGlobalShortcuts />
+      <ThreadAttentionChime />
       <Outlet />
     </>
   );

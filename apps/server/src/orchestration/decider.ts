@@ -716,6 +716,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const threadContext = Array.from(
+        new Map(
+          (command.threadContext ?? []).map((reference) => [reference.threadId, reference]),
+        ).values(),
+      );
+      for (const reference of threadContext) {
+        if (reference.threadId === targetThread.id) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "A thread cannot reference itself as context.",
+          });
+        }
+        const sourceThread = readModel.threads.find(
+          (thread) => thread.id === reference.threadId && thread.deletedAt === null,
+        );
+        if (!sourceThread) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Referenced thread '${reference.threadId}' does not exist or was deleted.`,
+          });
+        }
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -754,6 +776,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           role: "user",
           text: command.message.text,
           attachments: command.message.attachments,
+          ...(threadContext.length > 0 ? { threadContext } : {}),
           turnId: null,
           streaming: false,
           createdAt: command.createdAt,
@@ -779,6 +802,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           runtimeMode: targetThread.runtimeMode,
           interactionMode: targetThread.interactionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
+          ...(threadContext.length > 0 ? { threadContext } : {}),
           createdAt: command.createdAt,
         },
       };

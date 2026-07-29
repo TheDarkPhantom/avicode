@@ -234,6 +234,11 @@ export class GitHubCli extends Context.Service<
       readonly title: string;
       readonly bodyFile: string;
     }) => Effect.Effect<void, GitHubCliError>;
+    readonly mergePullRequest: (input: {
+      readonly cwd: string;
+      readonly reference: string;
+      readonly deleteBranch?: boolean;
+    }) => Effect.Effect<void, GitHubCliError>;
 
     readonly getDefaultBranch: (input: {
       readonly cwd: string;
@@ -433,6 +438,17 @@ export const make = Effect.gen(function* () {
           input.title,
           "--body-file",
           input.bodyFile,
+        ],
+      }).pipe(Effect.asVoid),
+    mergePullRequest: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "pr",
+          "merge",
+          input.reference,
+          "--merge",
+          ...(input.deleteBranch ? ["--delete-branch"] : []),
         ],
       }).pipe(Effect.asVoid),
     getDefaultBranch: (input) =>

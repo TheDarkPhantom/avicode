@@ -390,20 +390,26 @@ interface ExpectedAgentInput {
   readonly expiresAt: number;
 }
 
+/**
+ * Chords that must escape a focused preview webview and reach the app.
+ *
+ * `mod` is Cmd on macOS and Ctrl everywhere else — these were previously
+ * hardcoded to `meta: true, control: false`, so on Windows and Linux none of
+ * them ever matched and no app shortcut was forwarded out of the preview.
+ */
 const APP_FORWARDED_SHORTCUTS: ReadonlyArray<{
   key: string;
-  meta: boolean;
+  mod: boolean;
   shift: boolean;
-  control: boolean;
 }> = Object.freeze([
   // mod+shift+J → preview.toggle
-  { key: "j", meta: true, shift: true, control: false },
+  { key: "j", mod: true, shift: true },
   // mod+K → command palette
-  { key: "k", meta: true, shift: false, control: false },
-  // mod+, → settings (macOS convention)
-  { key: ",", meta: true, shift: false, control: false },
+  { key: "k", mod: true, shift: false },
+  // mod+, → settings
+  { key: ",", mod: true, shift: false },
   // mod+W → close tab/panel
-  { key: "w", meta: true, shift: false, control: false },
+  { key: "w", mod: true, shift: false },
 ]);
 
 const isPreviewInputSignal = (value: unknown): value is PreviewInputSignal => {
@@ -1150,14 +1156,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (managed) yield* Scope.close(managed.scope, Exit.void).pipe(Effect.ignore);
   });
 
+  const modIsMeta = hostPlatform === "darwin";
   const isAppShortcut = (input: Electron.Input): boolean =>
     input.type === "keyDown" &&
     APP_FORWARDED_SHORTCUTS.some(
       (shortcut) =>
         shortcut.key.toLowerCase() === input.key.toLowerCase() &&
-        shortcut.meta === input.meta &&
-        shortcut.shift === input.shift &&
-        shortcut.control === input.control,
+        input.meta === (shortcut.mod && modIsMeta) &&
+        input.control === (shortcut.mod && !modIsMeta) &&
+        shortcut.shift === input.shift,
     );
 
   const computeNavStatus = (wc: Electron.WebContents): PreviewNavStatus => {

@@ -16,7 +16,10 @@ import ProjectScriptsControl, {
 } from "../ProjectScriptsControl";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
+import {
+  useT3ProjectFileAutoMerge,
+  useT3ProjectFileScripts,
+} from "~/hooks/useT3ProjectFileScripts";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { cn } from "~/lib/utils";
 
@@ -32,8 +35,10 @@ interface ChatHeaderProps {
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
+  editorDiscoveryPending: boolean;
   rightPanelOpen: boolean;
   gitCwd: string | null;
+  onOpenChanges: () => void;
   onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
@@ -68,8 +73,10 @@ export const ChatHeader = memo(function ChatHeader({
   preferredScriptId,
   keybindings,
   availableEditors,
+  editorDiscoveryPending,
   rightPanelOpen,
   gitCwd,
+  onOpenChanges,
   onNewThreadInProject,
   onRunProjectScript,
   onAddProjectScript,
@@ -81,6 +88,7 @@ export const ChatHeader = memo(function ChatHeader({
     activeThreadEnvironmentId,
     activeProjectScripts ? activeProjectCwd : null,
   );
+  const autoMergePolicy = useT3ProjectFileAutoMerge(activeThreadEnvironmentId, activeProjectCwd);
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
     activeThreadEnvironmentId,
@@ -157,6 +165,7 @@ export const ChatHeader = memo(function ChatHeader({
             environmentId={activeThreadEnvironmentId}
             keybindings={keybindings}
             availableEditors={availableEditors}
+            editorDiscoveryPending={editorDiscoveryPending}
             openInCwd={openInCwd}
           />
         )}
@@ -164,6 +173,8 @@ export const ChatHeader = memo(function ChatHeader({
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
+            onOpenChanges={onOpenChanges}
+            autoMergePolicy={autoMergePolicy}
             {...(draftId ? { draftId } : {})}
           />
         )}

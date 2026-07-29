@@ -14,6 +14,20 @@ export { mostConstrainedQuotaWindow };
  * rather than one crying wolf before the other.
  */
 export const QUOTA_WARNING_PERCENT = 90;
+export const PROVIDER_QUOTA_REFRESH_MAX_AGE_MS = 5 * 60 * 1_000;
+
+export function shouldRefreshProviderQuota(
+  quota: ProviderQuotaSnapshot | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!quota || quota.windows.length === 0) return true;
+  const capturedAt = Date.parse(quota.capturedAt);
+  return (
+    !Number.isFinite(capturedAt) ||
+    capturedAt > now ||
+    now - capturedAt >= PROVIDER_QUOTA_REFRESH_MAX_AGE_MS
+  );
+}
 
 /**
  * Resolve the quota to display for a thread.
@@ -117,6 +131,52 @@ export function isQuotaAlarming(
 }
 
 /**
+ * How much of a window's allowance is left.
+ *
+ * The meter is framed as remaining rather than used because that is the
+ * question being asked at a glance — "how much have I got left" — and because
+ * a bar that drains reads as depletion without needing a label.
+ */
+export function quotaRemainingPercent(window: ProviderQuotaWindow): number {
+  // A provider rejection is authoritative. Utilization is often rounded or
+  // sampled just before enforcement, so an exhausted window can still arrive
+  // as 99% used. Calling that "1% left" contradicts the provider and the
+  // request failure the person just saw.
+  if (window.exhausted === true) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, 100 - window.usedPercent));
+}
+
+/**
+ * Hue for a remaining level, sweeping green → yellow → red as it drains.
+ *
+ * Interpolating hue (rather than blending two RGB endpoints) is what keeps the
+ * midrange vivid: a straight green-to-red blend passes through a muddy brown,
+ * whereas sweeping 140°→0° passes through a clean yellow at ~43% remaining.
+ */
+const quotaHue = (remainingPercent: number): number =>
+  (Math.max(0, Math.min(100, remainingPercent)) / 100) * 140;
+
+/**
+ * Fill for the remaining-allowance bar.
+ *
+ * A vertical gradient within the fill — lighter at the top, deeper at the
+ * bottom — so the bar reads as a column of liquid rather than a flat block.
+ * Both stops share the level's hue, so the whole bar still reads as one
+ * colour at a glance.
+ */
+export function quotaRemainingGradient(remainingPercent: number): string {
+  const hue = quotaHue(remainingPercent).toFixed(1);
+  return `linear-gradient(to bottom, hsl(${hue} 95% 60%), hsl(${hue} 90% 45%))`;
+}
+
+/** Flat colour at a remaining level, for text and dots that cannot carry a gradient. */
+export function quotaRemainingColor(remainingPercent: number): string {
+  return `hsl(${quotaHue(remainingPercent).toFixed(1)} 90% 50%)`;
+}
+
+/**
  * Windows ordered for display: most-constrained first, so the number that
  * matters is the one the eye lands on.
  */
@@ -130,7 +190,10 @@ export function orderQuotaWindows(
 
 /**
  * One-line quota summary for a settings row, e.g.
- * `"Weekly 62% · resets in 3d 4h"`.
+ * `"Weekly 38% left · resets in 3d 4h"`.
+ *
+ * Phrased as remaining to match the composer meter — the two must not disagree
+ * about whether a number means spent or left.
  *
  * Names only the most-constrained window: a settings list needs the number
  * that will bite first, and the full per-window breakdown lives in the
@@ -145,12 +208,13 @@ export function formatQuotaSummaryLine(
     return null;
   }
 
+  const remaining = quotaRemainingPercent(worst);
   const percent =
-    worst.usedPercent < 10
-      ? `${worst.usedPercent.toFixed(1).replace(/\.0$/, "")}%`
-      : `${Math.round(worst.usedPercent)}%`;
+    remaining < 10 ? `${remaining.toFixed(1).replace(/\.0$/, "")}%` : `${Math.round(remaining)}%`;
   const resetsIn = formatResetsIn(worst.resetsAt, now);
-  return resetsIn ? `${worst.label} ${percent} · ${resetsIn}` : `${worst.label} ${percent}`;
+  return resetsIn
+    ? `${worst.label} ${percent} left · ${resetsIn}`
+    : `${worst.label} ${percent} left`;
 }
 
 /**

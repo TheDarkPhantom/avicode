@@ -24,12 +24,14 @@ interface ComposerPrimaryActionsProps {
   isSendBusy: boolean;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
+  hasQueuedTurn: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onReviewPlanWithCodex: () => void;
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -50,6 +52,38 @@ export const formatPendingPrimaryActionLabel = (input: {
   return input.questionIndex > 0 ? "Submit answers" : "Submit answer";
 };
 
+export function normalComposerPrimaryActionState(input: {
+  isSendBusy: boolean;
+  isConnecting: boolean;
+  isEnvironmentUnavailable: boolean;
+  hasQueuedTurn: boolean;
+  hasSendableContent: boolean;
+  isPreparingWorktree: boolean;
+}): { readonly disabled: boolean; readonly label: string } {
+  return {
+    disabled:
+      input.isSendBusy || input.isConnecting || input.hasQueuedTurn || !input.hasSendableContent,
+    label: input.hasQueuedTurn
+      ? "Message already queued"
+      : input.isEnvironmentUnavailable
+        ? "Queue message until reconnected"
+        : input.isConnecting
+          ? "Connecting"
+          : input.isPreparingWorktree
+            ? "Preparing worktree"
+            : input.isSendBusy
+              ? "Sending"
+              : "Send message",
+  };
+}
+
+export function canSubmitComposerProviderState(input: {
+  readonly providerAvailable: boolean;
+  readonly environmentUnavailable: boolean;
+}): boolean {
+  return input.providerAvailable || input.environmentUnavailable;
+}
+
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
 };
@@ -63,12 +97,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isSendBusy,
   isConnecting,
   isEnvironmentUnavailable,
+  hasQueuedTurn,
   isPreparingWorktree,
   hasSendableContent,
   preserveComposerFocusOnPointerDown = false,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
+  onReviewPlanWithCodex,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -189,6 +225,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <MenuPopup align="end" side="top">
             <MenuItem
               disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+              onClick={() => void onReviewPlanWithCodex()}
+            >
+              Review with Codex
+            </MenuItem>
+            <MenuItem
+              disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
               onClick={() => void onImplementPlanInNewThread()}
             >
               Implement in a new thread
@@ -199,6 +241,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  const primaryActionState = normalComposerPrimaryActionState({
+    isSendBusy,
+    isConnecting,
+    isEnvironmentUnavailable,
+    hasQueuedTurn,
+    hasSendableContent,
+    isPreparingWorktree,
+  });
   return (
     <button
       type="submit"
@@ -209,18 +259,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           : "bg-primary/90 enabled:shadow-primary/24 hover:bg-primary",
       )}
       {...pointerFocusProps}
-      disabled={isSendBusy || isConnecting || isEnvironmentUnavailable || !hasSendableContent}
-      aria-label={
-        isEnvironmentUnavailable
-          ? "Environment disconnected"
-          : isConnecting
-            ? "Connecting"
-            : isPreparingWorktree
-              ? "Preparing worktree"
-              : isSendBusy
-                ? "Sending"
-                : "Send message"
-      }
+      disabled={primaryActionState.disabled}
+      aria-label={primaryActionState.label}
     >
       {stageBackdropVariant ? (
         <span className="absolute inset-0 -z-10" aria-hidden="true">

@@ -27,6 +27,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -59,6 +60,25 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
   public closeCalls = 0;
+
+  /**
+   * Scripted responses for the experimental plan-usage control request.
+   *
+   * `undefined` (the default) models an SDK build that does not expose the
+   * method at all — which is why `usage_EXPERIMENTAL_*` below is defined
+   * conditionally rather than always present.
+   */
+  public usageResponse: unknown | undefined;
+  public usageFailure: unknown | undefined;
+  public usageCalls = 0;
+
+  usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(): Promise<unknown> {
+    this.usageCalls += 1;
+    if (this.usageFailure !== undefined) {
+      return Promise.reject(this.usageFailure);
+    }
+    return Promise.resolve(this.usageResponse);
+  }
 
   emit(message: SDKMessage): void {
     if (this.done) {
@@ -1995,6 +2015,158 @@ describe("ClaudeAdapterLive", () => {
           },
         });
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // `it.live`: the plan-usage read is a real promise resolved off the
+  // microtask queue, so this needs wall-clock scheduling rather than TestClock.
+  it.live("reads plan usage once the session reports init, not at startSession", () => {
+    const harness = makeHarness();
+    harness.query.usageResponse = {
+      subscription_type: "max",
+      rate_limits_available: true,
+      rate_limits: {
+        five_hour: { utilization: 24, resets_at: "2026-07-29T18:00:00.000Z" },
+        seven_day: { utilization: 61, resets_at: "2026-08-02T12:00:00.000Z" },
+      },
+    };
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      // Wait for the quota event specifically: it arrives asynchronously after
+      // the control read resolves, so a fixed `take(n)` would race it.
+      const quotaEventFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "account.rate-limits.updated"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      // Firing at startSession is what the original implementation did, and it
+      // raced the SDK control channel: the read rejected and the meter stayed
+      // empty for the whole session.
+      assert.equal(harness.query.usageCalls, 0);
+
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: "sdk-session-quota-init",
+        model: "claude-opus-4-6",
+      } as unknown as SDKMessage);
+
+      const head = yield* Fiber.join(quotaEventFiber).pipe(Effect.timeout("5 seconds"));
+      const quotaEvent = Option.getOrNull(head);
+      if (quotaEvent?.type !== "account.rate-limits.updated") {
+        assert.fail("expected init to trigger a plan-usage quota event");
+        return;
+      }
+
+      assert.isAtLeast(harness.query.usageCalls, 1);
+      assert.deepEqual(quotaEvent.payload.quota?.windows, [
+        {
+          id: "five_hour",
+          label: "5-hour",
+          usedPercent: 24,
+          resetsAt: "2026-07-29T18:00:00.000Z",
+        },
+        {
+          id: "seven_day",
+          label: "Weekly",
+          usedPercent: 61,
+          resetsAt: "2026-08-02T12:00:00.000Z",
+        },
+      ]);
+      assert.equal(quotaEvent.payload.quota?.planType, "max");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("emits no quota when the account has no plan limits", () => {
+    const harness = makeHarness();
+    // API-key, Bedrock and Vertex sessions report this. Showing 0% would imply
+    // a full allowance; the meter must stay hidden instead.
+    harness.query.usageResponse = {
+      subscription_type: null,
+      rate_limits_available: false,
+      rate_limits: null,
+    };
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: "sdk-session-quota-none",
+        model: "claude-opus-4-6",
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      assert.isUndefined(
+        runtimeEvents.find((event) => event.type === "account.rate-limits.updated"),
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("survives a rejected plan-usage read without failing the session", () => {
+    const harness = makeHarness();
+    harness.query.usageFailure = new Error("control channel not ready");
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: "sdk-session-quota-failure",
+        model: "claude-opus-4-6",
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+
+      // The read is telemetry: it may fail, but the session it decorates must
+      // still come up and keep streaming.
+      assert.equal(session.provider, "claudeAgent");
+      assert.isUndefined(
+        runtimeEvents.find((event) => event.type === "account.rate-limits.updated"),
+      );
+      assert.isDefined(runtimeEvents.find((event) => event.type === "session.configured"));
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

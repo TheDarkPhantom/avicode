@@ -84,7 +84,10 @@
         object-fit: contain;
       }
     </style>
-    <title>Avi Code (Alpha)</title>
+    <!-- No release-stage suffix here: the stage is resolved at runtime in
+         branding.ts and applied by DocumentTitleSync, so hardcoding one made
+         Nightly and Dev builds read "(Alpha)" until hydration. -->
+    <title>Avi Code</title>
   </head>
   <body>
     <div id="root">

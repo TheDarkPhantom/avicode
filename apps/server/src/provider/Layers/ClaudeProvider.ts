@@ -2,6 +2,7 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ModelSelection,
+  type ProviderQuotaSnapshot,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -11,6 +12,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   createModelCapabilities,
@@ -32,6 +34,7 @@ import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
   buildServerProvider,
+  AUTH_PROBE_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
   parseGenericCliVersion,
@@ -42,6 +45,7 @@ import {
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import { normalizeClaudeProbeQuota } from "../providerQuotaProbe.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -55,6 +59,18 @@ const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
 const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
+
+const ClaudeAuthStatusOutput = Schema.Struct({
+  loggedIn: Schema.optional(Schema.Boolean),
+  authenticated: Schema.optional(Schema.Boolean),
+  authMethod: Schema.optional(Schema.String),
+  apiProvider: Schema.optional(Schema.String),
+  email: Schema.optional(Schema.String),
+});
+
+const decodeClaudeAuthStatusOutput = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(ClaudeAuthStatusOutput),
+);
 
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -561,6 +577,7 @@ function apiProviderAuthMetadata(
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+const USAGE_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Keep workspace-scoped command discovery intact while isolating the periodic
@@ -616,6 +633,7 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly quota?: ProviderQuotaSnapshot;
 };
 
 function parseClaudeInitializationCommands(
@@ -698,7 +716,8 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
  * message is ever written to the subprocess stdin. This means the Claude
  * Code subprocess completes its local initialization IPC (returning
  * account info and slash commands) but never starts an API request to
- * Anthropic. We read the init data and then abort the subprocess.
+ * Anthropic. We read the init data, make one best-effort usage control read,
+ * and then abort the subprocess.
  *
  * This is used as a fallback when `claude auth status` does not include
  * subscription type information.
@@ -715,7 +734,7 @@ const probeClaudeCapabilities = (
       claudeSettings.binaryPath,
       claudeEnvironment,
     );
-    return yield* Effect.tryPromise(async () => {
+    const initialized = yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
         // Never yield — we only need initialization data, not a conversation.
         // This prevents any prompt from reaching the Anthropic API.
@@ -731,22 +750,40 @@ const probeClaudeCapabilities = (
         }),
       });
       const init = await q.initializationResult();
-      const account = init.account as
-        | {
-            readonly email?: string;
-            readonly subscriptionType?: string;
-            readonly tokenSource?: string;
-            readonly apiProvider?: string;
-          }
-        | undefined;
-      return {
-        email: account?.email,
-        subscriptionType: account?.subscriptionType,
-        tokenSource: account?.tokenSource,
-        apiProvider: account?.apiProvider,
-        slashCommands: parseClaudeInitializationCommands(init.commands),
-      } satisfies ClaudeCapabilitiesProbe;
+      return { q, init };
     });
+    const { q, init } = initialized;
+    let usageResponse: unknown;
+    const readUsage = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    // Avi Code addition. Use the SDK control channel only; the never-yielding
+    // prompt above guarantees this cannot submit user content to Anthropic.
+    if (readUsage) {
+      const usageResult = yield* Effect.tryPromise(() => readUsage.call(q)).pipe(
+        Effect.timeoutOption(USAGE_PROBE_TIMEOUT_MS),
+        // Usage is best-effort. Account identity and model discovery remain
+        // useful even when an older Claude CLI rejects this control request.
+        Effect.orElseSucceed(() => Option.none()),
+      );
+      usageResponse = Option.getOrUndefined(usageResult);
+    }
+    const account = init.account as
+      | {
+          readonly email?: string;
+          readonly subscriptionType?: string;
+          readonly tokenSource?: string;
+          readonly apiProvider?: string;
+        }
+      | undefined;
+    const capturedAt = DateTime.formatIso(yield* DateTime.now);
+    const quota = normalizeClaudeProbeQuota(usageResponse, capturedAt);
+    return {
+      email: account?.email,
+      subscriptionType: account?.subscriptionType,
+      tokenSource: account?.tokenSource,
+      apiProvider: account?.apiProvider,
+      slashCommands: parseClaudeInitializationCommands(init.commands),
+      ...(quota ? { quota } : {}),
+    } satisfies ClaudeCapabilitiesProbe;
   }).pipe(
     Effect.ensuring(
       Effect.sync(() => {
@@ -904,7 +941,44 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const slashCommands = capabilities?.slashCommands ?? [];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
-  if (!capabilities) {
+  const externalApiProvider =
+    capabilities?.apiProvider && capabilities.apiProvider !== "firstParty"
+      ? capabilities.apiProvider
+      : undefined;
+  const authProbe = externalApiProvider
+    ? undefined
+    : yield* runClaudeCommand(claudeSettings, ["auth", "status"], resolvedEnvironment).pipe(
+        Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
+        Effect.result,
+      );
+  const decodedAuthStatus =
+    authProbe && Result.isSuccess(authProbe) && Option.isSome(authProbe.success)
+      ? yield* decodeClaudeAuthStatusOutput(authProbe.success.value.stdout.trim()).pipe(
+          Effect.option,
+          Effect.map(Option.getOrUndefined),
+        )
+      : undefined;
+  const loggedIn = decodedAuthStatus?.loggedIn ?? decodedAuthStatus?.authenticated;
+
+  if (loggedIn === false) {
+    return buildServerProvider({
+      presentation: CLAUDE_PRESENTATION,
+      enabled: claudeSettings.enabled,
+      checkedAt,
+      models,
+      slashCommands: dedupedSlashCommands,
+      skills,
+      probe: {
+        installed: true,
+        version: parsedVersion,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "Claude is not authenticated. Run `claude auth login` and try again.",
+      },
+    });
+  }
+
+  if (!capabilities && loggedIn !== true) {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -917,16 +991,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        message: "Could not verify Claude authentication status.",
       },
     });
   }
 
   const authMetadata =
     claudeAuthMetadata({
-      subscriptionType: capabilities.subscriptionType,
-      authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+      subscriptionType: capabilities?.subscriptionType,
+      authMethod: capabilities?.tokenSource ?? decodedAuthStatus?.authMethod,
+    }) ?? apiProviderAuthMetadata(capabilities?.apiProvider ?? decodedAuthStatus?.apiProvider);
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -934,13 +1008,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models,
     slashCommands: dedupedSlashCommands,
     skills,
+    ...(capabilities?.quota ? { quota: capabilities.quota } : {}),
     probe: {
       installed: true,
       version: parsedVersion,
       status: "ready",
       auth: {
         status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
+        ...(capabilities?.email || decodedAuthStatus?.email
+          ? { email: capabilities?.email ?? decodedAuthStatus?.email }
+          : {}),
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),

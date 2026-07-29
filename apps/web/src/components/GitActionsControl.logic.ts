@@ -75,6 +75,20 @@ export function buildGitActionProgressStages(input: {
   if (input.action === "create_pr") {
     return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
   }
+  if (input.action === "auto_merge") {
+    const commitStages = input.hasWorkingTreeChanges
+      ? input.hasCustomCommitMessage
+        ? ["Committing..."]
+        : ["Generating commit message...", "Committing..."]
+      : [];
+    return [
+      ...branchStages,
+      ...commitStages,
+      pushStage,
+      ...prStages,
+      "Merging promotion pull requests...",
+    ];
+  }
 
   const shouldIncludeCommitStages = input.action === "commit" || input.hasWorkingTreeChanges;
   const commitStages = !shouldIncludeCommitStages

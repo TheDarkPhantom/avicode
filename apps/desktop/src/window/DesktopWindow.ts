@@ -35,6 +35,22 @@ const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -118, // ERR_CONNECTION_TIMED_OUT
 ]);
 
+/**
+ * Avi Code addition: the renderer publishes repository/thread context through
+ * `document.title` for local ActivityWatch attribution. Upstream pins the
+ * native title to the static application name, so only accept renderer titles
+ * that retain Avi Code's product name as a suffix; arbitrary page titles still
+ * fall back to the trusted desktop display name.
+ */
+export function resolveNativeWindowTitle(displayName: string, pageTitle: string): string {
+  const productName = displayName.replace(/\s+\((?:Alpha|Dev|Nightly)\)$/i, "").trim();
+  const candidate = pageTitle.trim();
+  if (candidate === productName || candidate.endsWith(` — ${productName}`)) {
+    return candidate;
+  }
+  return displayName;
+}
+
 type WindowTitleBarOptions = Pick<
   Electron.BrowserWindowConstructorOptions,
   "titleBarOverlay" | "titleBarStyle" | "trafficLightPosition"
@@ -514,9 +530,9 @@ export const make = Effect.gen(function* () {
       }
     });
 
-    window.on("page-title-updated", (event) => {
+    window.on("page-title-updated", (event, title) => {
       event.preventDefault();
-      window.setTitle(environment.displayName);
+      window.setTitle(resolveNativeWindowTitle(environment.displayName, title));
     });
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);

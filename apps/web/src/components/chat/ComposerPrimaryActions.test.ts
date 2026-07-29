@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { formatPendingPrimaryActionLabel } from "./ComposerPrimaryActions";
+import {
+  canSubmitComposerProviderState,
+  formatPendingPrimaryActionLabel,
+  normalComposerPrimaryActionState,
+} from "./ComposerPrimaryActions";
 
 describe("formatPendingPrimaryActionLabel", () => {
   it("returns 'Submitting...' while responding", () => {
@@ -89,5 +93,56 @@ describe("formatPendingPrimaryActionLabel", () => {
         questionIndex: 5,
       }),
     ).toBe("Submit answers");
+  });
+});
+
+describe("normalComposerPrimaryActionState", () => {
+  it("allows a disconnected message to be queued", () => {
+    expect(
+      normalComposerPrimaryActionState({
+        isSendBusy: false,
+        isConnecting: false,
+        isEnvironmentUnavailable: true,
+        hasQueuedTurn: false,
+        hasSendableContent: true,
+        isPreparingWorktree: false,
+      }),
+    ).toEqual({
+      disabled: false,
+      label: "Queue message until reconnected",
+    });
+  });
+
+  it("prevents a second queued turn from racing the first", () => {
+    expect(
+      normalComposerPrimaryActionState({
+        isSendBusy: false,
+        isConnecting: false,
+        isEnvironmentUnavailable: true,
+        hasQueuedTurn: true,
+        hasSendableContent: true,
+        isPreparingWorktree: false,
+      }),
+    ).toEqual({
+      disabled: true,
+      label: "Message already queued",
+    });
+  });
+});
+
+describe("canSubmitComposerProviderState", () => {
+  it("uses the cached selection only while the environment is unavailable", () => {
+    expect(
+      canSubmitComposerProviderState({
+        providerAvailable: false,
+        environmentUnavailable: true,
+      }),
+    ).toBe(true);
+    expect(
+      canSubmitComposerProviderState({
+        providerAvailable: false,
+        environmentUnavailable: false,
+      }),
+    ).toBe(false);
   });
 });

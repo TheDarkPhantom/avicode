@@ -4,6 +4,13 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 export const EditorLaunchStyle = Schema.Literals(["direct-path", "goto", "line-column"]);
 export type EditorLaunchStyle = typeof EditorLaunchStyle.Type;
 
+/**
+ * Whether the server has finished scanning for installed editors. While
+ * `pending`, an empty editor list means "not scanned yet", not "none installed".
+ */
+export const EditorDiscoveryStatus = Schema.Literals(["pending", "ready"]);
+export type EditorDiscoveryStatus = typeof EditorDiscoveryStatus.Type;
+
 type EditorDefinition = {
   readonly id: string;
   readonly label: string;
