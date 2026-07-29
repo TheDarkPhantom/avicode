@@ -2,7 +2,7 @@
 
 Prioritized work. Structure: **shipped foundation → alpha verification → next work**.
 
-**Last updated:** 2026-07-29
+**Last updated:** 2026-07-30
 
 ## Shipped foundation
 
@@ -21,6 +21,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
       instead of the static application name.
 - [x] Header indicator for working-tree changed-file counts with one-click diff access.
 - [x] Per-chat provider/model badges with custom client initials and compact status labels.
+- [x] Repository icons on flat thread rows without repeating repository names.
 - [x] ALFRED-safe session metadata.
 - [x] Human-reviewed weekly upstream synchronization.
 - [x] Manual-only release and relay workflows; merging `main` cannot publish or deploy.

@@ -28,6 +28,7 @@ import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import { openDiscoveredPort } from "../preview/openDiscoveredPort";
+import { ProjectFavicon } from "../ProjectFavicon";
 import {
   ChangeRequestStatusIcon,
   prStatusIndicator,
@@ -50,8 +51,12 @@ interface SidebarThreadRowProps {
   thread: SidebarThreadSummary;
   projectCwd: string | null;
   /** Shown after the title in the flat sidebar, where rows have no project
-   * header above them to say which project they belong to. Null in the tree. */
-  projectLabel?: string | null;
+   * header above them to identify their repository. Null in the tree. */
+  projectIdentity?: {
+    environmentId: SidebarThreadSummary["environmentId"];
+    cwd: string;
+    label: string;
+  } | null;
   orderedProjectThreadKeys: readonly string[];
   isActive: boolean;
   jumpLabel: string | null;
@@ -111,7 +116,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     cancelRename,
     attemptArchiveThread,
     openPrLink,
-    projectLabel = null,
+    projectIdentity = null,
     thread,
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
@@ -477,17 +482,25 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               </TooltipPopup>
             </Tooltip>
           )}
-          {projectLabel && renamingThreadKey !== threadKey ? (
-            // Caps at 40% so a long project name gives way to the title rather
-            // than squeezing it out on a narrow sidebar.
-            <span
-              className={`max-w-[40%] shrink-0 truncate text-[10px] ${
-                isHighlighted ? "text-foreground/55" : "text-muted-foreground/45"
-              }`}
-              data-testid={`thread-project-label-${thread.id}`}
-            >
-              {projectLabel}
-            </span>
+          {projectIdentity && renamingThreadKey !== threadKey ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    aria-label={`Repository: ${projectIdentity.label}`}
+                    className={isHighlighted ? "opacity-80" : "opacity-60"}
+                    data-testid={`thread-project-icon-${thread.id}`}
+                  />
+                }
+              >
+                <ProjectFavicon
+                  environmentId={projectIdentity.environmentId}
+                  cwd={projectIdentity.cwd}
+                  className="size-3"
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="top">{projectIdentity.label}</TooltipPopup>
+            </Tooltip>
           ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">

@@ -1882,7 +1882,14 @@ interface SidebarProjectsContentProps {
   expandFlatList: () => void;
   collapseFlatList: () => void;
   flatThreads: readonly SidebarThreadSummary[];
-  projectLabelByThreadKey: ReadonlyMap<string, string>;
+  projectIdentityByThreadKey: ReadonlyMap<
+    string,
+    {
+      environmentId: SidebarThreadSummary["environmentId"];
+      cwd: string;
+      label: string;
+    }
+  >;
   threadHandlers: SidebarThreadHandlers;
   updateSettings: ReturnType<typeof useUpdateClientSettings>;
   openAddProject: () => void;
@@ -1929,7 +1936,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     expandFlatList,
     collapseFlatList,
     flatThreads,
-    projectLabelByThreadKey,
+    projectIdentityByThreadKey,
     threadHandlers,
     updateSettings,
     openAddProject,
@@ -2103,7 +2110,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             <SidebarMenuItem className="rounded-md">
               <SidebarFlatThreadList
                 threads={flatThreads}
-                projectLabelByThreadKey={projectLabelByThreadKey}
+                projectIdentityByThreadKey={projectIdentityByThreadKey}
                 threadSortOrder={threadSortOrder}
                 flatThreadCount={flatThreadCount}
                 isListExpanded={isFlatListExpanded}
@@ -2564,17 +2571,28 @@ export default function Sidebar() {
   // off the same visible order.
   const [isFlatListExpanded, setIsFlatListExpanded] = useState(false);
   const threadHandlers = useSidebarThreadHandlers();
-  const projectLabelByThreadKey = useMemo(() => {
-    const labels = new Map<string, string>();
+  const projectIdentityByThreadKey = useMemo(() => {
+    const identities = new Map<
+      string,
+      {
+        environmentId: SidebarThreadSummary["environmentId"];
+        cwd: string;
+        label: string;
+      }
+    >();
     for (const project of sidebarProjects) {
       for (const thread of threadsByProjectKey.get(project.projectKey) ?? []) {
-        labels.set(
+        identities.set(
           scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-          project.displayName,
+          {
+            environmentId: project.environmentId,
+            cwd: project.workspaceRoot,
+            label: project.displayName,
+          },
         );
       }
     }
-    return labels;
+    return identities;
   }, [sidebarProjects, threadsByProjectKey]);
   const flatSidebarThreadKeys = useMemo(
     () =>
@@ -2885,7 +2903,7 @@ export default function Sidebar() {
             expandFlatList={expandFlatList}
             collapseFlatList={collapseFlatList}
             flatThreads={visibleThreads}
-            projectLabelByThreadKey={projectLabelByThreadKey}
+            projectIdentityByThreadKey={projectIdentityByThreadKey}
             threadHandlers={threadHandlers}
             updateSettings={updateSettings}
             openAddProject={openAddProjectCommandPalette}
