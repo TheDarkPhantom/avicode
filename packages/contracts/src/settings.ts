@@ -78,9 +78,18 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   // Avi Code addition. Plays a short chime when a thread enters a state that
   // waits on the user — the same states the sidebar labels Pending Approval,
-  // Awaiting Input, and Completed/Done. Opt-in: a browser tab that makes noise
+  // Waiting, and Completed/Done. Opt-in: a browser tab that makes noise
   // without being asked to is worse than a missed notification.
   notificationSoundEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Avi Code additions. Keep the dense chat list scannable and let custom
+  // provider instances use a memorable one- or two-character client badge.
+  aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  aviCodeProviderBadgeLabels: Schema.Record(
+    ProviderInstanceId,
+    Schema.String.check(Schema.isMaxLength(2)),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
   // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
@@ -632,6 +641,10 @@ export const ClientSettingsPatch = Schema.Struct({
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
   notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
+  aviCodeProviderBadgeLabels: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
+  ),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

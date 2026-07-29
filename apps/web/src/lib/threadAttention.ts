@@ -7,7 +7,7 @@ import type { SidebarThreadSummary } from "../types";
  * Deliberately a subset of, and derived from, the sidebar status model: the
  * chime is supposed to mean "one of those labels just appeared", so anything
  * that changes what the sidebar shows has to change this too. `approval` and
- * `input` are the sidebar's Pending Approval / Awaiting Input; `done` is the
+ * `input` are the sidebar's Pending Approval / Waiting; `done` is the
  * unread-completion state the sidebar labels Completed (v1) or Done (v2).
  *
  * Working, Connecting, Plan Ready, Failed and Needs Resume are intentionally
