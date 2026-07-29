@@ -12,6 +12,7 @@ import {
   quotaRemainingPercent,
   selectProviderInstanceLabel,
   selectProviderQuota,
+  shouldRefreshProviderQuota,
 } from "./providerQuota";
 
 const NOW = Date.parse("2026-07-29T12:00:00.000Z");
@@ -71,6 +72,37 @@ describe("selectProviderQuota", () => {
 
   it("returns null for a provider that reports no quota at all", () => {
     expect(selectProviderQuota([provider({ instanceId: "opencode" })], "opencode")).toBeNull();
+  });
+});
+
+describe("shouldRefreshProviderQuota", () => {
+  it("refreshes missing or stale provider usage but keeps a recent snapshot", () => {
+    const now = Date.parse("2026-07-29T12:05:00.000Z");
+    expect(shouldRefreshProviderQuota(null, now)).toBe(true);
+    expect(
+      shouldRefreshProviderQuota(
+        { ...quota([{ id: "weekly", label: "Weekly", usedPercent: 20 }]), capturedAt: "bad" },
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      shouldRefreshProviderQuota(
+        {
+          ...quota([{ id: "weekly", label: "Weekly", usedPercent: 20 }]),
+          capturedAt: "2026-07-29T12:04:00.000Z",
+        },
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      shouldRefreshProviderQuota(
+        {
+          ...quota([{ id: "weekly", label: "Weekly", usedPercent: 20 }]),
+          capturedAt: "2026-07-29T12:00:00.000Z",
+        },
+        now,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -152,6 +184,17 @@ describe("quotaRemainingPercent", () => {
     [100, 0],
   ])("turns %s%% used into %s%% remaining", (used, expected) => {
     expect(quotaRemainingPercent({ id: "a", label: "a", usedPercent: used })).toBe(expected);
+  });
+
+  it("shows nothing left when the provider rejects below a rounded 100%", () => {
+    expect(
+      quotaRemainingPercent({
+        id: "five_hour",
+        label: "5-hour",
+        usedPercent: 99,
+        exhausted: true,
+      }),
+    ).toBe(0);
   });
 });
 

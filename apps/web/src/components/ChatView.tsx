@@ -29,6 +29,7 @@ import {
 import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
   parseScopedThreadKey,
+  scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
@@ -100,6 +101,8 @@ import { useUiStateStore } from "../uiStateStore";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
+  buildPlanReviewPrompt,
+  buildPlanReviewThreadTitle,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
 import {
@@ -170,6 +173,7 @@ import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useWindowActive } from "../hooks/useWindowActive";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
@@ -224,6 +228,7 @@ import {
   useThreadProposedPlans,
   useThreadRefs,
   useThreadShell,
+  useThreadShells,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -1150,6 +1155,9 @@ function ChatViewContent(props: ChatViewProps) {
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
   });
+  const refreshProviderUsage = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
@@ -1201,6 +1209,7 @@ function ChatViewContent(props: ChatViewProps) {
   const activeThreadLastVisitedAt = useUiStateStore(
     (store) => store.threadLastVisitedAtById[routeThreadKey],
   );
+  const windowActive = useWindowActive();
   const settings = useEnvironmentSettings(environmentId);
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
@@ -1235,6 +1244,9 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.setPreviewAnnotations,
   );
   const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
+  const setComposerDraftThreadContextIds = useComposerDraftStore(
+    (store) => store.setThreadContextIds,
+  );
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
@@ -1354,6 +1366,7 @@ function ChatViewContent(props: ChatViewProps) {
   const storeSetActiveTerminal = useTerminalUiStateStore((s) => s.setActiveTerminal);
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const serverThreadRefs = useThreadRefs();
+  const allThreadShells = useThreadShells();
   const serverThreadKeys = useMemo(() => serverThreadRefs.map(scopedThreadKey), [serverThreadRefs]);
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftThreadKeys = useMemo(
@@ -1667,6 +1680,23 @@ function ChatViewContent(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
+  const threadContextCandidates = useMemo(() => {
+    const projectTitles = new Map(
+      allProjects
+        .filter((project) => project.environmentId === environmentId)
+        .map((project) => [project.id, project.title]),
+    );
+    return allThreadShells
+      .filter((thread) => thread.environmentId === environmentId && thread.id !== activeThreadId)
+      .map((thread) => ({
+        threadId: thread.id,
+        title: thread.title,
+        projectTitle: projectTitles.get(thread.projectId) ?? "Unknown project",
+        updatedAt: thread.updatedAt,
+        archived: thread.archivedAt !== null,
+      }))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }, [activeThreadId, allProjects, allThreadShells, environmentId]);
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
@@ -1859,6 +1889,14 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   useEffect(() => {
+    // Only the window the user is actually looking at marks the open thread
+    // read. Turn completions stream in over the websocket whether or not the
+    // app is focused, so without this an agent finishing while the user is in
+    // their editor would mark its own work seen and the sidebar's Completed /
+    // Done indicator would never appear for a thread that needs review. The
+    // effect re-runs on refocus, so returning to a still-open thread clears
+    // the indicator exactly as before.
+    if (!windowActive) return;
     if (!serverThread?.id) return;
     const threadUpdatedAt = Date.parse(serverThread.updatedAt);
     if (Number.isNaN(threadUpdatedAt)) return;
@@ -1875,6 +1913,7 @@ function ChatViewContent(props: ChatViewProps) {
     serverThread?.environmentId,
     serverThread?.id,
     serverThread?.updatedAt,
+    windowActive,
   ]);
 
   const selectedProviderByThreadId = composerActiveProvider ?? null;
@@ -4530,6 +4569,7 @@ function ChatViewContent(props: ChatViewProps) {
       elementContexts: composerElementContexts,
       previewAnnotations: composerPreviewAnnotations,
       reviewComments: composerReviewComments,
+      threadContextIds: composerThreadContextIds,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -4645,6 +4685,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const composerThreadContextIdsSnapshot = [...composerThreadContextIds];
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
@@ -4715,6 +4756,11 @@ function ChatViewContent(props: ChatViewProps) {
         role: "user",
         text: outgoingMessageText,
         ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+        ...(composerThreadContextIdsSnapshot.length > 0
+          ? {
+              threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
+            }
+          : {}),
         turnId: null,
         createdAt: messageCreatedAt,
         updatedAt: messageCreatedAt,
@@ -4867,6 +4913,11 @@ function ChatViewContent(props: ChatViewProps) {
         runtimeMode,
         interactionMode,
         ...(bootstrap ? { bootstrap } : {}),
+        ...(composerThreadContextIdsSnapshot.length > 0
+          ? {
+              threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
+            }
+          : {}),
         createdAt: messageCreatedAt,
       });
       const queued = useOfflineTurnOutboxStore.getState().enqueue({
@@ -4992,6 +5043,11 @@ function ChatViewContent(props: ChatViewProps) {
           runtimeMode,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
+          ...(composerThreadContextIdsSnapshot.length > 0
+            ? {
+                threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
+              }
+            : {}),
           createdAt: messageCreatedAt,
         },
       });
@@ -5011,6 +5067,8 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
           .length ?? 0) === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
+          .length ?? 0) === 0 &&
+        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.threadContextIds
           .length ?? 0) === 0
       ) {
         setOptimisticUserMessages((existing) => {
@@ -5032,6 +5090,7 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftElementContexts(composerDraftTarget, composerElementContextsSnapshot);
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
+        setComposerDraftThreadContextIds(composerDraftTarget, composerThreadContextIdsSnapshot);
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
           prompt: promptForSend,
@@ -5565,6 +5624,152 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
+  const onReviewPlanWithCodex = useCallback(async () => {
+    if (
+      !activeThread ||
+      !activeProject ||
+      !activeProposedPlan ||
+      !isServerThread ||
+      isSendBusy ||
+      isConnecting ||
+      activeEnvironmentUnavailable ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+
+    const codexProvider = providerStatuses.find(
+      (provider) =>
+        provider.driver === "codex" &&
+        provider.enabled &&
+        provider.status === "ready" &&
+        provider.availability !== "unavailable",
+    );
+    const codexModel = codexProvider?.models[0]?.slug;
+    if (!codexProvider || !codexModel) {
+      toastManager.add({
+        type: "error",
+        title: "Codex is unavailable",
+        description: "Enable a ready Codex provider with at least one model to review this plan.",
+      });
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    const nextThreadId = newThreadId();
+    const planMarkdown = activeProposedPlan.planMarkdown;
+    const reviewPrompt = buildPlanReviewPrompt(planMarkdown);
+    const nextThreadTitle = truncate(buildPlanReviewThreadTitle(planMarkdown));
+    const reviewModelSelection: ModelSelection = {
+      instanceId: codexProvider.instanceId,
+      model: codexModel,
+    };
+
+    sendInFlightRef.current = true;
+    beginLocalDispatch({ preparingWorktree: false });
+    const finish = () => {
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+    };
+
+    const createResult = await createThread({
+      environmentId,
+      input: {
+        threadId: nextThreadId,
+        projectId: activeProject.id,
+        title: nextThreadTitle,
+        modelSelection: reviewModelSelection,
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+        branch: activeThreadBranch,
+        worktreePath: activeThread.worktreePath,
+        createdAt,
+      },
+    });
+    let failure: AtomCommandResult<unknown, unknown> | null =
+      createResult._tag === "Failure" ? createResult : null;
+
+    if (failure === null) {
+      const startResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text: reviewPrompt,
+            attachments: [],
+          },
+          modelSelection: reviewModelSelection,
+          titleSeed: nextThreadTitle,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+          createdAt,
+        },
+      });
+      failure = startResult._tag === "Failure" ? startResult : null;
+    }
+
+    if (failure === null) {
+      const startedResult = await settlePromise(() =>
+        waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+      );
+      failure = startedResult._tag === "Failure" ? startedResult : null;
+    }
+
+    if (failure === null) {
+      const navigateResult = await settlePromise(() =>
+        navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: activeThread.environmentId,
+            threadId: nextThreadId,
+          },
+        }),
+      );
+      failure = navigateResult._tag === "Failure" ? navigateResult : null;
+    }
+
+    if (failure !== null) {
+      const cleanupResult = await deleteThread({
+        environmentId,
+        input: { threadId: nextThreadId },
+      });
+      if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+        console.warn(
+          "Failed to clean up plan review thread after start failure.",
+          squashAtomCommandFailure(cleanupResult),
+        );
+      }
+      if (!isAtomCommandInterrupted(failure)) {
+        const error = squashAtomCommandFailure(failure);
+        toastManager.add({
+          type: "error",
+          title: "Could not start Codex review",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+    }
+    finish();
+  }, [
+    activeEnvironmentUnavailable,
+    activeProject,
+    activeProposedPlan,
+    activeThread,
+    activeThreadBranch,
+    beginLocalDispatch,
+    createThread,
+    deleteThread,
+    environmentId,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    navigate,
+    providerStatuses,
+    resetLocalDispatch,
+    startThreadTurn,
+  ]);
+
   const getModelDisabledReason = useCallback(
     (instanceId: ProviderInstanceId, model: string): string | null => {
       if (!activeThread) {
@@ -5645,11 +5850,16 @@ function ChatViewContent(props: ChatViewProps) {
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
       );
-      setStickyComposerModelSelection(nextModelSelection);
+      const stickyScopeKey =
+        settings.projectScopedProviderSelectionEnabled && activeProject
+          ? scopedProjectKey(scopeProjectRef(activeProject.environmentId, activeProject.id))
+          : null;
+      setStickyComposerModelSelection(nextModelSelection, stickyScopeKey);
       scheduleComposerFocus();
     },
     [
       activeThread,
+      activeProject,
       lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
@@ -5657,6 +5867,15 @@ function ChatViewContent(props: ChatViewProps) {
       providerStatuses,
       settings,
     ],
+  );
+  const onRefreshProviderUsage = useCallback(
+    async (instanceId: ProviderInstanceId): Promise<void> => {
+      await refreshProviderUsage({
+        environmentId,
+        input: { instanceId },
+      });
+    },
+    [environmentId, refreshProviderUsage],
   );
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
@@ -5877,6 +6096,7 @@ function ChatViewContent(props: ChatViewProps) {
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
+            onOpenChanges={onToggleDiff}
             onNewThreadInProject={handleNewThreadInActiveProject}
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}
@@ -6023,6 +6243,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeThreadId={activeThreadId}
                             activeThreadEnvironmentId={activeThread?.environmentId}
                             activeThread={activeThread}
+                            threadContextCandidates={threadContextCandidates}
                             isServerThread={isServerThread}
                             isLocalDraftThread={isLocalDraftThread}
                             forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
@@ -6059,6 +6280,13 @@ function ChatViewContent(props: ChatViewProps) {
                             activeThreadActivities={activeThread?.activities}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
+                            providerSelectionScopeKey={
+                              settings.projectScopedProviderSelectionEnabled && activeProject
+                                ? scopedProjectKey(
+                                    scopeProjectRef(activeProject.environmentId, activeProject.id),
+                                  )
+                                : null
+                            }
                             keybindings={keybindings}
                             terminalOpen={Boolean(terminalUiState.terminalOpen)}
                             gitCwd={gitCwd}
@@ -6069,6 +6297,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onReviewPlanWithCodex={onReviewPlanWithCodex}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption
@@ -6081,6 +6310,7 @@ function ChatViewContent(props: ChatViewProps) {
                               onChangeActivePendingUserInputCustomAnswer
                             }
                             onProviderModelSelect={onProviderModelSelect}
+                            onRefreshProviderUsage={onRefreshProviderUsage}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}

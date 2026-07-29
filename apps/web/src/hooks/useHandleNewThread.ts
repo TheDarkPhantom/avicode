@@ -27,6 +27,18 @@ import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
 
+export function shouldCarryProviderSelectionBetweenProjects(input: {
+  projectScopedProviderSelectionEnabled: boolean;
+  sourceProjectRef: ScopedProjectRef | null;
+  targetProjectRef: ScopedProjectRef;
+}): boolean {
+  return (
+    !input.projectScopedProviderSelectionEnabled ||
+    (input.sourceProjectRef !== null &&
+      scopedProjectKey(input.sourceProjectRef) === scopedProjectKey(input.targetProjectRef))
+  );
+}
+
 export function useNewThreadHandler() {
   const projects = useProjects();
   // New-thread defaults are a user preference, and the settings UI only ever
@@ -36,6 +48,9 @@ export function useNewThreadHandler() {
   // set those values on a remote server.
   const primaryServerSettings = useAtomValue(primaryServerSettingsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const projectScopedProviderSelectionEnabled = useClientSettings(
+    (settings) => settings.projectScopedProviderSelectionEnabled,
+  );
   const router = useRouter();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
@@ -88,8 +103,20 @@ export function useNewThreadHandler() {
       const composerModelSelection = composerActiveProvider
         ? (carrySourceComposer?.modelSelectionByProvider[composerActiveProvider] ?? null)
         : null;
-      const carryModelSelection =
-        composerModelSelection ?? carrySourceShell?.modelSelection ?? null;
+      const carrySourceProjectRef =
+        carrySourceShell && currentRouteTarget?.kind === "server"
+          ? scopeProjectRef(currentRouteTarget.threadRef.environmentId, carrySourceShell.projectId)
+          : carrySourceDraft
+            ? scopeProjectRef(carrySourceDraft.environmentId, carrySourceDraft.projectId)
+            : null;
+      const canCarryModelSelection = shouldCarryProviderSelectionBetweenProjects({
+        projectScopedProviderSelectionEnabled,
+        sourceProjectRef: carrySourceProjectRef,
+        targetProjectRef: projectRef,
+      });
+      const carryModelSelection = canCarryModelSelection
+        ? (composerModelSelection ?? carrySourceShell?.modelSelection ?? null)
+        : null;
       const carryRuntimeMode =
         carrySourceComposer?.runtimeMode ??
         carrySourceShell?.runtimeMode ??
@@ -262,7 +289,10 @@ export function useNewThreadHandler() {
           runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });
-        applyStickyState(draftId);
+        applyStickyState(
+          draftId,
+          projectScopedProviderSelectionEnabled ? scopedProjectKey(projectRef) : null,
+        );
         if (carryModelSelection) {
           // After sticky state so the viewed thread's exact selection
           // (model + options like effort and context window) wins over the
@@ -279,7 +309,14 @@ export function useNewThreadHandler() {
         });
       })();
     },
-    [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+    [
+      getCurrentRouteTarget,
+      primaryServerSettings,
+      projectGroupingSettings,
+      projectScopedProviderSelectionEnabled,
+      projects,
+      router,
+    ],
   );
 }
 

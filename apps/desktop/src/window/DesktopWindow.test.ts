@@ -117,6 +117,7 @@ function makeFakeBrowserWindow() {
     reload: webContents.reload,
     send: webContents.send,
     setAutoHideCursor: window.setAutoHideCursor,
+    setTitle: window.setTitle,
     webContentsListeners,
     windowListeners,
   };
@@ -889,6 +890,49 @@ describe("DesktopWindow", () => {
       }).pipe(Effect.provide(layer));
     }),
   );
+
+  it.effect("publishes trusted repository and thread metadata in the native title", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const pageTitleUpdated = fakeWindow.windowListeners.get("page-title-updated");
+        if (!pageTitleUpdated) {
+          return yield* Effect.die("page-title-updated listener was not registered");
+        }
+
+        const preventDefault = vi.fn();
+        pageTitleUpdated(
+          { preventDefault },
+          "advisoravi-business — Track Coding Threads — Avi Code",
+        );
+        assert.deepEqual(fakeWindow.setTitle.mock.lastCall, [
+          "advisoravi-business — Track Coding Threads — Avi Code",
+        ]);
+        assert.equal(preventDefault.mock.calls.length, 1);
+
+        pageTitleUpdated({ preventDefault }, "Untrusted renderer title");
+        assert.deepEqual(fakeWindow.setTitle.mock.lastCall, ["Avi Code (Dev)"]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it("keeps privacy-mode titles metadata-free", () => {
+    assert.equal(
+      DesktopWindow.resolveNativeWindowTitle("Avi Code (Alpha)", "Avi Code"),
+      "Avi Code",
+    );
+  });
 
   it.effect("recovers when the development renderer is temporarily unreachable", () =>
     Effect.gen(function* () {

@@ -11,6 +11,7 @@ export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
 
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
+const T3_PROJECT_FILE_MAX_PROMOTION_REFS = 3;
 
 // Annotations go on the encoded (string) side so they survive into the
 // published JSON Schema; decoding still trims and re-validates non-emptiness.
@@ -58,6 +59,39 @@ export const T3ProjectFileScript = Schema.Struct({
 });
 export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
 
+const promotionRefs = Schema.Array(
+  trimmedNonEmpty({
+    description: "A target ref in promotion order, for example avi-dev, staging, then main.",
+  }),
+)
+  .check(Schema.isMinLength(1), Schema.isMaxLength(T3_PROJECT_FILE_MAX_PROMOTION_REFS))
+  .annotate({
+    description: "Ordered refs that Auto merge promotes the chat worktree branch through.",
+  });
+
+const requireMainApproval = Schema.optionalKey(
+  Schema.Boolean.annotate({
+    description:
+      "When true, Auto merge stops after creating the final change request targeting main.",
+  }),
+);
+
+export const T3ProjectAutoMerge = Schema.Union([
+  Schema.Struct({
+    mode: Schema.Literal("solo"),
+    promotionRefs: Schema.optionalKey(promotionRefs),
+    requireMainApproval,
+  }),
+  Schema.Struct({
+    mode: Schema.Literal("collaborative"),
+    promotionRefs,
+    requireMainApproval,
+  }),
+]).annotate({
+  description: "Per-repository Auto merge workflow for Avi Code chat worktrees.",
+});
+export type T3ProjectAutoMerge = typeof T3ProjectAutoMerge.Type;
+
 export const T3ProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(
     Schema.String.annotate({
@@ -80,6 +114,7 @@ export const T3ProjectFile = Schema.Struct({
       })
       .check(Schema.isMaxLength(T3_PROJECT_FILE_MAX_SCRIPTS)),
   ),
+  autoMerge: Schema.optionalKey(T3ProjectAutoMerge),
 }).annotate({
   title: "T3 project file",
   description: "Checked-in project configuration for Avi Code (t3.json at the repository root).",

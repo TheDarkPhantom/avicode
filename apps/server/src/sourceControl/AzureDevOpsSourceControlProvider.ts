@@ -152,6 +152,14 @@ export const make = Effect.gen(function* () {
           ),
         );
     },
+    mergeChangeRequest: (input) =>
+      new SourceControlProviderError({
+        provider: "azure-devops",
+        operation: "mergeChangeRequest",
+        cwd: input.cwd,
+        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
+        detail: "Auto merge is currently supported for GitHub repositories only.",
+      }),
     getRepositoryCloneUrls: (input) =>
       azure.getRepositoryCloneUrls(input).pipe(
         Effect.mapError(

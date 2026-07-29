@@ -11,6 +11,7 @@ import {
   type ProviderSession,
   type RuntimeMode,
   type TurnId,
+  type ThreadContextReference,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
@@ -44,6 +45,10 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import {
+  serializeReferencedThreadContext,
+  type ReferencedThreadTranscript,
+} from "../threadContext.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -803,6 +808,53 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    const serializeThreadContext = Effect.fnUntraced(function* (
+      references: ReadonlyArray<ThreadContextReference>,
+    ) {
+      const transcripts: Array<ReferencedThreadTranscript> = [];
+      for (const reference of references) {
+        const sourceThread = yield* resolveThread(reference.threadId);
+        if (!sourceThread || sourceThread.deletedAt !== null) {
+          return yield* new ProviderAdapterRequestError({
+            provider: "orchestration",
+            method: "thread.turn.start",
+            detail: `Referenced thread '${reference.threadId}' is no longer available.`,
+          });
+        }
+        const sourceProject = yield* resolveProject(sourceThread.projectId);
+        transcripts.push({
+          id: sourceThread.id,
+          title: sourceThread.title,
+          projectTitle: sourceProject?.title ?? sourceThread.projectId,
+          messages: sourceThread.messages.flatMap((entry) =>
+            entry.role === "user" || entry.role === "assistant"
+              ? [
+                  {
+                    role: entry.role,
+                    text: entry.text,
+                    createdAt: entry.createdAt,
+                    ...(entry.attachments !== undefined ? { attachments: entry.attachments } : {}),
+                  },
+                ]
+              : [],
+          ),
+        });
+      }
+      const serialized = serializeReferencedThreadContext(transcripts);
+      if (!serialized.ok) {
+        return yield* new ProviderAdapterRequestError({
+          provider: "orchestration",
+          method: "thread.turn.start",
+          detail: serialized.detail,
+        });
+      }
+      return serialized.text;
+    });
+
+    const referencedContext = yield* serializeThreadContext(event.payload.threadContext ?? []);
+    const providerMessageText =
+      referencedContext.length > 0 ? `${message.text}\n\n${referencedContext}` : message.text;
+
     const isFirstUserMessageTurn =
       thread.messages.filter((entry) => entry.role === "user").length === 1;
     if (isFirstUserMessageTurn) {
@@ -872,7 +924,7 @@ const make = Effect.gen(function* () {
 
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: message.text,
+      messageText: providerMessageText,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
