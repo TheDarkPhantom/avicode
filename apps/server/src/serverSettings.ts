@@ -97,6 +97,23 @@ function redactProviderEnvironmentVariable(
   };
 }
 
+/**
+ * Name of the secret holding the Deepgram API key used for voice dictation.
+ * Unlike provider environment variables there is exactly one of these, so the
+ * name is a constant rather than derived from the settings path.
+ */
+export const VOICE_DEEPGRAM_SECRET_NAME = "voice-deepgram-api-key";
+
+function redactVoiceSettings(voice: ServerSettings["voice"]): ServerSettings["voice"] {
+  return {
+    ...voice,
+    deepgramApiKey: "",
+    ...(voice.deepgramApiKey.length > 0 || voice.deepgramApiKeyRedacted
+      ? { deepgramApiKeyRedacted: true }
+      : {}),
+  };
+}
+
 export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
   const providerInstances = Object.fromEntries(
     Object.entries(settings.providerInstances).map(([instanceId, instance]) => [
@@ -109,7 +126,7 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances };
+  return { ...settings, providerInstances, voice: redactVoiceSettings(settings.voice) };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -445,6 +462,83 @@ const make = Effect.gen(function* () {
       };
     });
 
+  const materializeVoiceSecret = (
+    settings: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    Effect.gen(function* () {
+      if (!settings.voice.deepgramApiKeyRedacted) return settings;
+      const secret = yield* secretStore.get(VOICE_DEEPGRAM_SECRET_NAME).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ServerSettingsError({
+              settingsPath,
+              operation: "read-secret",
+              environmentVariable: VOICE_DEEPGRAM_SECRET_NAME,
+              cause,
+            }),
+        ),
+      );
+      return {
+        ...settings,
+        voice: {
+          ...settings.voice,
+          deepgramApiKey: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
+        },
+      };
+    });
+
+  /**
+   * `deepgramApiKeyRedacted` distinguishes "the client re-sent the placeholder"
+   * from "the client typed something new". Only the latter touches the store,
+   * so a settings write that does not involve voice never rewrites the secret.
+   */
+  const persistVoiceSecret = (
+    next: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    Effect.gen(function* () {
+      if (next.voice.deepgramApiKeyRedacted) {
+        return { ...next, voice: redactVoiceSettings(next.voice) };
+      }
+      const value = next.voice.deepgramApiKey;
+      if (value.length > 0) {
+        yield* secretStore.set(VOICE_DEEPGRAM_SECRET_NAME, textEncoder.encode(value)).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ServerSettingsError({
+                settingsPath,
+                operation: "write-secret",
+                environmentVariable: VOICE_DEEPGRAM_SECRET_NAME,
+                cause,
+              }),
+          ),
+        );
+        return { ...next, voice: { deepgramApiKey: "", deepgramApiKeyRedacted: true } };
+      }
+      yield* secretStore.remove(VOICE_DEEPGRAM_SECRET_NAME).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ServerSettingsError({
+              settingsPath,
+              operation: "remove-secret",
+              environmentVariable: VOICE_DEEPGRAM_SECRET_NAME,
+              cause,
+            }),
+        ),
+      );
+      return { ...next, voice: { deepgramApiKey: "" } };
+    });
+
+  const materializeSecrets = (
+    settings: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    materializeProviderEnvironmentSecrets(settings).pipe(Effect.flatMap(materializeVoiceSecret));
+
+  const persistSecrets = (
+    current: ServerSettings,
+    next: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    persistProviderEnvironmentSecrets(current, next).pipe(Effect.flatMap(persistVoiceSecret));
+
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
       const sparseSettingsJson = yield* encodeServerSettingsJson(
@@ -541,14 +635,14 @@ const make = Effect.gen(function* () {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getSettingsFromCache.pipe(
-      Effect.flatMap(materializeProviderEnvironmentSecrets),
+      Effect.flatMap(materializeSecrets),
       Effect.map(resolveTextGenerationProvider),
     ),
     updateSettings: (patch) =>
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
+          const nextPersisted = yield* persistSecrets(
             current,
             applyServerSettingsPatch(current, patch),
           );
@@ -556,16 +650,16 @@ const make = Effect.gen(function* () {
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);
           yield* emitChange(next);
-          const materialized = yield* materializeProviderEnvironmentSecrets(next);
+          const materialized = yield* materializeSecrets(next);
           return resolveTextGenerationProvider(materialized);
         }),
       ),
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub).pipe(
         Stream.mapEffect((settings) =>
-          materializeProviderEnvironmentSecrets(settings).pipe(
+          materializeSecrets(settings).pipe(
             Effect.catch((error: ServerSettingsError) =>
-              Effect.logWarning("failed to materialize provider environment secrets", {
+              Effect.logWarning("failed to materialize settings secrets", {
                 operation: error.operation,
                 providerInstanceId: error.providerInstanceId,
                 environmentVariable: error.environmentVariable,

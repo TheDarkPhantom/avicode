@@ -44,6 +44,10 @@ import {
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { ComposerDictateButton } from "./ComposerDictateButton";
+import { usePrimarySettings } from "~/hooks/useSettings";
+import { useDictation } from "~/voice/useDictation";
+import { useVoiceToken } from "~/voice/useVoiceToken";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -1820,6 +1824,70 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [composerCursor, composerTerminalContexts, promptRef]);
 
+  // ------------------------------------------------------------------
+  // Voice dictation
+  // ------------------------------------------------------------------
+  // Transcribed text is written through `applyPromptReplacement`, replacing the
+  // span this session already inserted. `dictationRangeRef` tracks where that
+  // span starts and how long it currently is.
+  const dictationRangeRef = useRef<{ start: number; length: number } | null>(null);
+  const requestVoiceToken = useVoiceToken();
+  const hasVoiceKey = usePrimarySettings(
+    (settings) => settings.voice.deepgramApiKeyRedacted === true,
+  );
+
+  const writeDictatedText = useCallback(
+    (text: string, isFinal: boolean) => {
+      let range = dictationRangeRef.current;
+      if (!range) {
+        range = { start: readComposerSnapshot().cursor, length: 0 };
+        dictationRangeRef.current = range;
+      }
+      // Separate dictation from text already in the composer so words don't
+      // run into the last character typed.
+      const needsLeadingSpace =
+        range.start > 0 && /\S/.test(promptRef.current.charAt(range.start - 1));
+      const replacement = text.length > 0 && needsLeadingSpace ? ` ${text}` : text;
+
+      const applied = applyPromptReplacement(range.start, range.start + range.length, replacement, {
+        // If the user edited this span mid-dictation the guard fails and we
+        // stop tracking rather than clobbering what they typed.
+        expectedText: promptRef.current.slice(range.start, range.start + range.length),
+        focusEditorAfterReplace: isFinal,
+      });
+
+      if (!applied || isFinal) {
+        dictationRangeRef.current = null;
+        return;
+      }
+      dictationRangeRef.current = { start: range.start, length: replacement.length };
+    },
+    [applyPromptReplacement, promptRef, readComposerSnapshot],
+  );
+
+  const discardDictatedText = useCallback(() => {
+    const range = dictationRangeRef.current;
+    dictationRangeRef.current = null;
+    if (!range || range.length === 0) return;
+    applyPromptReplacement(range.start, range.start + range.length, "", {
+      expectedText: promptRef.current.slice(range.start, range.start + range.length),
+    });
+  }, [applyPromptReplacement, promptRef]);
+
+  const dictation = useDictation({
+    requestToken: requestVoiceToken,
+    onTranscript: writeDictatedText,
+    onCancel: discardDictatedText,
+  });
+
+  // Once dictation puts text in the composer the pill disappears, so it can
+  // never sit on top of the transcript. The footer mic stays available to stop.
+  const showDictatePill =
+    hasVoiceKey &&
+    prompt.trim().length === 0 &&
+    !isComposerApprovalState &&
+    pendingUserInputs.length === 0;
+
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
     trigger: ComposerTrigger | null;
@@ -3233,6 +3301,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
 
             <div className="relative">
+              {/* Avi Code addition: while the composer is empty, offer a larger
+                  labelled dictate affordance. Deliberately right-aligned and
+                  narrow — it must not cover the placeholder, because clicking
+                  the empty editor is how you focus it to type. */}
+              {showDictatePill ? (
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 flex items-center pr-1">
+                  <div className="pointer-events-auto">
+                    <ComposerDictateButton
+                      status={dictation.status}
+                      isActive={dictation.isActive}
+                      expanded
+                      onToggle={dictation.toggle}
+                      preserveComposerFocusOnPointerDown
+                    />
+                  </div>
+                </div>
+              ) : null}
               <ComposerPromptEditor
                 editorRef={composerEditorRef}
                 value={
@@ -3480,6 +3565,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
+                {/* Avi Code addition: dictation. Sits left of send so the send
+                    button keeps its position as the rightmost control. */}
+                <ComposerDictateButton
+                  status={dictation.status}
+                  isActive={dictation.isActive}
+                  disabled={!hasVoiceKey}
+                  onToggle={dictation.toggle}
+                  preserveComposerFocusOnPointerDown
+                />
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}

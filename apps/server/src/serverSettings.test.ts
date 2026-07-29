@@ -658,4 +658,79 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
+
+  it.effect("stores the Deepgram API key outside settings.json and never returns it", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const next = yield* serverSettings.updateSettings({
+        voice: { deepgramApiKey: "dg-secret-key", deepgramApiKeyRedacted: false },
+      });
+
+      // The service hands back the materialized value so the token grant can
+      // use it, but the on-disk copy must not contain it.
+      assert.equal(next.voice.deepgramApiKey, "dg-secret-key");
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, "dg-secret-key");
+
+      // ...and the copy destined for the browser is blank, flagged as stored.
+      const redacted = ServerSettingsModule.redactServerSettingsForClient(next);
+      assert.equal(redacted.voice.deepgramApiKey, "");
+      assert.equal(redacted.voice.deepgramApiKeyRedacted, true);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("keeps the stored Deepgram key when the client re-sends the placeholder", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+
+      yield* serverSettings.updateSettings({
+        voice: { deepgramApiKey: "dg-secret-key", deepgramApiKeyRedacted: false },
+      });
+
+      // A settings write that does not touch voice must not wipe the key.
+      const afterUnrelated = yield* serverSettings.updateSettings({
+        addProjectBaseDirectory: "/tmp/projects",
+      });
+      assert.equal(afterUnrelated.voice.deepgramApiKey, "dg-secret-key");
+
+      // Neither must re-submitting the redacted placeholder the UI displays.
+      const afterPlaceholder = yield* serverSettings.updateSettings({
+        voice: { deepgramApiKey: "", deepgramApiKeyRedacted: true },
+      });
+      assert.equal(afterPlaceholder.voice.deepgramApiKey, "dg-secret-key");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("clears the Deepgram key when an empty value is committed", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+
+      yield* serverSettings.updateSettings({
+        voice: { deepgramApiKey: "dg-secret-key", deepgramApiKeyRedacted: false },
+      });
+
+      const cleared = yield* serverSettings.updateSettings({
+        voice: { deepgramApiKey: "", deepgramApiKeyRedacted: false },
+      });
+
+      assert.equal(cleared.voice.deepgramApiKey, "");
+      assert.isNotTrue(cleared.voice.deepgramApiKeyRedacted);
+
+      const redacted = ServerSettingsModule.redactServerSettingsForClient(cleared);
+      assert.isNotTrue(redacted.voice.deepgramApiKeyRedacted);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("defaults to no configured Deepgram key", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* serverSettings.getSettings;
+      assert.equal(settings.voice.deepgramApiKey, "");
+      assert.isNotTrue(settings.voice.deepgramApiKeyRedacted);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
 });

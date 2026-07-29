@@ -359,5 +359,9 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
     }),
+    createVoiceToken: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:voice:create-token",
+      tag: WS_METHODS.voiceCreateToken,
+    }),
   };
 }
