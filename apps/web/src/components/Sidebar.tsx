@@ -111,6 +111,7 @@ import { useMouseBackForwardThreadNavigation } from "../hooks/useMouseBackForwar
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useThreadActions } from "../hooks/useThreadActions";
+import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
@@ -146,7 +147,15 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
-import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "./ui/menu";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -1060,6 +1069,7 @@ interface SidebarProjectItemProps {
   newThreadShortcutLabel: string | null;
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
+  unarchiveThread: ReturnType<typeof useThreadActions>["unarchiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   threadJumpLabelByKey: ReadonlyMap<string, string>;
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
@@ -1080,6 +1090,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     newThreadShortcutLabel,
     handleNewThread,
     archiveThread,
+    unarchiveThread,
     deleteThread,
     threadJumpLabelByKey,
     attachThreadListAutoAnimateRef,
@@ -1181,6 +1192,35 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const sidebarThreadByKeyRef = useRef(sidebarThreadByKey);
   sidebarThreadByKeyRef.current = sidebarThreadByKey;
   const projectThreads = sidebarThreads;
+  const archivedEnvironmentIds = useMemo(
+    () => [...new Set(project.memberProjects.map((member) => member.environmentId))],
+    [project.memberProjects],
+  );
+  const {
+    snapshots: archivedSnapshots,
+    error: archivedThreadsError,
+    isLoading: isLoadingArchivedThreads,
+  } = useArchivedThreadSnapshots(archivedEnvironmentIds);
+  const archivedProjectThreads = useMemo(() => {
+    const projectRefs = new Set(
+      project.memberProjects.map((member) =>
+        scopedProjectKey(scopeProjectRef(member.environmentId, member.id)),
+      ),
+    );
+    return archivedSnapshots
+      .flatMap(({ environmentId, snapshot }) =>
+        snapshot.threads.flatMap((thread) =>
+          projectRefs.has(scopedProjectKey(scopeProjectRef(environmentId, thread.projectId)))
+            ? [{ ...thread, environmentId }]
+            : [],
+        ),
+      )
+      .toSorted((left, right) => {
+        const leftTimestamp = left.archivedAt ?? left.createdAt;
+        const rightTimestamp = right.archivedAt ?? right.createdAt;
+        return rightTimestamp.localeCompare(leftTimestamp) || right.id.localeCompare(left.id);
+      });
+  }, [archivedSnapshots, project.memberProjects]);
   const projectPreferenceKeys = useMemo(() => projectExpansionPreferenceKeys(project), [project]);
   const projectExpanded = useUiStateStore((state) =>
     resolveProjectExpanded(state.projectExpandedById, projectPreferenceKeys),
@@ -1949,6 +1989,23 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [createThreadForProjectMember, project.groupedProjectCount, project.memberProjects],
   );
+  const handleUnarchiveThread = useCallback(
+    async (threadRef: ScopedThreadRef) => {
+      const result = await unarchiveThread(threadRef);
+      if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
+        return;
+      }
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to unarchive thread",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+    [unarchiveThread],
+  );
 
   const attemptArchiveThread = useCallback(
     async (threadRef: ScopedThreadRef) => {
@@ -2219,7 +2276,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       <div className="group/project-header relative">
         <SidebarMenuButton
           ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
-          className={`pr-8 group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:text-sidebar-foreground max-sm:pr-14 ${
+          className={`pr-16 group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:text-sidebar-foreground max-sm:pr-14 ${
             isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : ""
           }`}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
@@ -2299,26 +2356,71 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             </TooltipPopup>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <div className="pointer-events-none absolute top-[calc(50%+1px)] right-0.5 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+        <div className="pointer-events-none absolute top-[calc(50%+1px)] right-0.5 flex -translate-y-1/2 items-center opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+          <Menu>
+            <MenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Archived threads in ${project.displayName}`}
+                  title="Archived threads"
+                  data-testid="project-archive-button"
+                  className={SIDEBAR_ICON_ACTION_BUTTON_CLASS}
+                />
+              }
+            >
+              <ArchiveIcon className="size-3.5" />
+            </MenuTrigger>
+            <MenuPopup align="end" side="right" className="w-64">
+              <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                Archived threads
+              </div>
+              {isLoadingArchivedThreads && archivedProjectThreads.length === 0 ? (
+                <MenuItem disabled>
+                  <LoaderIcon className="animate-spin" />
+                  Loading…
+                </MenuItem>
+              ) : archivedThreadsError && archivedProjectThreads.length === 0 ? (
+                <MenuItem disabled>Could not load archived threads</MenuItem>
+              ) : archivedProjectThreads.length === 0 ? (
+                <MenuItem disabled>No archived threads</MenuItem>
+              ) : (
+                archivedProjectThreads.map((thread) => (
+                  <MenuItem
+                    key={scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))}
+                    onClick={() => {
+                      void handleUnarchiveThread(scopeThreadRef(thread.environmentId, thread.id));
+                    }}
+                  >
+                    <ArchiveIcon />
+                    <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
+                    </span>
+                  </MenuItem>
+                ))
+              )}
+            </MenuPopup>
+          </Menu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
                 <button
                   type="button"
                   aria-label={`Create new thread in ${project.displayName}`}
                   data-testid="new-thread-button"
                   className={SIDEBAR_ICON_ACTION_BUTTON_CLASS}
                   onClick={handleCreateThreadClick}
-                >
-                  <SquarePenIcon className="size-3.5" />
-                </button>
-              </div>
-            }
-          />
-          <TooltipPopup side="top">
-            {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
-          </TooltipPopup>
-        </Tooltip>
+                />
+              }
+            >
+              <SquarePenIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
+            </TooltipPopup>
+          </Tooltip>
+        </div>
       </div>
 
       <SidebarProjectThreadList
@@ -2744,6 +2846,7 @@ interface SidebarProjectsContentProps {
   handleProjectDragCancel: (event: DragCancelEvent) => void;
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
+  unarchiveThread: ReturnType<typeof useThreadActions>["unarchiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
   expandedThreadListsByProject: ReadonlySet<string>;
@@ -2784,6 +2887,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleProjectDragCancel,
     handleNewThread,
     archiveThread,
+    unarchiveThread,
     deleteThread,
     sortedProjects,
     expandedThreadListsByProject,
@@ -2930,6 +3034,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         newThreadShortcutLabel={newThreadShortcutLabel}
                         handleNewThread={handleNewThread}
                         archiveThread={archiveThread}
+                        unarchiveThread={unarchiveThread}
                         deleteThread={deleteThread}
                         threadJumpLabelByKey={threadJumpLabelByKey}
                         attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
@@ -2962,6 +3067,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 newThreadShortcutLabel={newThreadShortcutLabel}
                 handleNewThread={handleNewThread}
                 archiveThread={archiveThread}
+                unarchiveThread={unarchiveThread}
                 deleteThread={deleteThread}
                 threadJumpLabelByKey={threadJumpLabelByKey}
                 attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
@@ -3005,7 +3111,7 @@ export default function Sidebar() {
   );
   const updateSettings = useUpdateClientSettings();
   const handleNewThread = useNewThreadHandler();
-  const { archiveThread, deleteThread } = useThreadActions();
+  const { archiveThread, unarchiveThread, deleteThread } = useThreadActions();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeTarget = useParams({
     strict: false,
@@ -3634,6 +3740,7 @@ export default function Sidebar() {
             handleProjectDragCancel={handleProjectDragCancel}
             handleNewThread={handleNewThread}
             archiveThread={archiveThread}
+            unarchiveThread={unarchiveThread}
             deleteThread={deleteThread}
             sortedProjects={sortedProjects}
             expandedThreadListsByProject={expandedThreadListsByProject}
