@@ -1,0 +1,271 @@
+/* Avi Code addition: selectable colour themes.
+ *
+ * Upstream ships a single palette (light + dark) declared on `:root` in
+ * index.css. This file adds alternates without touching that block: the
+ * default "oxblood" theme sets NO `data-color-theme` attribute at all, so
+ * when it is selected every rule here stops matching and the upstream
+ * palette applies verbatim. Only the non-default themes opt in.
+ *
+ * How it works
+ * ------------
+ * 1. Each theme declares a `--theme-*` source palette, twice: once for light
+ *    (`html[data-color-theme="x"]`) and once for dark
+ *    (`html[data-color-theme="x"].dark`).
+ * 2. A single mapping block at the bottom copies `--theme-*` onto the real
+ *    semantic tokens (`--background`, `--card`, …). It is applied to <html>
+ *    AND to the sidebar-version containers, because index.css re-declares the
+ *    whole palette on `[data-sidebar-version="v1"|"v2"]`; custom properties
+ *    are inherited, so a declaration on the sidebar element itself beats
+ *    anything inherited from <html> regardless of specificity.
+ *
+ * Anything a theme does not declare (destructive/info/success/warning, radii,
+ * glass) falls through to the upstream `:root` palette by design.
+ *
+ * Keep the ids here in sync with COLOR_THEME_IDS in src/lib/colorTheme.ts and
+ * with the pre-paint bootstrap script in index.html.
+ */
+
+/* ── Midnight — cool blue-slate ─────────────────────────────────────────── */
+
+html[data-color-theme="midnight"] {
+  --theme-background: #f7f8fa;
+  --theme-foreground: #1e293b;
+  --theme-card: #ffffff;
+  --theme-popover: #ffffff;
+  --theme-primary: #1d4ed8;
+  --theme-primary-foreground: #ffffff;
+  --theme-secondary: #f1f5f9;
+  --theme-muted: #f1f5f9;
+  --theme-muted-foreground: #64748b;
+  --theme-accent: #e2e8f0;
+  --theme-accent-foreground: #0f172a;
+  --theme-border: #e2e8f0;
+  --theme-input: #cbd5e1;
+  --theme-ring: #3b82f6;
+  --theme-surface-raised: color-mix(in srgb, var(--theme-card) 20%, transparent);
+  --theme-sidebar: #f1f5f9;
+  --theme-sidebar-control-surface: #e2e8f0;
+  --theme-sidebar-row-hover: #f7f8fa;
+  --theme-sidebar-row-active: #ffffff;
+  --theme-sidebar-row-selected: #ffffff;
+  --theme-sidebar-stage-fade: var(--theme-sidebar);
+}
+
+html[data-color-theme="midnight"].dark {
+  --theme-background: #080b12;
+  --theme-foreground: #e6edf7;
+  --theme-card: #0d1320;
+  --theme-popover: #101828;
+  --theme-primary: #4f8ff7;
+  --theme-primary-foreground: #071018;
+  --theme-secondary: #18202f;
+  --theme-muted: #131a27;
+  --theme-muted-foreground: #94a3b8;
+  --theme-accent: #1d283a;
+  --theme-accent-foreground: #f1f5f9;
+  --theme-border: #253148;
+  --theme-input: #35476a;
+  --theme-ring: #4f8ff7;
+  --theme-surface-raised: var(--theme-secondary);
+  --theme-sidebar: var(--theme-card);
+  --theme-sidebar-control-surface: var(--theme-muted);
+  --theme-sidebar-row-hover: var(--theme-accent);
+  --theme-sidebar-row-active: var(--theme-accent);
+  --theme-sidebar-row-selected: var(--theme-muted);
+  --theme-sidebar-stage-fade: var(--theme-card);
+}
+
+/* ── Forest — deep green ────────────────────────────────────────────────── */
+
+html[data-color-theme="forest"] {
+  --theme-background: #f6f8f6;
+  --theme-foreground: #1c2b22;
+  --theme-card: #ffffff;
+  --theme-popover: #ffffff;
+  --theme-primary: #15803d;
+  --theme-primary-foreground: #ffffff;
+  --theme-secondary: #eef2ee;
+  --theme-muted: #eef2ee;
+  --theme-muted-foreground: #5f6f66;
+  --theme-accent: #e1e9e2;
+  --theme-accent-foreground: #10221a;
+  --theme-border: #dde5de;
+  --theme-input: #c6d2c8;
+  --theme-ring: #3fa96a;
+  --theme-surface-raised: color-mix(in srgb, var(--theme-card) 20%, transparent);
+  --theme-sidebar: #eef2ee;
+  --theme-sidebar-control-surface: #e1e9e2;
+  --theme-sidebar-row-hover: #f6f8f6;
+  --theme-sidebar-row-active: #ffffff;
+  --theme-sidebar-row-selected: #ffffff;
+  --theme-sidebar-stage-fade: var(--theme-sidebar);
+}
+
+html[data-color-theme="forest"].dark {
+  --theme-background: #070b09;
+  --theme-foreground: #e6efe9;
+  --theme-card: #0d1512;
+  --theme-popover: #101a15;
+  --theme-primary: #3fa96a;
+  --theme-primary-foreground: #04120a;
+  --theme-secondary: #16211c;
+  --theme-muted: #131d19;
+  --theme-muted-foreground: #94a89c;
+  --theme-accent: #1d2c25;
+  --theme-accent-foreground: #eaf3ee;
+  --theme-border: #24352d;
+  --theme-input: #33493d;
+  --theme-ring: #3fa96a;
+  --theme-surface-raised: var(--theme-secondary);
+  --theme-sidebar: var(--theme-card);
+  --theme-sidebar-control-surface: var(--theme-muted);
+  --theme-sidebar-row-hover: var(--theme-accent);
+  --theme-sidebar-row-active: var(--theme-accent);
+  --theme-sidebar-row-selected: var(--theme-muted);
+  --theme-sidebar-stage-fade: var(--theme-card);
+}
+
+/* ── Violet — muted purple ──────────────────────────────────────────────── */
+
+html[data-color-theme="violet"] {
+  --theme-background: #f9f8fc;
+  --theme-foreground: #2a2440;
+  --theme-card: #ffffff;
+  --theme-popover: #ffffff;
+  --theme-primary: #6d28d9;
+  --theme-primary-foreground: #ffffff;
+  --theme-secondary: #f2f0f9;
+  --theme-muted: #f2f0f9;
+  --theme-muted-foreground: #6b6480;
+  --theme-accent: #e9e5f6;
+  --theme-accent-foreground: #1f1937;
+  --theme-border: #e5e1f2;
+  --theme-input: #cfc8e6;
+  --theme-ring: #8b5cf6;
+  --theme-surface-raised: color-mix(in srgb, var(--theme-card) 20%, transparent);
+  --theme-sidebar: #f2f0f9;
+  --theme-sidebar-control-surface: #e9e5f6;
+  --theme-sidebar-row-hover: #f9f8fc;
+  --theme-sidebar-row-active: #ffffff;
+  --theme-sidebar-row-selected: #ffffff;
+  --theme-sidebar-stage-fade: var(--theme-sidebar);
+}
+
+html[data-color-theme="violet"].dark {
+  --theme-background: #09070f;
+  --theme-foreground: #ece8f8;
+  --theme-card: #120e1d;
+  --theme-popover: #171223;
+  --theme-primary: #9b7cf0;
+  --theme-primary-foreground: #120a24;
+  --theme-secondary: #1e1830;
+  --theme-muted: #1a1529;
+  --theme-muted-foreground: #a09ab8;
+  --theme-accent: #272040;
+  --theme-accent-foreground: #f0ecfb;
+  --theme-border: #2f2749;
+  --theme-input: #413760;
+  --theme-ring: #9b7cf0;
+  --theme-surface-raised: var(--theme-secondary);
+  --theme-sidebar: var(--theme-card);
+  --theme-sidebar-control-surface: var(--theme-muted);
+  --theme-sidebar-row-hover: var(--theme-accent);
+  --theme-sidebar-row-active: var(--theme-accent);
+  --theme-sidebar-row-selected: var(--theme-muted);
+  --theme-sidebar-stage-fade: var(--theme-card);
+}
+
+/* ── Graphite — neutral, no hue ─────────────────────────────────────────── */
+
+html[data-color-theme="graphite"] {
+  --theme-background: #fafafa;
+  --theme-foreground: #27272a;
+  --theme-card: #ffffff;
+  --theme-popover: #ffffff;
+  --theme-primary: #3f3f46;
+  --theme-primary-foreground: #ffffff;
+  --theme-secondary: #f4f4f5;
+  --theme-muted: #f4f4f5;
+  --theme-muted-foreground: #71717a;
+  --theme-accent: #e4e4e7;
+  --theme-accent-foreground: #18181b;
+  --theme-border: #e4e4e7;
+  --theme-input: #d4d4d8;
+  --theme-ring: #71717a;
+  --theme-surface-raised: color-mix(in srgb, var(--theme-card) 20%, transparent);
+  --theme-sidebar: #f4f4f5;
+  --theme-sidebar-control-surface: #e4e4e7;
+  --theme-sidebar-row-hover: #fafafa;
+  --theme-sidebar-row-active: #ffffff;
+  --theme-sidebar-row-selected: #ffffff;
+  --theme-sidebar-stage-fade: var(--theme-sidebar);
+}
+
+html[data-color-theme="graphite"].dark {
+  --theme-background: #09090b;
+  --theme-foreground: #e4e4e7;
+  --theme-card: #111113;
+  --theme-popover: #18181b;
+  --theme-primary: #d4d4d8;
+  --theme-primary-foreground: #18181b;
+  --theme-secondary: #1c1c1f;
+  --theme-muted: #18181b;
+  --theme-muted-foreground: #a1a1aa;
+  --theme-accent: #27272a;
+  --theme-accent-foreground: #fafafa;
+  --theme-border: #2b2b30;
+  --theme-input: #3f3f46;
+  --theme-ring: #a1a1aa;
+  --theme-surface-raised: var(--theme-secondary);
+  --theme-sidebar: var(--theme-card);
+  --theme-sidebar-control-surface: var(--theme-muted);
+  --theme-sidebar-row-hover: var(--theme-accent);
+  --theme-sidebar-row-active: var(--theme-accent);
+  --theme-sidebar-row-selected: var(--theme-muted);
+  --theme-sidebar-stage-fade: var(--theme-card);
+}
+
+/* ── `--theme-*` → semantic tokens ──────────────────────────────────────── *
+ *
+ * The attribute is repeated in the first selector purely for specificity: it
+ * has to outrank index.css's dark palette, which compiles to
+ * `:root:is(.dark, .dark *)` = (0,2,0). `html[data-color-theme]` alone is
+ * (0,1,1) and would lose in dark mode. Doubling it gives (0,2,1).
+ *
+ * The two sidebar selectors are (0,2,1) as well, which beats both
+ * `[data-sidebar-version="v1"]` (0,1,0) and `.dark [data-sidebar-version="v1"]`
+ * (0,2,0) from index.css. One block covers light and dark because `--theme-*`
+ * is already mode-resolved by the time it inherits down here.
+ */
+html[data-color-theme][data-color-theme],
+html[data-color-theme] [data-sidebar-version="v1"],
+html[data-color-theme] [data-sidebar-version="v2"] {
+  --background: var(--theme-background);
+  --app-chrome-background: var(--theme-background);
+  --surface-raised: var(--theme-surface-raised);
+  --foreground: var(--theme-foreground);
+  --card: var(--theme-card);
+  --card-foreground: var(--theme-foreground);
+  --popover: var(--theme-popover);
+  --popover-foreground: var(--theme-foreground);
+  --primary: var(--theme-primary);
+  --primary-foreground: var(--theme-primary-foreground);
+  --secondary: var(--theme-secondary);
+  --secondary-foreground: var(--theme-foreground);
+  --muted: var(--theme-muted);
+  --muted-foreground: var(--theme-muted-foreground);
+  --accent: var(--theme-accent);
+  --accent-foreground: var(--theme-accent-foreground);
+  --border: var(--theme-border);
+  --input: var(--theme-input);
+  --ring: var(--theme-ring);
+  --sidebar: var(--theme-sidebar);
+  --sidebar-foreground: var(--theme-foreground);
+  --sidebar-muted-foreground: var(--theme-muted-foreground);
+  --sidebar-control-surface: var(--theme-sidebar-control-surface);
+  --sidebar-row-hover: var(--theme-sidebar-row-hover);
+  --sidebar-row-active: var(--theme-sidebar-row-active);
+  --sidebar-row-selected: var(--theme-sidebar-row-selected);
+  --sidebar-border: var(--theme-border);
+  --sidebar-stage-fade: var(--theme-sidebar-stage-fade);
+}

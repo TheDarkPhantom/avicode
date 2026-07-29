@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* Avi Code addition: alternate colour palettes, keyed off `data-color-theme`
+   on <html>. Self-contained overrides — the default theme sets no attribute,
+   so the `:root` palette below applies unchanged. */
+@import "./styles/colorThemes.css";
 
 @custom-variant dark (&:is(.dark, .dark *));
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
