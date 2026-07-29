@@ -217,7 +217,10 @@ export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
     responseShape: "Return a JSON object with key: title.",
     rules: [
       "Title should summarize the user's request, not restate it verbatim.",
-      "Keep it short and specific (3-8 words).",
+      // Avi Code change: upstream allowed 3-8 words, which overflowed the
+      // chat list. Cap at three words; `sanitizeThreadTitle` enforces it.
+      "Use at most 3 words — 2 is often enough. Never exceed 3 words.",
+      "Drop articles and filler words to stay within the limit.",
       "Use Title Case: capitalize each word.",
       "Avoid quotes, filler, prefixes, and trailing punctuation.",
       "If images are attached, use them as primary context for visual/UI issues.",
