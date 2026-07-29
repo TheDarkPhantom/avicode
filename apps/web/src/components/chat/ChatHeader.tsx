@@ -35,8 +35,10 @@ interface ChatHeaderProps {
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
+  editorDiscoveryPending: boolean;
   rightPanelOpen: boolean;
   gitCwd: string | null;
+  onOpenChanges: () => void;
   onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
@@ -71,8 +73,10 @@ export const ChatHeader = memo(function ChatHeader({
   preferredScriptId,
   keybindings,
   availableEditors,
+  editorDiscoveryPending,
   rightPanelOpen,
   gitCwd,
+  onOpenChanges,
   onNewThreadInProject,
   onRunProjectScript,
   onAddProjectScript,
@@ -161,6 +165,7 @@ export const ChatHeader = memo(function ChatHeader({
             environmentId={activeThreadEnvironmentId}
             keybindings={keybindings}
             availableEditors={availableEditors}
+            editorDiscoveryPending={editorDiscoveryPending}
             openInCwd={openInCwd}
           />
         )}
@@ -168,6 +173,7 @@ export const ChatHeader = memo(function ChatHeader({
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
+            onOpenChanges={onOpenChanges}
             autoMergePolicy={autoMergePolicy}
             {...(draftId ? { draftId } : {})}
           />

@@ -90,6 +90,10 @@ export const primaryServerAvailableEditorsAtom = Atom.make(
     get(primaryServerConfigAtom)?.availableEditors ?? EMPTY_AVAILABLE_EDITORS,
 ).pipe(Atom.withLabel("web-primary-server-available-editors"));
 
+export const primaryServerEditorDiscoveryPendingAtom = Atom.make(
+  (get): boolean => get(primaryServerConfigAtom)?.editorDiscoveryStatus === "pending",
+).pipe(Atom.withLabel("web-primary-server-editor-discovery-pending"));
+
 export const primaryServerKeybindingsConfigPathAtom = Atom.make(
   (get): string | null => get(primaryServerConfigAtom)?.keybindingsConfigPath ?? null,
 ).pipe(Atom.withLabel("web-primary-server-keybindings-config-path"));

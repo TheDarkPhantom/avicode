@@ -131,6 +131,8 @@ function resetComposerDraftStore() {
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
     stickyModelSelectionByProvider: {},
     stickyActiveProvider: null,
+    projectStickyModelSelectionByProvider: {},
+    projectStickyActiveProvider: {},
   });
 }
 
@@ -1577,6 +1579,93 @@ describe("composerDraftStore sticky composer settings", () => {
       activeProvider: "claudeAgent",
     });
   });
+
+  it("isolates sticky provider credentials by concrete project scope", () => {
+    const store = useComposerDraftStore.getState();
+    const clientLThreadId = ThreadId.make("thread-client-l");
+    const clientWThreadId = ThreadId.make("thread-client-w");
+    const clientLScope = scopedProjectKey(
+      scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("client-l")),
+    );
+    const clientWScope = scopedProjectKey(
+      scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("client-w")),
+    );
+    const clientLClaude = createModelSelection(
+      ProviderInstanceId.make("claude_client_l"),
+      "claude-opus-4-6",
+      [],
+    );
+    const clientWClaude = createModelSelection(
+      ProviderInstanceId.make("claude_client_w"),
+      "claude-sonnet-4-6",
+      [],
+    );
+
+    store.setStickyModelSelection(clientLClaude, clientLScope);
+    store.setStickyModelSelection(clientWClaude, clientWScope);
+    store.applyStickyState(scopeThreadRef(TEST_ENVIRONMENT_ID, clientLThreadId), clientLScope);
+    store.applyStickyState(scopeThreadRef(TEST_ENVIRONMENT_ID, clientWThreadId), clientWScope);
+
+    expect(draftFor(clientLThreadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      activeProvider: "claude_client_l",
+      modelSelectionByProvider: {
+        claude_client_l: clientLClaude,
+      },
+    });
+    expect(draftFor(clientWThreadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      activeProvider: "claude_client_w",
+      modelSelectionByProvider: {
+        claude_client_w: clientWClaude,
+      },
+    });
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBeNull();
+  });
+
+  it("round-trips project-scoped provider credentials through persistence", () => {
+    const projectScope = scopedProjectKey(
+      scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("client-persisted")),
+    );
+    const selection = createModelSelection(
+      ProviderInstanceId.make("claude_client_persisted"),
+      "claude-opus-4-6",
+      [],
+    );
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+
+    useComposerDraftStore.getState().setStickyModelSelection(selection, projectScope);
+    const persistedState = persistApi.getOptions().partialize(useComposerDraftStore.getState());
+    const mergedState = persistApi
+      .getOptions()
+      .merge(persistedState, useComposerDraftStore.getInitialState());
+
+    expect(mergedState.projectStickyModelSelectionByProvider[projectScope]).toEqual({
+      claude_client_persisted: selection,
+    });
+    expect(mergedState.projectStickyActiveProvider[projectScope]).toBe("claude_client_persisted");
+  });
+
+  it("does not fall back to global sticky credentials for an empty project scope", () => {
+    const store = useComposerDraftStore.getState();
+    const threadId = ThreadId.make("thread-client-empty");
+    const projectScope = scopedProjectKey(
+      scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("client-empty")),
+    );
+
+    store.setStickyModelSelection(
+      createModelSelection(ProviderInstanceId.make("claude_other_client"), "claude-opus-4-6", []),
+    );
+    store.applyStickyState(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId), projectScope);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
 });
 
 describe("composerDraftStore provider-scoped option updates", () => {
@@ -1766,5 +1855,28 @@ describe("createDebouncedStorage", () => {
     vi.advanceTimersByTime(300);
     expect(base.setItem).toHaveBeenCalledTimes(1);
     expect(base.setItem).toHaveBeenCalledWith("key", "v2");
+  });
+});
+
+describe("composerDraftStore thread context references", () => {
+  const targetRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-context-target"));
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("deduplicates, caps, persists, and clears selected thread ids", () => {
+    const ids = Array.from({ length: 7 }, (_, index) => ThreadId.make(`thread-context-${index}`));
+    const store = useComposerDraftStore.getState();
+    store.setThreadContextIds(targetRef, [ids[0]!, ids[0]!, ...ids.slice(1)]);
+
+    expect(useComposerDraftStore.getState().getComposerDraft(targetRef)?.threadContextIds).toEqual(
+      ids.slice(0, 5),
+    );
+
+    useComposerDraftStore.getState().clearComposerContent(targetRef);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(targetRef)?.threadContextIds ?? [],
+    ).toEqual([]);
   });
 });

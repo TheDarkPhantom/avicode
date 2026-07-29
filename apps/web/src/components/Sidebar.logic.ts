@@ -103,7 +103,7 @@ export interface ThreadStatusPill {
     | "Failed"
     | "Completed"
     | "Pending Approval"
-    | "Awaiting Input"
+    | "Waiting"
     | "Plan Ready";
   colorClass: string;
   dotClass: string;
@@ -112,7 +112,7 @@ export interface ThreadStatusPill {
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
-  "Awaiting Input": 4,
+  Waiting: 4,
   "Needs Resume": 4,
   Failed: 4,
   Merging: 3,
@@ -316,6 +316,52 @@ export function orderItemsByPreferredIds<TItem, TId>(input: {
   });
   const remaining = items.filter((_, index) => !emittedIndexes.has(index));
   return [...ordered, ...remaining];
+}
+
+/** Avi Code addition: the flat sidebar's row list.
+ *
+ * Unlike the grouped tree there is no per-project "show more", so the cap is a
+ * single global one. The active thread is always appended when the cap would
+ * have cut it, otherwise navigating to an older chat (via the palette, a link,
+ * or back/forward) would leave the sidebar with no highlighted row. */
+export function buildFlatSidebarThreadList<
+  TThread extends { readonly id: string; readonly archivedAt: string | null } & ThreadSortInput,
+>(input: {
+  threads: readonly TThread[];
+  sortOrder: SidebarThreadSortOrder;
+  limit: number;
+  activeThreadKey: string | null;
+  getThreadKey: (thread: TThread) => string;
+}): {
+  renderedThreads: TThread[];
+  hiddenThreads: TThread[];
+  hasOverflowingThreads: boolean;
+} {
+  const { activeThreadKey, getThreadKey, limit, sortOrder, threads } = input;
+  const sorted = sortThreads(
+    threads.filter((thread) => thread.archivedAt === null),
+    sortOrder,
+  );
+  const hasOverflowingThreads = sorted.length > limit;
+  if (!hasOverflowingThreads) {
+    return { renderedThreads: sorted, hiddenThreads: [], hasOverflowingThreads: false };
+  }
+
+  const visible = sorted.slice(0, limit);
+  const hidden = sorted.slice(limit);
+  const activeIndex =
+    activeThreadKey === null
+      ? -1
+      : hidden.findIndex((thread) => getThreadKey(thread) === activeThreadKey);
+  if (activeIndex === -1) {
+    return { renderedThreads: visible, hiddenThreads: hidden, hasOverflowingThreads: true };
+  }
+
+  return {
+    renderedThreads: [...visible, hidden[activeIndex]!],
+    hiddenThreads: hidden.filter((_, index) => index !== activeIndex),
+    hasOverflowingThreads: true,
+  };
 }
 
 export function getVisibleSidebarThreadIds<TThreadId>(
@@ -638,7 +684,7 @@ export function resolveThreadStatusPill(input: {
 
   if (thread.hasPendingUserInput) {
     return {
-      label: "Awaiting Input",
+      label: "Waiting",
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
       pulse: false,

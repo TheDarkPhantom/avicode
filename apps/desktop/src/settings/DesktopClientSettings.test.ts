@@ -14,6 +14,8 @@ import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
+  aviCodeProviderBadgeLabels: {},
+  aviCodeSidebarShowStatusLabels: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   dismissedProviderUpdateNotificationKeys: [],
@@ -22,6 +24,7 @@ const clientSettings: ClientSettings = {
   favorites: [],
   glassOpacity: 80,
   notificationSoundEnabled: false,
+  projectScopedProviderSelectionEnabled: false,
   providerModelPreferences: {},
   rightPanelFollowsThreads: false,
   sidebarAutoSettleAfterDays: 3,
@@ -33,6 +36,8 @@ const clientSettings: ClientSettings = {
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
+  sidebarThreadGrouping: "flat",
+  sidebarFlatThreadCount: 20,
   sidebarV2Enabled: false,
   sidebarV2ConfiguredByUser: false,
   timestampFormat: "24-hour",

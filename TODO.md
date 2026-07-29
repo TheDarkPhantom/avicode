@@ -17,9 +17,16 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
       backend restart.
 - [x] PDF, TXT, and Markdown extraction and attachment metadata.
 - [x] Repository/thread native window titles and privacy mode.
+- [x] Electron-native title propagation so ActivityWatch receives the repository/thread title
+      instead of the static application name.
+- [x] Header indicator for working-tree changed-file counts with one-click diff access.
+- [x] Per-chat provider/model badges with custom client initials and compact status labels.
 - [x] ALFRED-safe session metadata.
 - [x] Human-reviewed weekly upstream synchronization.
 - [x] Manual-only release and relay workflows; merging `main` cannot publish or deploy.
+- [x] Persistent per-instance provider authentication transition audit log.
+- [x] Explicit cross-project thread references with full transcript context and provenance.
+- [x] Opt-in per-project provider/model memory and pre-send credential usage visibility.
 
 ## Personal alpha verification
 

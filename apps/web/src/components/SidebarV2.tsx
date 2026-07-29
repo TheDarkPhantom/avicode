@@ -485,6 +485,9 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
 
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
+  const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
+  const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
+  const providerBadgeLabel = badgeLabels[modelInstanceId]?.trim().toUpperCase();
   const effectiveStatus = status;
   const isMerging = isSidebarMergingSourceControlAction(vcsActionState);
   const topStatus =
@@ -511,7 +514,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
             }
           : effectiveStatus === "input"
             ? {
-                label: "Input",
+                label: "Waiting",
                 icon: null,
                 chip: false,
                 className: "text-indigo-600 dark:text-indigo-300",
@@ -553,6 +556,25 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
     : thread.modelSelection.model;
+  const modelBadge = driverKind ? (
+    <span
+      className="inline-flex shrink-0 items-center opacity-70"
+      aria-label={`${providerEntry?.displayName ?? modelInstanceId} · ${modelLabel}`}
+    >
+      <ProviderInstanceIcon
+        driverKind={driverKind}
+        displayName={
+          providerBadgeLabel ||
+          providerEntry?.displayName ||
+          thread.session?.providerName ||
+          modelInstanceId
+        }
+        accentColor={providerEntry?.accentColor}
+        showBadge
+        iconClassName="size-3.5"
+      />
+    </span>
+  ) : null;
 
   const isRemote =
     props.currentEnvironmentId !== null && thread.environmentId !== props.currentEnvironmentId;
@@ -798,6 +820,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 fallbackIcon={MessageSquareIcon}
               />
             </span>
+            {modelBadge}
             {title}
             {/* The PR badge stays outside the hover-fading slot: it must
               remain visible AND clickable while the row is hovered. Only
@@ -939,11 +962,13 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                         <GitBranchIcon aria-hidden className="size-4 shrink-0" />
                       ) : topStatus.icon === "woke" ? (
                         <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
-                      ) : null}
+                      ) : (
+                        <span aria-hidden className="size-2 rounded-full bg-current" />
+                      )}
                       {/* The label alone is the live region: a role="status"
                           wrapper around the ticking duration would make
                           screen readers announce every second. */}
-                      <span role="status">{topStatus.label}</span>
+                      {showStatusLabels ? <span role="status">{topStatus.label}</span> : null}
                       {status === "working" ? (
                         <span aria-hidden>
                           <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
@@ -1006,15 +1031,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                     <ServerIcon aria-hidden className="size-3.5" />
                   </span>
                 ) : null}
-                {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center opacity-60">
-                    <ProviderInstanceIcon
-                      driverKind={driverKind}
-                      displayName={thread.session?.providerName ?? modelInstanceId}
-                      iconClassName="size-3.5"
-                    />
-                  </span>
-                ) : null}
+                {modelBadge}
               </span>
             </div>
           </div>

@@ -72,7 +72,26 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "const lines = createInterface({ input: process.stdin });",
           'lines.on("line", (line) => {',
           "  const message = JSON.parse(line);",
-          '  if (message.type !== "control_request" || message.request?.subtype !== "initialize") return;',
+          '  if (message.type !== "control_request") return;',
+          '  if (message.request?.subtype === "get_usage") {',
+          "    process.stdout.write(JSON.stringify({",
+          '      type: "control_response",',
+          "      response: {",
+          '        subtype: "success",',
+          "        request_id: message.request_id,",
+          "        response: {",
+          "          rate_limits_available: true,",
+          '          subscription_type: "pro",',
+          "          rate_limits: {",
+          '            five_hour: { utilization: 42, resets_at: "2026-07-29T15:00:00.000Z" },',
+          "          },",
+          "        },",
+          "      },",
+          '    }) + "\\n");',
+          "    setTimeout(() => process.exit(0), 0);",
+          "    return;",
+          "  }",
+          '  if (message.request?.subtype !== "initialize") return;',
           "  process.stdout.write(JSON.stringify({",
           '    type: "control_response",',
           "    response: {",
@@ -104,6 +123,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         },
         workspaceCwd,
       );
+      assert.ok(capabilities?.quota);
 
       assert.deepEqual(capabilities, {
         email: "dev@example.com",
@@ -117,6 +137,18 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
             input: { hint: "[path]" },
           },
         ],
+        quota: {
+          windows: [
+            {
+              id: "five_hour",
+              label: "5-hour",
+              usedPercent: 42,
+              resetsAt: "2026-07-29T15:00:00.000Z",
+            },
+          ],
+          planType: "pro",
+          capturedAt: capabilities.quota.capturedAt,
+        },
       });
 
       // @effect-diagnostics-next-line preferSchemaOverJson:off

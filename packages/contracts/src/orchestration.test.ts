@@ -25,6 +25,7 @@ import {
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -248,6 +249,51 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
     assert.strictEqual(parsed.modelSelection?.instanceId, "codex");
     assert.strictEqual(parsed.runtimeMode, "full-access");
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+  }),
+);
+
+it.effect("preserves ordered thread context references in thread.turn.start", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadTurnStartCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-context",
+      threadId: "thread-target",
+      message: {
+        messageId: "msg-context",
+        role: "user",
+        text: "continue with this context",
+        attachments: [],
+      },
+      threadContext: [{ threadId: "thread-source-b" }, { threadId: "thread-source-a" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.deepStrictEqual(parsed.threadContext, [
+      { threadId: ThreadId.make("thread-source-b") },
+      { threadId: ThreadId.make("thread-source-a") },
+    ]);
+  }),
+);
+
+it.effect("rejects more than five thread context references", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.result(
+      decodeThreadTurnStartCommand({
+        type: "thread.turn.start",
+        commandId: "cmd-turn-context-limit",
+        threadId: "thread-target",
+        message: {
+          messageId: "msg-context-limit",
+          role: "user",
+          text: "too much context",
+          attachments: [],
+        },
+        threadContext: Array.from({ length: 6 }, (_, index) => ({
+          threadId: `thread-source-${index}`,
+        })),
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
   }),
 );
 

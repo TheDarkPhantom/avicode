@@ -21,6 +21,8 @@ import type * as Effect from "effect/Effect";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
 
+const ThreadContextReferenceSchema = Schema.Struct({ threadId: ThreadId });
+
 export const ProjectionThreadMessage = Schema.Struct({
   messageId: MessageId,
   threadId: ThreadId,
@@ -28,6 +30,7 @@ export const ProjectionThreadMessage = Schema.Struct({
   role: OrchestrationMessageRole,
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  threadContext: Schema.optional(Schema.Array(ThreadContextReferenceSchema)),
   isStreaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
