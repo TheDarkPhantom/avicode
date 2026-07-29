@@ -2,6 +2,7 @@ import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@
 import {
   BellRingIcon,
   DatabaseBackupIcon,
+  EyeOffIcon,
   LoaderIcon,
   RefreshCwIcon,
   SparklesIcon,
@@ -10,6 +11,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
 import { previewNotificationChime } from "../../lib/notificationChime";
+import {
+  isWindowTitlePrivacyEnabled,
+  setWindowTitlePrivacyEnabled,
+} from "../../lib/windowTitleMetadata";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -42,6 +47,34 @@ function NotificationSettings() {
               }
             }}
             aria-label="Play a sound when a chat needs you"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
+function TimeLoggingSettings() {
+  const [windowTitlePrivate, setWindowTitlePrivate] = useState(isWindowTitlePrivacyEnabled);
+
+  return (
+    <SettingsSection title="Time logging" icon={<EyeOffIcon className="size-5" />}>
+      <SettingsRow
+        title="Private window titles"
+        description="Hide repository and thread names from Avi Code's native title. Leave this off for exact ALFRED project and thread attribution."
+        status={
+          windowTitlePrivate
+            ? "ALFRED can still record generic Avi Code foreground time, but cannot name the active project or thread."
+            : "The native title contains repository and thread names only; conversation and attachment contents are never exposed."
+        }
+        control={
+          <Switch
+            checked={windowTitlePrivate}
+            aria-label="Private window titles"
+            onCheckedChange={(checked) => {
+              setWindowTitlePrivacyEnabled(checked);
+              setWindowTitlePrivate(checked);
+            }}
           />
         }
       />
@@ -134,6 +167,7 @@ export function AviCodeSettings() {
   return (
     <SettingsPageContainer>
       <NotificationSettings />
+      <TimeLoggingSettings />
 
       <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
         <SettingsRow
