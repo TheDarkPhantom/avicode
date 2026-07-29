@@ -20,6 +20,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Electron-native title propagation so ActivityWatch receives the repository/thread title
       instead of the static application name.
 - [x] Header indicator for working-tree changed-file counts with one-click diff access.
+- [x] Per-chat provider/model badges with custom client initials and compact status labels.
 - [x] ALFRED-safe session metadata.
 - [x] Human-reviewed weekly upstream synchronization.
 - [x] Manual-only release and relay workflows; merging `main` cannot publish or deploy.

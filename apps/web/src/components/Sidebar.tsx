@@ -197,6 +197,7 @@ import {
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { ThreadModelBadge } from "./sidebar/ThreadModelBadge";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
@@ -384,6 +385,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     threadId: thread.id,
   });
   const isMobile = useIsMobile();
+  const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const discoveredPorts = useThreadDiscoveredPorts({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -707,7 +709,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               </TooltipPopup>
             </Tooltip>
           )}
-          {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          {threadStatus && <ThreadStatusLabel status={threadStatus} compact={!showStatusLabels} />}
+          <ThreadModelBadge thread={thread} className="inline-flex shrink-0" />
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}

@@ -6,7 +6,9 @@ import {
   LoaderIcon,
   RefreshCwIcon,
   SparklesIcon,
+  TagsIcon,
 } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
@@ -15,7 +17,11 @@ import {
   isWindowTitlePrivacyEnabled,
   setWindowTitlePrivacyEnabled,
 } from "../../lib/windowTitleMetadata";
+import { deriveProviderInstanceEntries } from "../../providerInstances";
+import { primaryServerProvidersAtom } from "../../state/server";
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -30,7 +36,7 @@ function NotificationSettings() {
     <SettingsSection title="Notifications" icon={<BellRingIcon className="size-5" />}>
       <SettingsRow
         title="Sound when a chat needs you"
-        description="Plays a short chime the moment a chat starts waiting on you — it finished work you haven't read, it asked a question, or it's blocked on an approval. These are the same states the sidebar labels Completed, Awaiting Input, and Pending Approval, so the sound and the label always agree."
+        description="Plays a short chime the moment a chat starts waiting on you — it finished work you haven't read, it asked a question, or it's blocked on an approval. These are the same states the sidebar labels Completed, Waiting, and Pending Approval, so the sound and the label always agree."
         status="Stays quiet for the chat you already have open in a focused window, and for everything that is already waiting when the app starts."
         control={
           <Switch
@@ -78,6 +84,68 @@ function TimeLoggingSettings() {
           />
         }
       />
+    </SettingsSection>
+  );
+}
+
+function ChatListSettings() {
+  const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
+  const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
+  const providers = deriveProviderInstanceEntries(useAtomValue(primaryServerProvidersAtom));
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="Chat list" icon={<TagsIcon className="size-5" />}>
+      <SettingsRow
+        title="Show status labels"
+        description="Show concise labels such as Working and Waiting beside each chat. Turn this off to keep only the colored status dot."
+        control={
+          <Switch
+            checked={showStatusLabels}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeSidebarShowStatusLabels: Boolean(checked) })
+            }
+            aria-label="Show chat status labels"
+          />
+        }
+      />
+      {providers.map((provider) => {
+        const value = badgeLabels[provider.instanceId] ?? "";
+        return (
+          <SettingsRow
+            key={provider.instanceId}
+            title={`${provider.displayName} badge`}
+            description="Use one or two characters to identify this client in every chat row. Leave blank to use automatic initials."
+            control={
+              <div className="flex items-center gap-2">
+                <ProviderInstanceIcon
+                  driverKind={provider.driverKind}
+                  displayName={value || provider.displayName}
+                  accentColor={provider.accentColor}
+                  showBadge
+                />
+                <Input
+                  value={value}
+                  maxLength={2}
+                  className="w-16 text-center uppercase"
+                  aria-label={`${provider.displayName} chat badge`}
+                  placeholder="Auto"
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                      .replace(/[^a-z0-9]/giu, "")
+                      .slice(0, 2)
+                      .toUpperCase();
+                    const nextLabels = { ...badgeLabels };
+                    if (nextValue) nextLabels[provider.instanceId] = nextValue;
+                    else delete nextLabels[provider.instanceId];
+                    updateSettings({ aviCodeProviderBadgeLabels: nextLabels });
+                  }}
+                />
+              </div>
+            }
+          />
+        );
+      })}
     </SettingsSection>
   );
 }
@@ -168,6 +236,7 @@ export function AviCodeSettings() {
     <SettingsPageContainer>
       <NotificationSettings />
       <TimeLoggingSettings />
+      <ChatListSettings />
 
       <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
         <SettingsRow

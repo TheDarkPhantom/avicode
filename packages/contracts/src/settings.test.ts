@@ -123,6 +123,29 @@ describe("ClientSettings sidebar v2", () => {
   });
 });
 
+describe("ClientSettings Avi Code chat badges", () => {
+  it("shows concise status labels by default and defaults badge overrides empty", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.aviCodeSidebarShowStatusLabels).toBe(true);
+    expect(settings.aviCodeProviderBadgeLabels).toEqual({});
+  });
+
+  it("accepts one- or two-character provider badge overrides", () => {
+    const patch = decodeClientSettingsPatch({
+      aviCodeSidebarShowStatusLabels: false,
+      aviCodeProviderBadgeLabels: { claude: "L", codex: "CO" },
+    });
+    expect(patch.aviCodeSidebarShowStatusLabels).toBe(false);
+    expect(patch.aviCodeProviderBadgeLabels).toEqual({ claude: "L", codex: "CO" });
+  });
+
+  it("rejects provider badge overrides longer than two characters", () => {
+    expect(() =>
+      decodeClientSettingsPatch({ aviCodeProviderBadgeLabels: { claude: "CLA" } }),
+    ).toThrow();
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
