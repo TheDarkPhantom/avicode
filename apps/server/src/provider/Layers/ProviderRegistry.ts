@@ -53,6 +53,7 @@ import {
   resolveProviderStatusCachePath,
   writeProviderStatusCache,
 } from "../providerStatusCache.ts";
+import { makeProviderAuthAudit } from "../providerAuthAudit.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import type { ProviderSnapshotSource } from "../builtInProviderCatalog.ts";
@@ -216,6 +217,7 @@ export const ProviderRegistryLive = Layer.effect(
     const config = yield* ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const scope = yield* Effect.scope;
 
     // Aggregator PubSub — consumers (WS gateway, etc.) subscribe here for
     // coalesced updates across every instance.
@@ -292,6 +294,10 @@ export const ProviderRegistryLive = Layer.effect(
       ),
     );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(cachedProviders);
+    const authAudit = yield* makeProviderAuthAudit({
+      filePath: path.join(config.providerLogsDir, "auth-audit.jsonl"),
+      initialProviders: cachedProviders,
+    });
     const maintenanceActionStatesRef = yield* Ref.make<
       ReadonlyMap<ProviderInstanceId, { readonly update?: ServerProviderUpdateState | undefined }>
     >(new Map());
@@ -425,6 +431,15 @@ export const ProviderRegistryLive = Layer.effect(
         if (options?.publish !== false) {
           yield* PubSub.publish(changesPubSub, providers);
         }
+        yield* authAudit.observe(providersToPersist).pipe(
+          Effect.tapError((cause) =>
+            Effect.logError("failed to append provider authentication audit event", {
+              cause,
+            }),
+          ),
+          Effect.ignore,
+          Effect.forkIn(scope),
+        );
       }
 
       return providers;

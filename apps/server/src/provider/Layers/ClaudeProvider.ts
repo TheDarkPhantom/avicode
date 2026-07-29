@@ -11,6 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   createModelCapabilities,
@@ -32,6 +33,7 @@ import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
   buildServerProvider,
+  AUTH_PROBE_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
   parseGenericCliVersion,
@@ -55,6 +57,18 @@ const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
 const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
+
+const ClaudeAuthStatusOutput = Schema.Struct({
+  loggedIn: Schema.optional(Schema.Boolean),
+  authenticated: Schema.optional(Schema.Boolean),
+  authMethod: Schema.optional(Schema.String),
+  apiProvider: Schema.optional(Schema.String),
+  email: Schema.optional(Schema.String),
+});
+
+const decodeClaudeAuthStatusOutput = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(ClaudeAuthStatusOutput),
+);
 
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -904,7 +918,44 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const slashCommands = capabilities?.slashCommands ?? [];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
-  if (!capabilities) {
+  const externalApiProvider =
+    capabilities?.apiProvider && capabilities.apiProvider !== "firstParty"
+      ? capabilities.apiProvider
+      : undefined;
+  const authProbe = externalApiProvider
+    ? undefined
+    : yield* runClaudeCommand(claudeSettings, ["auth", "status"], resolvedEnvironment).pipe(
+        Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
+        Effect.result,
+      );
+  const decodedAuthStatus =
+    authProbe && Result.isSuccess(authProbe) && Option.isSome(authProbe.success)
+      ? yield* decodeClaudeAuthStatusOutput(authProbe.success.value.stdout.trim()).pipe(
+          Effect.option,
+          Effect.map(Option.getOrUndefined),
+        )
+      : undefined;
+  const loggedIn = decodedAuthStatus?.loggedIn ?? decodedAuthStatus?.authenticated;
+
+  if (loggedIn === false) {
+    return buildServerProvider({
+      presentation: CLAUDE_PRESENTATION,
+      enabled: claudeSettings.enabled,
+      checkedAt,
+      models,
+      slashCommands: dedupedSlashCommands,
+      skills,
+      probe: {
+        installed: true,
+        version: parsedVersion,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "Claude is not authenticated. Run `claude auth login` and try again.",
+      },
+    });
+  }
+
+  if (!capabilities && loggedIn !== true) {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -917,16 +968,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        message: "Could not verify Claude authentication status.",
       },
     });
   }
 
   const authMetadata =
     claudeAuthMetadata({
-      subscriptionType: capabilities.subscriptionType,
-      authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+      subscriptionType: capabilities?.subscriptionType,
+      authMethod: capabilities?.tokenSource ?? decodedAuthStatus?.authMethod,
+    }) ?? apiProviderAuthMetadata(capabilities?.apiProvider ?? decodedAuthStatus?.apiProvider);
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -940,7 +991,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       status: "ready",
       auth: {
         status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
+        ...(capabilities?.email || decodedAuthStatus?.email
+          ? { email: capabilities?.email ?? decodedAuthStatus?.email }
+          : {}),
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
