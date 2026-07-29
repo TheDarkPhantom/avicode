@@ -416,7 +416,7 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
 
-          expect(generated.title).toBe("Investigate Websocket Reconnect Regressions Aft...");
+          expect(generated.title).toBe("Investigate Websocket Reconnect");
         }),
     ),
   );

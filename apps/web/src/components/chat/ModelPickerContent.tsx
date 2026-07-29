@@ -107,6 +107,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const modelListRef = useRef<LegendListRef | null>(null);
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
+  // Avi Code addition: the rail shares the chat-row badge labels so a
+  // configured badge (e.g. "W") replaces the auto display-name initials here too.
+  const providerBadgeLabels = useClientSettings((s) => s.aviCodeProviderBadgeLabels);
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | "favorites">(
     () => {
       if (props.lockedProvider !== null) {
@@ -534,6 +537,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             selectedInstanceId={selectedInstanceId}
             onSelectInstance={handleSelectInstance}
             instanceEntries={sidebarInstanceEntries}
+            badgeLabels={providerBadgeLabels}
             showFavorites
             {...(lockedDisabledInstanceIds
               ? {

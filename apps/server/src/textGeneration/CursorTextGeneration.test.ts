@@ -231,7 +231,7 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
             },
           });
 
-          expect(generated.title).toBe("Trim Reconnect Spinner Status After Resume.");
+          expect(generated.title).toBe("Trim Reconnect Spinner");
         }),
     ),
   );

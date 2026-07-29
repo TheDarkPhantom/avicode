@@ -558,9 +558,12 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
     : thread.modelSelection.model;
   const modelBadge = driverKind ? (
     <span
-      className="inline-flex shrink-0 items-center opacity-70"
+      className="inline-flex shrink-0 items-center"
       aria-label={`${providerEntry?.displayName ?? modelInstanceId} · ${modelLabel}`}
     >
+      {/* Avi Code addition: a full-opacity glyph with a smaller corner badge.
+          The badge used to be as large as the icon at 70% opacity, which left
+          the provider glyph unreadable in the chat list. */}
       <ProviderInstanceIcon
         driverKind={driverKind}
         displayName={
@@ -571,7 +574,10 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
         }
         accentColor={providerEntry?.accentColor}
         showBadge
-        iconClassName="size-3.5"
+        className="size-4.5"
+        iconClassName="size-4.5"
+        badgeClassName="-right-1 -bottom-1 h-3 min-w-3 px-0.5 text-[7px]"
+        indicatorBackground="var(--sidebar)"
       />
     </span>
   ) : null;

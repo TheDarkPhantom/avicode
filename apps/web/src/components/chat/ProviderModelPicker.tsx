@@ -18,6 +18,7 @@ import {
 } from "./providerIconUtils";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, ComposerControlChevron } from "./ComposerControl";
+import { useClientSettings } from "~/hooks/useSettings";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -50,6 +51,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   // Resolve the active instance entry by exact routing key. The composer
   // resolves fallbacks before rendering this component; if the selected
   // instance disappears, do not infer a replacement from its driver kind.
+  const providerBadgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
   const activeEntry = useMemo(() => {
     return (
       props.instanceEntries.find((entry) => entry.instanceId === props.activeInstanceId) ?? null
@@ -70,7 +72,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const duplicateDriverCount = props.instanceEntries.filter(
     (entry) => activeEntry !== null && entry.driverKind === activeEntry.driverKind,
   ).length;
-  const showInstanceBadge = Boolean(activeEntry?.accentColor) || duplicateDriverCount > 1;
+  // Avi Code addition: the composer trigger honours the configured chat-row
+  // badge label instead of the display-name initials.
+  const activeBadgeLabel = activeEntry
+    ? providerBadgeLabels[activeEntry.instanceId]?.trim().toUpperCase()
+    : undefined;
+  const showInstanceBadge =
+    Boolean(activeEntry?.accentColor) || Boolean(activeBadgeLabel) || duplicateDriverCount > 1;
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -163,7 +171,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           {activeEntry ? (
             <ProviderInstanceIcon
               driverKind={activeEntry.driverKind}
-              displayName={activeEntry.displayName}
+              displayName={activeBadgeLabel || activeEntry.displayName}
               accentColor={activeEntry.accentColor}
               showBadge={showInstanceBadge}
               className="size-4"

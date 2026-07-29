@@ -179,12 +179,31 @@ describe("buildThreadTitlePrompt", () => {
 });
 
 describe("sanitizeThreadTitle", () => {
-  it("title-cases and truncates long titles with the shared sidebar-safe limit", () => {
+  it("title-cases and caps long titles at three words", () => {
     expect(
       sanitizeThreadTitle(
-        '  "Reconnect failures after restart because the session state does not recover"  ',
+        '  "Reconnect failures happen after restart because the session state does not recover"  ',
       ),
-    ).toBe("Reconnect Failures After Restart Because The Se...");
+    ).toBe("Reconnect Failures Happen");
+  });
+
+  it("drops a trailing connector word left behind by the three-word cap", () => {
+    expect(sanitizeThreadTitle("Modernize frontend to match Shopify branding")).toBe(
+      "Modernize Frontend",
+    );
+  });
+
+  it("keeps titles that already fit the three-word cap", () => {
+    expect(sanitizeThreadTitle("List app shortcuts")).toBe("List App Shortcuts");
+  });
+
+  it("still truncates with the shared sidebar-safe character limit", () => {
+    expect(sanitizeThreadTitle("Deduplicate multiplexed authentication reconnections")).toBe(
+      "Deduplicate Multiplexed Authentication",
+    );
+    expect(sanitizeThreadTitle("Deduplicate Multiplexedauthentication Reconnectionsbackoff")).toBe(
+      "Deduplicate Multiplexedauthentication Reconnect...",
+    );
   });
 
   it("falls back to a title-cased default when the input is empty", () => {
@@ -192,9 +211,7 @@ describe("sanitizeThreadTitle", () => {
   });
 
   it("preserves acronyms and internal punctuation while title-casing words", () => {
-    expect(sanitizeThreadTitle("fix AVI-ROG and OAuth reconnects")).toBe(
-      "Fix AVI-ROG And OAuth Reconnects",
-    );
+    expect(sanitizeThreadTitle("fix AVI-ROG and OAuth reconnects")).toBe("Fix AVI-ROG");
   });
 });
 

@@ -42,6 +42,66 @@ export function sanitizePrTitle(raw: string): string {
   return "Update project changes";
 }
 
+/**
+ * Avi Code addition: the chat list only has room for a few words, so a
+ * generated title is capped at three. Trailing connector words are dropped
+ * so a cut title reads as a phrase ("Modernize Frontend To" → "Modernize
+ * Frontend") rather than trailing into nothing.
+ */
+const THREAD_TITLE_MAX_WORDS = 3;
+const THREAD_TITLE_TRAILING_STOP_WORDS = new Set([
+  "a",
+  "about",
+  "after",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "because",
+  "before",
+  "but",
+  "by",
+  "during",
+  "for",
+  "from",
+  "in",
+  "into",
+  "is",
+  "nor",
+  "not",
+  "of",
+  "on",
+  "or",
+  "over",
+  "per",
+  "than",
+  "that",
+  "the",
+  "to",
+  "under",
+  "via",
+  "vs",
+  "when",
+  "with",
+  "without",
+]);
+
+function capThreadTitleWords(value: string): string {
+  const words = value.split(" ").filter(Boolean);
+  if (words.length <= THREAD_TITLE_MAX_WORDS) {
+    return words.join(" ");
+  }
+  const capped = words.slice(0, THREAD_TITLE_MAX_WORDS);
+  while (
+    capped.length > 1 &&
+    THREAD_TITLE_TRAILING_STOP_WORDS.has(capped[capped.length - 1]!.toLowerCase())
+  ) {
+    capped.pop();
+  }
+  return capped.join(" ");
+}
+
 /** Normalise a raw thread title to a compact single-line, title-cased sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
   const normalized = raw
@@ -56,7 +116,7 @@ export function sanitizeThreadTitle(raw: string): string {
     return "New Thread";
   }
 
-  const titled = toTitleCaseWords(normalized);
+  const titled = toTitleCaseWords(capThreadTitleWords(normalized));
 
   if (titled.length <= 50) {
     return titled;
