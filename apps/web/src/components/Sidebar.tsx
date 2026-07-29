@@ -2582,14 +2582,11 @@ export default function Sidebar() {
     >();
     for (const project of sidebarProjects) {
       for (const thread of threadsByProjectKey.get(project.projectKey) ?? []) {
-        identities.set(
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-          {
-            environmentId: project.environmentId,
-            cwd: project.workspaceRoot,
-            label: project.displayName,
-          },
-        );
+        identities.set(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), {
+          environmentId: project.environmentId,
+          cwd: project.workspaceRoot,
+          label: project.displayName,
+        });
       }
     }
     return identities;
