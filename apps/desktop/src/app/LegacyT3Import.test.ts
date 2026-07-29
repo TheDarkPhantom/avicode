@@ -32,17 +32,19 @@ function readMessage(path: string): unknown {
 
 describe("LegacyT3Import", () => {
   it("keeps the legacy source and AviCode destination separate", () => {
+    const homeDirectory = NodePath.join(NodePath.parse(process.cwd()).root, "Users", "Avi");
+    const targetStateDir = NodePath.join(homeDirectory, ".avicode", "userdata");
     const plan = makeLegacyT3ImportPlan({
-      homeDirectory: "C:\\Users\\Avi",
-      targetStateDir: "C:\\Users\\Avi\\.avicode\\userdata",
+      homeDirectory,
+      targetStateDir,
     });
     expect(plan.legacyDatabase).toContain(".t3");
     expect(plan.targetDatabase).toContain(".avicode");
     expect(plan.legacyDatabase).not.toBe(plan.targetDatabase);
-    expect(plan.legacyAttachmentsDir).toContain(NodePath.join(".t3", "userdata", "attachments"));
-    expect(plan.targetAttachmentsDir).toContain(
-      NodePath.join(".avicode", "userdata", "attachments"),
+    expect(plan.legacyAttachmentsDir).toBe(
+      NodePath.join(homeDirectory, ".t3", "userdata", "attachments"),
     );
+    expect(plan.targetAttachmentsDir).toBe(NodePath.join(targetStateDir, "attachments"));
   });
 
   it("creates a validated standalone SQLite snapshot", async () => {
