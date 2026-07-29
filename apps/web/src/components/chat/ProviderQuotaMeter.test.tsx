@@ -63,6 +63,30 @@ describe("ProviderQuotaMeter", () => {
     expect(markup).toContain("0.4% of Weekly limit remaining");
   });
 
+  it("shows zero remaining when the provider has rejected the window", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderQuotaMeter
+        quota={snapshot({
+          status: "exhausted",
+          windows: [
+            {
+              id: "five_hour",
+              label: "5-hour",
+              usedPercent: 99,
+              exhausted: true,
+            },
+          ],
+        })}
+        instanceLabel="Claude – Lawrence"
+        now={NOW}
+      />,
+    );
+
+    expect(markup).toContain("Claude – Lawrence usage: 0% of 5-hour limit remaining");
+    expect(markup).toContain('aria-valuenow="0"');
+    expect(markup).toContain("height:0%");
+  });
+
   // Only the popover *trigger* appears in static markup — the body renders
   // lazily on open. So the bar is what these assert; the popover copy is
   // covered by `isQuotaAlarming` in providerQuota.test.ts.

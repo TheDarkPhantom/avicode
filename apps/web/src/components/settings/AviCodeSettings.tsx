@@ -1,10 +1,53 @@
 import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@t3tools/contracts";
-import { DatabaseBackupIcon, LoaderIcon, RefreshCwIcon, SparklesIcon } from "lucide-react";
+import {
+  BellRingIcon,
+  DatabaseBackupIcon,
+  LoaderIcon,
+  RefreshCwIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { previewNotificationChime } from "../../lib/notificationChime";
 import { Button } from "../ui/button";
+import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+
+function NotificationSettings() {
+  const notificationSoundEnabled = useClientSettings(
+    (settings) => settings.notificationSoundEnabled,
+  );
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="Notifications" icon={<BellRingIcon className="size-5" />}>
+      <SettingsRow
+        title="Sound when a chat needs you"
+        description="Plays a short chime the moment a chat starts waiting on you — it finished work you haven't read, it asked a question, or it's blocked on an approval. These are the same states the sidebar labels Completed, Awaiting Input, and Pending Approval, so the sound and the label always agree."
+        status="Stays quiet for the chat you already have open in a focused window, and for everything that is already waiting when the app starts."
+        control={
+          <Switch
+            checked={notificationSoundEnabled}
+            // Play on enable, from inside the click: browsers only let audio
+            // start from a user gesture, so this both previews the sound and
+            // unblocks the audio context for later chimes that have no gesture
+            // behind them.
+            onCheckedChange={(checked) => {
+              const enabled = Boolean(checked);
+              updateSettings({ notificationSoundEnabled: enabled });
+              if (enabled) {
+                previewNotificationChime();
+              }
+            }}
+            aria-label="Play a sound when a chat needs you"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
 
 export function legacyT3ImportStatusDescription(
   status: DesktopLegacyT3ImportStatus | null,
@@ -90,6 +133,8 @@ export function AviCodeSettings() {
 
   return (
     <SettingsPageContainer>
+      <NotificationSettings />
+
       <SettingsSection title="Avi Code" icon={<SparklesIcon className="size-5" />}>
         <SettingsRow
           title="Import from T3 Code"

@@ -934,6 +934,26 @@ describe("resolveDefaultBranchActionDialogCopy", () => {
 });
 
 describe("buildGitActionProgressStages", () => {
+  it("includes the merge promotion stage for Auto merge", () => {
+    assert.deepEqual(
+      buildGitActionProgressStages({
+        action: "auto_merge",
+        hasCustomCommitMessage: false,
+        hasWorkingTreeChanges: true,
+        pushTarget: "origin/feature/auto-merge",
+      }),
+      [
+        "Generating commit message...",
+        "Committing...",
+        "Pushing to origin/feature/auto-merge...",
+        "Preparing PR...",
+        "Generating PR content...",
+        "Creating pull request...",
+        "Merging promotion pull requests...",
+      ],
+    );
+  });
+
   it("shows only push progress for explicit push actions", () => {
     const stages = buildGitActionProgressStages({
       action: "push",
