@@ -906,6 +906,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             role: event.payload.role,
             text: nextText,
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
+            ...(event.payload.threadContext !== undefined
+              ? { threadContext: [...event.payload.threadContext] }
+              : previousMessage?.threadContext !== undefined
+                ? { threadContext: [...previousMessage.threadContext] }
+                : {}),
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,

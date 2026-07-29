@@ -31,6 +31,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - No OCR in v1.
 - 20MB, 250 pages, and 100,000 extracted characters per document.
 - Eight combined attachments per message.
+- Five explicit thread references and 100,000 serialized context characters per turn.
 - No conversation or attachment contents in ALFRED exports or window titles.
 - No automated upstream merge or binary publication.
 
@@ -44,3 +45,4 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-29: per-chat provider/model badges, custom client initials, and compact status labels.
 - 2026-07-29: timestamped provider authentication transition auditing.
 - 2026-07-29: visible working-tree file count with one-click access to the changes panel.
+- 2026-07-29: explicit cross-thread transcript context with source provenance.
