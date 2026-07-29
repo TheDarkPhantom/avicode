@@ -74,6 +74,29 @@ export function buildPlanImplementationPrompt(planMarkdown: string): string {
   return `PLEASE IMPLEMENT THIS PLAN:\n${planMarkdown.trim()}`;
 }
 
+export function buildPlanReviewPrompt(planMarkdown: string): string {
+  return `Review the proposed plan below as an independent senior engineer.
+
+Stay in read-only plan mode. Inspect the repository to validate the plan's assumptions, but do not edit files or implement the plan.
+
+Evaluate:
+- correctness and fit with the current architecture
+- missing requirements, edge cases, and failure modes
+- unsafe sequencing, compatibility, migration, and rollout risks
+- whether the proposed tests and acceptance criteria are sufficient
+
+Do not merely restate the plan. Produce a concise Markdown audit with:
+1. Verdict: approve, approve with changes, or revise
+2. Blocking findings
+3. Non-blocking improvements
+4. Missing tests and acceptance criteria
+5. Concrete recommended amendments
+6. Repository evidence with file paths where useful
+
+PROPOSED PLAN:
+${planMarkdown.trim()}`;
+}
+
 export function resolvePlanFollowUpSubmission(input: { draftText: string; planMarkdown: string }): {
   text: string;
   interactionMode: "default" | "plan";
@@ -98,6 +121,11 @@ export function buildPlanImplementationThreadTitle(planMarkdown: string): string
     return "Implement plan";
   }
   return `Implement ${title}`;
+}
+
+export function buildPlanReviewThreadTitle(planMarkdown: string): string {
+  const title = proposedPlanTitle(planMarkdown);
+  return title ? `Review ${title}` : "Review plan";
 }
 
 export function buildProposedPlanMarkdownFilename(planMarkdown: string): string {

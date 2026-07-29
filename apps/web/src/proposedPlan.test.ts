@@ -4,6 +4,8 @@ import {
   buildCollapsedProposedPlanPreviewMarkdown,
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
+  buildPlanReviewPrompt,
+  buildPlanReviewThreadTitle,
   buildProposedPlanMarkdownFilename,
   proposedPlanTitle,
   resolvePlanFollowUpSubmission,
@@ -25,6 +27,22 @@ describe("buildPlanImplementationPrompt", () => {
     expect(buildPlanImplementationPrompt("## Ship it\n\n- step 1\n")).toBe(
       "PLEASE IMPLEMENT THIS PLAN:\n## Ship it\n\n- step 1",
     );
+  });
+});
+
+describe("buildPlanReviewPrompt", () => {
+  it("builds a read-only audit prompt around the captured plan", () => {
+    const prompt = buildPlanReviewPrompt("## Ship it\n\n- step 1\n");
+    expect(prompt).toContain("Stay in read-only plan mode");
+    expect(prompt).toContain("Verdict: approve, approve with changes, or revise");
+    expect(prompt).toContain("PROPOSED PLAN:\n## Ship it\n\n- step 1");
+  });
+});
+
+describe("buildPlanReviewThreadTitle", () => {
+  it("uses the plan title and has a fallback", () => {
+    expect(buildPlanReviewThreadTitle("# Improve auth\n\nDetails")).toBe("Review Improve auth");
+    expect(buildPlanReviewThreadTitle("- item")).toBe("Review plan");
   });
 });
 
