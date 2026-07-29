@@ -144,6 +144,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
+  threadContextIds: Schema.optionalKey(Schema.Array(ThreadId)),
   elementContexts: Schema.optionalKey(Schema.Array(PersistedElementContextDraft)),
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
@@ -268,6 +269,7 @@ export interface ComposerThreadDraftState {
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
+  threadContextIds: ThreadId[];
   /**
    * Element-pick attachments captured from the in-app preview browser. The
    * full payload (selector / html / styles / source frame) is persisted
@@ -418,6 +420,7 @@ interface ComposerDraftStoreState {
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
+  setThreadContextIds: (threadRef: ComposerThreadTarget, threadIds: ThreadId[]) => void;
   setModelSelection: (
     threadRef: ComposerThreadTarget,
     modelSelection: ModelSelection | null | undefined,
@@ -586,6 +589,7 @@ const EMPTY_IMAGES: ComposerAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
+const EMPTY_THREAD_CONTEXT_IDS: ThreadId[] = [];
 const EMPTY_ELEMENT_CONTEXTS: ElementContextDraft[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
@@ -608,6 +612,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
+  threadContextIds: EMPTY_THREAD_CONTEXT_IDS,
   elementContexts: EMPTY_ELEMENT_CONTEXTS,
   previewAnnotations: EMPTY_PREVIEW_ANNOTATIONS,
   reviewComments: EMPTY_REVIEW_COMMENTS,
@@ -630,6 +635,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
+    threadContextIds: [],
     elementContexts: [],
     previewAnnotations: [],
     reviewComments: [],
@@ -703,6 +709,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.images.length === 0 &&
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
+    draft.threadContextIds.length === 0 &&
     draft.elementContexts.length === 0 &&
     draft.previewAnnotations.length === 0 &&
     draft.reviewComments.length === 0 &&
@@ -1866,6 +1873,7 @@ function partializeComposerDraftStoreState(
       draft.prompt.length === 0 &&
       draft.persistedAttachments.length === 0 &&
       draft.terminalContexts.length === 0 &&
+      draft.threadContextIds.length === 0 &&
       draft.elementContexts.length === 0 &&
       draft.previewAnnotations.length === 0 &&
       draft.reviewComments.length === 0 &&
@@ -1890,6 +1898,9 @@ function partializeComposerDraftStoreState(
               lineEnd: context.lineEnd,
             })),
           }
+        : {}),
+      ...(draft.threadContextIds.length > 0
+        ? { threadContextIds: [...draft.threadContextIds] }
         : {}),
       ...(draft.elementContexts.length > 0
         ? {
@@ -2173,6 +2184,7 @@ function toHydratedThreadDraft(
         ...context,
         text: "",
       })) ?? [],
+    threadContextIds: [...(persistedDraft.threadContextIds ?? [])],
     elementContexts:
       persistedDraft.elementContexts?.map((context) => ({
         ...context,
@@ -2636,6 +2648,25 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 normalizedContexts.length,
               ),
               terminalContexts: normalizedContexts,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setThreadContextIds: (threadRef, threadIds) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          const uniqueIds = Array.from(new Set(threadIds)).slice(0, 5);
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              threadContextIds: uniqueIds,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
@@ -3377,6 +3408,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nonPersistedImageIds: [],
               persistedAttachments: [],
               terminalContexts: [],
+              threadContextIds: [],
               elementContexts: [],
               previewAnnotations: [],
               reviewComments: [],

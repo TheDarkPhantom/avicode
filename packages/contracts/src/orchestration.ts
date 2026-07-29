@@ -258,11 +258,20 @@ export type OrchestrationProject = typeof OrchestrationProject.Type;
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
+export const THREAD_CONTEXT_MAX_REFERENCES = 5;
+export const THREAD_CONTEXT_MAX_SERIALIZED_CHARS = 100_000;
+
+export const ThreadContextReference = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ThreadContextReference = typeof ThreadContextReference.Type;
+
 export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  threadContext: Schema.optional(Schema.Array(ThreadContextReference)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -716,6 +725,9 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  threadContext: Schema.optional(
+    Schema.Array(ThreadContextReference).check(Schema.isMaxLength(THREAD_CONTEXT_MAX_REFERENCES)),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -735,6 +747,9 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  threadContext: Schema.optional(
+    Schema.Array(ThreadContextReference).check(Schema.isMaxLength(THREAD_CONTEXT_MAX_REFERENCES)),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -1059,6 +1074,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   role: OrchestrationMessageRole,
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  threadContext: Schema.optional(Schema.Array(ThreadContextReference)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -1075,6 +1091,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  threadContext: Schema.optional(Schema.Array(ThreadContextReference)),
   createdAt: IsoDateTime,
 });
 

@@ -224,6 +224,7 @@ import {
   useThreadProposedPlans,
   useThreadRefs,
   useThreadShell,
+  useThreadShells,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -1235,6 +1236,9 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.setPreviewAnnotations,
   );
   const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
+  const setComposerDraftThreadContextIds = useComposerDraftStore(
+    (store) => store.setThreadContextIds,
+  );
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
@@ -1354,6 +1358,7 @@ function ChatViewContent(props: ChatViewProps) {
   const storeSetActiveTerminal = useTerminalUiStateStore((s) => s.setActiveTerminal);
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const serverThreadRefs = useThreadRefs();
+  const allThreadShells = useThreadShells();
   const serverThreadKeys = useMemo(() => serverThreadRefs.map(scopedThreadKey), [serverThreadRefs]);
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftThreadKeys = useMemo(
@@ -1667,6 +1672,23 @@ function ChatViewContent(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
+  const threadContextCandidates = useMemo(() => {
+    const projectTitles = new Map(
+      allProjects
+        .filter((project) => project.environmentId === environmentId)
+        .map((project) => [project.id, project.title]),
+    );
+    return allThreadShells
+      .filter((thread) => thread.environmentId === environmentId && thread.id !== activeThreadId)
+      .map((thread) => ({
+        threadId: thread.id,
+        title: thread.title,
+        projectTitle: projectTitles.get(thread.projectId) ?? "Unknown project",
+        updatedAt: thread.updatedAt,
+        archived: thread.archivedAt !== null,
+      }))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }, [activeThreadId, allProjects, allThreadShells, environmentId]);
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
@@ -4530,6 +4552,7 @@ function ChatViewContent(props: ChatViewProps) {
       elementContexts: composerElementContexts,
       previewAnnotations: composerPreviewAnnotations,
       reviewComments: composerReviewComments,
+      threadContextIds: composerThreadContextIds,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -4645,6 +4668,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const composerThreadContextIdsSnapshot = [...composerThreadContextIds];
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
@@ -4715,6 +4739,11 @@ function ChatViewContent(props: ChatViewProps) {
         role: "user",
         text: outgoingMessageText,
         ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+        ...(composerThreadContextIdsSnapshot.length > 0
+          ? {
+              threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
+            }
+          : {}),
         turnId: null,
         createdAt: messageCreatedAt,
         updatedAt: messageCreatedAt,
@@ -4867,6 +4896,11 @@ function ChatViewContent(props: ChatViewProps) {
         runtimeMode,
         interactionMode,
         ...(bootstrap ? { bootstrap } : {}),
+        ...(composerThreadContextIdsSnapshot.length > 0
+          ? {
+              threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
+            }
+          : {}),
         createdAt: messageCreatedAt,
       });
       const queued = useOfflineTurnOutboxStore.getState().enqueue({
@@ -4992,6 +5026,11 @@ function ChatViewContent(props: ChatViewProps) {
           runtimeMode,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
+          ...(composerThreadContextIdsSnapshot.length > 0
+            ? {
+                threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
+              }
+            : {}),
           createdAt: messageCreatedAt,
         },
       });
@@ -5011,6 +5050,8 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
           .length ?? 0) === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
+          .length ?? 0) === 0 &&
+        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.threadContextIds
           .length ?? 0) === 0
       ) {
         setOptimisticUserMessages((existing) => {
@@ -5032,6 +5073,7 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftElementContexts(composerDraftTarget, composerElementContextsSnapshot);
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
+        setComposerDraftThreadContextIds(composerDraftTarget, composerThreadContextIdsSnapshot);
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
           prompt: promptForSend,
@@ -6023,6 +6065,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeThreadId={activeThreadId}
                             activeThreadEnvironmentId={activeThread?.environmentId}
                             activeThread={activeThread}
+                            threadContextCandidates={threadContextCandidates}
                             isServerThread={isServerThread}
                             isLocalDraftThread={isLocalDraftThread}
                             forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
