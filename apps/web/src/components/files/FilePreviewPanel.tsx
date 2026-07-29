@@ -72,6 +72,7 @@ interface FilePreviewPanelProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
+  editorDiscoveryPending: boolean;
   revealLine: number | null;
   revealRequestId: number;
   onOpenFile: (relativePath: string) => void;
@@ -654,6 +655,7 @@ export default function FilePreviewPanel({
   composerDraftTarget,
   keybindings,
   availableEditors,
+  editorDiscoveryPending,
   revealLine,
   revealRequestId,
   onOpenFile,
@@ -775,6 +777,7 @@ export default function FilePreviewPanel({
               environmentId={environmentId}
               keybindings={keybindings}
               availableEditors={availableEditors}
+              editorDiscoveryPending={editorDiscoveryPending}
               openInCwd={absolutePath}
               compact
               enableShortcut={false}

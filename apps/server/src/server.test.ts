@@ -73,7 +73,7 @@ const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
 import * as ServerConfig from "./config.ts";
 import { makeRoutesLayer } from "./server.ts";
-import { resolveAvailableEditorsForConfig } from "./ws.ts";
+import * as EditorDiscovery from "./process/editorDiscovery.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -327,6 +327,7 @@ const buildAppUnderTest = (options?: {
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
+    editorDiscovery?: Partial<EditorDiscovery.EditorDiscovery["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
     gitVcsDriver?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
@@ -572,10 +573,21 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(ExternalLauncher.ExternalLauncher)({
-          resolveAvailableEditors: () => Effect.succeed([]),
-          ...options?.layers?.externalLauncher,
-        }),
+        Layer.merge(
+          Layer.mock(ExternalLauncher.ExternalLauncher)({
+            resolveAvailableEditors: () => Effect.succeed([]),
+            ...options?.layers?.externalLauncher,
+          }),
+          Layer.mock(EditorDiscovery.EditorDiscovery)({
+            current: Effect.succeed({
+              availableEditors: [],
+              editorDiscoveryStatus: "ready" as const,
+            }),
+            streamChanges: Stream.empty,
+            refresh: Effect.void,
+            ...options?.layers?.editorDiscovery,
+          }),
+        ),
       ),
       Layer.provide(
         Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({
@@ -3800,21 +3812,53 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("does not block server config when editor discovery never resolves", () =>
+  it.effect("does not block server config while editor discovery is still running", () =>
     Effect.gen(function* () {
       const discoveryInterrupted = yield* Deferred.make<void>();
-      const responseFiber = yield* resolveAvailableEditorsForConfig(
-        Effect.never.pipe(
-          Effect.onInterrupt(() => Deferred.succeed(discoveryInterrupted, undefined)),
+      const discovery = yield* EditorDiscovery.make.pipe(
+        Effect.provideService(
+          ExternalLauncher.ExternalLauncher,
+          ExternalLauncher.ExternalLauncher.of({
+            resolveAvailableEditors: () =>
+              Effect.never.pipe(
+                Effect.onInterrupt(() => Deferred.succeed(discoveryInterrupted, undefined)),
+              ),
+            launchBrowser: () => Effect.void,
+            launchEditor: () => Effect.void,
+          }),
         ),
-      ).pipe(Effect.forkChild);
+      );
 
-      yield* TestClock.adjust(Duration.seconds(5));
+      // Config readers resolve immediately even with the scan still in flight.
+      const pending = yield* discovery.current;
+      assert.deepEqual(pending.availableEditors, []);
+      assert.equal(pending.editorDiscoveryStatus, "pending");
 
-      const availableEditors = yield* Fiber.join(responseFiber);
+      // A scan that never finishes is released at the budget instead of leaking.
+      yield* TestClock.adjust(EditorDiscovery.EDITOR_DISCOVERY_TIMEOUT);
       yield* Deferred.await(discoveryInterrupted);
-      assert.deepEqual(availableEditors, []);
-    }),
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("publishes discovered editors once the scan settles", () =>
+    Effect.gen(function* () {
+      const discovery = yield* EditorDiscovery.make.pipe(
+        Effect.provideService(
+          ExternalLauncher.ExternalLauncher,
+          ExternalLauncher.ExternalLauncher.of({
+            resolveAvailableEditors: () => Effect.succeed(["vscode"] as const),
+            launchBrowser: () => Effect.void,
+            launchEditor: () => Effect.void,
+          }),
+        ),
+      );
+
+      yield* TestClock.adjust(Duration.millis(1));
+
+      const settled = yield* discovery.current;
+      assert.deepEqual(settled.availableEditors, ["vscode"]);
+      assert.equal(settled.editorDiscoveryStatus, "ready");
+    }).pipe(Effect.scoped),
   );
 
   it.effect(
