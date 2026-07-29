@@ -1,6 +1,7 @@
 import type {
   ProviderDriverKind,
   ModelCapabilities,
+  ProviderQuotaSnapshot,
   ServerProvider,
   ServerProviderAuth,
   ServerProviderSkill,
@@ -215,6 +216,7 @@ export function buildServerProvider(input: {
   models: ReadonlyArray<ServerProviderModel>;
   slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
   skills?: ReadonlyArray<ServerProviderSkill>;
+  quota?: ProviderQuotaSnapshot;
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
   const versionAdvisory = input.driver
@@ -243,6 +245,7 @@ export function buildServerProvider(input: {
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
+    ...(input.quota ? { quota: input.quota } : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
   };
 }

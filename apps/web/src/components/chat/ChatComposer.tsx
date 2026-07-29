@@ -209,7 +209,11 @@ import {
   deriveLatestContextWindowSnapshot,
   formatProviderDisplayName,
 } from "../../lib/contextWindow";
-import { selectProviderInstanceLabel, selectProviderQuota } from "../../lib/providerQuota";
+import {
+  selectProviderInstanceLabel,
+  selectProviderQuota,
+  shouldRefreshProviderQuota,
+} from "../../lib/providerQuota";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -419,6 +423,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   activeThreadProviderDisplayName: string | null;
   activeProviderQuota: ProviderQuotaSnapshot | null;
   activeProviderInstanceLabel: string | null;
+  isProviderQuotaLoading: boolean;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -454,6 +459,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
           quota={props.activeProviderQuota}
           instanceLabel={props.activeProviderInstanceLabel}
         />
+      ) : null}
+      {props.isProviderQuotaLoading && !props.activeProviderQuota ? (
+        <span className="text-muted-foreground/70 text-xs">Checking usage…</span>
       ) : null}
       {props.isPreparingWorktree ? (
         <span className="text-muted-foreground/70 text-xs">Preparing worktree...</span>
@@ -624,6 +632,7 @@ export interface ChatComposerProps {
   // Misc
   resolvedTheme: "light" | "dark";
   settings: UnifiedSettings;
+  providerSelectionScopeKey: string | null;
   keybindings: ResolvedKeybindingsConfig;
   terminalOpen: boolean;
   gitCwd: string | null;
@@ -656,6 +665,7 @@ export interface ChatComposerProps {
   ) => void;
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onRefreshProviderUsage: (instanceId: ProviderInstanceId) => Promise<void>;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -717,6 +727,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadActivities,
     resolvedTheme,
     settings,
+    providerSelectionScopeKey,
     keybindings,
     terminalOpen,
     gitCwd,
@@ -735,6 +746,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onRefreshProviderUsage,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -1062,12 +1074,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // selection and collapses to a per-driver name. Two instances of one driver
   // have separate allowances, so they must not share a reading.
   const activeProviderQuota = useMemo(
-    () => selectProviderQuota(providerStatuses, threadProvider),
-    [providerStatuses, threadProvider],
+    () => selectProviderQuota(providerStatuses, selectedInstanceId),
+    [providerStatuses, selectedInstanceId],
   );
   const activeProviderInstanceLabel = useMemo(
-    () => selectProviderInstanceLabel(providerStatuses, threadProvider),
-    [providerStatuses, threadProvider],
+    () => selectProviderInstanceLabel(providerStatuses, selectedInstanceId),
+    [providerStatuses, selectedInstanceId],
   );
 
   // ------------------------------------------------------------------
@@ -1088,6 +1100,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [quotaRefreshPendingInstanceId, setQuotaRefreshPendingInstanceId] =
+    useState<ProviderInstanceId | null>(null);
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
   const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
@@ -1121,6 +1135,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * thread) can still be stashed while an earlier encode is running.
    */
   const stashInFlightRef = useRef<Set<string>>(new Set());
+  const quotaRefreshRequestedInstanceIdsRef = useRef<Set<ProviderInstanceId>>(new Set());
+
+  // Avi Code addition. A composer can target a different credential instance
+  // before the thread is bound. Show that instance's cached allowance
+  // immediately, then refresh stale/missing usage on the first typing gesture.
+  useEffect(() => {
+    const composerActivated = isComposerFocused || prompt.trim().length > 0;
+    if (
+      !composerActivated ||
+      noProviderAvailable ||
+      environmentUnavailable !== null ||
+      !shouldRefreshProviderQuota(activeProviderQuota) ||
+      quotaRefreshRequestedInstanceIdsRef.current.has(selectedInstanceId)
+    ) {
+      return;
+    }
+
+    quotaRefreshRequestedInstanceIdsRef.current.add(selectedInstanceId);
+    setQuotaRefreshPendingInstanceId(selectedInstanceId);
+    void onRefreshProviderUsage(selectedInstanceId).finally(() => {
+      setQuotaRefreshPendingInstanceId((current) =>
+        current === selectedInstanceId ? null : current,
+      );
+    });
+  }, [
+    activeProviderQuota,
+    environmentUnavailable,
+    isComposerFocused,
+    noProviderAvailable,
+    onRefreshProviderUsage,
+    prompt,
+    selectedInstanceId,
+  ]);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1331,6 +1378,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
+    stickyScopeKey: providerSelectionScopeKey,
   });
   const providerTraitsPicker = renderProviderTraitsPicker({
     provider: selectedProvider,
@@ -1342,6 +1390,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
+    stickyScopeKey: providerSelectionScopeKey,
   });
   const pendingPrimaryAction = useMemo(
     () =>
@@ -3437,6 +3486,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   activeThreadProviderDisplayName={activeThreadProviderDisplayName}
                   activeProviderQuota={activeProviderQuota}
                   activeProviderInstanceLabel={activeProviderInstanceLabel}
+                  isProviderQuotaLoading={quotaRefreshPendingInstanceId === selectedInstanceId}
                   pendingAction={pendingPrimaryAction}
                   isRunning={phase === "running"}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}

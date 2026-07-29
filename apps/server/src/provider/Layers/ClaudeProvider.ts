@@ -2,6 +2,7 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ModelSelection,
+  type ProviderQuotaSnapshot,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -44,6 +45,7 @@ import {
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import { normalizeClaudeProbeQuota } from "../providerQuotaProbe.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -575,6 +577,7 @@ function apiProviderAuthMetadata(
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+const USAGE_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Keep workspace-scoped command discovery intact while isolating the periodic
@@ -630,6 +633,7 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly quota?: ProviderQuotaSnapshot;
 };
 
 function parseClaudeInitializationCommands(
@@ -712,7 +716,8 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
  * message is ever written to the subprocess stdin. This means the Claude
  * Code subprocess completes its local initialization IPC (returning
  * account info and slash commands) but never starts an API request to
- * Anthropic. We read the init data and then abort the subprocess.
+ * Anthropic. We read the init data, make one best-effort usage control read,
+ * and then abort the subprocess.
  *
  * This is used as a fallback when `claude auth status` does not include
  * subscription type information.
@@ -745,6 +750,25 @@ const probeClaudeCapabilities = (
         }),
       });
       const init = await q.initializationResult();
+      let usageResponse: unknown;
+      // Avi Code addition. Use the SDK control channel only; the never-yielding
+      // prompt above guarantees this cannot submit user content to Anthropic.
+      if (q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          usageResponse = await Promise.race([
+            q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
+            new Promise<undefined>((resolve) => {
+              timeout = setTimeout(() => resolve(undefined), USAGE_PROBE_TIMEOUT_MS);
+            }),
+          ]);
+        } catch {
+          // Usage is best-effort. Account identity and model discovery remain
+          // useful even when an older Claude CLI rejects this control request.
+        } finally {
+          if (timeout) clearTimeout(timeout);
+        }
+      }
       const account = init.account as
         | {
             readonly email?: string;
@@ -753,12 +777,14 @@ const probeClaudeCapabilities = (
             readonly apiProvider?: string;
           }
         | undefined;
+      const quota = normalizeClaudeProbeQuota(usageResponse, new Date().toISOString());
       return {
         email: account?.email,
         subscriptionType: account?.subscriptionType,
         tokenSource: account?.tokenSource,
         apiProvider: account?.apiProvider,
         slashCommands: parseClaudeInitializationCommands(init.commands),
+        ...(quota ? { quota } : {}),
       } satisfies ClaudeCapabilitiesProbe;
     });
   }).pipe(
@@ -985,6 +1011,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models,
     slashCommands: dedupedSlashCommands,
     skills,
+    ...(capabilities?.quota ? { quota: capabilities.quota } : {}),
     probe: {
       installed: true,
       version: parsedVersion,

@@ -14,6 +14,20 @@ export { mostConstrainedQuotaWindow };
  * rather than one crying wolf before the other.
  */
 export const QUOTA_WARNING_PERCENT = 90;
+export const PROVIDER_QUOTA_REFRESH_MAX_AGE_MS = 5 * 60 * 1_000;
+
+export function shouldRefreshProviderQuota(
+  quota: ProviderQuotaSnapshot | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!quota || quota.windows.length === 0) return true;
+  const capturedAt = Date.parse(quota.capturedAt);
+  return (
+    !Number.isFinite(capturedAt) ||
+    capturedAt > now ||
+    now - capturedAt >= PROVIDER_QUOTA_REFRESH_MAX_AGE_MS
+  );
+}
 
 /**
  * Resolve the quota to display for a thread.

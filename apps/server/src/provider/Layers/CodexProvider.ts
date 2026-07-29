@@ -19,6 +19,7 @@ import type {
   ServerProviderState,
   ModelCapabilities,
   ProviderOptionDescriptor,
+  ProviderQuotaSnapshot,
   ServerProviderModel,
   ServerProviderSkill,
 } from "@t3tools/contracts";
@@ -33,6 +34,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { normalizeCodexProbeQuota } from "../providerQuotaProbe.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
@@ -48,6 +50,7 @@ export interface CodexAppServerProviderSnapshot {
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
+  readonly quota?: ProviderQuotaSnapshot;
 }
 
 const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
@@ -389,15 +392,23 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     } satisfies CodexAppServerProviderSnapshot;
   }
 
-  const [skillsResponse, models] = yield* Effect.all(
+  // Avi Code addition. The app-server status probe is already authenticated
+  // for this exact instance, so read its allowance before closing it. This
+  // lets a composer warn about an exhausted account before its first turn.
+  const capturedAt = DateTime.formatIso(yield* DateTime.now);
+  const [skillsResponse, models, rateLimitsResponse] = yield* Effect.all(
     [
       client.request("skills/list", {
         cwds: [input.cwd],
       }),
       requestAllCodexModels(client),
+      client.request("account/rateLimits/read", undefined).pipe(Effect.option),
     ],
     { concurrency: "unbounded" },
   );
+  const quota = Option.isSome(rateLimitsResponse)
+    ? normalizeCodexProbeQuota(rateLimitsResponse.value, capturedAt)
+    : undefined;
 
   return {
     account: accountResponse,
@@ -406,6 +417,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
       appendCustomCodexModels(models, input.customModels ?? []),
     ),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
+    ...(quota ? { quota } : {}),
   } satisfies CodexAppServerProviderSnapshot;
 });
 
@@ -595,6 +607,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    ...(snapshot.quota ? { quota: snapshot.quota } : {}),
     probe: {
       installed: true,
       version: snapshot.version ?? null,

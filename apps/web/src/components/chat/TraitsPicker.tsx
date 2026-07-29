@@ -219,6 +219,7 @@ export interface TraitsMenuContentProps {
   allowPromptInjectedEffort?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
+  stickyScopeKey?: string | null;
 }
 
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
@@ -230,6 +231,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   onPromptChange,
   modelOptions,
   allowPromptInjectedEffort = true,
+  stickyScopeKey,
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
@@ -247,9 +249,10 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
         ...(instanceId ? { instanceId } : {}),
         model,
         persistSticky: true,
+        stickyScopeKey,
       });
     },
-    [instanceId, model, persistence, provider, setProviderModelOptions],
+    [instanceId, model, persistence, provider, setProviderModelOptions, stickyScopeKey],
   );
   const {
     descriptors,
@@ -429,6 +432,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   onPromptChange,
   modelOptions,
   allowPromptInjectedEffort = true,
+  stickyScopeKey,
   triggerVariant,
   triggerClassName,
   ...persistence
@@ -515,6 +519,7 @@ export const TraitsPicker = memo(function TraitsPicker({
           onPromptChange={onPromptChange}
           modelOptions={modelOptions}
           allowPromptInjectedEffort={allowPromptInjectedEffort}
+          stickyScopeKey={stickyScopeKey}
           {...persistence}
         />
       </MenuPopup>

@@ -26,6 +26,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Manual-only release and relay workflows; merging `main` cannot publish or deploy.
 - [x] Persistent per-instance provider authentication transition audit log.
 - [x] Explicit cross-project thread references with full transcript context and provenance.
+- [x] Opt-in per-project provider/model memory and pre-send credential usage visibility.
 
 ## Personal alpha verification
 

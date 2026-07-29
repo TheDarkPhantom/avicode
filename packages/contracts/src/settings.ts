@@ -90,6 +90,13 @@ export const ClientSettingsSchema = Schema.Struct({
     ProviderInstanceId,
     Schema.String.check(Schema.isMaxLength(2)),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Provider instances can represent separate client
+  // credentials, so carrying the last-picked instance across unrelated
+  // projects can cross an account boundary. Keep the upstream/global sticky
+  // behaviour by default and let users opt into concrete-project isolation.
+  projectScopedProviderSelectionEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
   // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
@@ -645,6 +652,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),
+  projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
