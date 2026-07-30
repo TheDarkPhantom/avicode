@@ -17,6 +17,18 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Opening a chat at its last response is web/desktop only. Mobile's `ThreadFeed` has its own
+  scroll machinery (`initialScrollAtEnd` plus bespoke end-space suppression) and reads none of the
+  Avi Code settings, so the toggle silently does nothing there — the same boundary every other
+  fork setting sits behind.
+- Opening at the last response anchors the newest assistant message, not the start of the turn. A
+  turn whose final answer is split across several assistant messages (commentary, tool work, then
+  a short "Done") opens on that last fragment rather than the substantive one. Anchoring the whole
+  turn instead would need the reserved end space the send anchor uses, which leaves scrollable
+  blank space below a finished chat.
+- The initial position is resolved once, on the first render with rows, and frozen for the chat's
+  lifetime. A chat whose history streams in after the first non-empty batch (very long chats, slow
+  links) anchors on whatever the newest response was at that moment.
 - Queue-vs-steer for messages sent while a turn is running. Today the composer always steers: a
   send during a running turn is injected into that turn immediately (see the comment in
   `apps/web/src/components/ChatView.logic.ts`). There is no queue and no setting, and the
@@ -133,3 +145,6 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-31: `CHANGELOG.md` plus an in-app `/changelog` page reached from under Settings in the
   sidebar, recording each version's fork changes and upstream sync separately so a merge never
   hides who wrote what.
+- 2026-07-31: opt-in "Open chats at the last response", which starts a finished chat at the top of
+  its last answer instead of the live edge, with the jump-to-end pill shown from the moment it
+  opens.

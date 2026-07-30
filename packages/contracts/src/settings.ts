@@ -194,6 +194,14 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeCommunicationStyles: Schema.Array(AviCodeCommunicationStylePreset)
     .check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_CUSTOM))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Avi Code addition. Opening a chat lands at the live edge, so reading a
+  // finished answer from its first line means scrolling back up. With this on,
+  // opening a chat that is not working lands at the top of its last response
+  // instead. Off by default: it starts the viewport away from the newest text,
+  // which is the wrong trade when replies are short.
+  aviCodeOpenChatsAtLastResponse: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -856,6 +864,7 @@ export const ClientSettingsPatch = Schema.Struct({
       Schema.isMaxLength(COMMUNICATION_STYLE_MAX_CUSTOM),
     ),
   ),
+  aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(

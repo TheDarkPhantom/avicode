@@ -14,6 +14,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -89,6 +90,7 @@ import {
   type TimelineLatestTurn,
   type TimelinePinnedRowMetrics,
 } from "./MessagesTimeline.logic";
+import { useChatInitialScrollTarget } from "./openChatAtLastResponse";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -200,6 +202,9 @@ interface MessagesTimelineProps {
   liveFollowEnabled: boolean;
   onIsAtEndChange: (isAtEnd: boolean, isAbsoluteEnd: boolean) => void;
   onManualNavigation: () => void;
+  // Avi Code addition. Fires when this chat opened at the top of its last
+  // response instead of the live edge, so the owner can leave live follow off.
+  onOpenedAtLastResponse: () => void;
   hideEmptyPlaceholder?: boolean;
   topFadeEnabled?: boolean;
 }
@@ -239,6 +244,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   liveFollowEnabled,
   onIsAtEndChange,
   onManualNavigation,
+  onOpenedAtLastResponse,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
 }: MessagesTimelineProps) {
@@ -351,6 +357,20 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  // Avi Code addition. A chat that is not working opens at the top of its last
+  // response when the setting is on, so a finished answer reads from its first
+  // line. Reported to the owner in a layout effect — before the first paint,
+  // so live follow is already off and nothing pulls the list back to the end.
+  const initialScrollTarget = useChatInitialScrollTarget({
+    rows,
+    chatIsIdle: !isWorking && !activeTurnInProgress,
+    topFadeEnabled,
+  });
+  useLayoutEffect(() => {
+    if (initialScrollTarget !== null) {
+      onOpenedAtLastResponse();
+    }
+  }, [initialScrollTarget, onOpenedAtLastResponse]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -581,7 +601,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             getItemType={getItemType}
             renderItem={renderItem}
             estimatedItemSize={90}
-            initialScrollAtEnd
+            initialScrollAtEnd={initialScrollTarget === null}
+            {...(initialScrollTarget ? { initialScrollIndex: initialScrollTarget } : {})}
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
             maintainScrollAtEnd={
