@@ -168,6 +168,28 @@ describe("ClientSettings Avi Code chat content width", () => {
   });
 });
 
+describe("ClientSettings Avi Code notification sound", () => {
+  it("stays opt-in, and defaults to the new sound rather than the old chime", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.notificationSoundEnabled).toBe(false);
+    expect(settings.aviCodeNotificationSound).toBe("pebble");
+  });
+
+  it.each(["pebble", "marimba", "pluck", "glass", "chime"] as const)("accepts %s", (value) => {
+    expect(decodeClientSettings({ aviCodeNotificationSound: value }).aviCodeNotificationSound).toBe(
+      value,
+    );
+    expect(
+      decodeClientSettingsPatch({ aviCodeNotificationSound: value }).aviCodeNotificationSound,
+    ).toBe(value);
+  });
+
+  it("rejects a sound outside the union", () => {
+    expect(() => decodeClientSettings({ aviCodeNotificationSound: "airhorn" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ aviCodeNotificationSound: "airhorn" })).toThrow();
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
