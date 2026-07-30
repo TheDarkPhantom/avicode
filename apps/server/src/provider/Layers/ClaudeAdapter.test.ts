@@ -3915,7 +3915,78 @@ describe("ClaudeAdapterLive", () => {
       const deniedResult = permissionResult as PermissionResult & {
         message?: string;
       };
-      assert.equal(deniedResult.message?.includes("captured your proposed plan"), true);
+      assert.equal(deniedResult.message?.includes("has NOT approved it"), true);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("denies mutating tools during a plan turn even with full-access runtime mode", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "plan this",
+        interactionMode: "plan",
+        attachments: [],
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      const canUseTool = createInput?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const editResult = (yield* Effect.promise(() =>
+        canUseTool(
+          "Edit",
+          { file_path: "/tmp/file.ts", old_string: "a", new_string: "b" },
+          { signal: new AbortController().signal, toolUseID: "tool-edit-1" },
+        ),
+      )) as PermissionResult & { message?: string };
+      assert.equal(editResult.behavior, "deny");
+      assert.equal(editResult.message?.includes("Plan mode is active"), true);
+
+      // Complete the plan turn, then a default turn allows edits again.
+      const turnCompletedFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runHead, Effect.forkChild);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-plan-deny",
+        uuid: "result-plan-deny",
+      } as unknown as SDKMessage);
+      yield* Fiber.join(turnCompletedFiber);
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "now implement it",
+        interactionMode: "default",
+        attachments: [],
+      });
+
+      const editAfterPlanResult = (yield* Effect.promise(() =>
+        canUseTool(
+          "Edit",
+          { file_path: "/tmp/file.ts", old_string: "a", new_string: "b" },
+          { signal: new AbortController().signal, toolUseID: "tool-edit-2" },
+        ),
+      )) as PermissionResult;
+      assert.equal(editAfterPlanResult.behavior, "allow");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
