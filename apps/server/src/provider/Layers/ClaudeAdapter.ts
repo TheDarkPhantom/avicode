@@ -30,6 +30,7 @@ import {
   type ProviderApprovalDecision,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ProviderInteractionMode,
   type ModelSelection,
   ProviderItemId,
   type ProviderQuotaSnapshot,
@@ -99,6 +100,13 @@ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJ
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.UnknownFromJsonString);
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
+
+/**
+ * Tools `canUseTool` refuses while the active turn is a plan turn, regardless
+ * of runtime mode. Bash stays with the SDK's own "plan" permission mode, which
+ * still permits read-only investigation commands.
+ */
+const PLAN_MODE_DENIED_TOOLS: ReadonlySet<string> = new Set(["Edit", "Write", "NotebookEdit"]);
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
 type ClaudeToolResultStreamKind = Extract<
   RuntimeContentStreamKind,
@@ -190,6 +198,14 @@ interface ClaudeSessionContext {
   streamFiber: Fiber.Fiber<void, Error> | undefined;
   readonly startedAt: string;
   readonly basePermissionMode: PermissionMode | undefined;
+  /**
+   * The interaction mode of the most recent turn, mirroring the SDK permission
+   * mode set in `sendTurn`. `canUseTool` consults it to hard-deny mutating
+   * tools during plan turns: with runtime mode "full-access" the permission
+   * callback would otherwise allow everything, letting a model that ignores
+   * the ExitPlanMode stop instruction implement the plan inside the plan turn.
+   */
+  currentInteractionMode: ProviderInteractionMode | undefined;
   currentApiModelId: string | undefined;
   resumeSessionId: string | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
@@ -3743,7 +3759,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           return {
             behavior: "deny",
             message:
-              "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn.",
+              "The plan was shown to the user for review. The user has NOT approved it - do not implement any part of it. End your turn now; if the user approves, they will send a separate implementation request.",
+          } satisfies PermissionResult;
+        }
+
+        // Hard-deny mutating tools during plan turns. The SDK's "plan"
+        // permission mode is only advisory once this callback answers: with
+        // runtime mode "full-access" the branch below allows every tool, so a
+        // model that keeps going after the ExitPlanMode deny could implement
+        // the plan before the user ever sees the Implement button.
+        if (context.currentInteractionMode === "plan" && PLAN_MODE_DENIED_TOOLS.has(toolName)) {
+          return {
+            behavior: "deny",
+            message:
+              "Plan mode is active: file modifications are not allowed. Present your plan with ExitPlanMode and end your turn; the user decides whether to implement it.",
           } satisfies PermissionResult;
         }
 
@@ -4005,6 +4034,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         streamFiber: undefined,
         startedAt,
         basePermissionMode: permissionMode,
+        currentInteractionMode: undefined,
         currentApiModelId: apiModelId,
         resumeSessionId: sessionId,
         pendingApprovals,
@@ -4147,11 +4177,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         try: () => context.query.setPermissionMode("plan"),
         catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
       });
+      context.currentInteractionMode = "plan";
     } else if (input.interactionMode === "default") {
       yield* Effect.tryPromise({
         try: () => context.query.setPermissionMode(context.basePermissionMode ?? "default"),
         catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
       });
+      context.currentInteractionMode = "default";
     }
 
     const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
