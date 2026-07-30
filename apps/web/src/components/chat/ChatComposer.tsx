@@ -177,6 +177,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -3544,15 +3545,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <div className="relative shrink-0">
+                {/*
+                  The picker has to portal out: the footer row it sits in is a horizontal scroller
+                  (`overflow-x-auto`), which computes `overflow-y` to `auto` as well, so an absolutely
+                  positioned popup opening upwards was clipped away entirely and the button looked dead.
+                */}
+                <Popover
+                  open={threadContextPickerOpen}
+                  onOpenChange={(open) => {
+                    setThreadContextPickerOpen(open);
+                    if (!open) {
+                      setThreadContextSearch("");
+                    }
+                  }}
+                >
                   <Tooltip>
                     <TooltipTrigger
                       render={
-                        <ComposerControl
-                          type="button"
-                          aria-label="Reference threads"
-                          aria-expanded={threadContextPickerOpen}
-                          onClick={() => setThreadContextPickerOpen((open) => !open)}
+                        <PopoverTrigger
+                          render={
+                            <ComposerControl
+                              type="button"
+                              className="shrink-0"
+                              aria-label="Reference threads"
+                            />
+                          }
                         />
                       }
                     >
@@ -3561,63 +3578,66 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     </TooltipTrigger>
                     <TooltipPopup side="top">Reference another thread</TooltipPopup>
                   </Tooltip>
-                  {threadContextPickerOpen ? (
-                    <div className="absolute bottom-full left-0 z-50 mb-2 w-80 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
-                      <div className="flex items-center gap-2 border-b px-3">
-                        <SearchIcon className="size-4 text-muted-foreground" />
-                        <input
-                          autoFocus
-                          value={threadContextSearch}
-                          onChange={(event) => setThreadContextSearch(event.target.value)}
-                          placeholder="Search threads or projects"
-                          aria-label="Search threads"
-                          className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
-                        />
-                      </div>
-                      <div className="max-h-72 overflow-y-auto p-1">
-                        {filteredThreadContextCandidates.length === 0 ? (
-                          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                            No matching threads
-                          </p>
-                        ) : (
-                          filteredThreadContextCandidates.map((candidate) => (
-                            <button
-                              key={candidate.threadId}
-                              type="button"
-                              className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
-                              onClick={() => {
-                                if (composerThreadContextIds.length >= 5) {
-                                  toastManager.add({
-                                    type: "error",
-                                    title: "You can reference up to 5 threads.",
-                                  });
-                                  return;
-                                }
-                                setComposerDraftThreadContextIds(composerDraftTarget, [
-                                  ...composerThreadContextIds,
-                                  candidate.threadId,
-                                ]);
-                                setThreadContextPickerOpen(false);
-                                setThreadContextSearch("");
-                              }}
-                            >
-                              <Link2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-medium">
-                                  {candidate.title}
-                                </span>
-                                <span className="block truncate text-xs text-muted-foreground">
-                                  {candidate.projectTitle}
-                                  {candidate.archived ? " · Archived" : ""}
-                                </span>
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
+                  <PopoverPopup
+                    side="top"
+                    align="start"
+                    className="w-80 overflow-hidden [--popup-width:20rem] [--viewport-inline-padding:0px]"
+                    viewportClassName="p-0"
+                  >
+                    <div className="flex items-center gap-2 border-b px-3">
+                      <SearchIcon className="size-4 text-muted-foreground" />
+                      <input
+                        autoFocus
+                        value={threadContextSearch}
+                        onChange={(event) => setThreadContextSearch(event.target.value)}
+                        placeholder="Search threads or projects"
+                        aria-label="Search threads"
+                        className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
+                      />
                     </div>
-                  ) : null}
-                </div>
+                    <div className="max-h-72 overflow-y-auto p-1">
+                      {filteredThreadContextCandidates.length === 0 ? (
+                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          No matching threads
+                        </p>
+                      ) : (
+                        filteredThreadContextCandidates.map((candidate) => (
+                          <button
+                            key={candidate.threadId}
+                            type="button"
+                            className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                            onClick={() => {
+                              if (composerThreadContextIds.length >= 5) {
+                                toastManager.add({
+                                  type: "error",
+                                  title: "You can reference up to 5 threads.",
+                                });
+                                return;
+                              }
+                              setComposerDraftThreadContextIds(composerDraftTarget, [
+                                ...composerThreadContextIds,
+                                candidate.threadId,
+                              ]);
+                              setThreadContextPickerOpen(false);
+                              setThreadContextSearch("");
+                            }}
+                          >
+                            <Link2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium">
+                                {candidate.title}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {candidate.projectTitle}
+                                {candidate.archived ? " · Archived" : ""}
+                              </span>
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </PopoverPopup>
+                </Popover>
                 {noProviderAvailable ? (
                   <Button
                     type="button"
