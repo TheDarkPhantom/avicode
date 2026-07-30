@@ -8,7 +8,11 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 
-import { canonicalizeClientCommandTimestamps, formatDocumentContext } from "./Normalizer.ts";
+import {
+  attachmentOwnerThreadId,
+  canonicalizeClientCommandTimestamps,
+  formatDocumentContext,
+} from "./Normalizer.ts";
 
 const clientCreatedAt = "2031-01-01T00:00:00.000Z";
 const serverReceivedAt = "2026-07-18T00:00:00.000Z";
@@ -83,5 +87,32 @@ describe("formatDocumentContext", () => {
     ).toBe(
       '<avicode_document name="brief &quot;final&quot;.md" mime="text/markdown">\n# Delivery plan\n</avicode_document>',
     );
+  });
+});
+
+describe("attachmentOwnerThreadId", () => {
+  it("persists fork uploads under the destination thread", () => {
+    const command: ClientOrchestrationCommand = {
+      type: "thread.fork",
+      commandId: CommandId.make("command-fork"),
+      threadId: ThreadId.make("source-thread"),
+      forkThreadId: ThreadId.make("fork-thread"),
+      forkPointMessageId: MessageId.make("source-message"),
+      message: {
+        messageId: MessageId.make("fork-message"),
+        role: "user",
+        text: "Edited message",
+        attachments: [],
+      },
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: clientCreatedAt,
+    };
+
+    expect(attachmentOwnerThreadId(command)).toBe(ThreadId.make("fork-thread"));
   });
 });
