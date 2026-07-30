@@ -57,6 +57,13 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
    * instances are never flagged — the user just made them).
    */
   newBadgeInstanceIds?: ReadonlySet<ProviderInstanceId>;
+  /**
+   * Avi Code addition: per-instance one/two character badge labels from
+   * `aviCodeProviderBadgeLabels`. Upstream derived the badge from the
+   * instance display name, so a configured badge only showed up on chat
+   * rows and the rail kept the auto initials.
+   */
+  badgeLabels?: Readonly<Record<string, string>>;
 }) {
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
@@ -143,8 +150,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isSelected = props.selectedInstanceId === entry.instanceId;
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showNewBadge = props.newBadgeInstanceIds?.has(entry.instanceId) ?? false;
+            const configuredBadge = props.badgeLabels?.[entry.instanceId]?.trim().toUpperCase();
             const showInstanceBadge =
-              Boolean(entry.accentColor) || (duplicateDriverCounts.get(entry.driverKind) ?? 0) > 1;
+              Boolean(entry.accentColor) ||
+              Boolean(configuredBadge) ||
+              (duplicateDriverCounts.get(entry.driverKind) ?? 0) > 1;
 
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry)
@@ -182,7 +192,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               >
                 <ProviderInstanceIcon
                   driverKind={entry.driverKind}
-                  displayName={entry.displayName}
+                  displayName={configuredBadge || entry.displayName}
                   accentColor={entry.accentColor}
                   showBadge={showInstanceBadge}
                   className="size-6"
