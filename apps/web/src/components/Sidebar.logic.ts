@@ -12,6 +12,7 @@ import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
+import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
@@ -332,23 +333,32 @@ export function buildFlatSidebarThreadList<
   limit: number;
   activeThreadKey: string | null;
   getThreadKey: (thread: TThread) => string;
+  /** Avi Code addition: pinned rows head the list and are exempt from the cap. */
+  pinnedThreadKeys?: readonly string[];
 }): {
   renderedThreads: TThread[];
   hiddenThreads: TThread[];
   hasOverflowingThreads: boolean;
 } {
-  const { activeThreadKey, getThreadKey, limit, sortOrder, threads } = input;
-  const sorted = sortThreads(
-    threads.filter((thread) => thread.archivedAt === null),
-    sortOrder,
-  );
-  const hasOverflowingThreads = sorted.length > limit;
+  const { activeThreadKey, getThreadKey, limit, pinnedThreadKeys, sortOrder, threads } = input;
+  const { ordered: sorted, pinnedCount } = orderPinnedFirst({
+    items: sortThreads(
+      threads.filter((thread) => thread.archivedAt === null),
+      sortOrder,
+    ),
+    pinnedKeys: pinnedThreadKeys ?? [],
+    getItemKeys: (thread) => [getThreadKey(thread)],
+  });
+  // Pins sort first, so raising the cap to cover them keeps every pinned row
+  // rendered without disturbing the "show more" behaviour for the rest.
+  const effectiveLimit = Math.max(limit, pinnedCount);
+  const hasOverflowingThreads = sorted.length > effectiveLimit;
   if (!hasOverflowingThreads) {
     return { renderedThreads: sorted, hiddenThreads: [], hasOverflowingThreads: false };
   }
 
-  const visible = sorted.slice(0, limit);
-  const hidden = sorted.slice(limit);
+  const visible = sorted.slice(0, effectiveLimit);
+  const hidden = sorted.slice(effectiveLimit);
   const activeIndex =
     activeThreadKey === null
       ? -1

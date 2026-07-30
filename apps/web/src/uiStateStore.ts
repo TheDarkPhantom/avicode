@@ -20,6 +20,11 @@ const LEGACY_PERSISTED_STATE_KEYS = [
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
+  // Avi Code addition: pinned rows. Array order is pin order, which is also the
+  // display order, so pinned rows hold a stable position instead of reshuffling
+  // on activity the way the upstream activity sort does.
+  pinnedProjectKeys?: string[];
+  pinnedThreadKeys?: string[];
   threadLastVisitedAtById?: Record<string, string>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
@@ -32,11 +37,15 @@ export interface PersistedUiState {
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
+  // Avi Code addition: physical project keys, pinned-first in this order.
+  pinnedProjectKeys: string[];
 }
 
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
+  // Avi Code addition: scoped thread keys, pinned-first in this order.
+  pinnedThreadKeys: string[];
 }
 
 export interface UiEndpointState {
@@ -48,6 +57,8 @@ export interface UiState extends UiProjectState, UiThreadState, UiEndpointState 
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
+  pinnedProjectKeys: [],
+  pinnedThreadKeys: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -125,6 +136,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
   return {
     projectExpandedById,
     projectOrder,
+    pinnedProjectKeys: sanitizeStringArray(parsed.pinnedProjectKeys),
+    pinnedThreadKeys: sanitizeStringArray(parsed.pinnedThreadKeys),
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
     threadChangedFilesExpandedById:
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
@@ -203,6 +216,8 @@ export function persistState(state: UiState): void {
       JSON.stringify({
         projectExpandedById,
         projectOrder: state.projectOrder,
+        pinnedProjectKeys: state.pinnedProjectKeys,
+        pinnedThreadKeys: state.pinnedThreadKeys,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
@@ -337,6 +352,50 @@ export function setProjectExpanded(
   };
 }
 
+/**
+ * Avi Code addition: the shared pin/unpin transform.
+ *
+ * Pinning appends, so the array doubles as the display order and an existing
+ * pin never moves when a new one joins. Returns null when nothing changed, so
+ * callers can hand back the same state reference and skip a re-render.
+ */
+function applyPinnedKeys(
+  pinnedKeys: readonly string[],
+  keys: string | readonly string[],
+  pinned: boolean,
+): string[] | null {
+  const requested = (typeof keys === "string" ? [keys] : keys).filter((key) => key.length > 0);
+  if (requested.length === 0) {
+    return null;
+  }
+  if (pinned) {
+    const current = new Set(pinnedKeys);
+    const added = [...new Set(requested.filter((key) => !current.has(key)))];
+    return added.length === 0 ? null : [...pinnedKeys, ...added];
+  }
+  const removed = new Set(requested);
+  const next = pinnedKeys.filter((key) => !removed.has(key));
+  return next.length === pinnedKeys.length ? null : next;
+}
+
+export function setProjectPinned(
+  state: UiState,
+  projectKeys: string | readonly string[],
+  pinned: boolean,
+): UiState {
+  const pinnedProjectKeys = applyPinnedKeys(state.pinnedProjectKeys, projectKeys, pinned);
+  return pinnedProjectKeys === null ? state : { ...state, pinnedProjectKeys };
+}
+
+export function setThreadPinned(
+  state: UiState,
+  threadKeys: string | readonly string[],
+  pinned: boolean,
+): UiState {
+  const pinnedThreadKeys = applyPinnedKeys(state.pinnedThreadKeys, threadKeys, pinned);
+  return pinnedThreadKeys === null ? state : { ...state, pinnedThreadKeys };
+}
+
 export function reorderProjects(
   state: UiState,
   currentProjectOrder: readonly string[],
@@ -387,6 +446,9 @@ interface UiStateStore extends UiState {
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
+  // Avi Code addition.
+  setProjectPinned: (projectKeys: string | readonly string[], pinned: boolean) => void;
+  setThreadPinned: (threadKeys: string | readonly string[], pinned: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
     draggedProjectIds: readonly string[],
@@ -406,6 +468,10 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
+  setProjectPinned: (projectKeys, pinned) =>
+    set((state) => setProjectPinned(state, projectKeys, pinned)),
+  setThreadPinned: (threadKeys, pinned) =>
+    set((state) => setThreadPinned(state, threadKeys, pinned)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),

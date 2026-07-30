@@ -1530,7 +1530,11 @@ describe("buildFlatSidebarThreadList", () => {
   });
   const build = (
     threads: ReturnType<typeof thread>[],
-    overrides: { limit?: number; activeThreadKey?: string | null } = {},
+    overrides: {
+      limit?: number;
+      activeThreadKey?: string | null;
+      pinnedThreadKeys?: readonly string[];
+    } = {},
   ) =>
     buildFlatSidebarThreadList({
       threads,
@@ -1538,6 +1542,7 @@ describe("buildFlatSidebarThreadList", () => {
       limit: overrides.limit ?? 10,
       activeThreadKey: overrides.activeThreadKey ?? null,
       getThreadKey: (entry) => entry.id,
+      ...(overrides.pinnedThreadKeys ? { pinnedThreadKeys: overrides.pinnedThreadKeys } : {}),
     });
 
   it("interleaves threads from different projects by activity", () => {
@@ -1563,6 +1568,63 @@ describe("buildFlatSidebarThreadList", () => {
       "alpha-old",
     ]);
     expect(result.hasOverflowingThreads).toBe(false);
+  });
+
+  // Avi Code addition: pinned rows.
+  it("puts pinned threads first regardless of activity", () => {
+    const result = build(
+      [
+        thread({ id: "newest", project: "a", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+        thread({ id: "oldest", project: "b", latestUserMessageAt: "2026-03-09T08:00:00.000Z" }),
+        thread({ id: "middle", project: "c", latestUserMessageAt: "2026-03-09T10:00:00.000Z" }),
+      ],
+      { pinnedThreadKeys: ["oldest"] },
+    );
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["oldest", "newest", "middle"]);
+  });
+
+  it("keeps pinned threads visible past the cap", () => {
+    const result = build(
+      [
+        thread({ id: "first", project: "a", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+        thread({ id: "second", project: "b", latestUserMessageAt: "2026-03-09T11:00:00.000Z" }),
+        thread({ id: "third", project: "c", latestUserMessageAt: "2026-03-09T10:00:00.000Z" }),
+        thread({ id: "fourth", project: "d", latestUserMessageAt: "2026-03-09T09:00:00.000Z" }),
+      ],
+      // Two pins with a cap of one: the cap stretches to cover both.
+      { limit: 1, pinnedThreadKeys: ["third", "fourth"] },
+    );
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["third", "fourth"]);
+    expect(result.hiddenThreads.map((entry) => entry.id)).toEqual(["first", "second"]);
+    expect(result.hasOverflowingThreads).toBe(true);
+  });
+
+  it("still surfaces an unpinned active thread from beyond the cap", () => {
+    const result = build(
+      [
+        thread({ id: "pinned", project: "a", latestUserMessageAt: "2026-03-09T08:00:00.000Z" }),
+        thread({ id: "loud", project: "b", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+        thread({ id: "active", project: "c", latestUserMessageAt: "2026-03-09T09:00:00.000Z" }),
+      ],
+      { limit: 2, activeThreadKey: "active", pinnedThreadKeys: ["pinned"] },
+    );
+
+    expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["pinned", "loud", "active"]);
+    expect(result.hiddenThreads).toEqual([]);
+  });
+
+  it("behaves exactly as before when no pins are supplied", () => {
+    const threads = [
+      thread({ id: "newest", project: "a", latestUserMessageAt: "2026-03-09T12:00:00.000Z" }),
+      thread({ id: "oldest", project: "b", latestUserMessageAt: "2026-03-09T08:00:00.000Z" }),
+    ];
+
+    expect(build(threads).renderedThreads.map((entry) => entry.id)).toEqual(["newest", "oldest"]);
+    expect(
+      build(threads, { pinnedThreadKeys: [] }).renderedThreads.map((entry) => entry.id),
+    ).toEqual(["newest", "oldest"]);
   });
 
   it("drops archived threads", () => {

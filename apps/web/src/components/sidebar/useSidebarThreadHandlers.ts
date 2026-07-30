@@ -51,6 +51,8 @@ export function useSidebarThreadHandlers() {
     reportFailure: false,
   });
   const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
+  // Avi Code addition: pinned threads.
+  const setThreadPinned = useUiStateStore((state) => state.setThreadPinned);
   const toggleThreadSelection = useThreadSelectionStore((state) => state.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((state) => state.rangeSelectTo);
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -194,9 +196,13 @@ export function useSidebarThreadHandlers() {
             description: error instanceof Error ? error.message : "An error occurred.",
           }),
         );
+        return;
       }
+      // Avi Code addition: an archived thread leaves the list, so its pin goes
+      // with it. Unarchiving deliberately does not restore the pin.
+      setThreadPinned(scopedThreadKey(threadRef), false);
     },
-    [archiveThread],
+    [archiveThread, setThreadPinned],
   );
 
   const handleUnarchiveThread = useCallback(
@@ -326,6 +332,9 @@ export function useSidebarThreadHandlers() {
             }),
           );
         }
+        // Avi Code addition: unpin whatever actually archived, including the
+        // partial set when a later thread in the batch failed.
+        setThreadPinned(archiveOutcome.archivedThreadKeys, false);
         if (archiveOutcome.mutationFailure) {
           removeFromSelection(archiveOutcome.archivedThreadKeys);
           if (!isAtomCommandInterrupted(archiveOutcome.mutationFailure)) {
@@ -357,7 +366,7 @@ export function useSidebarThreadHandlers() {
       }
 
       const deletedThreadKeys = new Set(threadKeys);
-      for (const { threadRef } of selectedThreadEntries) {
+      for (const { threadKey, threadRef } of selectedThreadEntries) {
         const result = await deleteThread(threadRef, {
           deletedThreadKeys,
         });
@@ -374,6 +383,9 @@ export function useSidebarThreadHandlers() {
           }
           return;
         }
+        // Avi Code addition: unpin as each delete lands, so an aborted batch
+        // leaves no pins pointing at threads that are already gone.
+        setThreadPinned(threadKey, false);
       }
       removeFromSelection(threadKeys);
     },
@@ -385,6 +397,7 @@ export function useSidebarThreadHandlers() {
       deleteThread,
       markThreadUnread,
       removeFromSelection,
+      setThreadPinned,
     ],
   );
 
@@ -400,11 +413,15 @@ export function useSidebarThreadHandlers() {
       // enclosing project at all.
       const threadProject = readProject(scopeProjectRef(thread.environmentId, thread.projectId));
       const threadWorkspacePath = thread.worktreePath ?? threadProject?.workspaceRoot ?? null;
+      // Avi Code addition: read at menu-open time so the label matches the
+      // current state without making the whole menu depend on the pin list.
+      const isThreadPinned = useUiStateStore.getState().pinnedThreadKeys.includes(threadKey);
       const clicked = await api.contextMenu.show(
         [
           ...(thread.branch
             ? [{ id: "new-thread-on-branch", label: `New thread on ${thread.branch}` }]
             : []),
+          { id: "toggle-pin", label: isThreadPinned ? "Unpin thread" : "Pin thread" },
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
@@ -435,6 +452,11 @@ export function useSidebarThreadHandlers() {
             }),
           );
         }
+        return;
+      }
+
+      if (clicked === "toggle-pin") {
+        setThreadPinned(threadKey, !isThreadPinned);
         return;
       }
 
@@ -487,7 +509,10 @@ export function useSidebarThreadHandlers() {
             description: error instanceof Error ? error.message : "An error occurred.",
           }),
         );
+        return;
       }
+      // Avi Code addition: drop the pin along with the thread.
+      setThreadPinned(threadKey, false);
     },
     [
       appSettingsConfirmThreadDelete,
@@ -496,6 +521,7 @@ export function useSidebarThreadHandlers() {
       deleteThread,
       handleNewThread,
       markThreadUnread,
+      setThreadPinned,
       startThreadRename,
     ],
   );
