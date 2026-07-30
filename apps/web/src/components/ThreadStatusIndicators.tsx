@@ -6,6 +6,7 @@ import {
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
+import { useClientSettings } from "../hooks/useSettings";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
@@ -144,8 +145,11 @@ export function ThreadWorktreeIndicator({
 }: {
   thread: Pick<SidebarThreadSummary, "id" | "branch" | "worktreePath">;
 }) {
+  // Avi Code addition: the icon can be hidden globally from the Avi Code
+  // settings page; upstream always renders it for worktree threads.
+  const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
   const worktreePath = thread.worktreePath?.trim();
-  if (!worktreePath) {
+  if (!showWorktreeIcon || !worktreePath) {
     return null;
   }
 

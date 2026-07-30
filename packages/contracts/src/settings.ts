@@ -122,6 +122,18 @@ export const ClientSettingsSchema = Schema.Struct({
     ProviderInstanceId,
     Schema.String.check(Schema.isMaxLength(2)),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Seeds brand-new chats with plan interaction mode so
+  // agents research and propose before touching files. Existing threads and
+  // restored drafts keep whatever mode they already carry.
+  aviCodeNewThreadsStartInPlanMode: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  // Avi Code addition. Hides the per-thread worktree icon in the sidebar for
+  // users who find the extra glyph noisy; the thread tooltip still names the
+  // worktree and branch.
+  aviCodeSidebarShowWorktreeIcon: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code addition. How wide the chat column is allowed to grow.
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
@@ -717,6 +729,8 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),
+  aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
