@@ -16,6 +16,7 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
+  ProviderSideQuestionChunk,
   ThreadId,
   ProviderTurnStartResult,
   TurnId,
@@ -25,11 +26,26 @@ import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
+/**
+ * Avi Code addition: whether `/btw` can be answered on this backend.
+ *
+ * "fork-session" means the backend can branch the live conversation, answer
+ * once against that branch, and discard it. Anything else is "unsupported" —
+ * answering a side question without the thread's context would look like the
+ * feature working while quietly being useless, so the command is hidden
+ * instead of degraded.
+ */
+export type ProviderSideQuestionMode = "fork-session" | "unsupported";
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /**
+   * Avi Code addition. Declares whether `/btw` side questions are answerable.
+   */
+  readonly sideQuestion: ProviderSideQuestionMode;
 }
 
 export interface ProviderThreadTurnSnapshot {
@@ -78,6 +94,22 @@ export interface ProviderAdapterShape<TError> {
    * Interrupt an active turn.
    */
   readonly interruptTurn: (threadId: ThreadId, turnId?: TurnId) => Effect.Effect<void, TError>;
+
+  /**
+   * Avi Code addition: answer a `/btw` side question about this thread.
+   *
+   * Streams the answer and leaves nothing behind — no turn, no runtime events,
+   * no change to the resume cursor. It runs against a throwaway branch of the
+   * conversation, so it can be asked while a turn is mid-flight without
+   * touching it.
+   *
+   * Adapters whose `capabilities.sideQuestion` is "unsupported" must fail
+   * rather than answer without the thread's context.
+   */
+  readonly askSideQuestion: (
+    threadId: ThreadId,
+    question: string,
+  ) => Stream.Stream<ProviderSideQuestionChunk, TError>;
 
   /**
    * Respond to an interactive approval request.

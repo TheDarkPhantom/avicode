@@ -90,6 +90,40 @@ export const ProviderInterruptTurnInput = Schema.Struct({
 });
 export type ProviderInterruptTurnInput = typeof ProviderInterruptTurnInput.Type;
 
+/**
+ * Avi Code addition: `/btw`, a side question about the thread.
+ *
+ * Deliberately not a turn. It forks the provider's conversation, asks once
+ * with tools denied, and throws the fork away — nothing reaches the event log,
+ * the transcript, or the thread's history. That is the whole point: asking
+ * "what does this file do again?" mid-task should not become a turn the agent
+ * has to carry, or a message you have to scroll past later.
+ */
+export const PROVIDER_SIDE_QUESTION_MAX_INPUT_CHARS = 4_000;
+
+export const ProviderSideQuestionInput = Schema.Struct({
+  threadId: ThreadId,
+  question: TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SIDE_QUESTION_MAX_INPUT_CHARS)),
+});
+export type ProviderSideQuestionInput = typeof ProviderSideQuestionInput.Type;
+
+/** One streamed chunk of the answer. */
+export const ProviderSideQuestionChunk = Schema.Struct({
+  textDelta: Schema.String,
+});
+export type ProviderSideQuestionChunk = typeof ProviderSideQuestionChunk.Type;
+
+export class ProviderSideQuestionError extends Schema.TaggedErrorClass<ProviderSideQuestionError>()(
+  "ProviderSideQuestionError",
+  {
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
 export const ProviderStopSessionInput = Schema.Struct({
   threadId: ThreadId,
 });

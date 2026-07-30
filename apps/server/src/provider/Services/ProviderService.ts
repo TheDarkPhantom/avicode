@@ -13,6 +13,8 @@
  */
 import type {
   ProviderInterruptTurnInput,
+  ProviderSideQuestionChunk,
+  ProviderSideQuestionInput,
   ProviderInstanceId,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
@@ -57,6 +59,16 @@ export interface ProviderServiceShape {
   readonly interruptTurn: (
     input: ProviderInterruptTurnInput,
   ) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
+   * Avi Code addition: answer a `/btw` side question about a thread.
+   *
+   * Ephemeral by construction — it never reaches the decider, the projector,
+   * or the event log, so it leaves no trace in the thread's history.
+   */
+  readonly askSideQuestion: (
+    input: ProviderSideQuestionInput,
+  ) => Stream.Stream<ProviderSideQuestionChunk, ProviderServiceError>;
 
   /**
    * Respond to a provider approval request.

@@ -64,6 +64,11 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ProviderSideQuestionChunk,
+  ProviderSideQuestionError,
+  ProviderSideQuestionInput,
+} from "./provider.ts";
+import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
   RelayClientStatusSchema,
@@ -226,6 +231,7 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetProviderUsage: "server.getProviderUsage",
+  providerAskSideQuestion: "provider.askSideQuestion",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -332,6 +338,21 @@ export const WsServerUpdateServerWithProgressRpc = Rpc.make(
  * always-visible meter needs no RPC — it rides `ServerProvider.quota` on the
  * existing config push stream.
  */
+/**
+ * Avi Code addition: `/btw`, a side question about a thread.
+ *
+ * Streaming so the answer appears as it is written rather than after a long
+ * pause. Deliberately not an orchestration command: it must not reach the
+ * decider or the event log, because the whole point is that asking leaves no
+ * trace in the thread.
+ */
+export const WsProviderAskSideQuestionRpc = Rpc.make(WS_METHODS.providerAskSideQuestion, {
+  payload: ProviderSideQuestionInput,
+  success: ProviderSideQuestionChunk,
+  error: Schema.Union([ProviderSideQuestionError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export const WsServerGetProviderUsageRpc = Rpc.make(WS_METHODS.serverGetProviderUsage, {
   payload: ServerProviderUsageInput,
   success: ServerProviderUsageResult,
@@ -802,6 +823,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerGetProviderUsageRpc,
+  WsProviderAskSideQuestionRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

@@ -15,6 +15,7 @@ import {
   NonNegativeInt,
   ThreadId,
   ProviderInterruptTurnInput,
+  ProviderSideQuestionInput,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   ProviderSendTurnInput,
@@ -990,6 +991,33 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  /**
+   * Avi Code addition: `/btw`.
+   *
+   * Routed like `interruptTurn` — it acts on whatever session already owns the
+   * thread — but it deliberately stops there. Nothing is dispatched, no receipt
+   * is published, and no runtime event is emitted, so the answer never reaches
+   * the event log or the read model.
+   */
+  const askSideQuestion: ProviderService.ProviderService["Service"]["askSideQuestion"] = (
+    rawInput,
+  ) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const input = yield* decodeInputOrValidationError({
+          operation: "ProviderService.askSideQuestion",
+          schema: ProviderSideQuestionInput,
+          payload: rawInput,
+        });
+        const routed = yield* resolveRoutableSession({
+          threadId: input.threadId,
+          operation: "ProviderService.askSideQuestion",
+          allowRecovery: true,
+        });
+        return routed.adapter.askSideQuestion(routed.threadId, input.question);
+      }),
+    );
+
   const getCapabilities: ProviderServiceMethod<"getCapabilities"> = (instanceId) =>
     registry.getByInstance(instanceId).pipe(Effect.map((adapter) => adapter.capabilities));
 
@@ -1105,6 +1133,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     respondToUserInput,
     stopSession,
     listSessions,
+    askSideQuestion,
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,

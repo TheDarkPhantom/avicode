@@ -78,6 +78,7 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderService from "./provider/Services/ProviderService.ts";
 import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
 import { rollUpProviderUsage } from "./provider/providerUsageRollup.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
@@ -85,7 +86,7 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import { VoiceTokenRequestError } from "@t3tools/contracts";
+import { ProviderSideQuestionError, VoiceTokenRequestError } from "@t3tools/contracts";
 import { createVoiceToken } from "./voice/VoiceTokenService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -354,6 +355,7 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const providerService = yield* ProviderService.ProviderService;
       const providerInstanceUsage = yield* ProviderInstanceUsageRepository;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -1447,6 +1449,24 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        // Avi Code addition: `/btw`. Straight to the provider — no dispatch, no
+        // decider, no event log, so asking leaves no trace in the thread.
+        [WS_METHODS.providerAskSideQuestion]: (input) =>
+          observeRpcStream(
+            WS_METHODS.providerAskSideQuestion,
+            providerService.askSideQuestion(input).pipe(
+              Stream.mapError(
+                (cause) =>
+                  new ProviderSideQuestionError({
+                    detail:
+                      cause instanceof Error && cause.message.length > 0
+                        ? cause.message
+                        : "Could not answer the side question.",
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "provider" },
           ),
         [WS_METHODS.voiceCreateToken]: (_input) =>
           observeRpcEffect(

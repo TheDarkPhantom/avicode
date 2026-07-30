@@ -178,6 +178,11 @@ function makeHarness(config?: {
   readonly instanceId?: ProviderInstanceId;
 }) {
   const query = new FakeClaudeQuery();
+  // Avi Code addition: `/btw` opens a *second* query alongside the session's.
+  // Handing both the same fake would let the session's stream fiber swallow the
+  // side answer, so calls after the first get their own.
+  const extraQueries: Array<FakeClaudeQuery> = [];
+  let createCount = 0;
   let createInput:
     | {
         readonly prompt: AsyncIterable<SDKUserMessage>;
@@ -189,7 +194,11 @@ function makeHarness(config?: {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
     createQuery: (input) => {
       createInput = input;
-      return query;
+      createCount += 1;
+      if (createCount === 1) return query;
+      const extra = new FakeClaudeQuery();
+      extraQueries.push(extra);
+      return extra;
     },
     ...(config?.nativeEventLogger
       ? {
@@ -221,6 +230,7 @@ function makeHarness(config?: {
       Layer.provideMerge(NodeServices.layer),
     ),
     query,
+    extraQueries,
     getLastCreateQueryInput: () => createInput,
   };
 }
@@ -1054,6 +1064,95 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(String(turnStartedEvents[0]?.turnId), String(turn.turnId));
       assert.equal(turnCompletedEvents.length, 1);
       assert.equal(String(turnCompletedEvents[0]?.turnId), String(turn.turnId));
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // Avi Code addition: `/btw`. The whole feature is "asking leaves no trace",
+  // so the invariant worth pinning is the absence of one — no turn, no runtime
+  // events, no extra turn on the thread.
+  it.effect("answers a side question without opening a turn or touching the thread", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      // Establish a resume cursor: the fork branches from the live session.
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: "sdk-session-btw",
+        uuid: "init-btw",
+      } as unknown as SDKMessage);
+
+      // Let the session's stream fiber pick up the init before branching from
+      // it — the fork resumes whatever session id that established.
+      yield* Effect.yieldNow;
+      const beforeThread = yield* adapter.readThread(session.threadId);
+
+      const answerFiber = yield* Stream.runCollect(
+        adapter.askSideQuestion(session.threadId, "what does that do?"),
+      ).pipe(Effect.forkChild);
+
+      // The side question runs on its own query, so its messages cannot be
+      // consumed by the session's stream fiber.
+      yield* Effect.yieldNow;
+      const sideQuery = harness.extraQueries[0];
+      assert.isDefined(sideQuery, "askSideQuestion should open its own query");
+      sideQuery.emit({
+        type: "assistant",
+        session_id: "sdk-session-btw-fork",
+        uuid: "assistant-btw-1",
+        parent_tool_use_id: null,
+        message: {
+          id: "assistant-message-btw-1",
+          content: [{ type: "text", text: "It parses the resume cursor." }],
+        },
+      } as unknown as SDKMessage);
+      sideQuery.finish();
+
+      const chunks = Array.from(yield* Fiber.join(answerFiber));
+      assert.deepEqual(
+        chunks.map((chunk) => chunk.textDelta),
+        ["It parses the resume cursor."],
+      );
+
+      const sideQueryOptions = harness.getLastCreateQueryInput()?.options as
+        | (ClaudeQueryOptions & {
+            readonly forkSession?: boolean;
+            readonly maxTurns?: number;
+            readonly resume?: string;
+          })
+        | undefined;
+
+      // Forked, not continued: without this the answer would be appended to
+      // the thread's own transcript.
+      assert.equal(sideQueryOptions?.forkSession, true);
+      assert.equal(sideQueryOptions?.resume, "sdk-session-btw");
+      assert.equal(sideQueryOptions?.maxTurns, 1);
+
+      // Told it has no tools, and held to it.
+      const decision = yield* Effect.promise(() =>
+        Promise.resolve(
+          (
+            sideQueryOptions?.canUseTool as unknown as (
+              ...args: ReadonlyArray<unknown>
+            ) => Promise<{ behavior: string }>
+          )("Read", {}, {}),
+        ),
+      );
+      assert.equal(decision.behavior, "deny");
+
+      // No turn was opened, and the thread gained nothing.
+      const afterThread = yield* adapter.readThread(session.threadId);
+      assert.equal(afterThread.turns.length, beforeThread.turns.length);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

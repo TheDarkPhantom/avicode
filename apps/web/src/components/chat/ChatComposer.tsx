@@ -22,6 +22,9 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { driverSupportsSideQuestion } from "@t3tools/shared/sideQuestionSupport";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { ComposerSideQuestionPanel } from "./ComposerSideQuestionPanel";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   memo,
@@ -945,6 +948,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // disabled.
   const selectedProvider: ProviderDriverKind =
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
+  // Avi Code addition: gates the `/btw` entry in the command menu.
+  const sideQuestionSupported = driverSupportsSideQuestion(selectedProvider);
+  // The answer panel is keyed per thread. Drafts have no thread to branch from,
+  // so there is nothing to ask about until the first message lands.
+  const sideQuestionThreadKey = useMemo(
+    () => (typeof composerDraftTarget === "string" ? null : scopedThreadKey(composerDraftTarget)),
+    [composerDraftTarget],
+  );
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
@@ -1253,6 +1264,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/default",
           description: "Switch this thread back to normal build mode",
         },
+        // Avi Code addition. Hidden when the provider cannot branch its
+        // conversation — answering without the thread's context would look
+        // like the command working while being useless.
+        ...(sideQuestionSupported
+          ? [
+              {
+                id: "slash:btw",
+                type: "slash-command" as const,
+                command: "btw" as const,
+                label: "/btw",
+                description: "Ask a side question — the answer stays out of this chat",
+              },
+            ]
+          : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
         (command) => ({
@@ -1948,6 +1973,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
+        // Avi Code addition: `/btw` takes an argument, so selecting it leaves
+        // the command in the composer for the question to be typed after —
+        // like a provider command, and unlike the mode switches below, which
+        // act immediately and clear themselves.
+        if (item.command === "btw") {
+          const replacement = "/btw ";
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) {
+            setComposerHighlightedItemId(null);
+          }
+          return;
+        }
         void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -2515,6 +2562,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           modelPickerOpen: isComposerModelPickerOpen,
         },
       });
+      // Avi Code addition: prefill `/btw ` and focus, so a side question is one
+      // keystroke away. It does not send — the question still goes through the
+      // normal submit path, which is where `/btw` is intercepted.
+      if (command === "composer.sideQuestion") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!sideQuestionSupported || isComposerApprovalState || projectSelectionRequired) {
+          return;
+        }
+        const existing = promptRef.current;
+        if (!existing.trimStart().startsWith("/btw")) {
+          const nextPrompt = existing.length > 0 ? `/btw ${existing}` : "/btw ";
+          promptRef.current = nextPrompt;
+          setPrompt(nextPrompt);
+        }
+        scheduleComposerFocus();
+        return;
+      }
       if (command !== "composer.stash") return;
       // Always claim the shortcut so the browser save dialog never opens,
       // even when the composer is in a state that can't stash.
@@ -3163,6 +3228,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               menuOpen={isStashMenuOpen}
               onToggleMenu={toggleStashMenu}
             />
+
+            {/* Avi Code addition: the `/btw` answer. Yields to the command and
+                stash menus, which are transient and need the same space. */}
+            {sideQuestionThreadKey !== null && !composerMenuOpen && !isStashMenuOpen && (
+              <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
+                <ComposerSideQuestionPanel
+                  threadKey={sideQuestionThreadKey}
+                  markdownCwd={gitCwd ?? undefined}
+                />
+              </ComposerCommandMenuLayer>
+            )}
 
             {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (
               <ComposerCommandMenuLayer anchor={composerMenuAnchor}>

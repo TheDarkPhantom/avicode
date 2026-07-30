@@ -87,6 +87,7 @@ import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderService from "./provider/Services/ProviderService.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -568,18 +569,27 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(ProviderRegistry.ProviderRegistry)({
-          getProviders: Effect.succeed([]),
-          refresh: () => Effect.succeed([]),
-          refreshInstance: () => Effect.succeed([]),
-          getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
-            Effect.succeed(
-              makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null }),
-            ),
-          setProviderMaintenanceActionState: () => Effect.succeed([]),
-          streamChanges: Stream.empty,
-          ...options?.layers?.providerRegistry,
-        }),
+        Layer.mergeAll(
+          Layer.mock(ProviderRegistry.ProviderRegistry)({
+            getProviders: Effect.succeed([]),
+            refresh: () => Effect.succeed([]),
+            refreshInstance: () => Effect.succeed([]),
+            getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
+              Effect.succeed(
+                makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null }),
+              ),
+            setProviderMaintenanceActionState: () => Effect.succeed([]),
+            streamChanges: Stream.empty,
+            ...options?.layers?.providerRegistry,
+          }),
+          // Avi Code addition: the `/btw` RPC handler resolves ProviderService,
+          // so the router now depends on it. Merged in here rather than as
+          // another `Layer.provide` — this pipe is already at `pipe`'s 20-arg
+          // overload ceiling.
+          Layer.mock(ProviderService.ProviderService)({
+            askSideQuestion: () => Stream.empty,
+          }),
+        ),
       ),
       Layer.provide(
         Layer.mock(ServerSettings.ServerSettingsService)({

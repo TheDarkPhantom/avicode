@@ -47,6 +47,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+0", command: "preview.resetZoom", when: "previewFocus && previewOpen" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
+  // Avi Code addition. `mod+;` matches Claude Code desktop's side-question
+  // shortcut, and `;` is unclaimed everywhere else in the app.
+  { key: "mod+;", command: "composer.sideQuestion", when: "!terminalFocus" },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },

@@ -44,6 +44,9 @@ export const RPC_REQUIRED_SCOPES = {
   // exhaustiveness check here is what surfaced that.
   [WS_METHODS.serverGetProviderUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceCreateToken]: AuthOrchestrationOperateScope,
+  // `/btw` reads the thread and runs the model with tools denied. It mutates
+  // nothing — not even the thread's own transcript — so it is a read.
+  [WS_METHODS.providerAskSideQuestion]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessResourceHistory]: AuthOrchestrationReadScope,
