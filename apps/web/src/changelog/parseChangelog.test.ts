@@ -1,0 +1,159 @@
+import { describe, expect, it } from "vite-plus/test";
+
+import { CHANGELOG_RELEASES } from "./changelogSource";
+import { parseChangelog, parseInlineSegments } from "./parseChangelog";
+
+const SAMPLE = `# Changelog
+
+Preamble prose that must never show up as a release.
+
+<!--
+Format notes live in a comment and are skipped.
+## Not a release
+-->
+
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- feat(web): read the changelog from the sidebar (#52)
+
+## 0.0.31-avicode.1 — 2026-07-30
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- fix(server): enforce read-only plan turns (#43)
+- docs: expand \`CLAUDE.md\` beyond the import (#36)
+
+### Upstream t3code
+
+Merged in [#49](https://github.com/TheDarkPhantom/avicode/pull/49), covering t3code 0.0.29
+through 0.0.31.
+
+- perf(server): gzip large thread snapshots (#4788) — Theo Browne
+- build(desktop): reduce installed app size by ~300MB (#4824) — wukko
+`;
+
+describe("parseChangelog", () => {
+  const releases = parseChangelog(SAMPLE);
+
+  it("ignores the preamble and HTML comments", () => {
+    expect(releases.map((release) => release.version)).toEqual(["Unreleased", "0.0.31-avicode.1"]);
+  });
+
+  it("reads the date and the upstream baseline of each release", () => {
+    expect(releases[0]).toMatchObject({
+      isUnreleased: true,
+      date: null,
+      upstreamVersion: "0.0.31",
+    });
+    expect(releases[1]).toMatchObject({
+      isUnreleased: false,
+      date: "2026-07-30",
+      upstreamVersion: "0.0.31",
+    });
+  });
+
+  it("separates fork sections from upstream sections", () => {
+    expect(releases[1]?.sections.map((section) => [section.title, section.origin])).toEqual([
+      ["Avi Code", "avicode"],
+      ["Upstream t3code", "upstream"],
+    ]);
+  });
+
+  it("pulls the pull request number off a fork entry", () => {
+    expect(releases[1]?.sections[0]?.entries[0]).toEqual({
+      summary: [{ kind: "text", text: "fix(server): enforce read-only plan turns" }],
+      pullRequest: 43,
+      author: null,
+    });
+  });
+
+  it("credits the author of an upstream entry", () => {
+    expect(releases[1]?.sections[1]?.entries).toEqual([
+      {
+        summary: [{ kind: "text", text: "perf(server): gzip large thread snapshots" }],
+        pullRequest: 4788,
+        author: "Theo Browne",
+      },
+      {
+        summary: [{ kind: "text", text: "build(desktop): reduce installed app size by ~300MB" }],
+        pullRequest: 4824,
+        author: "wukko",
+      },
+    ]);
+  });
+
+  it("reflows a wrapped section note and keeps its links", () => {
+    expect(releases[1]?.sections[1]?.note).toEqual([
+      { kind: "text", text: "Merged in " },
+      { kind: "link", text: "#49", url: "https://github.com/TheDarkPhantom/avicode/pull/49" },
+      { kind: "text", text: ", covering t3code 0.0.29 through 0.0.31." },
+    ]);
+  });
+
+  it("returns nothing for markdown without releases", () => {
+    expect(parseChangelog("# Changelog\n\nNothing here yet.\n")).toEqual([]);
+  });
+});
+
+describe("parseInlineSegments", () => {
+  it("splits inline code and links out of prose", () => {
+    expect(parseInlineSegments("see `vp check` and [docs](https://example.com) now")).toEqual([
+      { kind: "text", text: "see " },
+      { kind: "code", text: "vp check" },
+      { kind: "text", text: " and " },
+      { kind: "link", text: "docs", url: "https://example.com" },
+      { kind: "text", text: " now" },
+    ]);
+  });
+
+  it("leaves plain prose untouched", () => {
+    expect(parseInlineSegments("plain prose")).toEqual([{ kind: "text", text: "plain prose" }]);
+  });
+});
+
+// The rendered page is only as good as the file it reads, so hold the real CHANGELOG.md to the
+// format the parser expects. A malformed heading would otherwise silently drop a whole release.
+describe("CHANGELOG.md", () => {
+  it("parses into releases", () => {
+    expect(CHANGELOG_RELEASES.length).toBeGreaterThan(0);
+  });
+
+  it("opens with Unreleased and never repeats a version", () => {
+    expect(CHANGELOG_RELEASES[0]?.isUnreleased).toBe(true);
+    const versions = CHANGELOG_RELEASES.map((release) => release.version);
+    expect(new Set(versions).size).toBe(versions.length);
+  });
+
+  it("dates every released version and names its upstream baseline", () => {
+    for (const release of CHANGELOG_RELEASES) {
+      expect(release.upstreamVersion, `${release.version} upstream baseline`).toBeTruthy();
+      if (release.isUnreleased) continue;
+      expect(release.date, `${release.version} date`).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+      expect(release.version, `${release.version} suffix`).toMatch(/-avicode\.\d+$/u);
+    }
+  });
+
+  it("gives every entry a pull request, and every upstream entry an author", () => {
+    for (const release of CHANGELOG_RELEASES) {
+      expect(release.sections.length, `${release.version} sections`).toBeGreaterThan(0);
+      for (const section of release.sections) {
+        expect(section.entries.length, `${release.version} / ${section.title}`).toBeGreaterThan(0);
+        for (const entry of section.entries) {
+          const label = `${release.version} / ${section.title}: ${JSON.stringify(entry.summary)}`;
+          expect(entry.pullRequest, label).toBeTypeOf("number");
+          if (section.origin === "upstream") {
+            expect(entry.author, label).toBeTruthy();
+          } else {
+            expect(entry.author, label).toBeNull();
+          }
+        }
+      }
+    }
+  });
+});

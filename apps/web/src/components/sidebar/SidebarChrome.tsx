@@ -1,4 +1,4 @@
-import { SettingsIcon } from "lucide-react";
+import { ScrollTextIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
@@ -120,6 +120,14 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     }
     void navigate({ to: "/settings" });
   }, [isMobile, navigate, setOpenMobile]);
+  // Avi Code addition: upstream's footer ends at Settings. The fork merges upstream regularly, so
+  // the changelog — which separates fork work from what a sync brought in — sits one click away.
+  const handleChangelogClick = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void navigate({ to: "/changelog" });
+  }, [isMobile, navigate, setOpenMobile]);
 
   return (
     <SidebarFooter className="p-2">
@@ -130,6 +138,12 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
           <SidebarMenuButton onClick={handleSettingsClick}>
             <SettingsIcon />
             <span>Settings</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton onClick={handleChangelogClick}>
+            <ScrollTextIcon />
+            <span>Changelog</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

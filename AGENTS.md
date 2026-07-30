@@ -228,8 +228,14 @@ When a chunk of work is finished and verified, carry it to `main` without being 
   **Last updated** line when they land.
 - `FUTURE_ENHANCEMENTS.md` — after finishing a feature, review it for natural extensions and record
   any limitation hit while building.
+- `CHANGELOG.md` — what shipped, per version. Every user-visible change adds a line under
+  `## Unreleased` in the same PR that makes it, in the **Avi Code** section. An upstream sync adds
+  its commits under **Upstream t3code** with the author who wrote them there, so a merge never
+  hides who changed what. The file is parsed and rendered in-app at `/changelog`, so its format is
+  load-bearing — the format comment at the top of the file is the spec, and
+  `apps/web/src/changelog/parseChangelog.test.ts` fails the build if the real file drifts from it.
 
-Both are hand-maintained and are this repo's only running record of intent — there is no changelog.
+All three are hand-maintained and are this repo's only running record of intent.
 
 ## Avi Code Fork Conventions
 
