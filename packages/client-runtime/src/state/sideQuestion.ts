@@ -11,11 +11,7 @@
  *
  * @module sideQuestion
  */
-import {
-  type EnvironmentId,
-  type ProviderSideQuestionInput,
-  WS_METHODS,
-} from "@t3tools/contracts";
+import { type EnvironmentId, type ProviderSideQuestionInput, WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/unstable/reactivity";

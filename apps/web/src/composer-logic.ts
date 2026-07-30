@@ -2,7 +2,14 @@ import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "btw";
+
+/**
+ * Avi Code addition: `/btw <question>`, re-exported from the shared parser
+ * rather than reimplemented. This module already carries its own copy of
+ * `parseStandaloneComposerSlashCommand`; one duplicated parser is enough.
+ */
+export { parseComposerSideQuestionCommand } from "@t3tools/shared/composerTrigger";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -264,7 +271,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
+): Exclude<ComposerSlashCommand, "model" | "btw"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;

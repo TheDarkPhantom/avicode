@@ -159,6 +159,10 @@
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"
     },
+    "./sideQuestionSupport": {
+      "types": "./src/sideQuestionSupport.ts",
+      "import": "./src/sideQuestionSupport.ts"
+    },
     "./composerInlineTokens": {
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"

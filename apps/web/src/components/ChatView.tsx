@@ -74,6 +74,7 @@ import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
+  parseComposerSideQuestionCommand,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
@@ -300,6 +301,7 @@ import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
+import { askSideQuestionCommand } from "../state/sideQuestion";
 import { Button } from "./ui/button";
 import {
   AlertDialog,
@@ -1173,6 +1175,9 @@ function ChatViewContent(props: ChatViewProps) {
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  // Avi Code addition: `/btw`. Failures surface in the answer panel itself, so
+  // no toast — a side question going wrong should not interrupt the main task.
+  const askSideQuestion = useAtomCommand(askSideQuestionCommand, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -4915,6 +4920,29 @@ function ChatViewContent(props: ChatViewProps) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
+      return;
+    }
+    // Avi Code addition: `/btw` never becomes a turn. It clears the composer
+    // like the mode switches above, but instead of changing thread state it
+    // asks on a discarded fork and shows the answer in a dismissible panel.
+    const sideQuestionThreadRef = activeThreadRef;
+    const sideQuestionThreadKey = activeThreadKey;
+    const sideQuestion =
+      sideQuestionThreadRef === null || sideQuestionThreadKey === null
+        ? null
+        : parseComposerSideQuestionCommand(trimmed);
+    if (sideQuestion !== null && sideQuestionThreadRef !== null && sideQuestionThreadKey !== null) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      if (sideQuestion.question.length > 0) {
+        void askSideQuestion({
+          threadKey: sideQuestionThreadKey,
+          environmentId: sideQuestionThreadRef.environmentId,
+          threadId: sideQuestionThreadRef.threadId,
+          question: sideQuestion.question,
+        });
+      }
       return;
     }
     if (!hasSendableContent) {

@@ -75,6 +75,9 @@ const STATIC_KEYBINDING_COMMANDS = [
   "preview.resetZoom",
   "commandPalette.toggle",
   "composer.stash",
+  // Avi Code addition: focus the composer with `/btw ` prefilled, so a side
+  // question is one keystroke away rather than something you type out.
+  "composer.sideQuestion",
   "chat.new",
   "chat.newLocal",
   "editor.openFavorite",

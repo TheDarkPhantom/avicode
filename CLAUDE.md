@@ -42,7 +42,16 @@ node_modules/.bin/tsgo --noEmit -p apps/server/tsconfig.json   # same check, fas
 ```
 
 `vp check` runs format + lint + typecheck together. Per `AGENTS.md`, do not run it or any other
-repo-wide suite locally unless asked — CI owns full verification.
+repo-wide suite locally unless asked — CI owns full verification. What CI actually gates on:
+`vp check`, `vpr typecheck`, `vp run test`, `vp run build:desktop`, `node scripts/release-smoke.ts`,
+`cargo fmt --check`/`cargo test` for `native/resource-monitor`, and the fork guardrails below.
+
+Fork-only checks (`.github/workflows/avicode-guardrails.yml`, runs on every PR):
+
+```bash
+vp run check:avicode   # identity/branding boundaries — see "The fork's identity is CI-enforced"
+vp run test:avicode    # unit tests for the guardrail script itself
+```
 
 Desktop packaging (the Windows installer lands in `release/`):
 
@@ -83,6 +92,13 @@ propagates into every decode site at once — see the SELECT trap below.
 subpath exports (`@t3tools/client-runtime/rpc`, `/connection`, `/environment`, …). Logic both
 clients need belongs there rather than in `apps/web`.
 
+**Not everything is TypeScript.** `native/resource-monitor` is a Rust crate (cargo, its own
+`Cargo.toml`) that CI formats and tests separately; `vp` does not cover it.
+
+The fork's own features have their own docs: `docs/DOCUMENT_ATTACHMENTS.md`,
+`docs/ALFRED_INTEGRATION.md`, `docs/T3_IMPORT.md` (importing an upstream `~/.t3` database), and
+`docs/UPSTREAM_SYNC.md` (the human-reviewed merge process).
+
 ## Invariants that bite
 
 **Extending a projection schema breaks every query that feeds it.** `ProjectionThreadDbRowSchema`
@@ -104,8 +120,30 @@ the registry id disambiguates — renumber rather than reuse.
 - `no-inline-schema-compile` — keep `Schema.decode*`/`encode*` compilation out of function bodies.
 - `no-manual-effect-runtime-in-tests` — use the Effect test helpers.
 
+**The fork's identity is CI-enforced, including a brand-string ban.**
+`scripts/avicode/check-upstream-guardrails.mjs` fails the PR if the literal string `T3 Code` appears
+in any non-test `.ts`/`.tsx` under `apps/{web,desktop,server}/src` or
+`packages/{contracts,shared}/src`, outside a three-file allowlist (`DesktopEnvironment.ts`,
+`LegacyT3Import.ts`, `AviCodeSettings.tsx` — the legacy-import compatibility copy). So a new UI
+string, log line, or comment saying "T3 Code" is a build break, not a style nit. User-visible names,
+OS identity, storage roots, protocol, and release ownership must come from `AVICODE_IDENTITY`
+(`packages/shared/src/avicodeIdentity.ts`); internal package names and env vars stay upstream
+(`@t3tools/*`, `T3CODE_HOME`). The same script pins `.avicode/upstream-guardrails.json` (upstream
+stays `pingdotgg/t3code` main, releases stay `TheDarkPhantom/avicode`), forbids `sync-upstream.yml`
+from merging its own PR, and requires `release.yml`/`deploy-relay.yml` to stay manual-only for the
+personal alpha — adding a `push:`/`schedule:` trigger to either fails the check.
+
+**Two state directories, and the live one is not the one `AGENTS.md` names.** `AGENTS.md`'s Test
+data and "writing to the live install" guidance is upstream text and still says `~/.t3/userdata`.
+For this fork the installed desktop app's real database is **`~/.avicode/userdata`** (from
+`AVICODE_IDENTITY.homeDirectoryName`, resolved in `DesktopEnvironment.ts`) — snapshot that when you
+want realistic seed data. `~/.t3` is upstream T3 Code's data plus this repo's dev state: `devHome.ts`
+still gives `vp run dev` and each worktree a gitignored `.t3`, and `T3CODE_HOME` is still the env
+var. Treat `~/.avicode/userdata` with the same don't-touch rules the upstream text applies to
+`~/.t3/userdata`.
+
 **Fork versioning.** Versions stay on the upstream line with an `-avicode.N` prerelease suffix
-(`0.0.29-avicode.1`) so the fork never advertises itself as newer than t3code. Four packages carry
+(`0.0.31-avicode.1`) so the fork never advertises itself as newer than t3code. Four packages carry
 the version and must move together: `apps/desktop`, `apps/server`, `apps/web`, `packages/contracts`.
 Only `-nightly.` is special-cased by `resolveDesktopUpdateChannel` and
 `resolveWebAssetBrandForPackageVersion`, so an `-avicode.N` build still resolves to production
