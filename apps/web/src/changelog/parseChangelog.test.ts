@@ -18,24 +18,26 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- feat(web): read the changelog from the sidebar (#52)
+- See what changed in each version without leaving the app (#53)
 
-## 0.0.31-avicode.1 — 2026-07-30
+## 0.0.31-avicode.1 (2026-07-30)
 
 Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- fix(server): enforce read-only plan turns (#43)
-- docs: expand \`CLAUDE.md\` beyond the import (#36)
+- Claude stops editing files while it is planning (#43)
+- Pick a colour theme: Oxblood, Midnight, or Forest, each with a light and a
+  dark variant (#30)
+- Coding agents get clearer guidance about \`CLAUDE.md\` (#36)
 
 ### Upstream t3code
 
 Merged in [#49](https://github.com/TheDarkPhantom/avicode/pull/49), covering t3code 0.0.29
 through 0.0.31.
 
-- perf(server): gzip large thread snapshots (#4788) — Theo Browne
-- build(desktop): reduce installed app size by ~300MB (#4824) — wukko
+- Large threads load faster (#4788 by Theo Browne)
+- The desktop app installs about 300MB smaller (#4824 by wukko)
 `;
 
 describe("parseChangelog", () => {
@@ -67,8 +69,23 @@ describe("parseChangelog", () => {
 
   it("pulls the pull request number off a fork entry", () => {
     expect(releases[1]?.sections[0]?.entries[0]).toEqual({
-      summary: [{ kind: "text", text: "fix(server): enforce read-only plan turns" }],
+      summary: [{ kind: "text", text: "Claude stops editing files while it is planning" }],
       pullRequest: 43,
+      author: null,
+    });
+  });
+
+  // Entries are sentences, so they wrap. A continuation line used to be read as section prose,
+  // which stranded the trailing `(#30)` and cost the entry its link.
+  it("rejoins a wrapped entry", () => {
+    expect(releases[1]?.sections[0]?.entries[1]).toEqual({
+      summary: [
+        {
+          kind: "text",
+          text: "Pick a colour theme: Oxblood, Midnight, or Forest, each with a light and a dark variant",
+        },
+      ],
+      pullRequest: 30,
       author: null,
     });
   });
@@ -76,12 +93,12 @@ describe("parseChangelog", () => {
   it("credits the author of an upstream entry", () => {
     expect(releases[1]?.sections[1]?.entries).toEqual([
       {
-        summary: [{ kind: "text", text: "perf(server): gzip large thread snapshots" }],
+        summary: [{ kind: "text", text: "Large threads load faster" }],
         pullRequest: 4788,
         author: "Theo Browne",
       },
       {
-        summary: [{ kind: "text", text: "build(desktop): reduce installed app size by ~300MB" }],
+        summary: [{ kind: "text", text: "The desktop app installs about 300MB smaller" }],
         pullRequest: 4824,
         author: "wukko",
       },
@@ -152,6 +169,24 @@ describe("CHANGELOG.md", () => {
           } else {
             expect(entry.author, label).toBeNull();
           }
+        }
+      }
+    }
+  });
+
+  // House style, enforced so it cannot drift back one careless entry at a time: entries read as
+  // outcomes rather than commit subjects, stay to one short sentence, and use no em dashes.
+  it("keeps entries short, em-dash free, and out of commit-subject voice", () => {
+    for (const release of CHANGELOG_RELEASES) {
+      for (const section of release.sections) {
+        for (const entry of section.entries) {
+          const text = entry.summary.map((segment) => segment.text).join("");
+          const label = `${release.version} / ${section.title}: ${text}`;
+          expect(text, label).not.toMatch(
+            /^(?:feat|fix|chore|docs|refactor|perf|test|build|ci|style)(?:\([^)]*\))?!?:/u,
+          );
+          expect(text, label).not.toMatch(/[—–]/u);
+          expect(text.length, label).toBeLessThanOrEqual(100);
         }
       }
     }

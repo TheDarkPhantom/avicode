@@ -1,11 +1,13 @@
 # Changelog
 
-Every notable change to Avi Code, newest first.
+What changed in Avi Code, newest first, written as what it does for you rather than what moved in
+the code.
 
 Avi Code is a fork of [t3code](https://github.com/pingdotgg/t3code). Both codebases move, so this
-file keeps the two apart: **Avi Code** sections are changes written in this fork, **Upstream t3code**
-sections are changes merged in from `pingdotgg/t3code` and credited to whoever wrote them there. A
-sync merge lands dozens of commits at once and would otherwise erase that distinction entirely.
+file keeps the two apart. **Avi Code** sections are changes written in this fork. **Upstream
+t3code** sections are changes merged in from `pingdotgg/t3code`, credited to whoever wrote them
+there, because a sync merge lands dozens of commits at once and would otherwise erase the
+difference.
 
 Versions ride the upstream line with an `-avicode.N` suffix, so `0.0.31-avicode.1` is the first Avi
 Code release built on t3code `0.0.31`. The `Upstream:` line under each version records the t3code
@@ -14,15 +16,24 @@ release the fork was sitting on at the time.
 <!--
 Format, parsed by apps/web/src/changelog/parseChangelog.ts and rendered at /changelog:
 
-  ## <version> — <YYYY-MM-DD>        (or `## Unreleased`, with no date)
+  ## <version> (<YYYY-MM-DD>)        or `## Unreleased`, with no date
 
   Upstream: t3code <version>
 
-  ### Avi Code                       (or `### Upstream t3code`)
+  ### Avi Code                       or `### Upstream t3code`
 
-  - <summary> (#<pr>)                (upstream entries add ` — <Author>`)
+  - <what you can now do, or what stopped going wrong> (#<pr>)
+  - <same, for upstream> (#<pr> by <Author>)
 
-Add every user-visible change to Unreleased as it lands; the release bump renames the heading.
+Entries may wrap onto further indented lines.
+
+House style: one short sentence, present tense, no em dashes. Write the outcome, not the
+implementation. "Pin the threads you keep coming back to" beats "feat(web): add sidebar pinning".
+The reader uses Avi Code and should not need to know what a projector or an adapter is. Name the
+surface only when it narrows who is affected ("On mobile, ..."). Commit-style detail belongs in the
+PR, which every entry already links to.
+
+Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
 ## Unreleased
@@ -31,119 +42,119 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- feat(web): read the changelog from the sidebar, with fork and upstream changes kept apart (#53)
-- ci: publish the Windows installer from the packaging guardrail (#51)
-- feat: /btw side questions on a discarded conversation fork (#50)
+- See what changed in each version, and whether it came from Avi Code or upstream (#53)
+- Every packaging run leaves a downloadable Windows installer (#51)
+- Ask a side question with `/btw` without derailing the thread (#50)
 
-## 0.0.31-avicode.1 — 2026-07-30
+## 0.0.31-avicode.1 (2026-07-30)
 
 Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- feat(web): pin threads and projects to the top of the sidebar (#45)
-- feat(web): offer five notification sounds instead of one (#48)
-- feat(web): tint the whole thread row in its status color (#47)
-- feat(web): add plan-mode and worktree-icon toggles to Avi Code settings (#44)
-- feat(web): make the chat column width configurable (#46)
-- fix(server): enforce read-only plan turns in the Claude adapter (#43)
-- feat: edit and fork earlier Codex messages (#42)
-- fix(server): settle orphaned "running" sessions on startup (#41)
-- fix(attachments): raise document and input character caps (#40)
-- feat(web): show repository icons on flat thread rows (#39)
-- feat(web): add a Shortcuts tab to the Avi Code settings page (#38)
-- fix(web,server): surface provider badges in the picker and shorten thread titles (#37)
-- docs: expand CLAUDE.md beyond the AGENTS.md import (#36)
-- fix(web): keep the dictation websocket connected (#35)
+- Pin the threads and projects you keep returning to so they stay at the top (#45)
+- Five notification sounds to choose from instead of one (#48)
+- Thread rows show their status as a colour across the whole row (#47)
+- Turn plan mode and worktree icons on or off yourself (#44)
+- Set how wide the chat column is (#46)
+- Claude stops editing files while it is planning (#43)
+- Edit an earlier message and branch the thread from there (#42)
+- Threads stop hanging on "running" after a crash or restart (#41)
+- Longer documents and prompts go through without hitting a cap (#40)
+- Thread rows show which repository they belong to (#39)
+- A Shortcuts tab lists the keyboard shortcuts you can use (#38)
+- Provider and model show in the picker, and titles fit the sidebar (#37)
+- Agents working on Avi Code get clearer guidance about the codebase (#36)
+- Voice dictation stays connected instead of dropping (#35)
 
 ### Upstream t3code
 
 Merged in [#49](https://github.com/TheDarkPhantom/avicode/pull/49), covering t3code 0.0.29 through
 0.0.31.
 
-- fix(web): show server update progress through reconnect (#4903) — Theo Browne
-- feat(web): regenerate thread titles from sidebar (#4810) — Theo Browne
-- feat(web): pasting a huge screenshot now compresses it instead of erroring (#4967) — Theo Browne
-- perf(mobile): reconnect environments immediately on resume (#4878) — Theo Browne
-- fix(web): keep worktree default when switching a draft's machine (#4964) — Theo Browne
-- fix(mobile): stop long iOS threads from jumping while scrolling up (#4867) — Theo Browne
-- fix(mobile): support dragged images in the composer (#4953) — Theo Browne
-- docs: seed worktrees with a copy of real userdata instead of banning it (#4949) — Theo Browne
-- fix(web): show Codex fast mode as a bolt (#4947) — Theo Browne
-- perf(mobile): sends respond instantly, thread opens stop freezing (#4882) — Theo Browne
-- fix(mobile): stop shared content errors in Personal Team builds (#4943) — Theo Browne
-- fix(connect): suggest a serve command that matches how you ran connect (#4897) — Theo Browne
-- fix(web): align remote server update action (#4731) — Wout Stiens
-- docs: link iOS and Android app store downloads (#4902) — Theo Browne
-- fix(composer): hide default Codex service tier (#4784) — Max Katz
-- fix(clients): disable add project while disconnected (#4834) — Wout Stiens
-- fix(web): settle button now works on hover, not just right-click (#4905) — Theo Browne
-- fix(web): restore sidebar v2 thread actions and terminal icon (#4712) — Jono Kemball
-- fix(mobile): reduce thread feed scroll jank (#4874) — Gabriel De Andrade
-- fix(web): remember the rendered-markdown choice across threads (#4853) — Simon Doba
-- fix(web): editable file focus and live syntax highlighting (#3979) — Jake Leventhal
-- fix(git): disable external diff for review diff previews (#4854) — ohbentos
-- perf(server): merge staged and unstaged numstat into a single diff (#4843) — Utkarsh Patil
-- fix(server): detect repositories after initialization (#4848) — Wout Stiens
-- perf(server): reduce idle work and disk churn with native resource diagnostics (#2679) — Julius Marminge
-- fix(web): preserve the thread shell while detail loads (#4830) — Julius Marminge
-- chore: update model version from claude-opus-4-8 to claude-opus-5 (#4832) — Julius Marminge
-- build(desktop): reduce installed app size by ~300MB (#4824) — wukko
-- fix(web): simplify files panel header (#4828) — Julius Marminge
-- fix(desktop): restore Connect sign-in (#4809) — Alex
-- fix(web): fix Connect sign-in settings label (#4806) — Julius Marminge
-- feat: remove Connect waitlist and add GA announcement tooling (#4691) — Julius Marminge
-- refactor(server): use native HTTP compression streams (#4798) — Julius Marminge
-- fix(mobile): defer filesystem navigation (#4799) — Julius Marminge
-- refactor(client): share filesystem browse navigation (#4797) — Julius Marminge
-- fix(release): skip scripts during Vercel installs (#4796) — Theo Browne
-- fix(web): defer command palette filesystem navigation (#2109) — Julius Marminge
-- perf(server): trim stale context-window rows and drop dead replay RPC (#4791) — Theo Browne
-- fix(server): fix Git ref refresh resource storms (#4727) — Julius Marminge
-- fix(web): stashed prompts now survive switching providers (#4787) — Theo Browne
-- perf(server): gzip large thread snapshots (#4788) — Theo Browne
-- fix(web): prevent sidebar row labels from truncating (#4789) — Julius Marminge
-- docs: overhaul agent guidance (#4782) — Theo Browne
+- A server update shows progress while the app reconnects (#4903 by Theo Browne)
+- Regenerate a thread title from the sidebar (#4810 by Theo Browne)
+- Pasting a large screenshot compresses it instead of failing (#4967 by Theo Browne)
+- On mobile, environments reconnect as soon as you pick up your phone (#4878 by Theo Browne)
+- Switching a draft's machine keeps your worktree choice (#4964 by Theo Browne)
+- On iOS, long threads stop jumping while you scroll back (#4867 by Theo Browne)
+- On mobile, dragging an image into the composer attaches it (#4953 by Theo Browne)
+- Clearer guidance for contributors seeding realistic test data (#4949 by Theo Browne)
+- Codex fast mode is marked with a bolt (#4947 by Theo Browne)
+- On mobile, sending responds instantly and threads stop freezing (#4882 by Theo Browne)
+- On mobile, sharing into the app stops erroring on Personal Team builds (#4943 by Theo Browne)
+- Connect suggests a serve command that matches how you started it (#4897 by Theo Browne)
+- Updating a remote server works like updating a local one (#4731 by Wout Stiens)
+- The docs link straight to the iOS and Android downloads (#4902 by Theo Browne)
+- The composer stops showing Codex's default tier as your choice (#4784 by Max Katz)
+- Adding a project is disabled while you are disconnected (#4834 by Wout Stiens)
+- The settle button works on hover, not just right-click (#4905 by Theo Browne)
+- Thread actions and the terminal icon are back in the new sidebar (#4712 by Jono Kemball)
+- On mobile, the thread feed scrolls more smoothly (#4874 by Gabriel De Andrade)
+- Your rendered-markdown preference sticks across threads (#4853 by Simon Doba)
+- Editing a file keeps focus and highlights syntax as you type (#3979 by Jake Leventhal)
+- Diff previews render in the app, not in your external diff tool (#4854 by ohbentos)
+- Change counts for a repository come back faster (#4843 by Utkarsh Patil)
+- A repository you just created is picked up without a restart (#4848 by Wout Stiens)
+- The app uses less CPU and disk while you are idle (#2679 by Julius Marminge)
+- Opening a thread shows its frame immediately, not a blank screen (#4830 by Julius Marminge)
+- Claude Opus 5 is available as a model (#4832 by Julius Marminge)
+- The desktop app installs about 300MB smaller (#4824 by wukko)
+- The files panel header is simpler to scan (#4828 by Julius Marminge)
+- Signing in to Connect from the desktop app works again (#4809 by Alex)
+- The Connect sign-in setting is labelled correctly (#4806 by Julius Marminge)
+- Connect is generally available, with no waitlist (#4691 by Julius Marminge)
+- Data moves between app and server with less overhead (#4798 by Julius Marminge)
+- On mobile, browsing the filesystem stops stalling the screen (#4799 by Julius Marminge)
+- File browsing works the same on web and mobile (#4797 by Julius Marminge)
+- The hosted web app deploys reliably (#4796 by Theo Browne)
+- The command palette stays responsive while listing directories (#2109 by Julius Marminge)
+- The server keeps less stale data around (#4791 by Theo Browne)
+- Repositories with many branches stop causing CPU spikes (#4727 by Julius Marminge)
+- A prompt you have typed survives switching providers (#4787 by Theo Browne)
+- Large threads load faster (#4788 by Theo Browne)
+- Sidebar labels stop getting cut off (#4789 by Julius Marminge)
+- Coding agents get better guidance for working in the codebase (#4782 by Theo Browne)
 
-## 0.0.29-avicode.1 — 2026-07-29
+## 0.0.29-avicode.1 (2026-07-29)
 
 Upstream: t3code 0.0.29
 
 The fork's first numbered release. Everything below was written in this fork on top of t3code
-0.0.29; no upstream sync had happened yet.
+0.0.29, before any upstream sync.
 
 ### Avi Code
 
-- chore: adopt the `-avicode.N` version suffix across desktop, server, web, and contracts (#34)
-- fix(web): drop the settled banner from the composer (#33)
-- feat(server): record fork lineage when a thread branches (#32)
-- feat: dictate prompts into the composer with Deepgram (#31)
-- feat(web): add selectable colour themes (#30)
-- fix: stabilize environment connections (#29)
-- feat(server): serialize repository-mutating git workflows per repository (#28)
-- docs: add git, shipping, and planning conventions to AGENTS.md (#26)
-- feat(web): add a flat, activity-ordered sidebar thread list (#17)
-- fix(server): move editor discovery off the config path (#15)
-- feat(server): isolate provider credentials by project (#25)
-- fix(server): fix native thread titles for timelogging (#24)
-- feat(web): show provider badges in the chat list (#23)
-- feat: add cross-thread context references (#22)
-- fix(server): audit provider auth transitions (#21)
-- feat(web): show the changed file count (#19)
-- fix(web): show exhausted quota as empty (#20)
-- feat(web): sound and a reliable label when a chat needs you (#18)
-- feat(web): add Codex plan review handoff (#16)
-- feat(web): unarchive threads from the project sidebar (#14)
-- feat(web): show plan allowance as a draining green-to-red bar (#13)
-- fix: make the Claude plan-quota read actually run (#12)
-- feat: consolidate local Avi Code improvements (#11)
-- feat: track plan quota and token usage per provider instance (#10)
-- fix: fix disconnected message delivery and reconnect polling (#9)
-- feat(web): pin the current turn prompt while scrolling (#8)
-- fix(web): preserve timeline position after manual scrolling (#7)
-- feat: complete Advisor Avi branding as Avi Code (#6)
-- fix: keep Avi Code distribution manual-only (#5)
-- feat: establish the Avi Code product foundation (#4)
-- fix: run the guardrail smoke test in Xvfb (#3)
-- fix: build desktop before the guardrail smoke test (#2)
-- ci: add guarded upstream synchronization (#1)
+- Versions carry an `-avicode.N` suffix, so the upstream base is obvious (#34)
+- The composer stops showing a settled banner that was in the way (#33)
+- A branched thread shows which thread it came from (#32)
+- Dictate a prompt into the composer with your voice (#31)
+- Pick a colour theme: Oxblood, Midnight, Forest, Violet, or Graphite (#30)
+- Environments stay connected instead of dropping out (#29)
+- Two agents in one repository stop tripping over each other's git work (#28)
+- Agents contributing to Avi Code follow explicit git and planning conventions (#26)
+- A flat sidebar list ordered by recent activity (#17)
+- Startup stops stalling while Avi Code looks for your editor (#15)
+- Scope provider credentials per project (#25)
+- Window titles carry repository and thread, so time trackers attribute work correctly (#24)
+- Each chat shows which provider it runs on (#23)
+- Reference another thread's transcript as context (#22)
+- Provider sign-ins and sign-outs are recorded with timestamps (#21)
+- See how many files changed, and click through to them (#19)
+- An exhausted plan quota reads as empty, not full (#20)
+- A sound and a clear label when a chat is waiting on you (#18)
+- Review a Codex plan and hand it off to be implemented (#16)
+- Unarchive a thread from the project sidebar (#14)
+- Your plan allowance shows as a bar draining green to red (#13)
+- The Claude plan quota is read, so the meter reflects what is left (#12)
+- A batch of quality-of-life fixes from daily use (#11)
+- See plan quota and token usage per provider account (#10)
+- Messages sent while disconnected are delivered on reconnect (#9)
+- The current turn's prompt stays pinned while you scroll (#8)
+- Scrolling back through a thread stops yanking you to the bottom (#7)
+- Avi Code has its own name, icon, and identity throughout (#6)
+- Releases go out only when you trigger them (#5)
+- Avi Code runs as its own app with its own data, beside t3code (#4)
+- The packaging check runs headlessly in CI (#3)
+- The packaging check builds the app first, so it tests a real build (#2)
+- Upstream changes come in through a guarded, reviewed process (#1)

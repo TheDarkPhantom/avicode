@@ -45,10 +45,9 @@ export interface ChangelogRelease {
 const RELEASE_HEADING = /^##\s+(.+?)\s*$/u;
 const SECTION_HEADING = /^###\s+(.+?)\s*$/u;
 const LIST_ITEM = /^[-*]\s+(.+?)\s*$/u;
-const RELEASE_DATE_SUFFIX = /^(.*?)\s+[—–-]\s+(\d{4}-\d{2}-\d{2})$/u;
+const RELEASE_DATE_SUFFIX = /^(.*?)\s*\((\d{4}-\d{2}-\d{2})\)$/u;
 const UPSTREAM_LINE = /^Upstream:\s*(?:t3code\s*)?(.+?)\s*$/iu;
-const ENTRY_AUTHOR_SUFFIX = /^(.*?)\s+[—–]\s+([^—–]+?)$/u;
-const ENTRY_PULL_REQUEST_SUFFIX = /^(.*?)\s*\(#(\d+)\)$/u;
+const ENTRY_SUFFIX = /^(.*?)\s*\(#(\d+)(?:\s+by\s+(.+?))?\)\s*$/u;
 const INLINE_TOKEN = /`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/gu;
 
 /** Splits prose into plain runs, inline code, and markdown links; other markdown is left as text. */
@@ -80,24 +79,22 @@ function resolveOrigin(title: string): ChangelogOrigin {
   return /^avi\s*code\b/iu.test(title) ? "avicode" : "upstream";
 }
 
+/**
+ * Splits `<summary> (#123)` or `<summary> (#123 by Author)` apart. The credit sits inside the
+ * pull request reference rather than after a dash, so nothing in the summary's own punctuation
+ * can be mistaken for a byline.
+ */
 function parseEntry(raw: string): ChangelogEntry {
-  let rest = raw;
-  let author: string | null = null;
-  let pullRequest: number | null = null;
-
-  const authorMatch = ENTRY_AUTHOR_SUFFIX.exec(rest);
-  if (authorMatch) {
-    rest = authorMatch[1] ?? rest;
-    author = authorMatch[2]?.trim() || null;
+  const match = ENTRY_SUFFIX.exec(raw.trim());
+  if (!match) {
+    return { summary: parseInlineSegments(raw.trim()), pullRequest: null, author: null };
   }
 
-  const pullRequestMatch = ENTRY_PULL_REQUEST_SUFFIX.exec(rest);
-  if (pullRequestMatch) {
-    rest = pullRequestMatch[1] ?? rest;
-    pullRequest = Number.parseInt(pullRequestMatch[2] ?? "", 10);
-  }
-
-  return { summary: parseInlineSegments(rest.trim()), pullRequest, author };
+  return {
+    summary: parseInlineSegments((match[1] ?? "").trim()),
+    pullRequest: Number.parseInt(match[2] ?? "", 10),
+    author: match[3]?.trim() || null,
+  };
 }
 
 /**
@@ -115,9 +112,20 @@ export function parseChangelog(markdown: string): readonly ChangelogRelease[] {
   } | null = null;
   let section: { origin: ChangelogOrigin; title: string; noteLines: string[] } | null = null;
   let entries: ChangelogEntry[] = [];
+  // Entries are written as sentences, so they wrap. Their lines accumulate until a blank line or
+  // the next heading ends the entry, then parse as one — otherwise a wrapped entry loses the
+  // `(#123)` that landed on its continuation line.
+  let entryLines: string[] | null = null;
   let insideHtmlComment = false;
 
+  const closeEntry = () => {
+    if (!entryLines) return;
+    entries.push(parseEntry(entryLines.join(" ")));
+    entryLines = null;
+  };
+
   const closeSection = () => {
+    closeEntry();
     if (!release || !section) return;
     release.sections.push({
       origin: section.origin,
@@ -182,11 +190,20 @@ export function parseChangelog(markdown: string): readonly ChangelogRelease[] {
 
     const listItem = LIST_ITEM.exec(line);
     if (listItem && section) {
-      entries.push(parseEntry(listItem[1] ?? ""));
+      closeEntry();
+      entryLines = [listItem[1] ?? ""];
       continue;
     }
 
-    if (line.length === 0) continue;
+    if (line.length === 0) {
+      closeEntry();
+      continue;
+    }
+
+    if (entryLines) {
+      entryLines.push(line);
+      continue;
+    }
 
     const upstreamLine = UPSTREAM_LINE.exec(line);
     if (upstreamLine && !section) {
