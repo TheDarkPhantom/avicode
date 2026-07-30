@@ -176,10 +176,19 @@ export function ThreadWorktreeIndicator({
 export function ThreadStatusLabel({
   status,
   compact = false,
+  inheritColor = false,
 }: {
   status: ThreadStatusPill;
   compact?: boolean;
+  /**
+   * Avi Code addition. On a status-tinted sidebar row the pill's own
+   * `colorClass` sits on a wash of the same hue and nearly disappears. Setting
+   * this defers to the row's foreground instead. The dot keeps `dotClass` —
+   * it is the one element that still needs to read as the status colour.
+   */
+  inheritColor?: boolean;
 }) {
+  const textClass = inheritColor ? "text-current" : status.colorClass;
   if (compact) {
     return (
       <Tooltip>
@@ -187,7 +196,7 @@ export function ThreadStatusLabel({
           render={
             <span
               aria-label={status.label}
-              className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
+              className={`inline-flex size-3.5 shrink-0 items-center justify-center ${textClass}`}
             />
           }
         >
@@ -208,7 +217,7 @@ export function ThreadStatusLabel({
         render={
           <span
             aria-label={status.label}
-            className={`inline-flex items-center gap-1 text-[10px] ${status.colorClass}`}
+            className={`inline-flex items-center gap-1 text-[10px] ${textClass}`}
           />
         }
       >

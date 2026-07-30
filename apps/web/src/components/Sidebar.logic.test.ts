@@ -1005,6 +1005,44 @@ describe("resolveThreadStatusPill", () => {
       }),
     ).toMatchObject({ label: "Completed", pulse: false });
   });
+
+  // Avi Code addition: the tint is what makes a status readable at a glance in
+  // a long sidebar, and readable at all with labels turned off.
+  describe("row tints", () => {
+    it("tints the states that are waiting on the user, in their own hue", () => {
+      const approval = resolveThreadStatusPill({
+        thread: { ...baseThread, hasPendingApprovals: true },
+      });
+      expect(approval?.label).toBe("Pending Approval");
+      expect(approval?.tint?.bgClass).toContain("amber");
+
+      const waiting = resolveThreadStatusPill({
+        thread: { ...baseThread, hasPendingUserInput: true },
+      });
+      expect(waiting?.label).toBe("Waiting");
+      expect(waiting?.tint?.bgClass).toContain("indigo");
+    });
+
+    it("always pairs a background with a foreground so the title stays legible", () => {
+      const tinted = [
+        resolveThreadStatusPill({ thread: { ...baseThread, hasPendingApprovals: true } }),
+        resolveThreadStatusPill({ thread: { ...baseThread, hasPendingUserInput: true } }),
+      ];
+      for (const pill of tinted) {
+        expect(pill?.tint?.bgClass).toBeTruthy();
+        expect(pill?.tint?.textClass).toBeTruthy();
+      }
+    });
+
+    // Working is the common case and already animates. Tinting it too would
+    // leave the whole sidebar glowing with nothing standing out.
+    it.each(["running", "starting"] as const)("leaves %s untinted", (status) => {
+      const pill = resolveThreadStatusPill({
+        thread: { ...baseThread, session: { ...baseThread.session, status } },
+      });
+      expect(pill?.tint).toBeNull();
+    });
+  });
 });
 
 describe("resolveThreadRowClassName", () => {
@@ -1027,6 +1065,57 @@ describe("resolveThreadRowClassName", () => {
     expect(className).toContain("bg-sidebar-row-active");
     expect(className).toContain("hover:bg-sidebar-row-active");
   });
+
+  // Avi Code addition: a status tint paints the row, so the active/selected
+  // state has to stop painting it too or the status colour is lost.
+  describe("status tint", () => {
+    const tint = { bgClass: "bg-amber-500/25", textClass: "text-amber-950" };
+
+    it("paints the row in the status color and pairs it with a foreground", () => {
+      const className = resolveThreadRowClassName({
+        isActive: false,
+        isSelected: false,
+        statusTint: tint,
+      });
+      expect(className).toContain("bg-amber-500/25");
+      expect(className).toContain("text-amber-950");
+    });
+
+    it("never lets the active surface paint over the tint", () => {
+      for (const [isActive, isSelected] of [
+        [true, false],
+        [false, true],
+        [true, true],
+      ] as const) {
+        const className = resolveThreadRowClassName({ isActive, isSelected, statusTint: tint });
+        expect(className).toContain("bg-amber-500/25");
+        expect(className).not.toContain("bg-sidebar-row-active");
+        expect(className).not.toContain("bg-sidebar-row-selected");
+      }
+    });
+
+    it("still distinguishes the active row, via a ring rather than a background", () => {
+      const resting = resolveThreadRowClassName({
+        isActive: false,
+        isSelected: false,
+        statusTint: tint,
+      });
+      const active = resolveThreadRowClassName({
+        isActive: true,
+        isSelected: false,
+        statusTint: tint,
+      });
+      expect(resting).not.toContain("ring-current");
+      expect(active).toContain("ring-1 ring-inset ring-current");
+      expect(active).toContain("font-medium");
+    });
+
+    it("leaves untinted rows on upstream's treatment", () => {
+      expect(
+        resolveThreadRowClassName({ isActive: true, isSelected: false, statusTint: null }),
+      ).toBe(resolveThreadRowClassName({ isActive: true, isSelected: false }));
+    });
+  });
 });
 
 describe("resolveProjectStatusIndicator", () => {
@@ -1042,18 +1131,21 @@ describe("resolveProjectStatusIndicator", () => {
           colorClass: "text-emerald-600",
           dotClass: "bg-emerald-500",
           pulse: false,
+          tint: null,
         },
         {
           label: "Pending Approval",
           colorClass: "text-amber-600",
           dotClass: "bg-amber-500",
           pulse: false,
+          tint: null,
         },
         {
           label: "Working",
           colorClass: "text-sky-600",
           dotClass: "bg-sky-500",
           pulse: true,
+          tint: null,
         },
       ]),
     ).toMatchObject({ label: "Pending Approval", dotClass: "bg-amber-500" });
@@ -1067,12 +1159,14 @@ describe("resolveProjectStatusIndicator", () => {
           colorClass: "text-emerald-600",
           dotClass: "bg-emerald-500",
           pulse: false,
+          tint: null,
         },
         {
           label: "Plan Ready",
           colorClass: "text-violet-600",
           dotClass: "bg-violet-500",
           pulse: false,
+          tint: null,
         },
       ]),
     ).toMatchObject({ label: "Plan Ready", dotClass: "bg-violet-500" });
