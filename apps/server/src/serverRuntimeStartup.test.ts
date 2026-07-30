@@ -1,5 +1,16 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { DEFAULT_MODEL, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  DEFAULT_MODEL,
+  type OrchestrationCommand,
+  type OrchestrationReadModel,
+  type OrchestrationSession,
+  type OrchestrationThread,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -220,6 +231,178 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
     assert.equal(typeof targets.bootstrapProjectId, "string");
     assert.equal(typeof targets.bootstrapThreadId, "string");
     assert.deepStrictEqual(yield* Ref.get(dispatchCalls), ["project.create", "thread.create"]);
+  }),
+);
+
+const RECONCILE_NOW = "2026-01-01T00:00:00.000Z";
+
+function makeReconcileSession(
+  threadId: ThreadId,
+  status: OrchestrationSession["status"],
+  activeTurnId: TurnId | null,
+): OrchestrationSession {
+  return {
+    threadId,
+    status,
+    providerName: "Codex",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    runtimeMode: "full-access",
+    activeTurnId,
+    lastError: null,
+    updatedAt: RECONCILE_NOW,
+  };
+}
+
+function makeReconcileThread(
+  threadId: ThreadId,
+  session: OrchestrationSession | null,
+): OrchestrationThread {
+  return {
+    id: threadId,
+    projectId: ProjectId.make("project-1"),
+    title: "Thread",
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    latestTurn: null,
+    createdAt: RECONCILE_NOW,
+    updatedAt: RECONCILE_NOW,
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    deletedAt: null,
+    messages: [],
+    proposedPlans: [],
+    activities: [],
+    checkpoints: [],
+    session,
+  };
+}
+
+function makeReconcileReadModel(
+  threads: ReadonlyArray<OrchestrationThread>,
+): OrchestrationReadModel {
+  return {
+    snapshotSequence: 0,
+    projects: [],
+    threads: [...threads],
+    updatedAt: RECONCILE_NOW,
+  };
+}
+
+it("selectOrphanedRunningSessions returns only running and starting sessions", () => {
+  const runningThreadId = ThreadId.make("thread-running");
+  const startingThreadId = ThreadId.make("thread-starting");
+  const readModel = makeReconcileReadModel([
+    makeReconcileThread(
+      runningThreadId,
+      makeReconcileSession(runningThreadId, "running", TurnId.make("turn-running")),
+    ),
+    makeReconcileThread(startingThreadId, makeReconcileSession(startingThreadId, "starting", null)),
+    makeReconcileThread(
+      ThreadId.make("thread-ready"),
+      makeReconcileSession(ThreadId.make("thread-ready"), "ready", null),
+    ),
+    makeReconcileThread(ThreadId.make("thread-none"), null),
+  ]);
+
+  const orphaned = ServerRuntimeStartup.selectOrphanedRunningSessions(readModel);
+
+  assert.deepStrictEqual(
+    orphaned.map((entry) => entry.threadId),
+    [runningThreadId, startingThreadId],
+  );
+});
+
+it("buildSessionInterruptCommand settles the turn and preserves provider metadata", () => {
+  const threadId = ThreadId.make("thread-running");
+  const session = makeReconcileSession(threadId, "running", TurnId.make("turn-running"));
+
+  const command = ServerRuntimeStartup.buildSessionInterruptCommand(
+    threadId,
+    session,
+    RECONCILE_NOW,
+    CommandId.make("command-1"),
+  );
+
+  assert.strictEqual(command.type, "thread.session.set");
+  if (command.type !== "thread.session.set") {
+    throw new Error("expected a thread.session.set command");
+  }
+  assert.strictEqual(command.createdAt, RECONCILE_NOW);
+  assert.deepStrictEqual(command.session, {
+    threadId,
+    status: "interrupted",
+    providerName: "Codex",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    runtimeMode: "full-access",
+    activeTurnId: null,
+    lastError: null,
+    updatedAt: RECONCILE_NOW,
+  });
+});
+
+it.effect("reconcileOrphanedRunningSessions interrupts each orphaned session exactly once", () =>
+  Effect.gen(function* () {
+    const runningThreadId = ThreadId.make("thread-running");
+    const dispatched = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+    const readModel = makeReconcileReadModel([
+      makeReconcileThread(
+        runningThreadId,
+        makeReconcileSession(runningThreadId, "running", TurnId.make("turn-running")),
+      ),
+      makeReconcileThread(
+        ThreadId.make("thread-ready"),
+        makeReconcileSession(ThreadId.make("thread-ready"), "ready", null),
+      ),
+    ]);
+
+    const settled = yield* ServerRuntimeStartup.reconcileOrphanedRunningSessions.pipe(
+      Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+        getCommandReadModel: () => Effect.succeed(readModel),
+        getSnapshot: () => Effect.die("unused"),
+        getShellSnapshot: () => Effect.die("unused"),
+        getArchivedShellSnapshot: () => Effect.die("unused"),
+        getSnapshotSequence: () => Effect.die("unused"),
+        getCounts: () => Effect.die("unused"),
+        getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+        getProjectShellById: () => Effect.die("unused"),
+        getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+        getThreadCheckpointContext: () => Effect.succeed(Option.none()),
+        getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+        getThreadShellById: () => Effect.die("unused"),
+        getThreadDetailById: () => Effect.die("unused"),
+        getThreadDetailSnapshot: () => Effect.die("unused"),
+      }),
+      Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
+        readEvents: () => Stream.empty,
+        dispatch: (command) =>
+          Ref.update(dispatched, (calls) => [...calls, command]).pipe(Effect.as({ sequence: 1 })),
+        streamDomainEvents: Stream.empty,
+        latestSequence: Effect.succeed(0),
+      } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
+      Effect.provide(NodeServices.layer),
+    );
+
+    assert.strictEqual(settled, 1);
+    const commands = yield* Ref.get(dispatched);
+    assert.strictEqual(commands.length, 1);
+    const command = commands[0];
+    assert.strictEqual(command?.type, "thread.session.set");
+    assert.strictEqual(
+      command?.type === "thread.session.set" ? command.threadId : null,
+      runningThreadId,
+    );
+    assert.strictEqual(
+      command?.type === "thread.session.set" ? command.session.status : null,
+      "interrupted",
+    );
+    assert.strictEqual(
+      command?.type === "thread.session.set" ? command.session.activeTurnId : "unexpected",
+      null,
+    );
   }),
 );
 
