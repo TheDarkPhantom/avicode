@@ -42,6 +42,22 @@ describe("notification sound presets", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
+  // Caught a real one: Glass originally reused the classic chime's A5 + E6.
+  // It differed in rhythm (a chord, not a sequence) but sharing both pitches
+  // made the two sound like relatives, which defeats offering both.
+  it("gives no two presets the same set of pitches", () => {
+    const byPitches = new Map<string, string[]>();
+    for (const [id, preset] of Object.entries(NOTIFICATION_SOUND_PRESETS)) {
+      const key = preset.notes
+        .map((note) => note.frequencyHz)
+        .sort((a, b) => a - b)
+        .join(",");
+      byPitches.set(key, [...(byPitches.get(key) ?? []), id]);
+    }
+    const collisions = [...byPitches.values()].filter((group) => group.length > 1);
+    expect(collisions, `presets share pitches: ${JSON.stringify(collisions)}`).toEqual([]);
+  });
+
   it("keeps the classic chime playable as an escape hatch for anyone who liked it", () => {
     const chime = NOTIFICATION_SOUND_PRESETS.chime;
     expect(chime.notes.map((note) => note.frequencyHz)).toEqual([880, 1_318.51]);

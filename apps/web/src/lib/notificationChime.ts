@@ -68,16 +68,20 @@ export const NOTIFICATION_SOUND_PRESETS = {
     attackSeconds: 0.004,
     notes: [{ frequencyHz: 440, startSeconds: 0, durationSeconds: 0.14 }],
   },
-  // A fifth (A5 + E6) struck together and left to ring. The only preset whose
+  // A fifth (D6 + A6) struck together and left to ring. The only preset whose
   // notes overlap, which is what gives it a chord rather than a melody.
+  //
+  // Deliberately not A5 + E6: that is the classic chime's pair, and two presets
+  // sharing both pitches sound like relatives even when their rhythm differs.
+  // Sitting a whole tone up keeps the interval but not the confusion.
   glass: {
     label: "Glass",
     oscillatorType: "sine",
     peakGain: 0.12,
     attackSeconds: 0.02,
     notes: [
-      { frequencyHz: 880, startSeconds: 0, durationSeconds: 0.5 },
-      { frequencyHz: 1_318.51, startSeconds: 0, durationSeconds: 0.5 },
+      { frequencyHz: 1_174.66, startSeconds: 0, durationSeconds: 0.5 },
+      { frequencyHz: 1_760, startSeconds: 0, durationSeconds: 0.5 },
     ],
   },
   // The original A5 → E6 rising sine, kept so anyone who liked it can keep it.
