@@ -6,6 +6,7 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   formatShortcutLabel,
   isAppZoomShortcut,
@@ -235,6 +236,29 @@ describe("split/new/close terminal shortcuts", () => {
         context: { terminalFocus: true },
       }),
     );
+  });
+
+  // Avi Code addition. Asserted against the shipped defaults rather than the
+  // fixture above: the point is that mod+w is never left unclaimed, because an
+  // unclaimed mod+w reaches Electron's window-close role and quits the app.
+  it("gives mod+w to the thread outside a focused terminal", () => {
+    for (const platform of ["Win32", "MacIntel"]) {
+      const modifier = platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true };
+      assert.equal(
+        resolveShortcutCommand(event({ key: "w", ...modifier }), DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { terminalFocus: true },
+        }),
+        "terminal.close",
+      );
+      assert.equal(
+        resolveShortcutCommand(event({ key: "w", ...modifier }), DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { terminalFocus: false },
+        }),
+        "thread.archive",
+      );
+    }
   });
 
   it("supports when expressions", () => {
