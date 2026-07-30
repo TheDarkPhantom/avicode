@@ -66,20 +66,29 @@ jobs:
           cache: true
           run-install: true
 
+      # Packaging compiles `native/resource-monitor`, so this job needs cargo.
+      # The runner image ships Rust, but pin it explicitly the way release.yml
+      # does — an image change should not silently break packaging.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Electron runtime
         run: vp run --filter @t3tools/desktop ensure:electron
 
       - name: Build desktop bundles
         run: vp run build:desktop
 
+      # A pull request only proves packaging still works, so it keeps the
+      # throwaway CI version. A manual dispatch is someone asking for an
+      # installer they intend to run, so that one carries the real version.
       - name: Build unsigned personal-alpha package
-        run: >
-          vp run dist:desktop:artifact
-          --platform win
-          --target nsis
-          --arch x64
-          --build-version 0.0.0-avicode-ci
-          --skip-build
+        shell: pwsh
+        run: |
+          $buildArgs = @("--platform", "win", "--target", "nsis", "--arch", "x64", "--skip-build")
+          if ($env:GITHUB_EVENT_NAME -ne "workflow_dispatch") {
+            $buildArgs += @("--build-version", "0.0.0-avicode-ci")
+          }
+          vp run dist:desktop:artifact @buildArgs
 
       - name: Verify package exists
         shell: pwsh
@@ -89,3 +98,16 @@ jobs:
             throw "The Windows x64 packaging check produced no installer."
           }
           $artifacts | Select-Object Name, Length
+
+      # Only on a manual dispatch: PR runs are a check, and uploading a
+      # multi-hundred-megabyte installer for every one of them is waste.
+      - name: Upload installer
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: avicode-windows-x64-installer
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+          if-no-files-found: error
+          retention-days: 14
