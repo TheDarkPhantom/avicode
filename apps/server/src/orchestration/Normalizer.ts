@@ -10,6 +10,7 @@ import {
   PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES,
   PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type ThreadId,
 } from "@t3tools/contracts";
 
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
@@ -56,6 +57,17 @@ export const canonicalizeClientCommandTimestamps = (
     },
   };
 };
+
+// Avi Code addition: fork uploads belong to the new aggregate, never the source thread.
+export function attachmentOwnerThreadId(command: ClientOrchestrationCommand): ThreadId | null {
+  if (command.type === "thread.fork") {
+    return command.forkThreadId;
+  }
+  if (command.type === "thread.turn.start") {
+    return command.threadId;
+  }
+  return null;
+}
 
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
@@ -114,9 +126,13 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       } satisfies OrchestrationCommand;
     }
 
-    if (canonicalCommand.type !== "thread.turn.start") {
+    if (canonicalCommand.type !== "thread.turn.start" && canonicalCommand.type !== "thread.fork") {
       return canonicalCommand as OrchestrationCommand;
     }
+    const attachmentThreadId =
+      canonicalCommand.type === "thread.fork"
+        ? canonicalCommand.forkThreadId
+        : canonicalCommand.threadId;
 
     const documentContexts: string[] = [];
     const normalizedAttachments = yield* Effect.forEach(
@@ -136,7 +152,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
               });
             }
 
-            const attachmentId = createAttachmentId(canonicalCommand.threadId);
+            const attachmentId = createAttachmentId(attachmentThreadId);
             if (!attachmentId) {
               return yield* new OrchestrationDispatchCommandError({
                 message: "Failed to create a safe attachment id.",
@@ -185,7 +201,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             });
           }
 
-          const attachmentId = createAttachmentId(canonicalCommand.threadId);
+          const attachmentId = createAttachmentId(attachmentThreadId);
           if (!attachmentId) {
             return yield* new OrchestrationDispatchCommandError({
               message: "Failed to create a safe attachment id.",

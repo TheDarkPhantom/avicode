@@ -28,6 +28,8 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Persistent per-instance provider authentication transition audit log.
 - [x] Explicit cross-project thread references with full transcript context and provenance.
 - [x] Opt-in per-project provider/model memory and pre-send credential usage visibility.
+- [x] Desktop Codex conversation forks from edited earlier messages, preserving the original thread
+      and current repository state.
 
 ## Personal alpha verification
 

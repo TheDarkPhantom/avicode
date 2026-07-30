@@ -182,8 +182,11 @@ function buildProps() {
     routeThreadKey: "environment-local:thread-1",
     onOpenTurnDiff: () => {},
     revertTurnCountByUserMessageId: new Map(),
+    canEditAndFork: false,
+    onEditAndForkUserMessage: () => {},
     onRevertUserMessage: () => {},
     isRevertingCheckpoint: false,
+    isForkingThread: false,
     onImageExpand: () => {},
     activeThreadEnvironmentId: ACTIVE_THREAD_ENVIRONMENT_ID,
     markdownCwd: undefined,
@@ -224,6 +227,19 @@ function buildUserTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it("renders the edit-and-fork action only when enabled", () => {
+    const timelineEntries = [buildUserTimelineEntry("Try another direction")];
+    const disabledMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={timelineEntries} />,
+    );
+    const enabledMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} canEditAndFork timelineEntries={timelineEntries} />,
+    );
+
+    expect(disabledMarkup).not.toContain('aria-label="Edit and fork"');
+    expect(enabledMarkup).toContain('aria-label="Edit and fork"');
+  });
+
   it("uses the larger leading inset only when the top fade is enabled", () => {
     const timelineEntries = [buildUserTimelineEntry("Hello")];
 

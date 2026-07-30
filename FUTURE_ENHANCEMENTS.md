@@ -38,6 +38,10 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - User-selectable ALFRED title templates.
 - Explicit project-to-provider credential pinning; the shipped isolation mode learns each project's
   last selection.
+- Extend desktop Codex message forks to mobile and browser clients, add optional checkpoint-restored
+  worktree forks, and support portable transcript forks for providers without native turn forks.
+- Persist an in-progress message-fork edit across app restarts and add an optional fork-family
+  visualization if lineage banners alone become difficult to navigate.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
@@ -66,3 +70,4 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-29: opt-in per-project provider/model memory and proactive credential usage checks.
 - 2026-07-29: selectable colour themes (Oxblood, Midnight, Forest, Violet, Graphite), each with a
   light and a dark palette, orthogonal to the Light/Dark/System switch.
+- 2026-07-30: desktop Codex “Edit and fork” from earlier user messages with lineage navigation.

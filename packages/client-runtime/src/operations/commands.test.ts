@@ -2,7 +2,9 @@ import {
   CommandId,
   EnvironmentId,
   ORCHESTRATION_WS_METHODS,
+  MessageId,
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
@@ -24,6 +26,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  forkThread,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -116,6 +119,55 @@ describe("environment commands", () => {
           commandId: "queued-command",
           threadId: "thread-1",
           createdAt: "2026-06-06T00:01:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches a conversation fork with generated metadata", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* forkThread({
+        threadId: ThreadId.make("source-thread"),
+        forkThreadId: ThreadId.make("fork-thread"),
+        forkPointMessageId: MessageId.make("source-message"),
+        message: {
+          messageId: MessageId.make("edited-message"),
+          role: "user",
+          text: "Take a different approach",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: "2026-07-30T00:00:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.fork",
+          commandId: "00000000-0000-4000-8000-000000000000",
+          threadId: "source-thread",
+          forkThreadId: "fork-thread",
+          forkPointMessageId: "source-message",
+          message: {
+            messageId: "edited-message",
+            role: "user",
+            text: "Take a different approach",
+            attachments: [],
+          },
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-5.4",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdAt: "2026-07-30T00:00:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
