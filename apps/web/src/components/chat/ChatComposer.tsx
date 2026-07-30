@@ -17,6 +17,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
@@ -2582,7 +2583,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             file,
           });
           if (extracted.truncated) {
-            error = `'${file.name}' was truncated to 100,000 characters.`;
+            error = `'${file.name}' was truncated to ${PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS.toLocaleString()} characters.`;
           }
         } catch (cause) {
           error = cause instanceof Error ? cause.message : `Could not read '${file.name}'.`;

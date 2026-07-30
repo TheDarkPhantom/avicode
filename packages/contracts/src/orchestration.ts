@@ -139,11 +139,14 @@ export type ProviderApprovalDecision = typeof ProviderApprovalDecision.Type;
 export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unknown);
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
-export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
+// Avi Code addition: raised the document/input character caps (upstream: 120k input /
+// 100k document) so long transcripts attach without being truncated. These still bound
+// what is sent into the provider context window; keep DOCUMENT <= INPUT.
+export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 600_000;
 export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
-export const PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS = 100_000;
+export const PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS = 500_000;
 const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS = 14_000_000;
 const CHAT_ATTACHMENT_ID_MAX_CHARS = 128;
 // Correlation id is command id by design in this model.
