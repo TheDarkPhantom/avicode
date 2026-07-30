@@ -50,6 +50,10 @@ import Migration0034 from "./Migrations/034_ProjectionThreadsSnoozed.ts";
 import Migration0035 from "./Migrations/035_ProviderInstanceUsage.ts";
 import Migration0036 from "./Migrations/036_ProjectionThreadMessageContext.ts";
 import Migration0037 from "./Migrations/037_ProjectionThreadsForkLineage.ts";
+// Avi Code addition: upstream shipped this as 035, but the fork had already
+// taken 35/36/37 and those ids are applied in users' databases. Renumbered to
+// 38 so it runs next instead of colliding with an id that has already run.
+import Migration0038 from "./Migrations/038_ProjectionThreadTitleRegeneration.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -99,6 +103,7 @@ export const migrationEntries = [
   [35, "ProviderInstanceUsage", Migration0035],
   [36, "ProjectionThreadMessageContext", Migration0036],
   [37, "ProjectionThreadsForkLineage", Migration0037],
+  [38, "ProjectionThreadTitleRegeneration", Migration0038],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

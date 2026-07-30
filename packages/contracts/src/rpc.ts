@@ -9,6 +9,11 @@ import {
   EnvironmentAuthorizationError,
 } from "./auth.ts";
 import {
+  BackgroundPolicySnapshot,
+  ClientActivityReportInput,
+  HostPowerSnapshot,
+} from "./background.ts";
+import {
   FilesystemBrowseInput,
   FilesystemBrowseResult,
   FilesystemBrowseError,
@@ -55,8 +60,6 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
   OrchestrationGetTurnDiffInput,
-  OrchestrationReplayEventsError,
-  OrchestrationReplayEventsInput,
   OrchestrationRpcSchemas,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
@@ -127,6 +130,7 @@ import {
   ServerProviderUpdatedPayload,
   ServerSelfUpdateError,
   ServerSelfUpdateInput,
+  ServerSelfUpdateProgressEvent,
   ServerSelfUpdateResult,
   ServerTraceDiagnosticsResult,
   ServerProcessDiagnosticsResult,
@@ -137,6 +141,12 @@ import {
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
+import {
+  ResourceTelemetryHistory,
+  ResourceTelemetryHistoryInput,
+  ResourceTelemetryRetryResult,
+  ResourceTelemetrySnapshot,
+} from "./resourceTelemetry.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -212,6 +222,7 @@ export const WS_METHODS = {
   serverRefreshProviders: "server.refreshProviders",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
+  serverUpdateServerWithProgress: "server.updateServerWithProgress",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetProviderUsage: "server.getProviderUsage",
@@ -221,7 +232,12 @@ export const WS_METHODS = {
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
+  serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
+  serverRetryResourceTelemetry: "server.retryResourceTelemetry",
   serverSignalProcess: "server.signalProcess",
+  serverReportClientActivity: "server.reportClientActivity",
+  serverReportHostPowerState: "server.reportHostPowerState",
+  serverGetBackgroundPolicy: "server.getBackgroundPolicy",
 
   // Voice dictation
   voiceCreateToken: "voice.createToken",
@@ -244,6 +260,8 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
+  subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
+  subscribeResourceTelemetry: "subscribeResourceTelemetry",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -295,6 +313,16 @@ export const WsServerUpdateServerRpc = Rpc.make(WS_METHODS.serverUpdateServer, {
   success: ServerSelfUpdateResult,
   error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
 });
+
+export const WsServerUpdateServerWithProgressRpc = Rpc.make(
+  WS_METHODS.serverUpdateServerWithProgress,
+  {
+    payload: ServerSelfUpdateInput,
+    success: ServerSelfUpdateProgressEvent,
+    error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
 
 /**
  * Token/cost totals per provider instance.
@@ -355,6 +383,21 @@ export const WsServerGetProcessResourceHistoryRpc = Rpc.make(
   },
 );
 
+export const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
+  WS_METHODS.serverGetResourceTelemetryHistory,
+  {
+    payload: ResourceTelemetryHistoryInput,
+    success: ResourceTelemetryHistory,
+    error: EnvironmentAuthorizationError,
+  },
+);
+
+export const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetryResourceTelemetry, {
+  payload: Schema.Struct({}),
+  success: ResourceTelemetryRetryResult,
+  error: EnvironmentAuthorizationError,
+});
+
 export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
   payload: ServerSignalProcessInput,
   success: ServerSignalProcessResult,
@@ -372,6 +415,22 @@ export const WsCloudInstallRelayClientRpc = Rpc.make(WS_METHODS.cloudInstallRela
   success: RelayClientInstallProgressEventSchema,
   error: Schema.Union([RelayClientInstallFailedError, EnvironmentAuthorizationError]),
   stream: true,
+});
+
+export const WsServerReportClientActivityRpc = Rpc.make(WS_METHODS.serverReportClientActivity, {
+  payload: ClientActivityReportInput,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerReportHostPowerStateRpc = Rpc.make(WS_METHODS.serverReportHostPowerState, {
+  payload: HostPowerSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerGetBackgroundPolicyRpc = Rpc.make(WS_METHODS.serverGetBackgroundPolicy, {
+  payload: Schema.Struct({}),
+  success: BackgroundPolicySnapshot,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsSourceControlLookupRepositoryRpc = Rpc.make(
@@ -658,12 +717,6 @@ export const WsOrchestrationGetFullThreadDiffRpc = Rpc.make(
   },
 );
 
-export const WsOrchestrationReplayEventsRpc = Rpc.make(ORCHESTRATION_WS_METHODS.replayEvents, {
-  payload: OrchestrationReplayEventsInput,
-  success: OrchestrationRpcSchemas.replayEvents.output,
-  error: Schema.Union([OrchestrationReplayEventsError, EnvironmentAuthorizationError]),
-});
-
 export const WsOrchestrationGetArchivedShellSnapshotRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot,
   {
@@ -725,12 +778,27 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsSubscribeBackgroundPolicyRpc = Rpc.make(WS_METHODS.subscribeBackgroundPolicy, {
+  payload: Schema.Struct({}),
+  success: BackgroundPolicySnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTelemetry, {
+  payload: Schema.Struct({}),
+  success: ResourceTelemetrySnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerUpdateServerRpc,
+  WsServerUpdateServerWithProgressRpc,
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerGetProviderUsageRpc,
@@ -740,7 +808,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
+  WsServerGetResourceTelemetryHistoryRpc,
+  WsServerRetryResourceTelemetryRpc,
   WsServerSignalProcessRpc,
+  WsServerReportClientActivityRpc,
+  WsServerReportHostPowerStateRpc,
+  WsServerGetBackgroundPolicyRpc,
   WsVoiceCreateTokenRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
@@ -791,10 +864,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
+  WsSubscribeBackgroundPolicyRpc,
+  WsSubscribeResourceTelemetryRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
-  WsOrchestrationReplayEventsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,

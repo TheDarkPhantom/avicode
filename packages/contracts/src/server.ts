@@ -359,6 +359,7 @@ export type ServerProcessSignal = typeof ServerProcessSignal.Type;
 
 export const ServerProcessDiagnosticsEntry = Schema.Struct({
   pid: PositiveInt,
+  startTimeMs: NonNegativeInt,
   ppid: NonNegativeInt,
   pgid: Schema.Option(Schema.Int),
   status: TrimmedNonEmptyString,
@@ -451,6 +452,7 @@ export type ServerProcessResourceHistoryResult = typeof ServerProcessResourceHis
 
 export const ServerSignalProcessInput = Schema.Struct({
   pid: PositiveInt,
+  startTimeMs: NonNegativeInt,
   signal: ServerProcessSignal,
 });
 export type ServerSignalProcessInput = typeof ServerSignalProcessInput.Type;
@@ -667,6 +669,21 @@ export const ServerSelfUpdateResult = Schema.Struct({
   method: ServerSelfUpdateMethod,
 });
 export type ServerSelfUpdateResult = typeof ServerSelfUpdateResult.Type;
+
+export const ServerSelfUpdateProgressStage = Schema.Literals(["downloading", "installing"]);
+export type ServerSelfUpdateProgressStage = typeof ServerSelfUpdateProgressStage.Type;
+
+export const ServerSelfUpdateProgressEvent = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("progress"),
+    stage: ServerSelfUpdateProgressStage,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("complete"),
+    result: ServerSelfUpdateResult,
+  }),
+]);
+export type ServerSelfUpdateProgressEvent = typeof ServerSelfUpdateProgressEvent.Type;
 
 export class ServerSelfUpdateError extends Schema.TaggedErrorClass<ServerSelfUpdateError>()(
   "ServerSelfUpdateError",
