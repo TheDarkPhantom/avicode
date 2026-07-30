@@ -94,6 +94,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
+  /* Avi Code addition. Upstream repeated `max-w-3xl` at every chat-column site
+     and hard-coded the same 768px in the timeline minimap maths. Both now read
+     these, and ChatView overrides them per the `aviCodeChatContentWidth`
+     setting. `--chat-wide-content-max-width` is the break-out measure for block
+     content that a prose column squeezes — tables, code, diffs. */
+  --chat-content-max-width: 48rem;
+  --chat-wide-content-max-width: 87.5rem;
 }
 
 .dark {
@@ -377,6 +384,31 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   .chat-composer-horizontal-inset {
     padding-inline-start: calc(env(safe-area-inset-left) + 0.75rem);
     padding-inline-end: calc(env(safe-area-inset-right) + 0.75rem);
+  }
+
+  /* Avi Code addition. Establishes the chat pane as a query container so block
+     content can measure the pane rather than the prose column it sits inside.
+     Without this, `100cqw` below would resolve against the viewport and ignore
+     the sidebar and right panel. */
+  .chat-content-container {
+    container-type: inline-size;
+  }
+
+  /* Avi Code addition. Prose wants a comfortable measure; tables, code, and
+     diffs want room. Widen those symmetrically into whatever gutter the prose
+     column leaves, capped at `--chat-wide-content-max-width`.
+
+     Negative margins rather than `margin-left: 50%; transform: translateX(-50%)`
+     — the transform idiom would create a containing block for the table's
+     sticky header and interfere with the ScrollArea wrapper. This clamps to 0
+     when there is no gutter (narrow pane, or `full` width where the column
+     already spans the pane), so it is inert instead of overflowing. */
+  .chat-content-breakout {
+    --chat-content-breakout-inset: max(
+      0px,
+      (min(100cqw, var(--chat-wide-content-max-width)) - var(--chat-content-max-width)) / 2
+    );
+    margin-inline: calc(-1 * var(--chat-content-breakout-inset));
   }
 
   .chat-composer-glass {

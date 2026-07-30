@@ -1,11 +1,13 @@
 import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@t3tools/contracts";
 import {
+  type AviCodeChatContentWidth,
   MAX_SIDEBAR_FLAT_THREAD_COUNT,
   MIN_SIDEBAR_FLAT_THREAD_COUNT,
   type SidebarFlatThreadCount,
   type SidebarThreadGrouping,
 } from "@t3tools/contracts/settings";
 import {
+  AlignCenterIcon,
   BellRingIcon,
   DatabaseBackupIcon,
   EyeOffIcon,
@@ -142,6 +144,52 @@ const SIDEBAR_THREAD_GROUPING_LABELS: Record<SidebarThreadGrouping, string> = {
   project: "Group by project",
   flat: "Flat, by activity",
 };
+
+const CHAT_CONTENT_WIDTH_LABELS: Record<AviCodeChatContentWidth, string> = {
+  comfortable: "Comfortable",
+  wide: "Wide",
+  full: "Full width",
+};
+
+function ChatLayoutSettings() {
+  const contentWidth = useClientSettings<AviCodeChatContentWidth>(
+    (settings) => settings.aviCodeChatContentWidth,
+  );
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="Chat layout" icon={<AlignCenterIcon className="size-5" />}>
+      <SettingsRow
+        title="Conversation width"
+        description="How wide the message column and composer are allowed to grow. Comfortable keeps the reading measure short, which is easier on long prose; Full uses the whole pane."
+        status="Tables, code blocks, and diffs always widen past this into whatever space is free, so a wide table stays readable on Comfortable."
+        control={
+          <Select
+            value={contentWidth}
+            onValueChange={(value) => {
+              updateSettings({ aviCodeChatContentWidth: value as AviCodeChatContentWidth });
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-48" aria-label="Conversation width">
+              <SelectValue>{CHAT_CONTENT_WIDTH_LABELS[contentWidth]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="comfortable">
+                {CHAT_CONTENT_WIDTH_LABELS.comfortable}
+              </SelectItem>
+              <SelectItem hideIndicator value="wide">
+                {CHAT_CONTENT_WIDTH_LABELS.wide}
+              </SelectItem>
+              <SelectItem hideIndicator value="full">
+                {CHAT_CONTENT_WIDTH_LABELS.full}
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+    </SettingsSection>
+  );
+}
 
 function SidebarLayoutSettings() {
   const threadGrouping = useClientSettings<SidebarThreadGrouping>(
@@ -534,6 +582,7 @@ export function AviCodeSettings() {
       {tab !== "settings" ? null : (
         <>
           <ColorThemeSettings />
+          <ChatLayoutSettings />
           <SidebarLayoutSettings />
           <NotificationSettings />
           <TimeLoggingSettings />
