@@ -14,6 +14,7 @@ import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
+  aviCodeNotificationSound: "pebble",
   aviCodeProviderBadgeLabels: {},
   aviCodeSidebarShowStatusLabels: true,
   confirmThreadArchive: true,

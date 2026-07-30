@@ -3,6 +3,7 @@ import {
   MAX_SIDEBAR_FLAT_THREAD_COUNT,
   MIN_SIDEBAR_FLAT_THREAD_COUNT,
   type SidebarFlatThreadCount,
+  type AviCodeNotificationSound,
   type SidebarThreadGrouping,
 } from "@t3tools/contracts/settings";
 import {
@@ -37,7 +38,7 @@ import {
   isColorThemeId,
 } from "../../lib/colorTheme";
 import { DraftInput } from "../ui/draft-input";
-import { previewNotificationChime } from "../../lib/notificationChime";
+import { NOTIFICATION_SOUND_PRESETS, previewNotificationChime } from "../../lib/notificationChime";
 import {
   isWindowTitlePrivacyEnabled,
   setWindowTitlePrivacyEnabled,
@@ -231,9 +232,16 @@ function SidebarLayoutSettings() {
   );
 }
 
+const NOTIFICATION_SOUND_OPTIONS = Object.entries(NOTIFICATION_SOUND_PRESETS) as ReadonlyArray<
+  [AviCodeNotificationSound, (typeof NOTIFICATION_SOUND_PRESETS)[AviCodeNotificationSound]]
+>;
+
 function NotificationSettings() {
   const notificationSoundEnabled = useClientSettings(
     (settings) => settings.notificationSoundEnabled,
+  );
+  const notificationSound = useClientSettings<AviCodeNotificationSound>(
+    (settings) => settings.aviCodeNotificationSound,
   );
   const updateSettings = useUpdateClientSettings();
 
@@ -241,7 +249,7 @@ function NotificationSettings() {
     <SettingsSection title="Notifications" icon={<BellRingIcon className="size-5" />}>
       <SettingsRow
         title="Sound when a chat needs you"
-        description="Plays a short chime the moment a chat starts waiting on you — it finished work you haven't read, it asked a question, or it's blocked on an approval. These are the same states the sidebar labels Completed, Waiting, and Pending Approval, so the sound and the label always agree."
+        description="Plays a short sound the moment a chat starts waiting on you — it finished work you haven't read, it asked a question, or it's blocked on an approval. These are the same states the sidebar labels Completed, Waiting, and Pending Approval, so the sound and the label always agree."
         status="Stays quiet for the chat you already have open in a focused window, and for everything that is already waiting when the app starts."
         control={
           <Switch
@@ -254,11 +262,40 @@ function NotificationSettings() {
               const enabled = Boolean(checked);
               updateSettings({ notificationSoundEnabled: enabled });
               if (enabled) {
-                previewNotificationChime();
+                previewNotificationChime(notificationSound);
               }
             }}
             aria-label="Play a sound when a chat needs you"
           />
+        }
+      />
+      <SettingsRow
+        title="Sound"
+        description="Picking one plays it. They differ in rhythm and timbre, not just pitch, so you can tell Avi Code apart from whatever else on your machine chimes at you."
+        control={
+          <Select
+            value={notificationSound}
+            disabled={!notificationSoundEnabled}
+            onValueChange={(value) => {
+              const next = value as AviCodeNotificationSound;
+              updateSettings({ aviCodeNotificationSound: next });
+              // Same user-gesture reasoning as the toggle above: this is the
+              // one moment we are allowed to make noise, so use it to let the
+              // choice be heard rather than guessed from a name.
+              previewNotificationChime(next);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-48" aria-label="Notification sound">
+              <SelectValue>{NOTIFICATION_SOUND_PRESETS[notificationSound].label}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {NOTIFICATION_SOUND_OPTIONS.map(([id, preset]) => (
+                <SelectItem hideIndicator key={id} value={id}>
+                  {preset.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
         }
       />
     </SettingsSection>

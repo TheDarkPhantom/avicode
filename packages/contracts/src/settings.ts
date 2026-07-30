@@ -44,6 +44,20 @@ export const SidebarFlatThreadCount = Schema.Int.check(
 export type SidebarFlatThreadCount = typeof SidebarFlatThreadCount.Type;
 export const DEFAULT_SIDEBAR_FLAT_THREAD_COUNT: SidebarFlatThreadCount = 20;
 
+// Avi Code addition. The chime used to be a single hard-coded rising two-note
+// sine — the same shape other desktop tools use, so hearing it did not tell you
+// which app wanted you. These five are synthesized from preset tables in
+// `apps/web/src/lib/notificationChime.ts`; no audio assets are involved.
+export const AviCodeNotificationSound = Schema.Literals([
+  "pebble",
+  "marimba",
+  "pluck",
+  "glass",
+  "chime",
+]);
+export type AviCodeNotificationSound = typeof AviCodeNotificationSound.Type;
+export const DEFAULT_AVICODE_NOTIFICATION_SOUND: AviCodeNotificationSound = "pebble";
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -104,6 +118,10 @@ export const ClientSettingsSchema = Schema.Struct({
   // Waiting, and Completed/Done. Opt-in: a browser tab that makes noise
   // without being asked to is worse than a missed notification.
   notificationSoundEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Which of the synthesized presets that chime uses.
+  aviCodeNotificationSound: AviCodeNotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_NOTIFICATION_SOUND)),
+  ),
   // Avi Code additions. Keep the dense chat list scannable and let custom
   // provider instances use a memorable one- or two-character client badge.
   aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
@@ -699,6 +717,7 @@ export const ClientSettingsPatch = Schema.Struct({
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
   notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
+  aviCodeNotificationSound: Schema.optionalKey(AviCodeNotificationSound),
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
