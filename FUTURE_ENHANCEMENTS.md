@@ -17,6 +17,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
+  during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
+  have not been verified to stop after proposing a plan. If a provider still auto-implements,
+  consider interrupting the turn as soon as the plan is captured so it settles and the Implement
+  button appears immediately.
+- The start-in-plan-mode setting reads the client-settings snapshot through a callback registered
+  by `hooks/useSettings` (module-cycle constraint), so a draft created before that module loads
+  would fall back to build mode. Not observed in practice — any rendered UI loads the hook first.
 - Colour themes do not reach three surfaces that are still hardcoded to a binary light/dark:
   the desktop native window chrome (`DesktopWindow.ts` — background `#0a0a0a`/`#ffffff` and the
   titlebar symbol colours), the Shiki/diff highlighting themes (`diffRendering.ts` is fixed to
