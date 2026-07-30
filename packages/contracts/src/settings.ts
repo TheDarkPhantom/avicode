@@ -44,6 +44,15 @@ export const SidebarFlatThreadCount = Schema.Int.check(
 export type SidebarFlatThreadCount = typeof SidebarFlatThreadCount.Type;
 export const DEFAULT_SIDEBAR_FLAT_THREAD_COUNT: SidebarFlatThreadCount = 20;
 
+// Avi Code addition. Upstream pins the chat column to a fixed 48rem regardless
+// of window width, so a wide window is mostly empty gutter. "comfortable" keeps
+// that measure, "wide" trades some line-length comfort for density, and "full"
+// uses the whole pane. Wide block content (tables, code, diffs) breaks out past
+// this cap on its own — see `--chat-wide-content-max-width`.
+export const AviCodeChatContentWidth = Schema.Literals(["comfortable", "wide", "full"]);
+export type AviCodeChatContentWidth = typeof AviCodeChatContentWidth.Type;
+export const DEFAULT_AVICODE_CHAT_CONTENT_WIDTH: AviCodeChatContentWidth = "comfortable";
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -113,6 +122,10 @@ export const ClientSettingsSchema = Schema.Struct({
     ProviderInstanceId,
     Schema.String.check(Schema.isMaxLength(2)),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. How wide the chat column is allowed to grow.
+  aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -700,6 +713,7 @@ export const ClientSettingsPatch = Schema.Struct({
   glassOpacity: Schema.optionalKey(GlassOpacity),
   notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
+  aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),

@@ -102,8 +102,10 @@ import {
   extractTrailingPreviewAnnotation,
   type ParsedPreviewAnnotation,
 } from "~/lib/previewAnnotation";
+import { chatContentMaxWidthPx } from "~/lib/chatContentWidth";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
+import { useClientSettings } from "~/hooks/useSettings";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
@@ -242,6 +244,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
+  // Avi Code addition: the column's cap is user-configurable, and the minimap's
+  // gutter maths has to agree with it or the rail drifts off the content edge.
+  const chatContentMaxWidth = chatContentMaxWidthPx(
+    useClientSettings((settings) => settings.aviCodeChatContentWidth),
+  );
 
   const onToggleTurnFold = useCallback((turnId: TurnId) => {
     setExpandedTurnIds((existing) => {
@@ -432,11 +439,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
     const measure = () => {
       const viewportWidth = timelineViewportElement.getBoundingClientRect().width;
-      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(viewportWidth);
+      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(
+        viewportWidth,
+        chatContentMaxWidth,
+      );
       setMinimapHasPersistentGutter((current) =>
         current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
       );
-      setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth));
+      setMinimapHitStripWidth(
+        resolveTimelineMinimapHitStripWidth(viewportWidth, chatContentMaxWidth),
+      );
     };
 
     const frame = requestAnimationFrame(measure);
@@ -448,7 +460,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [timelineViewportElement, rows.length]);
+  }, [timelineViewportElement, rows.length, chatContentMaxWidth]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
@@ -515,7 +527,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // from TimelineRowCtx, which propagates through LegendList's memo.
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
-      <div className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip" data-timeline-root="true">
+      <div
+        className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width) overflow-x-clip"
+        data-timeline-root="true"
+      >
         <TimelineRowContent row={item} />
       </div>
     ),
@@ -717,7 +732,7 @@ function TimelinePinnedUserMessage({
       )}
       data-testid="timeline-pinned-user-message"
     >
-      <div className="flex w-full max-w-3xl justify-end">
+      <div className="flex w-full max-w-(--chat-content-max-width) justify-end">
         <button
           aria-label={`Jump to message: ${label}`}
           className="pointer-events-auto flex min-w-0 max-w-[80%] cursor-pointer items-center gap-2 rounded-xl border border-border/40 bg-accent/90 px-3 py-1.5 text-left text-sm shadow-md shadow-black/10 backdrop-blur-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
