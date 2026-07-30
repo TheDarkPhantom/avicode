@@ -365,6 +365,17 @@ describe("MessagesTimeline", () => {
     expect(resolveTimelineMinimapHitStripWidth(0)).toBe(0);
     expect(resolveTimelineMinimapHitStripWidth(Number.NaN)).toBe(0);
 
+    // Avi Code addition: the column cap is user-configurable, so the gutter
+    // maths takes it as an argument. A wider column eats the gutter the
+    // minimap lives in — at 1400px viewport the 768 column leaves 316px a
+    // side, but a 1152 column leaves only 124px, and "full" leaves none.
+    expect(resolveTimelineMinimapHasPersistentGutter(1400, 1152)).toBe(true);
+    expect(resolveTimelineMinimapHasPersistentGutter(1200, 1152)).toBe(false);
+    expect(resolveTimelineMinimapHitStripWidth(1400, 1152)).toBe(40);
+    expect(resolveTimelineMinimapHitStripWidth(1200, 1152)).toBe(12);
+    expect(resolveTimelineMinimapHasPersistentGutter(1400, Number.POSITIVE_INFINITY)).toBe(false);
+    expect(resolveTimelineMinimapHitStripWidth(1400, Number.POSITIVE_INFINITY)).toBe(0);
+
     // The collapsed target stays narrow, but an open preview keeps its full
     // 20rem width plus the 2rem offset from the minimap rail interactive.
     expect(resolveTimelineMinimapInteractiveWidth(0, false)).toBe(0);

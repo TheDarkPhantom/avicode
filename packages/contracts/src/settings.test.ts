@@ -148,6 +148,26 @@ describe("ClientSettings Avi Code chat badges", () => {
   });
 });
 
+describe("ClientSettings Avi Code chat content width", () => {
+  it("defaults to the upstream comfortable measure so existing users see no change", () => {
+    expect(decodeClientSettings({}).aviCodeChatContentWidth).toBe("comfortable");
+  });
+
+  it.each(["comfortable", "wide", "full"] as const)("accepts %s", (value) => {
+    expect(decodeClientSettings({ aviCodeChatContentWidth: value }).aviCodeChatContentWidth).toBe(
+      value,
+    );
+    expect(
+      decodeClientSettingsPatch({ aviCodeChatContentWidth: value }).aviCodeChatContentWidth,
+    ).toBe(value);
+  });
+
+  it("rejects a width outside the union", () => {
+    expect(() => decodeClientSettings({ aviCodeChatContentWidth: "widest" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ aviCodeChatContentWidth: "widest" })).toThrow();
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
