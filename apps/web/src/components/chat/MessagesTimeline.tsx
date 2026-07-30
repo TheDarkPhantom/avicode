@@ -137,6 +137,8 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
+  canEditAndFork: boolean;
+  onEditAndForkUserMessage: (messageId: MessageId) => void;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -147,6 +149,7 @@ interface TimelineRowSharedState {
 interface TimelineRowActivityState {
   isWorking: boolean;
   isRevertingCheckpoint: boolean;
+  isForkingThread: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
 }
@@ -157,6 +160,7 @@ const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FADE_HEADER = <div className="h-10 sm:h-12" />;
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const NOOP_MESSAGE_ACTION = (_messageId: MessageId) => {};
 
 // ---------------------------------------------------------------------------
 // Props (public API)
@@ -175,7 +179,10 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  canEditAndFork?: boolean;
+  onEditAndForkUserMessage?: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
+  isForkingThread?: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
@@ -211,7 +218,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  canEditAndFork = false,
+  onEditAndForkUserMessage = NOOP_MESSAGE_ACTION,
   isRevertingCheckpoint,
+  isForkingThread = false,
   onImageExpand,
   activeThreadEnvironmentId,
   markdownCwd,
@@ -450,6 +460,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      canEditAndFork,
+      onEditAndForkUserMessage,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -464,6 +476,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      canEditAndFork,
+      onEditAndForkUserMessage,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -475,10 +489,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     () => ({
       isWorking,
       isRevertingCheckpoint,
+      isForkingThread,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
     }),
-    [activeTurnInProgress, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
+    [activeTurnInProgress, isForkingThread, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
   );
 
   const pinnedMessageItem =
@@ -1094,6 +1109,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             </TooltipPopup>
           </Tooltip>
           <div className="flex items-center gap-0.5">
+            {/* Avi Code addition: edit an earlier Codex message into a separate conversation. */}
+            {ctx.canEditAndFork && <EditAndForkUserMessageButton messageId={row.message.id} />}
             {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
             {displayedUserMessage.copyText && (
               <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
@@ -1102,6 +1119,31 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       </div>
     </div>
+  );
+}
+
+function EditAndForkUserMessageButton({ messageId }: { messageId: MessageId }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={activity.isForkingThread || activity.isWorking}
+            onClick={() => ctx.onEditAndForkUserMessage(messageId)}
+            aria-label="Edit and fork"
+          />
+        }
+      >
+        <SquarePenIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Edit and fork</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -1119,13 +1161,13 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
             variant="ghost"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
             onClick={() => ctx.onRevertUserMessage(messageId)}
-            aria-label="Revert to this message"
+            aria-label="Revert thread here"
           />
         }
       >
         <Undo2Icon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Revert to this message</TooltipPopup>
+      <TooltipPopup side="top">Revert thread here</TooltipPopup>
     </Tooltip>
   );
 }

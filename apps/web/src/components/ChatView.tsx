@@ -111,6 +111,7 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
+  type ChatAttachment,
   type SessionPhase,
   type Thread,
   type TurnDiffSummary,
@@ -153,6 +154,7 @@ import {
   ChevronDownIcon,
   GitBranchIcon,
   TriangleAlertIcon,
+  SquarePenIcon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -182,6 +184,7 @@ import {
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerAttachment,
+  type ComposerThreadDraftState,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
@@ -1184,6 +1187,7 @@ function ChatViewContent(props: ChatViewProps) {
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
+  const forkThread = useAtomCommand(threadEnvironment.fork, { reportFailure: false });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const { environments } = useEnvironments();
@@ -1279,6 +1283,13 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  // Avi Code addition: ephemeral desktop composer state for non-destructive message forks.
+  const [forkEditState, setForkEditState] = useState<{
+    sourceMessageId: MessageId;
+    retainedAttachments: Array<ChatAttachment & { readonly previewUrl?: string }>;
+    savedDraft: ComposerThreadDraftState;
+  } | null>(null);
+  const [isForkingThread, setIsForkingThread] = useState(false);
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -4131,12 +4142,155 @@ function ChatViewContent(props: ChatViewProps) {
     }
     void handleSwitchCheckoutToThread();
   }, [gitStatusQuery.data?.hasWorkingTreeChanges, handleSwitchCheckoutToThread]);
+  const restoreComposerDraft = useCallback(
+    (draft: ComposerThreadDraftState) => {
+      clearComposerDraftContent(composerDraftTarget);
+      promptRef.current = draft.prompt;
+      composerImagesRef.current = [...draft.images];
+      composerTerminalContextsRef.current = [...draft.terminalContexts];
+      composerElementContextsRef.current = [...draft.elementContexts];
+      setComposerDraftPrompt(composerDraftTarget, draft.prompt);
+      addComposerDraftImages(composerDraftTarget, [...draft.images]);
+      setComposerDraftTerminalContexts(composerDraftTarget, draft.terminalContexts);
+      setComposerDraftElementContexts(composerDraftTarget, draft.elementContexts);
+      setComposerDraftPreviewAnnotations(composerDraftTarget, draft.previewAnnotations);
+      setComposerDraftReviewComments(composerDraftTarget, draft.reviewComments);
+      setComposerDraftThreadContextIds(composerDraftTarget, draft.threadContextIds);
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(draft.prompt, draft.prompt.length),
+        prompt: draft.prompt,
+        detectTrigger: true,
+      });
+    },
+    [
+      addComposerDraftImages,
+      clearComposerDraftContent,
+      composerDraftTarget,
+      composerRef,
+      setComposerDraftElementContexts,
+      setComposerDraftPreviewAnnotations,
+      setComposerDraftPrompt,
+      setComposerDraftReviewComments,
+      setComposerDraftTerminalContexts,
+      setComposerDraftThreadContextIds,
+    ],
+  );
+  const cancelForkEdit = useCallback(() => {
+    if (!forkEditState || isForkingThread) return;
+    restoreComposerDraft(forkEditState.savedDraft);
+    setForkEditState(null);
+    scheduleComposerFocus();
+  }, [forkEditState, isForkingThread, restoreComposerDraft, scheduleComposerFocus]);
+  const onEditAndForkUserMessage = useCallback(
+    (messageId: MessageId) => {
+      if (!isElectron || !activeThread || !isServerThread || isForkingThread || isWorking) return;
+      const message = displayServerMessages.find(
+        (candidate) => candidate.id === messageId && candidate.role === "user",
+      );
+      if (!message) return;
+      const currentDraft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+      if (!currentDraft) return;
+      const savedDraft: ComposerThreadDraftState = {
+        ...currentDraft,
+        images: currentDraft.images.map(cloneComposerImageForRetry),
+        terminalContexts: [...currentDraft.terminalContexts],
+        threadContextIds: [...currentDraft.threadContextIds],
+        elementContexts: [...currentDraft.elementContexts],
+        previewAnnotations: [...currentDraft.previewAnnotations],
+        reviewComments: [...currentDraft.reviewComments],
+        modelSelectionByProvider: { ...currentDraft.modelSelectionByProvider },
+        nonPersistedImageIds: [...currentDraft.nonPersistedImageIds],
+        persistedAttachments: [...currentDraft.persistedAttachments],
+      };
+      clearComposerDraftContent(composerDraftTarget);
+      promptRef.current = message.text;
+      composerImagesRef.current = [];
+      composerTerminalContextsRef.current = [];
+      composerElementContextsRef.current = [];
+      setComposerDraftPrompt(composerDraftTarget, message.text);
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(message.text, message.text.length),
+        prompt: message.text,
+        detectTrigger: true,
+      });
+      setForkEditState({
+        sourceMessageId: messageId,
+        retainedAttachments: [...(message.attachments ?? [])],
+        savedDraft,
+      });
+      scheduleComposerFocus();
+    },
+    [
+      activeThread,
+      displayServerMessages,
+      clearComposerDraftContent,
+      composerDraftTarget,
+      composerRef,
+      isForkingThread,
+      isServerThread,
+      isWorking,
+      scheduleComposerFocus,
+      setComposerDraftPrompt,
+    ],
+  );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const forkEditItems: ComposerBannerStackItem[] =
+      forkEditState === null
+        ? []
+        : [
+            {
+              id: `fork-edit:${forkEditState.sourceMessageId}`,
+              variant: "info",
+              icon: <SquarePenIcon />,
+              title: "Editing a fork from an earlier message",
+              description:
+                forkEditState.retainedAttachments.length > 0 ? (
+                  <span className="flex flex-wrap items-center gap-1">
+                    {forkEditState.retainedAttachments.map((attachment) => (
+                      <Button
+                        key={attachment.id}
+                        size="xs"
+                        variant="outline"
+                        disabled={isForkingThread}
+                        aria-label={`Remove ${attachment.name}`}
+                        onClick={() =>
+                          setForkEditState((current) =>
+                            current === null
+                              ? null
+                              : {
+                                  ...current,
+                                  retainedAttachments: current.retainedAttachments.filter(
+                                    (candidate) => candidate.id !== attachment.id,
+                                  ),
+                                },
+                          )
+                        }
+                      >
+                        {attachment.name} (remove)
+                      </Button>
+                    ))}
+                  </span>
+                ) : (
+                  "The original thread and repository files will remain unchanged."
+                ),
+              actions: (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={isForkingThread}
+                  onClick={cancelForkEdit}
+                >
+                  Cancel
+                </Button>
+              ),
+            },
+          ];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
-      return [...systemComposerBannerItems, ...parkedThreadItems];
+      return [...forkEditItems, ...systemComposerBannerItems, ...parkedThreadItems];
     }
     return [
+      ...forkEditItems,
       ...systemComposerBannerItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
@@ -4180,6 +4334,9 @@ function ChatViewContent(props: ChatViewProps) {
       ...parkedThreadItems,
     ];
   }, [
+    cancelForkEdit,
+    forkEditState,
+    isForkingThread,
     activeBranchMismatchKey,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
@@ -4522,6 +4679,154 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerReviewComments.length,
     });
+    if (forkEditState) {
+      if (
+        !isElectron ||
+        !isServerThread ||
+        selectedProvider !== "codex" ||
+        phase === "running" ||
+        activeEnvironmentUnavailable
+      ) {
+        setThreadError(activeThread.id, "This Codex thread is not ready to fork.");
+        return;
+      }
+      if (!hasSendableContent && forkEditState.retainedAttachments.length === 0) {
+        return;
+      }
+
+      setIsForkingThread(true);
+      const forkThreadId = newThreadId();
+      const createdAt = new Date().toISOString();
+      const messageTextWithContexts = appendElementContextsToPrompt(
+        appendTerminalContextsToPrompt(promptForSend, sendableComposerTerminalContexts),
+        composerElementContexts,
+      );
+      const messageTextWithPreviewAnnotations = composerPreviewAnnotations.reduce(
+        (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
+        messageTextWithContexts,
+      );
+      const messageTextForSend = appendReviewCommentsToPrompt(
+        messageTextWithPreviewAnnotations,
+        composerReviewComments,
+      );
+      const outgoingMessageText = formatOutgoingPrompt({
+        provider: ctxSelectedProvider,
+        model: ctxSelectedModel,
+        models: ctxSelectedProviderModels,
+        effort: ctxSelectedPromptEffort,
+        text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      });
+      const attachmentResult = await settlePromise(async () => {
+        const retainedUploads = await Promise.all(
+          forkEditState.retainedAttachments.map(async (attachment) => {
+            if (!attachment.previewUrl) {
+              throw new Error(`The original attachment '${attachment.name}' is unavailable.`);
+            }
+            const response = await fetch(attachment.previewUrl);
+            if (!response.ok) {
+              throw new Error(`Could not reload '${attachment.name}'.`);
+            }
+            if (attachment.type === "document") {
+              return {
+                type: "document" as const,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+                extractedText: await response.text(),
+              };
+            }
+            const blob = await response.blob();
+            return {
+              type: "image" as const,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              dataUrl: await readFileAsDataUrl(
+                new File([blob], attachment.name, { type: attachment.mimeType }),
+              ),
+            };
+          }),
+        );
+        const newUploads = await Promise.all(
+          composerImages.map(async (attachment) =>
+            attachment.type === "document"
+              ? {
+                  type: "document" as const,
+                  name: attachment.name,
+                  mimeType: attachment.mimeType,
+                  sizeBytes: attachment.sizeBytes,
+                  extractedText: attachment.extractedText,
+                }
+              : {
+                  type: "image" as const,
+                  name: attachment.name,
+                  mimeType: attachment.mimeType,
+                  sizeBytes: attachment.sizeBytes,
+                  dataUrl: await readFileAsDataUrl(attachment.file),
+                },
+          ),
+        );
+        return [...retainedUploads, ...newUploads];
+      });
+
+      let failure: AtomCommandResult<unknown, unknown> | null = null;
+      if (attachmentResult._tag === "Failure") {
+        setThreadError(
+          activeThread.id,
+          sanitizeThreadErrorMessage(
+            chatActionErrorMessage(squashAtomCommandFailure(attachmentResult)),
+          ),
+        );
+      } else {
+        const forkResult = await forkThread({
+          environmentId,
+          input: {
+            threadId: activeThread.id,
+            forkThreadId,
+            forkPointMessageId: forkEditState.sourceMessageId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: outgoingMessageText,
+              attachments: attachmentResult.value,
+            },
+            modelSelection: ctxSelectedModelSelection,
+            runtimeMode,
+            interactionMode,
+            createdAt,
+          },
+        });
+        failure = forkResult._tag === "Failure" ? forkResult : null;
+      }
+      if (failure === null && attachmentResult._tag === "Success") {
+        const startedResult = await settlePromise(() =>
+          waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, forkThreadId)),
+        );
+        failure = startedResult._tag === "Failure" ? startedResult : null;
+      }
+      if (failure !== null) {
+        const error = squashAtomCommandFailure(failure);
+        setThreadError(activeThread.id, sanitizeThreadErrorMessage(chatActionErrorMessage(error)));
+        setIsForkingThread(false);
+        return;
+      }
+      if (attachmentResult._tag === "Failure") {
+        setIsForkingThread(false);
+        return;
+      }
+
+      restoreComposerDraft(forkEditState.savedDraft);
+      setForkEditState(null);
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: activeThread.environmentId,
+          threadId: forkThreadId,
+        },
+      });
+      setIsForkingThread(false);
+      return;
+    }
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
@@ -5880,11 +6185,18 @@ function ChatViewContent(props: ChatViewProps) {
     }
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
-
   // Empty state: no active thread
   if (!activeThread) {
     return <NoActiveThreadState />;
   }
+  const forkSourceThread =
+    activeThread.forkedFrom == null
+      ? null
+      : (allThreadShells.find(
+          (thread) =>
+            thread.environmentId === activeThread.environmentId &&
+            thread.id === activeThread.forkedFrom?.threadId,
+        ) ?? null);
 
   const panelToggleControls = (
     <PanelLayoutControls
@@ -6056,6 +6368,37 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
+              {activeThread.forkedFrom ? (
+                <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/35 px-3 py-2 text-xs">
+                  <span className="min-w-0 truncate">
+                    Forked from an earlier message in{" "}
+                    <strong>{forkSourceThread?.title ?? "another thread"}</strong>
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      const sourceRef = scopeThreadRef(
+                        activeThread.environmentId,
+                        activeThread.forkedFrom!.threadId,
+                      );
+                      setTimelineAnchor({
+                        threadKey: scopedThreadKey(sourceRef),
+                        messageId: activeThread.forkedFrom!.messageId,
+                      });
+                      void navigate({
+                        to: "/$environmentId/$threadId",
+                        params: {
+                          environmentId: activeThread.environmentId,
+                          threadId: activeThread.forkedFrom!.threadId,
+                        },
+                      });
+                    }}
+                  >
+                    Open source
+                  </Button>
+                </div>
+              ) : null}
               <MessagesTimeline
                 key={activeThread.id}
                 isWorking={isWorking}
@@ -6074,8 +6417,16 @@ function ChatViewContent(props: ChatViewProps) {
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                canEditAndFork={
+                  isElectron &&
+                  isServerThread &&
+                  selectedProvider === "codex" &&
+                  !activeEnvironmentUnavailable
+                }
+                onEditAndForkUserMessage={onEditAndForkUserMessage}
                 onRevertUserMessage={onRevertUserMessage}
                 isRevertingCheckpoint={isRevertingCheckpoint}
+                isForkingThread={isForkingThread}
                 onImageExpand={onExpandTimelineImage}
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
