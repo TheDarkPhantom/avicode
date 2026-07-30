@@ -428,6 +428,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         className={`${resolveThreadRowClassName({
           isActive,
           isSelected,
+          statusTint: threadStatus?.tint ?? null,
         })} relative isolate`}
         onClick={handleRowClick}
         onDoubleClick={handleRowDoubleClick}
@@ -454,7 +455,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               </TooltipPopup>
             </Tooltip>
           )}
-          {threadStatus && <ThreadStatusLabel status={threadStatus} compact={!showStatusLabels} />}
+          {threadStatus && (
+            <ThreadStatusLabel
+              status={threadStatus}
+              compact={!showStatusLabels}
+              inheritColor={threadStatus.tint !== null}
+            />
+          )}
           <ThreadModelBadge thread={thread} className="inline-flex shrink-0" />
           {/* Avi Code addition: pinned marker. */}
           {isThreadPinned && (
@@ -642,9 +649,15 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 ) : (
                   <span
                     className={`text-[10px] tabular-nums ${
-                      isHighlighted
-                        ? "text-foreground/72 dark:text-foreground/82"
-                        : "text-muted-foreground/40"
+                      // Avi Code addition: on a tinted row the muted token has
+                      // almost no contrast against the wash, so defer to the
+                      // tint's own foreground (set on the row) at reduced
+                      // opacity instead of overriding it.
+                      threadStatus?.tint
+                        ? "text-current/60"
+                        : isHighlighted
+                          ? "text-foreground/72 dark:text-foreground/82"
+                          : "text-muted-foreground/40"
                     }`}
                   >
                     {formatRelativeTimeLabel(
