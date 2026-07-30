@@ -10,6 +10,7 @@ import {
   DatabaseBackupIcon,
   EyeOffIcon,
   LoaderIcon,
+  MapIcon,
   MicIcon,
   PaletteIcon,
   PanelLeftIcon,
@@ -293,8 +294,35 @@ function TimeLoggingSettings() {
   );
 }
 
+function NewChatSettings() {
+  const startInPlanMode = useClientSettings(
+    (settings) => settings.aviCodeNewThreadsStartInPlanMode,
+  );
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="New chats" icon={<MapIcon className="size-5" />}>
+      <SettingsRow
+        title="Start new chats in plan mode"
+        description="Every brand-new chat opens with the composer in Plan mode, so the agent researches and proposes a plan before touching files. You still flip any individual chat back with the mode toggle, and existing chats keep whatever mode they already use."
+        status="Only seeds the initial mode of a new chat. Implementing a plan still switches that chat to Build as usual."
+        control={
+          <Switch
+            checked={startInPlanMode}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeNewThreadsStartInPlanMode: Boolean(checked) })
+            }
+            aria-label="Start new chats in plan mode"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
 function ChatListSettings() {
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
+  const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
   const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
   const providers = deriveProviderInstanceEntries(useAtomValue(primaryServerProvidersAtom));
   const updateSettings = useUpdateClientSettings();
@@ -311,6 +339,19 @@ function ChatListSettings() {
               updateSettings({ aviCodeSidebarShowStatusLabels: Boolean(checked) })
             }
             aria-label="Show chat status labels"
+          />
+        }
+      />
+      <SettingsRow
+        title="Show worktree icon"
+        description="Show the small git-folder icon on chats that run in their own worktree. Turning this off hides the icon; hovering a chat still names its worktree and branch in the tooltip."
+        control={
+          <Switch
+            checked={showWorktreeIcon}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeSidebarShowWorktreeIcon: Boolean(checked) })
+            }
+            aria-label="Show worktree icon in the chat list"
           />
         }
       />
@@ -534,6 +575,7 @@ export function AviCodeSettings() {
       {tab !== "settings" ? null : (
         <>
           <ColorThemeSettings />
+          <NewChatSettings />
           <SidebarLayoutSettings />
           <NotificationSettings />
           <TimeLoggingSettings />

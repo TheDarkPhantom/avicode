@@ -25,6 +25,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { registerStartInPlanModeReader } from "~/aviCodeInteractionMode";
 import { APP_STAGE_LABEL } from "~/branding";
 import { resolveSidebarV2Enabled } from "~/branding.logic";
 import { ensureLocalApi } from "~/localApi";
@@ -59,6 +60,11 @@ function emitClientSettingsHydrationChange() {
 function getClientSettingsSnapshot(): ClientSettings {
   return clientSettingsSnapshot;
 }
+
+// Avi Code addition: hands the live snapshot to store-level code
+// (composerDraftStore) without letting it import this module, which would
+// create a module cycle through state/server and the connection graph.
+registerStartInPlanModeReader(() => clientSettingsSnapshot.aviCodeNewThreadsStartInPlanMode);
 
 function replaceClientSettingsSnapshot(settings: ClientSettings): void {
   clientSettingsSnapshot = settings;

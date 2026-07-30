@@ -105,8 +105,8 @@ import {
   buildPlanReviewThreadTitle,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
+import { resolveInitialInteractionMode } from "../aviCodeInteractionMode";
 import {
-  DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
@@ -1458,8 +1458,10 @@ function ChatViewContent(props: ChatViewProps) {
     ? (localServerError ?? serverThread?.session?.lastError ?? null)
     : localDraftError;
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
+  // Avi Code addition: the final fallback (an unmaterialized new draft) honours
+  // the start-in-plan-mode setting; server threads always carry a mode.
   const interactionMode =
-    composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
+    composerInteractionMode ?? activeThread?.interactionMode ?? resolveInitialInteractionMode();
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
@@ -1863,7 +1865,8 @@ function ChatViewContent(props: ChatViewProps) {
         threadId: nextThreadId,
         createdAt: new Date().toISOString(),
         runtimeMode: DEFAULT_RUNTIME_MODE,
-        interactionMode: DEFAULT_INTERACTION_MODE,
+        // Avi Code addition: new drafts honour the start-in-plan-mode setting.
+        interactionMode: resolveInitialInteractionMode(),
         ...input,
       });
       await navigate({

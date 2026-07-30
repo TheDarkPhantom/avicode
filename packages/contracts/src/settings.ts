@@ -113,6 +113,18 @@ export const ClientSettingsSchema = Schema.Struct({
     ProviderInstanceId,
     Schema.String.check(Schema.isMaxLength(2)),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Seeds brand-new chats with plan interaction mode so
+  // agents research and propose before touching files. Existing threads and
+  // restored drafts keep whatever mode they already carry.
+  aviCodeNewThreadsStartInPlanMode: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  // Avi Code addition. Hides the per-thread worktree icon in the sidebar for
+  // users who find the extra glyph noisy; the thread tooltip still names the
+  // worktree and branch.
+  aviCodeSidebarShowWorktreeIcon: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -703,6 +715,8 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),
+  aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
