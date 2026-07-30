@@ -1184,6 +1184,31 @@ function buildUserMessage(input: {
   } as SDKUserMessage;
 }
 
+/**
+ * Avi Code addition: the assistant text out of one side-question SDK message.
+ *
+ * Only complete assistant messages are read, not `stream_event` partials. A
+ * side answer is short and the panel renders markdown — streaming half a fenced
+ * block would flicker, and the fork is discarded either way, so there is no
+ * partial state worth surfacing.
+ */
+function sideQuestionTextDelta(message: SDKMessage): string | null {
+  if (message.type !== "assistant") return null;
+  const content = (message.message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return null;
+  const text = content
+    .filter(
+      (block): block is { type: "text"; text: string } =>
+        typeof block === "object" &&
+        block !== null &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string",
+    )
+    .map((block) => block.text)
+    .join("");
+  return text.length > 0 ? text : null;
+}
+
 function buildClaudeImageContentBlock(input: {
   readonly mimeType: string;
   readonly bytes: Uint8Array;
@@ -4269,6 +4294,93 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
   );
 
+  /**
+   * Avi Code addition: `/btw`.
+   *
+   * A second, short-lived `query()` against a fork of the live session, rather
+   * than anything on the session's own prompt queue — that queue is how
+   * `sendTurn` steers a running turn, and a side question must not do that.
+   *
+   * `forkSession: true` makes the resume write to a fresh session id, so the
+   * thread's transcript is untouched no matter what the answer says. Note this
+   * is the branch `forkThread` below still cannot do: it needs an arbitrary
+   * earlier turn's uuid, whereas a side question always branches at the tip,
+   * which is exactly the one uuid the session already tracks.
+   *
+   * Nothing here emits a runtime event, opens a turn, or advances the resume
+   * cursor. The fork is created, drained, and dropped.
+   */
+  const askSideQuestion: ClaudeAdapterShape["askSideQuestion"] = (threadId, question) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const context = yield* requireSession(threadId);
+        const resumeSessionId = context.resumeSessionId;
+        if (resumeSessionId === undefined) {
+          return Stream.fail(
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "thread/sideQuestion",
+              detail:
+                "This chat has no Claude session to branch from yet. Send a message first, then ask.",
+            }),
+          );
+        }
+
+        // The model is told it has no tools, and the callback enforces it. The
+        // instruction alone is not enough — a denial the model did not expect
+        // reads as a failure and it retries; being told up front, it answers
+        // from what it already has.
+        const prompt = (async function* () {
+          yield buildUserMessage({
+            sdkContent: [
+              {
+                type: "text",
+                text: `<system-reminder>The user asked a side question about this conversation. Answer it directly and briefly from the context you already have. You have NO tools available — you cannot read files, run commands, search, or take any action. Do not attempt to. This is a one-off aside: it is not part of the task you were working on, and you will not continue from it.</system-reminder>\n\n${question}`,
+              },
+            ],
+          });
+        })();
+
+        const sideQuery = createQuery({
+          prompt,
+          options: {
+            ...(context.session.cwd ? { cwd: context.session.cwd } : {}),
+            ...(context.currentApiModelId ? { model: context.currentApiModelId } : {}),
+            pathToClaudeCodeExecutable: claudeSdkExecutablePath,
+            systemPrompt: { type: "preset", preset: "claude_code" },
+            settingSources: [...CLAUDE_SETTING_SOURCES],
+            resume: resumeSessionId,
+            forkSession: true,
+            ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
+            maxTurns: 1,
+            canUseTool: () =>
+              Promise.resolve({
+                behavior: "deny" as const,
+                message: "Side questions cannot use tools.",
+              }),
+          } as unknown as ClaudeQueryOptions,
+        });
+
+        return Stream.fromAsyncIterable(
+          sideQuery,
+          (cause) =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "thread/sideQuestion",
+              detail: "Claude could not answer the side question.",
+              cause,
+            }),
+        ).pipe(
+          Stream.map((message) => sideQuestionTextDelta(message)),
+          Stream.filter((textDelta): textDelta is string => textDelta !== null),
+          Stream.map((textDelta) => ({ textDelta })),
+          // The fork is disposable: close it as soon as the answer is read, or
+          // when the client hangs up mid-answer.
+          Stream.ensuring(Effect.sync(() => sideQuery.close())),
+        );
+      }),
+    );
+
   // Avi Code addition: conversation branching.
   //
   // NOT YET IMPLEMENTED, deliberately failing rather than degrading. The SDK
@@ -4378,9 +4490,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      sideQuestion: "fork-session",
     },
     startSession,
     sendTurn,
+    askSideQuestion,
     interruptTurn,
     readThread,
     rollbackThread,

@@ -1989,13 +1989,29 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     ),
   );
 
+  // Avi Code addition: `/btw` needs a branch of the live conversation to answer
+  // against. This backend cannot make one, and answering without the thread's
+  // context would look like the feature working while being useless — so fail
+  // loudly. The UI hides the command for providers reporting "unsupported", so
+  // this is a backstop rather than the usual path.
+  const askSideQuestion: CodexAdapterShape["askSideQuestion"] = () =>
+    Stream.fail(
+      new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "thread/sideQuestion",
+        detail: "Side questions are not supported by this provider yet.",
+      }),
+    );
+
   return {
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      sideQuestion: "unsupported",
     },
     startSession,
     sendTurn,
+    askSideQuestion,
     interruptTurn,
     readThread,
     rollbackThread,

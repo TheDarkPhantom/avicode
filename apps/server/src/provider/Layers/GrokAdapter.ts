@@ -1456,11 +1456,26 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     const streamEvents = Stream.fromPubSub(runtimeEventPubSub);
 
+    // Avi Code addition: `/btw` needs a branch of the live conversation to
+    // answer against. This backend cannot make one, and answering without the
+    // thread's context would look like the feature working while being
+    // useless — so fail loudly. The command is hidden in the UI for providers
+    // that report "unsupported", so this is a backstop, not the usual path.
+    const askSideQuestion: GrokAdapterShape["askSideQuestion"] = () =>
+      Stream.fail(
+        new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/sideQuestion",
+          detail: "Side questions are not supported by this provider yet.",
+        }),
+      );
+
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session" },
+      capabilities: { sessionModelSwitch: "in-session", sideQuestion: "unsupported" },
       startSession,
       sendTurn,
+      askSideQuestion,
       interruptTurn,
       readThread,
       rollbackThread,
