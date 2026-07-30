@@ -22,6 +22,7 @@ interface ComposerPrimaryActionsProps {
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
+  sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
   hasQueuedTurn: boolean;
@@ -52,6 +53,14 @@ export const formatPendingPrimaryActionLabel = (input: {
   return input.questionIndex > 0 ? "Submit answers" : "Submit answer";
 };
 
+/**
+ * Avi Code addition: upstream computes this inline in the JSX and disables the
+ * send button outright when the environment is unavailable. The fork queues
+ * offline sends instead, so "unavailable" is a label change, not a block — only
+ * an already-queued turn disables it, because the outbox holds one per thread.
+ *
+ * `sendDisabledReason` is upstream's, folded in here so both rules apply.
+ */
 export function normalComposerPrimaryActionState(input: {
   isSendBusy: boolean;
   isConnecting: boolean;
@@ -59,21 +68,29 @@ export function normalComposerPrimaryActionState(input: {
   hasQueuedTurn: boolean;
   hasSendableContent: boolean;
   isPreparingWorktree: boolean;
+  sendDisabledReason?: string | null;
 }): { readonly disabled: boolean; readonly label: string } {
+  const sendDisabledReason = input.sendDisabledReason ?? null;
   return {
     disabled:
-      input.isSendBusy || input.isConnecting || input.hasQueuedTurn || !input.hasSendableContent,
+      input.isSendBusy ||
+      sendDisabledReason !== null ||
+      input.isConnecting ||
+      input.hasQueuedTurn ||
+      !input.hasSendableContent,
     label: input.hasQueuedTurn
       ? "Message already queued"
-      : input.isEnvironmentUnavailable
-        ? "Queue message until reconnected"
-        : input.isConnecting
-          ? "Connecting"
-          : input.isPreparingWorktree
-            ? "Preparing worktree"
-            : input.isSendBusy
-              ? "Sending"
-              : "Send message",
+      : sendDisabledReason
+        ? sendDisabledReason
+        : input.isEnvironmentUnavailable
+          ? "Queue message until reconnected"
+          : input.isConnecting
+            ? "Connecting"
+            : input.isPreparingWorktree
+              ? "Preparing worktree"
+              : input.isSendBusy
+                ? "Sending"
+                : "Send message",
   };
 }
 
@@ -95,6 +112,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   showPlanFollowUpPrompt,
   promptHasText,
   isSendBusy,
+  sendDisabledReason,
   isConnecting,
   isEnvironmentUnavailable,
   hasQueuedTurn,
@@ -110,6 +128,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     ? { onPointerDown: preventPointerFocus }
     : undefined;
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
+  const isSendDisabled = sendDisabledReason !== null;
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
@@ -189,7 +208,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           size="sm"
           className={cn("rounded-full", compact ? "h-9 px-3 sm:h-8" : "h-9 px-4 sm:h-8")}
           {...pointerFocusProps}
-          disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+          disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
           {isConnecting || isSendBusy ? "Sending..." : "Refine"}
         </Button>
@@ -203,7 +222,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           size="sm"
           className="h-9 rounded-l-full rounded-r-none px-4 sm:h-8"
           {...pointerFocusProps}
-          disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+          disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
         >
           {isConnecting || isSendBusy ? "Sending..." : "Implement"}
         </Button>
@@ -216,7 +235,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 className="h-9 rounded-l-none rounded-r-full border-l-white/12 px-2 sm:h-8"
                 aria-label="Implementation actions"
                 {...pointerFocusProps}
-                disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+                disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
               />
             }
           >
@@ -224,13 +243,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           </MenuTrigger>
           <MenuPopup align="end" side="top">
             <MenuItem
-              disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+              disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
               onClick={() => void onReviewPlanWithCodex()}
             >
               Review with Codex
             </MenuItem>
             <MenuItem
-              disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+              disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
               onClick={() => void onImplementPlanInNewThread()}
             >
               Implement in a new thread
@@ -248,6 +267,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     hasQueuedTurn,
     hasSendableContent,
     isPreparingWorktree,
+    sendDisabledReason,
   });
   return (
     <button
