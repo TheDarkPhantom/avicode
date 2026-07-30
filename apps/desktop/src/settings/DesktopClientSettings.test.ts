@@ -14,8 +14,10 @@ import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
+  aviCodeNewThreadsStartInPlanMode: false,
   aviCodeProviderBadgeLabels: {},
   aviCodeSidebarShowStatusLabels: true,
+  aviCodeSidebarShowWorktreeIcon: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   dismissedProviderUpdateNotificationKeys: [],
