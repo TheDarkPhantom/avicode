@@ -233,4 +233,3 @@ file is a future merge conflict. Keep the fork's surface area small and easy to 
 - Do not hand two agents the same worktree, even for tasks that look disjoint. One worktree, one agent, one task.
 - Each worktree gets its own gitignored `.t3` dev state and its own preferred port offsets, so isolated agents also avoid dev-server and database collisions (see Dev Servers).
 - Remove the worktree once its work is merged or abandoned. Leftover worktrees keep stale `.t3` state and port reservations alive.
-

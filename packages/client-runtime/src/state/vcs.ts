@@ -272,6 +272,11 @@ export function createVcsEnvironmentAtoms<R, E>(
     listRefs,
     status: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:vcs:status",
+      // Avi Code change: drop the subscription the moment its last consumer
+      // unmounts instead of holding it for the shared 5-minute idle TTL. A
+      // lingering status subscription keeps the server polling git for a pane
+      // nobody is looking at. `runtime.test.ts` pins this.
+      idleTtlMs: 0,
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.subscribeVcsStatus>) =>
         subscribe(WS_METHODS.subscribeVcsStatus, input).pipe(
           Stream.mapAccum(
