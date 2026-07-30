@@ -32,6 +32,7 @@ import { DeepMutable } from "effect/Types";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { useMemo } from "react";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
+import { resolveInitialInteractionMode } from "./aviCodeInteractionMode";
 import { resolveAppModelSelection, resolveAppModelSelectionForInstance } from "./modelSelection";
 import {
   DEFAULT_INTERACTION_MODE,
@@ -1460,8 +1461,13 @@ function createDraftThreadState(
     logicalProjectKey,
     createdAt: options?.createdAt ?? existingThread?.createdAt ?? new Date().toISOString(),
     runtimeMode: options?.runtimeMode ?? existingThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+    // Avi Code addition: brand-new drafts (no explicit mode, no prior draft
+    // state) honour the start-in-plan-mode setting instead of the upstream
+    // hardcoded default.
     interactionMode:
-      options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
+      options?.interactionMode ??
+      existingThread?.interactionMode ??
+      resolveInitialInteractionMode(),
     branch: nextBranch,
     worktreePath: nextWorktreePath,
     envMode:

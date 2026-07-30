@@ -30,6 +30,10 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Opt-in per-project provider/model memory and pre-send credential usage visibility.
 - [x] Desktop Codex conversation forks from edited earlier messages, preserving the original thread
       and current repository state.
+- [x] Read-only plan turns enforced in the Claude adapter, so a proposed plan waits for the
+      Implement button instead of auto-building.
+- [x] Avi Code settings toggles for starting new chats in plan mode and hiding the sidebar
+      worktree icon.
 
 ## Personal alpha verification
 
