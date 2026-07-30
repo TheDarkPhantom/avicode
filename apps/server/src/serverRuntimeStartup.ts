@@ -3,10 +3,14 @@ import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   type ModelSelection,
+  type OrchestrationCommand,
+  type OrchestrationReadModel,
+  type OrchestrationSession,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -249,6 +253,87 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
   } as const;
 });
 
+// Avi Code addition: reconcile orphaned "running" sessions on startup.
+//
+// Agent providers are external CLIs that do not survive a server restart, but the
+// projection persists a session's "running"/"starting" status and its open turn's
+// `startedAt`. On the next boot nothing settles them, so the sidebar keeps showing
+// "Working" and the web timer — computed as `now - startedAt` — appears to have
+// counted straight through the downtime (including a laptop that was fully powered
+// off). A freshly started process has no live provider bindings yet, so every such
+// session is definitionally orphaned. Settle it to "interrupted", which the projector
+// uses to close the still-open latest turn (`settledTurnStateForSessionStatus`), so
+// the UI flips to "needs resume" and the elapsed timer stops.
+export function selectOrphanedRunningSessions(
+  readModel: OrchestrationReadModel,
+): ReadonlyArray<{ readonly threadId: ThreadId; readonly session: OrchestrationSession }> {
+  return readModel.threads.flatMap((thread) => {
+    const session = thread.session;
+    return session !== null && (session.status === "running" || session.status === "starting")
+      ? [{ threadId: thread.id, session }]
+      : [];
+  });
+}
+
+export function buildSessionInterruptCommand(
+  threadId: ThreadId,
+  session: OrchestrationSession,
+  now: string,
+  commandId: CommandId,
+): OrchestrationCommand {
+  return {
+    type: "thread.session.set",
+    commandId,
+    threadId,
+    session: {
+      ...session,
+      status: "interrupted",
+      activeTurnId: null,
+      updatedAt: now,
+    },
+    createdAt: now,
+  };
+}
+
+export const reconcileOrphanedRunningSessions = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
+  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const projectionReadModelQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+
+  const readModel = yield* projectionReadModelQuery.getCommandReadModel();
+  const orphaned = selectOrphanedRunningSessions(readModel);
+  if (orphaned.length === 0) {
+    return 0;
+  }
+
+  // One failure (e.g. a thread deleted out from under us) must not abort startup or
+  // strand the remaining orphans, so each dispatch is caught and counted independently.
+  const outcomes = yield* Effect.forEach(orphaned, ({ threadId, session }) =>
+    Effect.gen(function* () {
+      const now = DateTime.formatIso(yield* DateTime.now);
+      const commandId = CommandId.make(yield* crypto.randomUUIDv4);
+      yield* orchestrationEngine.dispatch(
+        buildSessionInterruptCommand(threadId, session, now, commandId),
+      );
+      return 1;
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("failed to reconcile orphaned running session", {
+          threadId,
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as(0)),
+      ),
+    ),
+  );
+  const settledCount = outcomes.reduce((sum, value) => sum + value, 0);
+
+  yield* Effect.logInfo("reconciled orphaned running sessions on startup", {
+    total: orphaned.length,
+    settled: settledCount,
+  });
+  return settledCount;
+});
+
 const resolveStartupBrowserTarget = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -344,6 +429,21 @@ export const make = Effect.gen(function* () {
         yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
         yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
       }),
+    );
+
+    // Avi Code addition: settle sessions left "running" by a prior crash/shutdown
+    // before command readiness is announced, so reconnecting clients never see a
+    // stale "Working" pill or a timer that counted through the downtime.
+    yield* Effect.logDebug("startup phase: reconciling orphaned running sessions");
+    yield* runStartupPhase(
+      "sessions.reconcile",
+      reconcileOrphanedRunningSessions.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to reconcile orphaned running sessions", {
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.as(0)),
+        ),
+      ),
     );
 
     const welcomeBase = yield* resolveWelcomeBase;
