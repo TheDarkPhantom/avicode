@@ -241,6 +241,19 @@ describe("MessagesTimeline", () => {
     expect(enabledMarkup).toContain('aria-label="Edit and fork"');
   });
 
+  it("renders the send-again action only when enabled", () => {
+    const timelineEntries = [buildUserTimelineEntry("Run that once more")];
+    const disabledMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={timelineEntries} />,
+    );
+    const enabledMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} canRetryMessages timelineEntries={timelineEntries} />,
+    );
+
+    expect(disabledMarkup).not.toContain('aria-label="Send again"');
+    expect(enabledMarkup).toContain('aria-label="Send again"');
+  });
+
   it("uses the larger leading inset only when the top fade is enabled", () => {
     const timelineEntries = [buildUserTimelineEntry("Hello")];
 

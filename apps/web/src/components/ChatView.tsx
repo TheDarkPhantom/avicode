@@ -5864,6 +5864,164 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // Avi Code addition: resend an earlier user message as a fresh turn in the
+  // same thread. The original text and attachments go out verbatim; the
+  // composer draft is left untouched.
+  const onRetryUserMessage = useCallback(
+    async (messageId: MessageId) => {
+      if (
+        !activeThread ||
+        !isServerThread ||
+        isSendBusy ||
+        isConnecting ||
+        activeEnvironmentUnavailable ||
+        sendInFlightRef.current
+      ) {
+        return;
+      }
+      const message = displayServerMessages.find(
+        (candidate) => candidate.id === messageId && candidate.role === "user",
+      );
+      if (!message) return;
+      const sendCtx = composerRef.current?.getSendContext();
+      if (!sendCtx?.providerAvailable) return;
+
+      const threadIdForSend = activeThread.id;
+      const retryMessageId = newMessageId();
+      const messageCreatedAt = new Date().toISOString();
+      // Display rows resolve preview URLs onto every attachment kind at runtime.
+      const messageAttachments: ReadonlyArray<ChatAttachment & { readonly previewUrl?: string }> =
+        message.attachments ?? [];
+
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      setThreadError(threadIdForSend, null);
+
+      const attachmentResult = await settlePromise(() =>
+        Promise.all(
+          messageAttachments.map(async (attachment) => {
+            if (!attachment.previewUrl) {
+              throw new Error(`The original attachment '${attachment.name}' is unavailable.`);
+            }
+            const response = await fetch(attachment.previewUrl);
+            if (!response.ok) {
+              throw new Error(`Could not reload '${attachment.name}'.`);
+            }
+            if (attachment.type === "document") {
+              return {
+                type: "document" as const,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+                extractedText: await response.text(),
+              };
+            }
+            const blob = await response.blob();
+            return {
+              type: "image" as const,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              dataUrl: await readFileAsDataUrl(
+                new File([blob], attachment.name, { type: attachment.mimeType }),
+              ),
+            };
+          }),
+        ),
+      );
+      if (attachmentResult._tag === "Failure") {
+        setThreadError(
+          threadIdForSend,
+          sanitizeThreadErrorMessage(
+            chatActionErrorMessage(squashAtomCommandFailure(attachmentResult)),
+          ),
+        );
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+        return;
+      }
+
+      // Position this sent row once LegendList has measured the anchored tail.
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = "anchoring-new-turn";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      pendingTimelineAnchorRef.current = retryMessageId;
+      activeTimelineAnchorIndexRef.current = null;
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      setTimelineAnchor({
+        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageId: retryMessageId,
+      });
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        {
+          id: retryMessageId,
+          role: "user",
+          text: message.text,
+          ...(message.attachments && message.attachments.length > 0
+            ? { attachments: message.attachments }
+            : {}),
+          turnId: null,
+          createdAt: messageCreatedAt,
+          updatedAt: messageCreatedAt,
+          streaming: false,
+        },
+      ]);
+
+      const startResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: threadIdForSend,
+          message: {
+            messageId: retryMessageId,
+            role: "user",
+            text: message.text,
+            attachments: attachmentResult.value,
+          },
+          modelSelection: sendCtx.selectedModelSelection,
+          titleSeed: activeThread.title,
+          runtimeMode,
+          interactionMode,
+          createdAt: messageCreatedAt,
+        },
+      });
+      if (startResult._tag === "Failure") {
+        // The optimistic attachments still belong to the original message's
+        // display row, so drop the copy without revoking its preview URLs.
+        setOptimisticUserMessages((existing) =>
+          existing.filter((candidate) => candidate.id !== retryMessageId),
+        );
+        if (!isAtomCommandInterrupted(startResult)) {
+          const error = squashAtomCommandFailure(startResult);
+          setThreadError(
+            threadIdForSend,
+            error instanceof Error ? error.message : "Failed to send the message again.",
+          );
+        }
+        resetLocalDispatch();
+      }
+      sendInFlightRef.current = false;
+    },
+    [
+      activeThread,
+      activeEnvironmentUnavailable,
+      beginLocalDispatch,
+      composerRef,
+      displayServerMessages,
+      environmentId,
+      interactionMode,
+      isConnecting,
+      isSendBusy,
+      isServerThread,
+      resetLocalDispatch,
+      runtimeMode,
+      setThreadError,
+      startThreadTurn,
+    ],
+  );
+
   const onImplementPlanInNewThread = useCallback(async () => {
     if (
       !activeThread ||
@@ -6591,6 +6749,8 @@ function ChatViewContent(props: ChatViewProps) {
                   !activeEnvironmentUnavailable
                 }
                 onEditAndForkUserMessage={onEditAndForkUserMessage}
+                canRetryMessages={isServerThread && !activeEnvironmentUnavailable}
+                onRetryUserMessage={onRetryUserMessage}
                 onRevertUserMessage={onRevertUserMessage}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 isForkingThread={isForkingThread}
