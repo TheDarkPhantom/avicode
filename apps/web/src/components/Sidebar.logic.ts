@@ -94,6 +94,19 @@ export function buildMultiSelectThreadContextMenuItems(input: {
   ];
 }
 
+/**
+ * Avi Code addition: how strongly a status paints its whole sidebar row.
+ *
+ * Upstream only ever coloured a 6px dot and 10px of label text, which does not
+ * read at a glance in a list of twenty threads. A tinted row does — but a
+ * saturated background sits under the row's own resting `text-*`, so each tint
+ * has to carry a matching foreground or the title becomes unreadable.
+ */
+export interface ThreadStatusTint {
+  bgClass: string;
+  textClass: string;
+}
+
 export interface ThreadStatusPill {
   label:
     | "Working"
@@ -108,6 +121,12 @@ export interface ThreadStatusPill {
   colorClass: string;
   dotClass: string;
   pulse: boolean;
+  /**
+   * Null for the states that already animate (Working, Connecting). Those are
+   * the common case, and tinting them would leave the whole sidebar glowing
+   * with nothing standing out.
+   */
+  tint: ThreadStatusTint | null;
 }
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
@@ -480,9 +499,31 @@ export function isContextMenuPointerDown(input: {
 export function resolveThreadRowClassName(input: {
   isActive: boolean;
   isSelected: boolean;
+  /** Avi Code addition: null for untinted rows, which keep upstream's treatment. */
+  statusTint?: ThreadStatusTint | null;
 }): string {
   const baseClassName =
     "h-8 w-full translate-x-0 cursor-pointer justify-start rounded-md px-2 text-left text-sm select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+
+  // Avi Code addition. A tinted row already owns its background, so the
+  // active/selected state has to say so some other way — an inset ring plus
+  // weight, rather than `bg-sidebar-row-active` painting over the status
+  // colour and losing it. Untinted rows fall through to upstream's logic
+  // unchanged.
+  const tint = input.statusTint ?? null;
+  if (tint) {
+    const highlighted = input.isActive || input.isSelected;
+    return cn(
+      baseClassName,
+      tint.bgClass,
+      tint.textClass,
+      "hover:brightness-110 dark:hover:brightness-125",
+      // `ring-current` picks up the tint's own foreground, so the active
+      // outline reads as an emphasis of the status rather than a second,
+      // competing colour — and it adapts to light/dark for free.
+      highlighted && "font-medium ring-1 ring-inset ring-current",
+    );
+  }
 
   if (input.isSelected && input.isActive) {
     return cn(
@@ -679,6 +720,10 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-amber-600 dark:text-amber-300/90",
       dotClass: "bg-amber-500 dark:bg-amber-300/90",
       pulse: false,
+      tint: {
+        bgClass: "bg-amber-500/25 dark:bg-amber-400/20",
+        textClass: "text-amber-950 dark:text-amber-50",
+      },
     };
   }
 
@@ -688,6 +733,10 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
       pulse: false,
+      tint: {
+        bgClass: "bg-indigo-500/25 dark:bg-indigo-400/20",
+        textClass: "text-indigo-950 dark:text-indigo-50",
+      },
     };
   }
 
@@ -697,6 +746,7 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
+      tint: null,
     };
   }
 
@@ -706,6 +756,7 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
+      tint: null,
     };
   }
 
@@ -720,6 +771,10 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-violet-600 dark:text-violet-300/90",
       dotClass: "bg-violet-500 dark:bg-violet-300/90",
       pulse: false,
+      tint: {
+        bgClass: "bg-violet-500/25 dark:bg-violet-400/20",
+        textClass: "text-violet-950 dark:text-violet-50",
+      },
     };
   }
 
@@ -729,6 +784,10 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
       dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
       pulse: false,
+      tint: {
+        bgClass: "bg-emerald-500/25 dark:bg-emerald-400/20",
+        textClass: "text-emerald-950 dark:text-emerald-50",
+      },
     };
   }
 
