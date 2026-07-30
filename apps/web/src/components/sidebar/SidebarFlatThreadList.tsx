@@ -16,6 +16,7 @@ import type {
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { buildFlatSidebarThreadList } from "../Sidebar.logic";
+import { useUiStateStore } from "../../uiStateStore";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   SidebarMenuSub,
@@ -63,6 +64,7 @@ export function resolveFlatSidebarThreads(input: {
   flatThreadCount: number;
   isListExpanded: boolean;
   activeRouteThreadKey: string | null;
+  pinnedThreadKeys: readonly string[];
 }): {
   renderedThreads: SidebarThreadSummary[];
   orderedThreadKeys: string[];
@@ -75,6 +77,7 @@ export function resolveFlatSidebarThreads(input: {
     limit: input.isListExpanded ? Number.POSITIVE_INFINITY : input.flatThreadCount,
     activeThreadKey: input.activeRouteThreadKey,
     getThreadKey: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+    pinnedThreadKeys: input.pinnedThreadKeys,
   });
   return {
     renderedThreads,
@@ -103,6 +106,8 @@ export const SidebarFlatThreadList = memo(function SidebarFlatThreadList(
     threads,
   } = props;
   const openPrLink = useOpenPrLink();
+  // Avi Code addition: pinned rows head the flat list too.
+  const pinnedThreadKeys = useUiStateStore((state) => state.pinnedThreadKeys);
 
   const { renderedThreads, orderedThreadKeys, hasOverflowingThreads, hiddenThreadCount } = useMemo(
     () =>
@@ -112,8 +117,16 @@ export const SidebarFlatThreadList = memo(function SidebarFlatThreadList(
         flatThreadCount,
         isListExpanded,
         activeRouteThreadKey,
+        pinnedThreadKeys,
       }),
-    [activeRouteThreadKey, flatThreadCount, isListExpanded, threadSortOrder, threads],
+    [
+      activeRouteThreadKey,
+      flatThreadCount,
+      isListExpanded,
+      pinnedThreadKeys,
+      threadSortOrder,
+      threads,
+    ],
   );
 
   const showMoreButtonRender = useMemo(() => <button type="button" />, []);

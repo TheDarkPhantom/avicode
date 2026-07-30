@@ -28,6 +28,7 @@ import {
   GitBranchIcon,
   EllipsisIcon,
   MessageSquareIcon,
+  PinIcon,
   PlusIcon,
   SearchIcon,
   ServerIcon,
@@ -156,6 +157,8 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./u
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+// Avi Code addition: pinned rows head the active block and the project picker.
+import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -420,6 +423,8 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   );
   const threadKey = scopedThreadKey(threadRef);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
+  // Avi Code addition: pinned marker.
+  const isThreadPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const openPrLink = useOpenPrLink();
 
@@ -770,6 +775,11 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
     </span>
   );
 
+  // Avi Code addition: pinned marker, rendered in both row variants.
+  const pinnedMarker = isThreadPinned ? (
+    <PinIcon aria-label="Pinned thread" className="size-3 shrink-0 text-muted-foreground/60" />
+  ) : null;
+
   const prBadge =
     prStatus && pr ? (
       <button
@@ -827,6 +837,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
               />
             </span>
             {modelBadge}
+            {pinnedMarker}
             {title}
             {/* The PR badge stays outside the hover-fading slot: it must
               remain visible AND clickable while the row is hovered. Only
@@ -1014,7 +1025,10 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 ) : null}
               </span>
             </div>
-            <div className="mt-1 flex min-w-0">{title}</div>
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              {pinnedMarker}
+              {title}
+            </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground/75">
               {thread.branch ? (
                 <span className="min-w-0 flex-1 truncate whitespace-nowrap">{thread.branch}</span>
@@ -1118,6 +1132,11 @@ export default function SidebarV2() {
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
+  // Avi Code addition: pinned rows. v2's active block is otherwise static
+  // creation order, so pinning simply lifts a row to the front of it.
+  const pinnedThreadKeys = useUiStateStore((s) => s.pinnedThreadKeys);
+  const pinnedProjectKeys = useUiStateStore((s) => s.pinnedProjectKeys);
+  const setThreadPinned = useUiStateStore((s) => s.setThreadPinned);
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -1176,8 +1195,19 @@ export default function SidebarV2() {
     ],
   );
   const projectGroups = useMemo(
-    () => sortLogicalProjectsForSidebar(unsortedProjectGroups, threads, sidebarProjectSortOrder),
-    [sidebarProjectSortOrder, threads, unsortedProjectGroups],
+    () =>
+      // Avi Code addition: v2 has no project rows, so this ordering surfaces in
+      // the project scope picker — pinned projects sit at the top of it.
+      orderPinnedFirst({
+        items: sortLogicalProjectsForSidebar(
+          unsortedProjectGroups,
+          threads,
+          sidebarProjectSortOrder,
+        ),
+        pinnedKeys: pinnedProjectKeys,
+        getItemKeys: (group) => group.memberProjects.map((member) => member.physicalProjectKey),
+      }).ordered,
+    [pinnedProjectKeys, sidebarProjectSortOrder, threads, unsortedProjectGroups],
   );
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const providerEntryByInstanceId = useMemo(
@@ -1474,7 +1504,14 @@ export default function SidebarV2() {
       }
     }
     return {
-      activeThreads: sortThreadsForSidebarV2(active),
+      // Avi Code addition: pins head the active block. The settled and snoozed
+      // shelves keep their lifecycle ordering — a pinned thread that settles
+      // simply leaves its pinned slot, the same way archiving works in v1.
+      activeThreads: orderPinnedFirst({
+        items: sortThreadsForSidebarV2(active),
+        pinnedKeys: pinnedThreadKeys,
+        getItemKeys: (thread) => [scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+      }).ordered,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
@@ -1488,6 +1525,7 @@ export default function SidebarV2() {
     autoSettleAfterDays,
     changeRequestStateByKey,
     nowMinute,
+    pinnedThreadKeys,
     scopedProjectKeys,
     serverConfigs,
     snoozeWakeTick,
@@ -2026,6 +2064,9 @@ export default function SidebarV2() {
           return;
         }
         deletedThreadKeys.add(threadKey);
+        // Avi Code addition: unpin as each delete lands, so an aborted batch
+        // leaves no pins pointing at threads that are already gone.
+        setThreadPinned(threadKey, false);
       }
       removeFromSelection(threadKeys);
     },
@@ -2038,6 +2079,7 @@ export default function SidebarV2() {
       markThreadUnread,
       removeFromSelection,
       serverConfigs,
+      setThreadPinned,
     ],
   );
 
@@ -2065,6 +2107,9 @@ export default function SidebarV2() {
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
+        // Avi Code addition: read at menu-open time, like the settle/snooze
+        // state above.
+        const isThreadPinned = useUiStateStore.getState().pinnedThreadKeys.includes(threadKey);
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date());
         const clicked = await settlePromise(() =>
@@ -2078,6 +2123,10 @@ export default function SidebarV2() {
                     },
                   ]
                 : []),
+              {
+                id: "toggle-pin",
+                label: isThreadPinned ? "Unpin thread" : "Pin thread",
+              },
               ...(supportsSettlement
                 ? [
                     isSettled
@@ -2139,6 +2188,10 @@ export default function SidebarV2() {
             }
             return;
           }
+          // Avi Code addition.
+          case "toggle-pin":
+            setThreadPinned(threadKey, !isThreadPinned);
+            return;
           case "settle":
             attemptSettle(threadRef);
             return;
@@ -2178,6 +2231,8 @@ export default function SidebarV2() {
               );
               return;
             }
+            // Avi Code addition: drop the pin along with the thread.
+            setThreadPinned(threadKey, false);
             return;
           }
           default:
@@ -2195,6 +2250,7 @@ export default function SidebarV2() {
       handleMultiSelectContextMenu,
       markThreadUnread,
       serverConfigs,
+      setThreadPinned,
       startThreadRename,
     ],
   );

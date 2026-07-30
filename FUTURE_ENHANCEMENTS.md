@@ -17,6 +17,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Sidebar pins are device-local. They persist in the browser's `t3code:ui-state:v1` blob, next to
+  the manual project order, so they do not follow the user to another device or to the desktop
+  app's settings file. Syncing would mean either moving them into `ClientSettingsSchema` or giving
+  threads a server-side pin the way upstream did for settle/snooze.
+- Pinning is a single-row action: the multi-select thread menu offers no "Pin (n)", and the command
+  palette still lists projects in plain activity order.
 - Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
   during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
   have not been verified to stop after proposing a plan. If a provider still auto-implements,
@@ -79,3 +85,5 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-29: selectable colour themes (Oxblood, Midnight, Forest, Violet, Graphite), each with a
   light and a dark palette, orthogonal to the Light/Dark/System switch.
 - 2026-07-30: desktop Codex “Edit and fork” from earlier user messages with lineage navigation.
+- 2026-07-30: pinned sidebar threads and projects, held at the top in pin order while everything
+  else keeps sorting by activity — wired into both the v1 tree/flat list and the v2 active block.

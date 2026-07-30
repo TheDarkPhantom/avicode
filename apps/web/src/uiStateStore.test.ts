@@ -13,7 +13,9 @@ import {
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
+  setProjectPinned,
   setThreadChangedFilesExpanded,
+  setThreadPinned,
   type UiState,
 } from "./uiStateStore";
 
@@ -21,6 +23,8 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
   return {
     projectExpandedById: {},
     projectOrder: [],
+    pinnedProjectKeys: [],
+    pinnedThreadKeys: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -146,6 +150,76 @@ describe("uiStateStore pure functions", () => {
   });
 });
 
+// Avi Code addition: pinned sidebar rows.
+describe("uiStateStore pinning", () => {
+  it("appends pins so an existing pin never moves", () => {
+    const first = setThreadPinned(makeUiState(), "environment:thread-1", true);
+    const second = setThreadPinned(first, "environment:thread-2", true);
+
+    expect(second.pinnedThreadKeys).toEqual(["environment:thread-1", "environment:thread-2"]);
+  });
+
+  it("returns the same state when a pin would not change anything", () => {
+    const pinned = setThreadPinned(makeUiState(), "environment:thread-1", true);
+
+    expect(setThreadPinned(pinned, "environment:thread-1", true)).toBe(pinned);
+    expect(setThreadPinned(pinned, "environment:thread-2", false)).toBe(pinned);
+    expect(setThreadPinned(pinned, "", true)).toBe(pinned);
+    expect(setThreadPinned(pinned, [], true)).toBe(pinned);
+  });
+
+  it("unpins without disturbing the order of the remaining pins", () => {
+    const state = makeUiState({ pinnedThreadKeys: ["a", "b", "c"] });
+
+    expect(setThreadPinned(state, "b", false).pinnedThreadKeys).toEqual(["a", "c"]);
+  });
+
+  it("pins and unpins every member of a grouped project at once", () => {
+    const pinned = setProjectPinned(makeUiState(), ["member-1", "member-2"], true);
+    expect(pinned.pinnedProjectKeys).toEqual(["member-1", "member-2"]);
+
+    const unpinned = setProjectPinned(pinned, ["member-1", "member-2"], false);
+    expect(unpinned.pinnedProjectKeys).toEqual([]);
+  });
+
+  it("adds only the members that are missing when a group is partly pinned", () => {
+    const state = makeUiState({ pinnedProjectKeys: ["member-1"] });
+
+    expect(setProjectPinned(state, ["member-1", "member-2"], true).pinnedProjectKeys).toEqual([
+      "member-1",
+      "member-2",
+    ]);
+  });
+
+  it("keeps project and thread pins in separate lists", () => {
+    const state = setThreadPinned(
+      setProjectPinned(makeUiState(), "project-key", true),
+      "environment:thread-1",
+      true,
+    );
+
+    expect(state.pinnedProjectKeys).toEqual(["project-key"]);
+    expect(state.pinnedThreadKeys).toEqual(["environment:thread-1"]);
+  });
+
+  it("hydrates pins and drops malformed entries", () => {
+    const parsed = parsePersistedState({
+      pinnedProjectKeys: ["physical-a", "", "physical-a", 7 as unknown as string],
+      pinnedThreadKeys: "nonsense" as unknown as string[],
+    });
+
+    expect(parsed.pinnedProjectKeys).toEqual(["physical-a"]);
+    expect(parsed.pinnedThreadKeys).toEqual([]);
+  });
+
+  it("defaults to no pins for state saved before the feature existed", () => {
+    const parsed = parsePersistedState({ projectOrder: ["physical-a"] });
+
+    expect(parsed.pinnedProjectKeys).toEqual([]);
+    expect(parsed.pinnedThreadKeys).toEqual([]);
+  });
+});
+
 describe("parsePersistedState", () => {
   it("hydrates raw UI-owned state without server entities", () => {
     const parsed = parsePersistedState({
@@ -173,6 +247,8 @@ describe("parsePersistedState", () => {
         logical: false,
       },
       projectOrder: ["physical-b", "physical-a"],
+      pinnedProjectKeys: [],
+      pinnedThreadKeys: [],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
@@ -292,6 +368,8 @@ describe("uiStateStore persistence", () => {
         logical: false,
       },
       projectOrder: ["physical-b", "physical-a"],
+      pinnedProjectKeys: [],
+      pinnedThreadKeys: [],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },

@@ -1,4 +1,4 @@
-import { ArchiveIcon, CloudIcon, Globe2Icon, TerminalIcon } from "lucide-react";
+import { ArchiveIcon, CloudIcon, Globe2Icon, PinIcon, TerminalIcon } from "lucide-react";
 import React, { useCallback, memo, useMemo } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
@@ -122,6 +122,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
+  // Avi Code addition: pinned marker.
+  const isThreadPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -461,6 +463,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
             />
           )}
           <ThreadModelBadge thread={thread} className="inline-flex shrink-0" />
+          {/* Avi Code addition: pinned marker. */}
+          {isThreadPinned && (
+            <PinIcon
+              aria-label="Pinned thread"
+              className="size-3 shrink-0 text-muted-foreground/60"
+            />
+          )}
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}

@@ -7,6 +7,7 @@ import {
   FolderPlusIcon,
   Globe2Icon,
   LoaderIcon,
+  PinIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -205,6 +206,8 @@ import {
   useFlatNewThread,
 } from "./sidebar/SidebarFlatThreadList";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+// Avi Code addition: pinned rows sort ahead of the upstream activity order.
+import { isPinnedByKeys, orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
@@ -553,6 +556,17 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   );
   const { isMobile, setOpenMobile } = useSidebar();
   const setProjectExpanded = useUiStateStore((state) => state.setProjectExpanded);
+  // Avi Code addition: a grouped row stands in for several physical projects,
+  // so it pins and unpins as one — any pinned member pins the row.
+  const memberProjectKeys = useMemo(
+    () => project.memberProjects.map((member) => member.physicalProjectKey),
+    [project.memberProjects],
+  );
+  const isProjectPinned = useUiStateStore((state) =>
+    isPinnedByKeys(state.pinnedProjectKeys, memberProjectKeys),
+  );
+  const setProjectPinned = useUiStateStore((state) => state.setProjectPinned);
+  const pinnedThreadKeys = useUiStateStore((state) => state.pinnedThreadKeys);
   // Thread-row behaviour is shared with the flat sidebar; only project-scoped
   // concerns (rename/grouping/removal, the archived menu, new-thread) stay here.
   const threadHandlers = useSidebarThreadHandlers();
@@ -664,7 +678,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     return counts;
   }, [memberProjectByScopedKey, project.memberProjects, projectThreads]);
 
-  const { projectStatus, visibleProjectThreads, orderedProjectThreadKeys } = useMemo(() => {
+  const {
+    projectStatus,
+    visibleProjectThreads,
+    orderedProjectThreadKeys,
+    pinnedVisibleThreadCount,
+  } = useMemo(() => {
     const lastVisitedAtByThreadKey = new Map(
       projectThreads.map((thread, index) => [
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -682,10 +701,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         },
       });
     };
-    const visibleProjectThreads = sortThreads(
-      projectThreads.filter((thread) => thread.archivedAt === null),
-      threadSortOrder,
-    );
+    // Avi Code addition: pinned threads head the list whatever the sort order
+    // says. Keep this in sync with the groupedSidebarThreadKeys memo below,
+    // which recomputes the same ordering for the keyboard jump slots.
+    const { ordered: visibleProjectThreads, pinnedCount: pinnedVisibleThreadCount } =
+      orderPinnedFirst({
+        items: sortThreads(
+          projectThreads.filter((thread) => thread.archivedAt === null),
+          threadSortOrder,
+        ),
+        pinnedKeys: pinnedThreadKeys,
+        getItemKeys: (thread) => [scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+      });
     const projectStatus = resolveProjectStatusIndicator(
       visibleProjectThreads.map((thread) => resolveProjectThreadStatus(thread)),
     );
@@ -693,10 +720,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       orderedProjectThreadKeys: visibleProjectThreads.map((thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       ),
+      pinnedVisibleThreadCount,
       projectStatus,
       visibleProjectThreads,
     };
-  }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  }, [pinnedThreadKeys, projectThreads, threadLastVisitedAts, threadSortOrder]);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
     if (!activeThreadKey || projectExpanded) {
@@ -734,11 +762,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         },
       });
     };
-    const hasOverflowingThreads = visibleProjectThreads.length > sidebarThreadPreviewCount;
+    // Avi Code addition: a pinned thread is never truncated out of the preview.
+    // Pins already sort first, so widening the cap to cover them is enough.
+    const effectivePreviewCount = Math.max(sidebarThreadPreviewCount, pinnedVisibleThreadCount);
+    const hasOverflowingThreads = visibleProjectThreads.length > effectivePreviewCount;
     const previewThreads =
       isThreadListExpanded || !hasOverflowingThreads
         ? visibleProjectThreads
-        : visibleProjectThreads.slice(0, sidebarThreadPreviewCount);
+        : visibleProjectThreads.slice(0, effectivePreviewCount);
     const visibleThreadKeys = new Set(
       [...previewThreads, ...(pinnedCollapsedThread ? [pinnedCollapsedThread] : [])].map((thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -765,6 +796,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   }, [
     isThreadListExpanded,
     pinnedCollapsedThread,
+    pinnedVisibleThreadCount,
     projectExpanded,
     projectThreads,
     sidebarThreadPreviewCount,
@@ -866,6 +898,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (result._tag === "Failure") {
         return result;
       }
+      // Avi Code addition: a removed project leaves no row to unpin from, so
+      // drop the key here rather than letting it linger as a stale pin.
+      setProjectPinned(member.physicalProjectKey, false);
       const draftStore = useComposerDraftStore.getState();
       const projectDraftThread = draftStore.getDraftThreadByProjectRef(memberProjectRef);
       if (projectDraftThread) {
@@ -874,7 +909,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       draftStore.clearProjectDraftThreadId(memberProjectRef);
       return result;
     },
-    [deleteProject],
+    [deleteProject, setProjectPinned],
   );
 
   const handleRemoveProject = useCallback(
@@ -1078,8 +1113,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           };
         };
 
+        // Avi Code addition: pinning is a whole-row action, so it stays a
+        // single top-level item even when the row groups several projects.
+        actionHandlers.set("toggle-pin", () => {
+          setProjectPinned(memberProjectKeys, !isProjectPinned);
+        });
+
         const clicked = await api.contextMenu.show(
           [
+            {
+              id: "toggle-pin",
+              label: isProjectPinned ? "Unpin project" : "Pin project",
+            },
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
@@ -1103,10 +1148,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [
       copyPathToClipboard,
       handleRemoveProject,
+      isProjectPinned,
+      memberProjectKeys,
       openProjectGroupingDialog,
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
+      setProjectPinned,
       suppressProjectClickForContextMenuRef,
     ],
   );
@@ -1318,6 +1366,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               <span className="shrink-0 text-[10px] text-muted-foreground/60">
                 {project.groupedProjectCount} projects
               </span>
+            ) : null}
+            {/* Avi Code addition: pinned marker. */}
+            {isProjectPinned ? (
+              <PinIcon
+                aria-label="Pinned project"
+                className="size-3 shrink-0 text-muted-foreground/60"
+              />
             ) : null}
           </span>
         </SidebarMenuButton>
@@ -2207,6 +2262,10 @@ export default function Sidebar() {
   const sidebarThreads = useThreadShells();
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
+  // Avi Code addition: pinned rows are partitioned here, after the upstream
+  // sort has run, so every sort order (including manual) keeps pins on top.
+  const pinnedProjectKeys = useUiStateStore((store) => store.pinnedProjectKeys);
+  const pinnedThreadKeys = useUiStateStore((store) => store.pinnedThreadKeys);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
@@ -2499,7 +2558,7 @@ export default function Sidebar() {
         projectId: (physicalToLogicalKey.get(physicalKey) ?? physicalKey) as ProjectId,
       };
     });
-    return sortProjectsForSidebar(
+    const ordered = sortProjectsForSidebar(
       sortableProjects,
       sortableThreads,
       sidebarProjectSortOrder,
@@ -2507,9 +2566,16 @@ export default function Sidebar() {
       const resolvedProject = sidebarProjectByKey.get(project.id);
       return resolvedProject ? [resolvedProject] : [];
     });
+    // Avi Code addition: pins win over whichever order ran above.
+    return orderPinnedFirst({
+      items: ordered,
+      pinnedKeys: pinnedProjectKeys,
+      getItemKeys: (project) => project.memberProjects.map((member) => member.physicalProjectKey),
+    }).ordered;
   }, [
     sidebarProjectSortOrder,
     physicalToLogicalKey,
+    pinnedProjectKeys,
     projectPhysicalKeyByScopedRef,
     sidebarProjectByKey,
     sidebarProjects,
@@ -2519,12 +2585,22 @@ export default function Sidebar() {
   const groupedSidebarThreadKeys = useMemo(
     () =>
       sortedProjects.flatMap((project) => {
-        const projectThreads = sortThreads(
-          (threadsByProjectKey.get(project.projectKey) ?? []).filter(
-            (thread) => thread.archivedAt === null,
+        // Avi Code addition: this mirrors SidebarProjectItem's own ordering and
+        // preview cap. The two must stay in sync — this copy feeds the jump
+        // slots, ctrl-tab traversal, and detail prewarming, so a row that is
+        // rendered but missing here loses its keyboard slot.
+        const { ordered: projectThreads, pinnedCount } = orderPinnedFirst({
+          items: sortThreads(
+            (threadsByProjectKey.get(project.projectKey) ?? []).filter(
+              (thread) => thread.archivedAt === null,
+            ),
+            sidebarThreadSortOrder,
           ),
-          sidebarThreadSortOrder,
-        );
+          pinnedKeys: pinnedThreadKeys,
+          getItemKeys: (thread) => [
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          ],
+        });
         const projectExpanded = resolveProjectExpanded(
           projectExpandedById,
           projectExpansionPreferenceKeys(project),
@@ -2543,11 +2619,14 @@ export default function Sidebar() {
           return [];
         }
         const isThreadListExpanded = expandedThreadListsByProject.has(project.projectKey);
-        const hasOverflowingThreads = projectThreads.length > sidebarThreadPreviewCount;
+        // Pinned rows sort first, so raising the cap to cover them is all it
+        // takes to keep a pin from being truncated out of the preview.
+        const effectivePreviewCount = Math.max(sidebarThreadPreviewCount, pinnedCount);
+        const hasOverflowingThreads = projectThreads.length > effectivePreviewCount;
         const previewThreads =
           isThreadListExpanded || !hasOverflowingThreads
             ? projectThreads
-            : projectThreads.slice(0, sidebarThreadPreviewCount);
+            : projectThreads.slice(0, effectivePreviewCount);
         const renderedThreads = pinnedCollapsedThread ? [pinnedCollapsedThread] : previewThreads;
         return renderedThreads.map((thread) =>
           scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -2557,6 +2636,7 @@ export default function Sidebar() {
       sidebarThreadSortOrder,
       sidebarThreadPreviewCount,
       expandedThreadListsByProject,
+      pinnedThreadKeys,
       projectExpandedById,
       routeThreadKey,
       sortedProjects,
@@ -2600,11 +2680,13 @@ export default function Sidebar() {
             flatThreadCount: sidebarFlatThreadCount,
             isListExpanded: isFlatListExpanded,
             activeRouteThreadKey: routeThreadKey,
+            pinnedThreadKeys,
           }).orderedThreadKeys
         : [],
     [
       isFlatListExpanded,
       isFlatSidebar,
+      pinnedThreadKeys,
       routeThreadKey,
       sidebarFlatThreadCount,
       sidebarThreadSortOrder,
