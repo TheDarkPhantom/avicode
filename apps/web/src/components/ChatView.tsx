@@ -4925,16 +4925,27 @@ function ChatViewContent(props: ChatViewProps) {
     // Avi Code addition: `/btw` never becomes a turn. It clears the composer
     // like the mode switches above, but instead of changing thread state it
     // asks on a discarded fork and shows the answer in a dismissible panel.
-    const sideQuestionThreadRef = activeThreadRef;
-    const sideQuestionThreadKey = activeThreadKey;
-    const sideQuestion =
-      sideQuestionThreadRef === null || sideQuestionThreadKey === null
-        ? null
-        : parseComposerSideQuestionCommand(trimmed);
-    if (sideQuestion !== null && sideQuestionThreadRef !== null && sideQuestionThreadKey !== null) {
+    //
+    // Claimed even on a draft, where there is no conversation to branch from.
+    // Falling through there would send the raw "/btw …" text as a prompt,
+    // which is never what was meant.
+    const sideQuestion = parseComposerSideQuestionCommand(trimmed);
+    if (sideQuestion !== null) {
+      const sideQuestionThreadRef = activeThreadRef;
+      const sideQuestionThreadKey = activeThreadKey;
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
+      if (sideQuestionThreadRef === null || sideQuestionThreadKey === null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Nothing to ask about yet.",
+            description: "Send a message first — /btw answers from this chat's history.",
+          }),
+        );
+        return;
+      }
       if (sideQuestion.question.length > 0) {
         void askSideQuestion({
           threadKey: sideQuestionThreadKey,
