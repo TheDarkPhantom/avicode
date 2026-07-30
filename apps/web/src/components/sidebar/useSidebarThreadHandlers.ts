@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import {
   parseScopedThreadKey,
@@ -15,7 +15,7 @@ import { useRouter } from "@tanstack/react-router";
 
 import { isMacPlatform } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
-import { readProject, readThreadShell } from "../../state/entities";
+import { readProject, readThreadShell, useThreadShell } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiStateStore } from "../../uiStateStore";
@@ -205,10 +205,30 @@ export function useSidebarThreadHandlers() {
     [archiveThread, setThreadPinned],
   );
 
+  // Avi Code addition: unarchiving from the sidebar is nearly always "give me
+  // that one thread back", so opening it is the point of the click. The archived
+  // list comes from its own `archivedShellSnapshot` RPC rather than the live
+  // shell, so the thread is usually not in the entity store yet when the command
+  // resolves — navigating straight away would hit the route's "missing" branch
+  // and bounce to the home view. Holding the ref and letting the shell upsert
+  // trigger the navigation costs nothing when the thread is already loaded, and
+  // simply does nothing if it never arrives.
+  const [pendingOpenThreadRef, setPendingOpenThreadRef] = useState<ScopedThreadRef | null>(null);
+  const pendingOpenThreadShell = useThreadShell(pendingOpenThreadRef);
+  useEffect(() => {
+    if (!pendingOpenThreadRef || !pendingOpenThreadShell) return;
+    setPendingOpenThreadRef(null);
+    navigateToThread(pendingOpenThreadRef);
+  }, [navigateToThread, pendingOpenThreadRef, pendingOpenThreadShell]);
+
   const handleUnarchiveThread = useCallback(
     async (threadRef: ScopedThreadRef) => {
       const result = await unarchiveThread(threadRef);
-      if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
+      if (result._tag === "Success") {
+        setPendingOpenThreadRef(threadRef);
+        return;
+      }
+      if (isAtomCommandInterrupted(result)) {
         return;
       }
       const error = squashAtomCommandFailure(result);
