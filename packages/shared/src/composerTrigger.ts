@@ -1,5 +1,5 @@
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "btw";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -126,7 +126,7 @@ export function detectComposerTrigger(
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
+): Exclude<ComposerSlashCommand, "model" | "btw"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
@@ -134,6 +134,22 @@ export function parseStandaloneComposerSlashCommand(
   const command = match[1]?.toLowerCase();
   if (command === "plan") return "plan";
   return "default";
+}
+
+/**
+ * Avi Code addition: `/btw <question>`.
+ *
+ * Unlike `/plan` and `/default`, this one carries an argument, so it needs its
+ * own parser rather than the bare-command matcher above. A lone `/btw` returns
+ * an empty question — the caller opens the panel and lets the user type there,
+ * which is what the keyboard shortcut does too.
+ */
+export function parseComposerSideQuestionCommand(text: string): { question: string } | null {
+  const match = /^\/btw(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  if (!match) {
+    return null;
+  }
+  return { question: (match[1] ?? "").trim() };
 }
 
 export function replaceTextRange(
