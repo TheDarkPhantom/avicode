@@ -31,7 +31,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- feat(web): read the changelog from the sidebar, with fork and upstream changes kept apart (#52)
+- feat(web): read the changelog from the sidebar, with fork and upstream changes kept apart (#53)
 - ci: publish the Windows installer from the packaging guardrail (#51)
 - feat: /btw side questions on a discarded conversation fork (#50)
 
