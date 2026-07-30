@@ -16,6 +16,7 @@ const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
   aviCodeChatContentWidth: "comfortable",
   aviCodeNewThreadsStartInPlanMode: false,
+  aviCodeNotificationSound: "pebble",
   aviCodeProviderBadgeLabels: {},
   aviCodeSidebarShowStatusLabels: true,
   aviCodeSidebarShowWorktreeIcon: true,

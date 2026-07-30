@@ -22,6 +22,7 @@ import { useUiStateStore } from "../uiStateStore";
  */
 export function ThreadAttentionChime(): null {
   const enabled = useClientSettings((settings) => settings.notificationSoundEnabled);
+  const sound = useClientSettings((settings) => settings.aviCodeNotificationSound);
   const shells = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
@@ -67,9 +68,9 @@ export function ThreadAttentionChime(): null {
     });
     // One sound per pass, however many threads moved at once.
     if (chimes.length > 0) {
-      playNotificationChime();
+      playNotificationChime(sound);
     }
-  }, [bootstrapped, enabled, routeThreadKey, shells, threadLastVisitedAtById, windowActive]);
+  }, [bootstrapped, enabled, routeThreadKey, shells, sound, threadLastVisitedAtById, windowActive]);
 
   return null;
 }
