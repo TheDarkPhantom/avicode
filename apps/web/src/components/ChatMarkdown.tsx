@@ -430,7 +430,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       ref={containerRef}
-      className="chat-markdown-table-container"
+      className="chat-markdown-table-container chat-content-breakout"
       data-expanded={expanded ? "true" : "false"}
     >
       <ScrollArea
@@ -636,7 +636,7 @@ function MarkdownCodeBlock({
 
   return (
     <div
-      className="chat-markdown-codeblock leading-snug"
+      className="chat-markdown-codeblock chat-content-breakout leading-snug"
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
     >

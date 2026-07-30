@@ -46,6 +46,7 @@ import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/ter
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  type CSSProperties,
   lazy,
   memo,
   Suspense,
@@ -157,6 +158,7 @@ import {
   SquarePenIcon,
   WifiOffIcon,
 } from "lucide-react";
+import { chatContentMaxWidthCss } from "~/lib/chatContentWidth";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -1528,6 +1530,17 @@ function ChatViewContent(props: ChatViewProps) {
   // each thread remembering its own visibility.
   const rightPanelFollowsThreads = useClientSettings(
     (settings) => settings.rightPanelFollowsThreads,
+  );
+  // Avi Code addition. Upstream pinned the chat column to a fixed 48rem in six
+  // separate class strings. They all read `--chat-content-max-width` now, which
+  // this sets once on the chat root from the user's setting.
+  const chatContentWidth = useClientSettings((settings) => settings.aviCodeChatContentWidth);
+  const chatContentWidthStyle = useMemo(
+    () =>
+      ({
+        "--chat-content-max-width": chatContentMaxWidthCss(chatContentWidth),
+      }) as CSSProperties,
+    [chatContentWidth],
   );
   useEffect(() => {
     if (!rightPanelFollowsThreads || !activeThreadRef) return;
@@ -6301,11 +6314,14 @@ function ChatViewContent(props: ChatViewProps) {
   ) : null;
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+    <div
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+      style={chatContentWidthStyle}
+    >
       {rightPanelOpen && !shouldUsePlanSidebarSheet ? panelLayoutControls : null}
       <div
         className={cn(
-          "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
+          "chat-content-container flex min-h-0 min-w-0 flex-col overflow-x-hidden",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
@@ -6372,7 +6388,7 @@ function ChatViewContent(props: ChatViewProps) {
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               {activeThread.forkedFrom ? (
-                <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/35 px-3 py-2 text-xs">
+                <div className="mx-auto mt-2 flex w-full max-w-(--chat-content-max-width) items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/35 px-3 py-2 text-xs">
                   <span className="min-w-0 truncate">
                     Forked from an earlier message in{" "}
                     <strong>{forkSourceThread?.title ?? "another thread"}</strong>
@@ -6514,7 +6530,7 @@ function ChatViewContent(props: ChatViewProps) {
                   >
                     <div
                       className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
+                        "chat-composer-glass-shell relative mx-auto w-full max-w-(--chat-content-max-width)",
                         showComposerContextStrip && "chat-composer-glass-shell-with-context",
                       )}
                     >
