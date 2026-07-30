@@ -416,7 +416,7 @@ function ChatListSettings() {
     <SettingsSection title="Chat list" icon={<TagsIcon className="size-5" />}>
       <SettingsRow
         title="Show status labels"
-        description="Show concise labels such as Working and Waiting beside each chat. Turn this off to keep only the colored status dot."
+        description="Show concise labels such as Working and Waiting beside each chat. Turn this off for a denser list — chats waiting on you still tint their whole row in the status color, so you can read state from color alone."
         control={
           <Switch
             checked={showStatusLabels}
