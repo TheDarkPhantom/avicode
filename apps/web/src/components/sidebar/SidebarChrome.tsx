@@ -96,7 +96,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 function AviCodeMark() {
   return (
     <svg
-      aria-label="Advisor Avi"
+      aria-label="Avi Code"
       className="h-5 w-5 shrink-0"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
