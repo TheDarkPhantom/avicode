@@ -238,7 +238,7 @@ export const importLatestT3Data = Effect.fn("avicode.legacyT3Import.latest")(fun
     title: "Import the latest T3 Code workspace?",
     message: "Avi Code will refresh its projects and conversations from T3 Code.",
     detail:
-      "The current Avi Code database is backed up first. Avi-specific provider settings stay unchanged, but conversations created only in Avi Code are replaced by the T3 Code snapshot. Active agent turns in either app should finish before you continue.",
+      "The current Avi Code database is backed up first. Your Avi Code provider settings stay unchanged, but conversations created only in Avi Code are replaced by the T3 Code snapshot. Active agent turns in either app should finish before you continue.",
     buttons: ["Import and Restart", "Cancel"],
     defaultId: 0,
     cancelId: 1,

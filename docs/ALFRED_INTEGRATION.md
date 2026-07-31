@@ -1,4 +1,9 @@
-# ALFRED integration
+# Window title metadata
+
+How Avi Code exposes what it is working on to external time trackers. ALFRED below is the
+maintainer's own time-attribution tool; any tracker that reads window titles, such as ActivityWatch,
+consumes the same signals. Nothing here is required to use the app, and the **Private window titles**
+setting turns it off.
 
 AviCode exposes metadata only:
 

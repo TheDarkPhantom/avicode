@@ -373,13 +373,13 @@ function TimeLoggingSettings() {
   const [windowTitlePrivate, setWindowTitlePrivate] = useState(isWindowTitlePrivacyEnabled);
 
   return (
-    <SettingsSection title="Time logging" icon={<EyeOffIcon className="size-5" />}>
+    <SettingsSection title="Window title" icon={<EyeOffIcon className="size-5" />}>
       <SettingsRow
         title="Private window titles"
-        description="Hide repository and thread names from Avi Code's native title. Leave this off for exact ALFRED project and thread attribution."
+        description="Hide repository and thread names from Avi Code's native title, so anything reading window titles — time trackers, screen recordings, screen shares — sees only the app name. Leave this off if you want those tools to name the project and chat you are on."
         status={
           windowTitlePrivate
-            ? "ALFRED can still record generic Avi Code foreground time, but cannot name the active project or thread."
+            ? "The native title is just Avi Code. Anything tracking window titles can tell the app is in front, but not which project or chat."
             : "The native title contains repository and thread names only; conversation and attachment contents are never exposed."
         }
         control={
