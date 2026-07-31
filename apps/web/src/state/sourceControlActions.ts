@@ -12,6 +12,7 @@ import type {
   EnvironmentId,
   GitActionProgressEvent,
   GitResolvePullRequestResult,
+  GitRunStackedActionInput,
   GitStackedAction,
   SourceControlCloneProtocol,
   SourceControlRepositoryVisibility,
@@ -218,6 +219,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
       commitMessage?: string;
       featureBranch?: boolean;
       filePaths?: string[];
+      autoMerge?: GitRunStackedActionInput["autoMerge"];
       onProgress?: (event: GitActionProgressEvent) => void;
     }) => {
       if (resolveScope(scope) === null) {
@@ -237,6 +239,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
         ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
         ...(input.featureBranch ? { featureBranch: true } : {}),
         ...(input.filePaths?.length ? { filePaths: input.filePaths } : {}),
+        ...(input.autoMerge ? { autoMerge: input.autoMerge } : {}),
         ...(input.onProgress ? { onProgress: input.onProgress } : {}),
       });
     },

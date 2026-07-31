@@ -76,6 +76,11 @@ export interface RunVcsStackedActionInput {
   readonly commitMessage?: string;
   readonly featureBranch?: boolean;
   readonly filePaths?: ReadonlyArray<string>;
+  /**
+   * Required by the `auto_merge` action: the server rejects it without the
+   * repository's policy, so callers must forward what `t3.json` declares.
+   */
+  readonly autoMerge?: GitRunStackedActionInput["autoMerge"];
   readonly onProgress?: (event: GitActionProgressEvent) => void;
 }
 
@@ -463,6 +468,7 @@ export function createVcsActionManager<R, E>(
           ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
           ...(input.featureBranch ? { featureBranch: true } : {}),
           ...(input.filePaths?.length ? { filePaths: [...input.filePaths] } : {}),
+          ...(input.autoMerge ? { autoMerge: input.autoMerge } : {}),
         };
         return consumeVcsActionProgress(
           runStreamInEnvironment(
