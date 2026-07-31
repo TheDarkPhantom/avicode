@@ -4724,6 +4724,7 @@ function ChatViewContent(props: ChatViewProps) {
       previewAnnotations: composerPreviewAnnotations,
       reviewComments: composerReviewComments,
       threadContextIds: composerThreadContextIds,
+      communicationStyle: composerCommunicationStyle,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -5097,6 +5098,11 @@ function ChatViewContent(props: ChatViewProps) {
               threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
             }
           : {}),
+        // Avi Code addition: the optimistic message carries the label so the
+        // style chip appears immediately rather than after the server echo.
+        ...(composerCommunicationStyle
+          ? { communicationStyle: composerCommunicationStyle.label }
+          : {}),
         turnId: null,
         createdAt: messageCreatedAt,
         updatedAt: messageCreatedAt,
@@ -5254,6 +5260,7 @@ function ChatViewContent(props: ChatViewProps) {
               threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
             }
           : {}),
+        ...(composerCommunicationStyle ? { communicationStyle: composerCommunicationStyle } : {}),
         createdAt: messageCreatedAt,
       });
       const queued = useOfflineTurnOutboxStore.getState().enqueue({
@@ -5384,6 +5391,7 @@ function ChatViewContent(props: ChatViewProps) {
                 threadContext: composerThreadContextIdsSnapshot.map((threadId) => ({ threadId })),
               }
             : {}),
+          ...(composerCommunicationStyle ? { communicationStyle: composerCommunicationStyle } : {}),
           createdAt: messageCreatedAt,
         },
       });

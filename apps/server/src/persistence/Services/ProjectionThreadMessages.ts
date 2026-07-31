@@ -31,6 +31,9 @@ export const ProjectionThreadMessage = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   threadContext: Schema.optional(Schema.Array(ThreadContextReferenceSchema)),
+  // Avi Code addition: the label of the communication style this turn was sent
+  // with. Absent means the Default style.
+  communicationStyle: Schema.optional(Schema.String),
   isStreaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

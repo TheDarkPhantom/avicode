@@ -49,7 +49,17 @@ import {
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import { ComposerDictateButton } from "./ComposerDictateButton";
-import { usePrimarySettings } from "~/hooks/useSettings";
+import {
+  useClientSettings,
+  usePrimarySettings,
+  useUpdateClientSettings,
+} from "~/hooks/useSettings";
+import { CommunicationStylePicker } from "./CommunicationStylePicker";
+import {
+  resolveEffectiveStyleId,
+  toCommunicationStyleDirective,
+  toCommunicationStyles,
+} from "./communicationStyleState";
 import { useDictation } from "~/voice/useDictation";
 import { useVoiceToken } from "~/voice/useVoiceToken";
 import {
@@ -533,6 +543,7 @@ export interface ChatComposerHandle {
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
     threadContextIds: ThreadId[];
+    communicationStyle: { label: string; instruction: string } | undefined;
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
@@ -788,6 +799,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const setComposerDraftThreadContextIds = useComposerDraftStore(
     (store) => store.setThreadContextIds,
+  );
+  // Avi Code addition: communication style. The thread's own choice wins; a
+  // thread that has never chosen inherits the global last-picked style, and
+  // choosing inside a thread writes that global back so the next new thread
+  // starts where this one left off.
+  const setComposerDraftCommunicationStyleId = useComposerDraftStore(
+    (store) => store.setCommunicationStyleId,
+  );
+  const globalCommunicationStyleId = useClientSettings(
+    (settings) => settings.aviCodeCommunicationStyleId,
+  );
+  const communicationStylePresets = useClientSettings(
+    (settings) => settings.aviCodeCommunicationStyles,
+  );
+  const customCommunicationStyles = useMemo(
+    () => toCommunicationStyles(communicationStylePresets),
+    [communicationStylePresets],
+  );
+  const effectiveCommunicationStyleId = resolveEffectiveStyleId({
+    threadStyleId: composerDraft.communicationStyleId,
+    globalStyleId: globalCommunicationStyleId,
+  });
+  const updateClientSettings = useUpdateClientSettings();
+  const handleCommunicationStyleChange = useCallback(
+    (styleId: string) => {
+      setComposerDraftCommunicationStyleId(composerDraftTarget, styleId);
+      updateClientSettings({ aviCodeCommunicationStyleId: styleId });
+    },
+    [composerDraftTarget, setComposerDraftCommunicationStyleId, updateClientSettings],
   );
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
@@ -3020,6 +3060,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
         threadContextIds: composerThreadContextIds,
+        // Avi Code addition: resolved at send so an edit to a custom style
+        // applies to the next turn rather than the one already queued.
+        communicationStyle: toCommunicationStyleDirective(
+          effectiveCommunicationStyleId,
+          customCommunicationStyles,
+        ),
         selectedPromptEffort: providerSendContext.selectedPromptEffort,
         selectedModelOptionsForDispatch: providerSendContext.selectedModelOptionsForDispatch,
         selectedModelSelection: providerSendContext.selectedModelSelection,
@@ -3594,8 +3640,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {/*
                   Avi Code addition: the Threads button used to live here, opening its own
                   search popover. Referencing a thread is a mention, so it moved into the `@`
-                  menu next to files and this slot went back to the footer's budget.
+                  menu next to files, and the communication-style picker took the slot.
                 */}
+                <CommunicationStylePicker
+                  styleId={effectiveCommunicationStyleId}
+                  customStyles={customCommunicationStyles}
+                  compact={isComposerFooterCompact}
+                  onStyleChange={handleCommunicationStyleChange}
+                />
                 {noProviderAvailable ? (
                   <Button
                     type="button"

@@ -39,6 +39,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   threads a server-side pin the way upstream did for settle/snooze.
 - Pinning is a single-row action: the multi-select thread menu offers no "Pin (n)", and the command
   palette still lists projects in plain activity order.
+- Communication styles are recorded per message by _label_, not by id. That keeps history honest
+  when a custom style is renamed or deleted, but it means the timeline chip cannot link back to the
+  style that produced it, and two styles that once shared a name are indistinguishable after the
+  fact. Storing an id alongside the label would fix both at the cost of a second column.
+- A style applies from the next message only. There is no "re-ask that turn in this style", which
+  would need the original prompt re-sent rather than the transcript re-rendered.
 - Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
   during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
   have not been verified to stop after proposing a plan. If a provider still auto-implements,
@@ -114,3 +120,6 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-30: desktop Codex “Edit and fork” from earlier user messages with lineage navigation.
 - 2026-07-30: pinned sidebar threads and projects, held at the top in pin order while everything
   else keeps sorting by activity — wired into both the v1 tree/flat list and the v2 active block.
+- 2026-07-31: per-turn communication styles (Default, Business, ELI5, Caveman, plus user-authored
+  presets), picked from the composer, recorded per message, and spliced into the provider-bound
+  text so the transcript stays exactly what the user typed.
