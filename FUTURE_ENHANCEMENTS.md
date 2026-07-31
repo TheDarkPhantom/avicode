@@ -32,6 +32,16 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   present. If it is wanted sooner, the cheap fork-local version is a client-side hold while
   `phase === "running"` that flushes on turn completion, with an `aviCodeSendWhileRunning`
   setting on the Avi Code settings page — at the cost of a queue that does not survive a reload.
+- The changelog is hand-written. Nothing derives it from git, so a PR that forgets its `Unreleased`
+  line leaves no trace, and an upstream sync means pasting the merged commit list in by hand. A
+  script that turns `git log --first-parent <base>..<sync>` into the **Upstream t3code** section
+  would remove the tedious half; CI could then fail a PR whose diff touches `apps/` without touching
+  `CHANGELOG.md`.
+- The changelog is web and desktop only. Mobile has its own navigation and no equivalent entry, so
+  a phone cannot see what changed.
+- Releases in the changelog are not tied to release artifacts: the version heading is written by
+  hand at bump time rather than by the release workflow, so a published build and its changelog
+  entry can drift.
 - Sidebar pins are device-local. They persist in the browser's `t3code:ui-state:v1` blob, next to
   the manual project order, so they do not follow the user to another device or to the desktop
   app's settings file. Syncing would mean either moving them into `ClientSettingsSchema` or giving
@@ -122,3 +132,6 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-31: per-turn communication styles (Default, Business, ELI5, Caveman, plus user-authored
   presets), picked from the composer, recorded per message, and spliced into the provider-bound
   text so the transcript stays exactly what the user typed.
+- 2026-07-31: `CHANGELOG.md` plus an in-app `/changelog` page reached from under Settings in the
+  sidebar, recording each version's fork changes and upstream sync separately so a merge never
+  hides who wrote what.

@@ -228,8 +228,26 @@ When a chunk of work is finished and verified, carry it to `main` without being 
   **Last updated** line when they land.
 - `FUTURE_ENHANCEMENTS.md` — after finishing a feature, review it for natural extensions and record
   any limitation hit while building.
+- `CHANGELOG.md` — what shipped, per version. Every user-visible change adds a line under
+  `## Unreleased` in the same PR that makes it, in the **Avi Code** section. An upstream sync adds
+  its commits under **Upstream t3code** with the author who wrote them there, so a merge never
+  hides who changed what. The file is parsed and rendered in-app at `/changelog`, so its format is
+  load-bearing — the format comment at the top of the file is the spec, and
+  `apps/web/src/changelog/parseChangelog.test.ts` fails the build if the real file drifts from it.
 
-Both are hand-maintained and are this repo's only running record of intent — there is no changelog.
+  **Write entries as outcomes, not commit subjects.** The reader is someone who uses Avi Code, not
+  someone who works on it. They want to know what they can now do or what stopped going wrong, and
+  should not have to know what a projector, an adapter, or a reactor is. "Pin the threads you keep
+  returning to so they stay at the top" beats "feat(web): add sidebar pinning". Internal work still
+  earns a line when a user would feel it; say what they feel, not what moved. Name the surface only
+  when it narrows who is affected ("On mobile, ..."). Commit-style detail belongs in the PR, which
+  every entry already links to.
+
+  **One short sentence, present tense, no em dashes.** The test enforces all three: it rejects a
+  conventional-commit prefix, any em or en dash, and anything over 100 characters. If an entry does
+  not fit, it is usually two entries.
+
+All three are hand-maintained and are this repo's only running record of intent.
 
 ## Avi Code Fork Conventions
 
