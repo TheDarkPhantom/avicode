@@ -31,8 +31,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   migration. Wait for the V2 merge tracked in `TODO.md`, then re-check whether the behaviour is
   present. If it is wanted sooner, the cheap fork-local version is a client-side hold while
   `phase === "running"` that flushes on turn completion, with an `aviCodeSendWhileRunning`
-  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload
-  or reach mobile.
+  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload.
 - Sidebar pins are device-local. They persist in the browser's `t3code:ui-state:v1` blob, next to
   the manual project order, so they do not follow the user to another device or to the desktop
   app's settings file. Syncing would mean either moving them into `ClientSettingsSchema` or giving
@@ -68,8 +67,8 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - User-selectable ALFRED title templates.
 - Explicit project-to-provider credential pinning; the shipped isolation mode learns each project's
   last selection.
-- Extend desktop Codex message forks to mobile and browser clients, add optional checkpoint-restored
-  worktree forks, and support portable transcript forks for providers without native turn forks.
+- Add optional checkpoint-restored worktree forks to Codex message forks, and support portable
+  transcript forks for providers without native turn forks.
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family
   visualization if lineage banners alone become difficult to navigate.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
