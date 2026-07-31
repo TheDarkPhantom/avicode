@@ -86,8 +86,8 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import { ProviderSideQuestionError, VoiceTokenRequestError } from "@t3tools/contracts";
-import { createVoiceToken } from "./voice/VoiceTokenService.ts";
+import { ProviderSideQuestionError, VoiceCredentialUnavailableError } from "@t3tools/contracts";
+import { getVoiceCredential } from "./voice/VoiceCredentialService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -1468,14 +1468,14 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "provider" },
           ),
-        [WS_METHODS.voiceCreateToken]: (_input) =>
+        [WS_METHODS.voiceGetCredential]: (_input) =>
           observeRpcEffect(
-            WS_METHODS.voiceCreateToken,
+            WS_METHODS.voiceGetCredential,
             // Reads the materialized settings so the plaintext key is present;
             // the redacted copy sent to clients always has it blank.
             serverSettings.getSettings.pipe(
-              Effect.mapError((cause) => new VoiceTokenRequestError({ cause })),
-              Effect.flatMap((settings) => createVoiceToken(settings.voice.deepgramApiKey)),
+              Effect.mapError((cause) => new VoiceCredentialUnavailableError({ cause })),
+              Effect.flatMap((settings) => getVoiceCredential(settings.voice.deepgramApiKey)),
             ),
             {
               "rpc.aggregate": "voice",

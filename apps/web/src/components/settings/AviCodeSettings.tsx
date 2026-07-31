@@ -552,13 +552,10 @@ function VoiceSettingsSection() {
     <SettingsSection title="Voice" icon={<MicIcon className="size-5" />}>
       <SettingsRow
         title="Deepgram API key"
-        // Deepgram only issues the short-lived dictation tokens to keys with
-        // Member permissions or higher. A weaker key still transcribes, so
-        // nothing about it looks wrong until dictation refuses to start.
-        description="Enables the microphone button in the chat composer, so you can dictate a prompt instead of typing it. Create one at console.deepgram.com with at least Member permissions."
+        description="Enables the microphone button in the chat composer, so you can dictate a prompt instead of typing it. Get a key at console.deepgram.com."
         status={
           hasStoredKey
-            ? "A key is stored. It is kept on the server and is never sent to the browser — the app requests a short-lived token for each recording."
+            ? "A key is stored. It stays on this machine, but a browser you hand a --share pairing URL to can read it while dictating."
             : "Dictation is off until a key is set."
         }
         control={

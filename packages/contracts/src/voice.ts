@@ -4,32 +4,28 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 /**
  * Voice dictation transcribes through Deepgram's streaming API directly from
  * the client, so the socket has to be opened with a credential the browser can
- * hold. The account API key must never be that credential — `apps/web` is also
- * served over the tailnet `--share` URL, where anything shipped to the page is
- * readable by every device that can reach it.
+ * hold. That credential is the stored account API key, sent with Deepgram's
+ * `token` WebSocket subprotocol (`["token", apiKey]`) exactly as VibeSpeak does
+ * in `renderer/overlay.js`.
  *
- * Instead the server exchanges the stored key for a short-lived Deepgram access
- * token (`POST /v1/auth/grant`) and hands only that to the client. The token
- * needs to be valid at connect time; the socket then stays open for the whole
- * recording regardless of expiry, so a short TTL costs nothing.
+ * The fork briefly exchanged the key for a short-lived JWT via
+ * `POST /v1/auth/grant` instead. That endpoint only answers keys with Member
+ * permissions or higher, and a weaker key transcribes perfectly well, so the
+ * exchange turned working keys into dead dictation. Avi Code is distributed as
+ * a desktop installer where each install holds its own locally entered key, so
+ * the key never travels further than the renderer on the same machine.
  *
- * The token is a JWT and is passed with the `bearer` WebSocket subprotocol
- * (`["bearer", token]`), which is what Deepgram's own JS SDK sends from a
- * browser. The streaming endpoint does not accept an `access_token` query
- * parameter at all. See buildDeepgramSocketProtocols in apps/web.
- *
- * The grant call needs an API key with at least Member permissions. A key
- * below that transcribes fine but gets 403 from `/v1/auth/grant`, so the
- * failure looks like "dictation does nothing" rather than "wrong key".
+ * The one case that does expose it is a `--share` pairing URL, which points a
+ * remote browser at this server and therefore hands that browser the key. That
+ * is a deliberate trade: any Deepgram key works, at the cost of the key being
+ * readable by whoever you share a session with.
  */
-export const VOICE_TOKEN_TTL_SECONDS = 60;
 
-export const VoiceTokenResult = Schema.Struct({
-  accessToken: TrimmedNonEmptyString,
-  /** Seconds until the token stops being accepted for *new* connections. */
-  expiresIn: Schema.Number,
+export const VoiceCredentialResult = Schema.Struct({
+  /** Deepgram account API key, used directly as the socket subprotocol value. */
+  apiKey: TrimmedNonEmptyString,
 });
-export type VoiceTokenResult = typeof VoiceTokenResult.Type;
+export type VoiceCredentialResult = typeof VoiceCredentialResult.Type;
 
 export class VoiceNotConfiguredError extends Schema.TaggedErrorClass<VoiceNotConfiguredError>()(
   "VoiceNotConfiguredError",
@@ -40,42 +36,21 @@ export class VoiceNotConfiguredError extends Schema.TaggedErrorClass<VoiceNotCon
   }
 }
 
-export class VoiceTokenRejectedError extends Schema.TaggedErrorClass<VoiceTokenRejectedError>()(
-  "VoiceTokenRejectedError",
-  {
-    status: Schema.Number,
-  },
-) {
-  override get message(): string {
-    // 403 is the one worth spelling out: the key works for transcription, so
-    // "check your key" sends you looking in the wrong place. Deepgram only
-    // issues dictation tokens to keys with Member permissions or higher.
-    if (this.status === 403) {
-      return "This Deepgram key is not allowed to create dictation tokens. Create a key with at least Member permissions at console.deepgram.com, then paste it into Settings → Avi Code → Voice.";
-    }
-    if (this.status === 401) {
-      return "Deepgram rejected the configured API key. Check it in Settings → Avi Code → Voice.";
-    }
-    return `Deepgram refused to issue a dictation token (HTTP ${this.status}).`;
-  }
-}
-
-export class VoiceTokenRequestError extends Schema.TaggedErrorClass<VoiceTokenRequestError>()(
-  "VoiceTokenRequestError",
+export class VoiceCredentialUnavailableError extends Schema.TaggedErrorClass<VoiceCredentialUnavailableError>()(
+  "VoiceCredentialUnavailableError",
   {
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return "Could not reach Deepgram to start dictation.";
+    return "Could not read the stored Deepgram API key.";
   }
 }
 
-export const VoiceTokenError = Schema.Union([
+export const VoiceCredentialError = Schema.Union([
   VoiceNotConfiguredError,
-  VoiceTokenRejectedError,
-  VoiceTokenRequestError,
+  VoiceCredentialUnavailableError,
 ]);
-export type VoiceTokenError = typeof VoiceTokenError.Type;
+export type VoiceCredentialError = typeof VoiceCredentialError.Type;
 
-export const isVoiceTokenError = Schema.is(VoiceTokenError);
+export const isVoiceCredentialError = Schema.is(VoiceCredentialError);
