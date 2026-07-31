@@ -83,6 +83,53 @@ export function resolveTimelinePinnedMessageIndex({
   return pinnedIndex;
 }
 
+/** Breathing room kept between the pinned pill and the prompt sliding up into it. */
+export const TIMELINE_PINNED_MESSAGE_PUSH_GAP = 8;
+
+/**
+ * How far to slide the pinned pill up so it never covers the next prompt.
+ *
+ * The pill is absolutely positioned over the list, so without this the prompt
+ * scrolling up from below passes underneath it and is unreadable for the
+ * hundred or so pixels it takes to reach the top. VS Code's sticky scroll
+ * handles the same collision by pushing the stale header out of frame, and the
+ * pill it is pushing out is about to be replaced by that very prompt anyway.
+ */
+export function resolveTimelinePinnedMessagePushOffset({
+  pinnedHeight,
+  pinnedIndex,
+  revealOffset,
+  rows,
+  scrollTop,
+}: {
+  readonly pinnedHeight: number;
+  readonly pinnedIndex: number | null;
+  readonly revealOffset: number;
+  readonly rows: ReadonlyArray<TimelinePinnedRowMetrics>;
+  readonly scrollTop: number;
+}): number {
+  if (pinnedIndex === null || pinnedHeight <= 0) {
+    return 0;
+  }
+
+  const next = rows[pinnedIndex + 1];
+  // No later prompt, or one LegendList has not measured yet: nothing can
+  // collide, and guessing a position would push the pill away for no reason.
+  if (!next || next.top === null) {
+    return 0;
+  }
+
+  const band = revealOffset + pinnedHeight + TIMELINE_PINNED_MESSAGE_PUSH_GAP;
+  const distanceToNext = next.top - scrollTop;
+  if (distanceToNext >= band) {
+    return 0;
+  }
+
+  // Clamped so the pill stops once it is fully clear rather than drifting on
+  // into the header as the next prompt keeps rising.
+  return Math.min(band, band - distanceToNext);
+}
+
 export function resolveTimelineMinimapHeightStyle(itemCount: number): string {
   const naturalHeight = Math.max(1, (itemCount - 1) * TIMELINE_MINIMAP_ITEM_SPACING);
   return `min(${naturalHeight}px, ${TIMELINE_MINIMAP_MAX_HEIGHT_CSS})`;
