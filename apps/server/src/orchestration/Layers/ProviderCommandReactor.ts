@@ -49,6 +49,7 @@ import {
   serializeReferencedThreadContext,
   type ReferencedThreadTranscript,
 } from "../threadContext.ts";
+import { serializeCommunicationStyleDirective } from "@t3tools/shared/communicationStyles";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -1071,8 +1072,16 @@ const make = Effect.gen(function* () {
     });
 
     const referencedContext = yield* serializeThreadContext(event.payload.threadContext ?? []);
-    const providerMessageText =
-      referencedContext.length > 0 ? `${message.text}\n\n${referencedContext}` : message.text;
+    // Avi Code addition. The style directive is spliced in here rather than
+    // persisted on the message, so it shapes the reply without ever appearing
+    // in the transcript. It goes last, closest to the model's turn, and applies
+    // to every provider because every adapter receives this same text.
+    const styleDirective = serializeCommunicationStyleDirective(
+      event.payload.communicationStyle?.instruction ?? "",
+    );
+    const providerMessageText = [message.text, referencedContext, styleDirective]
+      .filter((part) => part.length > 0)
+      .join("\n\n");
 
     const isFirstUserMessageTurn =
       thread.messages.filter((entry) => entry.role === "user").length === 1;

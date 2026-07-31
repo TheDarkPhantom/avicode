@@ -2,7 +2,7 @@
 
 Prioritized work. Structure: **shipped foundation → alpha verification → next work**.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-07-31
 
 ## Shipped foundation
 
@@ -45,6 +45,15 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [ ] Confirm ActivityWatch sees `repository — thread — Avi Code`.
 - [ ] Run an ALFRED window and verify project/thread/work-kind calendar attribution.
 - [ ] Verify privacy mode leaves only `Avi Code` in the native title.
+
+## Upstream tracking
+
+- [ ] Plan the merge of upstream orchestration V2 (`pingdotgg/t3code#2829`, open as of 2026-07-31,
+      810 files / +154k / −74k). It replaces the V1 orchestration engine wholesale, so the decider,
+      projector, projection tables, migrations, and every provider adapter are in its blast radius.
+      The weekly `sync-upstream.yml` will surface it on the Monday after it lands — most likely as
+      an `upstream-sync-blocked` issue rather than a clean PR, given the size. Budget real time for
+      it rather than treating it as a routine sync.
 
 ## Before public alpha
 

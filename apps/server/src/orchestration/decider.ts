@@ -759,6 +759,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           (command.threadContext ?? []).map((reference) => [reference.threadId, reference]),
         ).values(),
       );
+      // Avi Code addition. A style with nothing to say is the Default style, and
+      // recording it would put a meaningless chip on the turn. Normalizing here
+      // means the client can send its current selection unconditionally.
+      const communicationStyle =
+        command.communicationStyle !== undefined &&
+        command.communicationStyle.instruction.trim().length > 0
+          ? command.communicationStyle
+          : undefined;
       for (const reference of threadContext) {
         if (reference.threadId === targetThread.id) {
           return yield* new OrchestrationCommandInvariantError({
@@ -815,6 +823,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           text: command.message.text,
           attachments: command.message.attachments,
           ...(threadContext.length > 0 ? { threadContext } : {}),
+          // Only the label is persisted, and only when a style was actually
+          // chosen. Absence means Default, which is why the timeline shows no
+          // chip for it.
+          ...(communicationStyle !== undefined
+            ? { communicationStyle: communicationStyle.label }
+            : {}),
           turnId: null,
           streaming: false,
           createdAt: command.createdAt,
@@ -841,6 +855,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: targetThread.interactionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
           ...(threadContext.length > 0 ? { threadContext } : {}),
+          // The instruction rides the turn, not the message, so it reaches the
+          // provider without ever being written into the transcript.
+          ...(communicationStyle !== undefined ? { communicationStyle } : {}),
           createdAt: command.createdAt,
         },
       };

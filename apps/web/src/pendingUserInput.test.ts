@@ -7,6 +7,7 @@ import {
   findFirstUnansweredPendingUserInputQuestionIndex,
   resolvePendingUserInputAnswer,
   setPendingUserInputCustomAnswer,
+  shouldDismissPendingUserInputForKey,
   togglePendingUserInputOptionSelection,
 } from "./pendingUserInput";
 
@@ -39,6 +40,51 @@ const multiSelectQuestion = {
   ],
   multiSelect: true,
 } as const;
+
+const escapeEvent = {
+  key: "Escape",
+  defaultPrevented: false,
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: false,
+  targetOutsideComposer: false,
+  isResponding: false,
+} as const;
+
+describe("shouldDismissPendingUserInputForKey", () => {
+  it("dismisses on a bare Escape", () => {
+    expect(shouldDismissPendingUserInputForKey(escapeEvent)).toBe(true);
+  });
+
+  it("ignores every other key", () => {
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, key: "Enter" })).toBe(false);
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, key: "1" })).toBe(false);
+  });
+
+  it("leaves chorded Escape to whoever owns the chord", () => {
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, metaKey: true })).toBe(false);
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, ctrlKey: true })).toBe(false);
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, altKey: true })).toBe(false);
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, shiftKey: true })).toBe(false);
+  });
+
+  it("stands down once another handler has taken the event", () => {
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, defaultPrevented: true })).toBe(
+      false,
+    );
+  });
+
+  it("leaves Escape to a focused menu or dialog instead of stopping the turn", () => {
+    expect(
+      shouldDismissPendingUserInputForKey({ ...escapeEvent, targetOutsideComposer: true }),
+    ).toBe(false);
+  });
+
+  it("does nothing while the answer is already being submitted", () => {
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, isResponding: true })).toBe(false);
+  });
+});
 
 describe("resolvePendingUserInputAnswer", () => {
   it("prefers a custom answer over selected options", () => {

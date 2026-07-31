@@ -132,6 +132,37 @@ describe("ClientSettings Avi Code chat badges", () => {
     expect(settings.aviCodeProviderBadgeLabels).toEqual({});
   });
 
+  it("shows the worktree and pull request markers by default and lets each be turned off", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.aviCodeSidebarShowWorktreeIcon).toBe(true);
+    expect(settings.aviCodeSidebarShowPrIndicator).toBe(true);
+
+    const patch = decodeClientSettingsPatch({ aviCodeSidebarShowPrIndicator: false });
+    expect(patch.aviCodeSidebarShowPrIndicator).toBe(false);
+  });
+
+  it("starts on the default communication style with no custom styles", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.aviCodeCommunicationStyleId).toBe("default");
+    expect(settings.aviCodeCommunicationStyles).toEqual([]);
+
+    // The id is the last style picked anywhere, so a patch carrying only it is
+    // what the composer writes when the style changes inside a chat.
+    const patch = decodeClientSettingsPatch({ aviCodeCommunicationStyleId: "caveman" });
+    expect(patch.aviCodeCommunicationStyleId).toBe("caveman");
+  });
+
+  it("round-trips a user-authored communication style", () => {
+    const patch = decodeClientSettingsPatch({
+      aviCodeCommunicationStyles: [
+        { id: "custom:terse", label: "Terse", instruction: "Answer in three sentences." },
+      ],
+    });
+    expect(patch.aviCodeCommunicationStyles).toEqual([
+      { id: "custom:terse", label: "Terse", instruction: "Answer in three sentences." },
+    ]);
+  });
+
   it("accepts one- or two-character provider badge overrides", () => {
     const patch = decodeClientSettingsPatch({
       aviCodeSidebarShowStatusLabels: false,
