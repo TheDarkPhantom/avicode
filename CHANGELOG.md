@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Agents get the toolchain traps that cost real debugging time written down (#69)
 - Merge a project's ready threads one at a time from the sidebar (#64)
 - The repository's auto merge policy now reaches the server (#62)
 - Unarchiving a thread from the sidebar opens it (#59)
