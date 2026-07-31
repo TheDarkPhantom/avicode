@@ -104,6 +104,10 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - User-selectable ALFRED title templates.
 - Explicit project-to-provider credential pinning; the shipped isolation mode learns each project's
   last selection.
+- The timeline "Send again" action is web/desktop only — mobile's chat surface has no per-message
+  resend. It is also hidden while the environment is unavailable instead of queueing through the
+  offline turn outbox, and it resends the original text verbatim, so a prompt-effort prefix baked
+  in at first send is kept even if the effort picker has since changed.
 - Add optional checkpoint-restored worktree forks to Codex message forks, and support portable
   transcript forks for providers without native turn forks.
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family

@@ -53,6 +53,7 @@ import {
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
+  RotateCcwIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -144,6 +145,8 @@ interface TimelineRowSharedState {
   activeThreadEnvironmentId: EnvironmentId;
   canEditAndFork: boolean;
   onEditAndForkUserMessage: (messageId: MessageId) => void;
+  canRetryMessages: boolean;
+  onRetryUserMessage: (messageId: MessageId) => void;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -186,6 +189,8 @@ interface MessagesTimelineProps {
   onRevertUserMessage: (messageId: MessageId) => void;
   canEditAndFork?: boolean;
   onEditAndForkUserMessage?: (messageId: MessageId) => void;
+  canRetryMessages?: boolean;
+  onRetryUserMessage?: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
   isForkingThread?: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -228,6 +233,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onRevertUserMessage,
   canEditAndFork = false,
   onEditAndForkUserMessage = NOOP_MESSAGE_ACTION,
+  canRetryMessages = false,
+  onRetryUserMessage = NOOP_MESSAGE_ACTION,
   isRevertingCheckpoint,
   isForkingThread = false,
   onImageExpand,
@@ -495,6 +502,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       canEditAndFork,
       onEditAndForkUserMessage,
+      canRetryMessages,
+      onRetryUserMessage,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -511,6 +520,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       canEditAndFork,
       onEditAndForkUserMessage,
+      canRetryMessages,
+      onRetryUserMessage,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -1161,6 +1172,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             </TooltipPopup>
           </Tooltip>
           <div className="flex items-center gap-0.5">
+            {/* Avi Code addition: resend this prompt as a fresh turn in the same thread. */}
+            {ctx.canRetryMessages && <RetryUserMessageButton messageId={row.message.id} />}
             {/* Avi Code addition: edit an earlier Codex message into a separate conversation. */}
             {ctx.canEditAndFork && <EditAndForkUserMessageButton messageId={row.message.id} />}
             {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
@@ -1171,6 +1184,31 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       </div>
     </div>
+  );
+}
+
+function RetryUserMessageButton({ messageId }: { messageId: MessageId }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={activity.isWorking || activity.isForkingThread}
+            onClick={() => ctx.onRetryUserMessage(messageId)}
+            aria-label="Send again"
+          />
+        }
+      >
+        <RotateCcwIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Send again</TooltipPopup>
+    </Tooltip>
   );
 }
 
