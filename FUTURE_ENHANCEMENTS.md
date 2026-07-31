@@ -17,6 +17,22 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Queue-vs-steer for messages sent while a turn is running. Today the composer always steers: a
+  send during a running turn is injected into that turn immediately (see the comment in
+  `apps/web/src/components/ChatView.logic.ts`). There is no queue and no setting, and the
+  `hasQueuedTurn` path in `ChatComposer.tsx` is the offline outbox for a disconnected environment,
+  not this. Upstream built the feature — server-side per-thread queue, auto-drained on natural turn
+  completion, with per-message Steer and Remove chips above the composer — in
+  `pingdotgg/t3code#4245` (branch `t3code/queue-steer-feature`, fetched here as
+  `origin/t3code/queue-steer-feature`). That PR was **closed unmerged** on 2026-07-30 in favour of
+  orchestration V2 (`#2829`), which reportedly has the behaviour natively; the closing note invites
+  a rebase-and-reopen if V2 turns out to be missing it. So do not merge the dead branch — its seven
+  commits sit on a base that is now well over a hundred commits stale and it adds a colliding
+  migration. Wait for the V2 merge tracked in `TODO.md`, then re-check whether the behaviour is
+  present. If it is wanted sooner, the cheap fork-local version is a client-side hold while
+  `phase === "running"` that flushes on turn completion, with an `aviCodeSendWhileRunning`
+  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload
+  or reach mobile.
 - Sidebar pins are device-local. They persist in the browser's `t3code:ui-state:v1` blob, next to
   the manual project order, so they do not follow the user to another device or to the desktop
   app's settings file. Syncing would mean either moving them into `ClientSettingsSchema` or giving
