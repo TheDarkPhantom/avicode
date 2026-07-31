@@ -13,22 +13,12 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
+import { formatDocumentContext } from "@t3tools/shared/documentContext";
+
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
-
-function escapeDocumentAttribute(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
-}
-
-export function formatDocumentContext(input: {
-  readonly name: string;
-  readonly mimeType: string;
-  readonly text: string;
-}): string {
-  return `<avicode_document name="${escapeDocumentAttribute(input.name)}" mime="${escapeDocumentAttribute(input.mimeType)}">\n${input.text}\n</avicode_document>`;
-}
 
 export const canonicalizeClientCommandTimestamps = (
   command: ClientOrchestrationCommand,
