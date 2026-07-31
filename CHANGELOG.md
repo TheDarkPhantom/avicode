@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The pinned prompt moves aside instead of covering the next message as you scroll (#76)
 - Dictation works with any Deepgram key, not only ones allowed to mint tokens (#75)
 - Dictation says why it stopped instead of switching itself off without a word (#74)
 - The window title privacy setting says what it hides instead of naming an unfamiliar tool (#73)

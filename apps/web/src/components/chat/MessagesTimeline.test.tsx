@@ -449,6 +449,55 @@ describe("MessagesTimeline", () => {
     );
   });
 
+  it("pushes the pinned pill out before it can cover the next prompt", async () => {
+    const { resolveTimelinePinnedMessagePushOffset, TIMELINE_PINNED_MESSAGE_PUSH_GAP } =
+      await import("./MessagesTimeline.logic");
+
+    const rows = [
+      { top: 0, height: 120 },
+      { top: 400, height: 120 },
+    ];
+    // Pill occupies the first 8 + 34 pixels, plus the gap kept below it.
+    const base = { pinnedHeight: 34, pinnedIndex: 0, revealOffset: 8, rows };
+    const band = 8 + 34 + TIMELINE_PINNED_MESSAGE_PUSH_GAP;
+
+    // The next prompt is still far below the pill, so nothing moves.
+    expect(resolveTimelinePinnedMessagePushOffset({ ...base, scrollTop: 120 })).toBe(0);
+    // Exactly touching the band is still clear.
+    expect(resolveTimelinePinnedMessagePushOffset({ ...base, scrollTop: 400 - band })).toBe(0);
+    // Ten pixels into the band pushes the pill up by exactly that overlap.
+    expect(resolveTimelinePinnedMessagePushOffset({ ...base, scrollTop: 400 - band + 10 })).toBe(
+      10,
+    );
+    // Once the prompt reaches the top the pill is fully clear and stops there,
+    // rather than drifting further up as scrolling continues.
+    expect(resolveTimelinePinnedMessagePushOffset({ ...base, scrollTop: 400 })).toBe(band);
+    expect(resolveTimelinePinnedMessagePushOffset({ ...base, scrollTop: 900 })).toBe(band);
+
+    // Nothing to collide with: the last prompt never gets pushed.
+    expect(
+      resolveTimelinePinnedMessagePushOffset({ ...base, pinnedIndex: 1, scrollTop: 900 }),
+    ).toBe(0);
+    // An unmeasured next row must not be treated as an imminent collision.
+    expect(
+      resolveTimelinePinnedMessagePushOffset({
+        ...base,
+        rows: [
+          { top: 0, height: 120 },
+          { top: null, height: null },
+        ],
+        scrollTop: 900,
+      }),
+    ).toBe(0);
+    // Nothing pinned, or an unmeasured pill, means no transform at all.
+    expect(
+      resolveTimelinePinnedMessagePushOffset({ ...base, pinnedIndex: null, scrollTop: 900 }),
+    ).toBe(0);
+    expect(
+      resolveTimelinePinnedMessagePushOffset({ ...base, pinnedHeight: 0, scrollTop: 900 }),
+    ).toBe(0);
+  });
+
   it("anchors a sent attachment message using its measured height", () => {
     const onAnchorReady = vi.fn();
     const onAnchorSizeChanged = vi.fn();

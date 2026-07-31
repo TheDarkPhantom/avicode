@@ -21,6 +21,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -76,6 +77,7 @@ import {
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelinePinnedMessageIndex,
+  resolveTimelinePinnedMessagePushOffset,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapHeightStyle,
   resolveTimelineMinimapHitStripWidth,
@@ -385,6 +387,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
   const [pinnedMessageIndex, setPinnedMessageIndex] = useState<number | null>(null);
+  const pinnedMessageRef = useRef<HTMLDivElement | null>(null);
   const handleAnchorReady = useCallback(
     (info: { anchorIndex: number | undefined }) => {
       if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -453,6 +456,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       scrollTop,
     });
     setPinnedMessageIndex((current) => (current === nextPinnedIndex ? current : nextPinnedIndex));
+
+    // Avi Code addition: written straight to the node instead of through state,
+    // because this runs on every scroll frame and a re-render per frame is
+    // exactly the kind of jank this timeline is careful to avoid.
+    const pinnedElement = pinnedMessageRef.current;
+    if (pinnedElement) {
+      const pushOffset = resolveTimelinePinnedMessagePushOffset({
+        pinnedHeight: pinnedElement.offsetHeight,
+        pinnedIndex: nextPinnedIndex,
+        revealOffset: pinnedRevealOffset,
+        rows: pinnedRowMetrics,
+        scrollTop,
+      });
+      pinnedElement.style.transform = pushOffset === 0 ? "" : `translateY(-${pushOffset}px)`;
+    }
   }, [listRef, minimapItems, minimapStripMap, onIsAtEndChange, pinnedRevealOffset]);
 
   useEffect(() => {
@@ -644,6 +662,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             <TimelinePinnedUserMessage
               item={pinnedMessageItem}
               onSelect={jumpToTimelineItem}
+              pinnedRef={pinnedMessageRef}
               topFadeEnabled={topFadeEnabled}
             />
           ) : null}
@@ -747,10 +766,12 @@ function resolveTimelineRowHeight(state: TimelinePositionState, rowIndex: number
 function TimelinePinnedUserMessage({
   item,
   onSelect,
+  pinnedRef,
   topFadeEnabled,
 }: {
   item: TimelineMinimapItem;
   onSelect: (item: TimelineMinimapItem) => void;
+  pinnedRef: RefObject<HTMLDivElement | null>;
   topFadeEnabled: boolean;
 }) {
   const label = item.userText ?? "User message";
@@ -764,6 +785,7 @@ function TimelinePinnedUserMessage({
         topFadeEnabled ? "top-1.5" : "top-1",
       )}
       data-testid="timeline-pinned-user-message"
+      ref={pinnedRef}
     >
       <div className="flex w-full max-w-(--chat-content-max-width) justify-end">
         <button
