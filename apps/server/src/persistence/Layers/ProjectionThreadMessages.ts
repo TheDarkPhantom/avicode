@@ -24,6 +24,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     threadContext: Schema.NullOr(Schema.fromJsonString(Schema.Array(ThreadContextReferenceSchema))),
+    communicationStyle: Schema.NullOr(Schema.String),
   }),
 );
 
@@ -41,6 +42,7 @@ function toProjectionThreadMessage(
     updatedAt: row.updatedAt,
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
     ...(row.threadContext !== null ? { threadContext: row.threadContext } : {}),
+    ...(row.communicationStyle !== null ? { communicationStyle: row.communicationStyle } : {}),
   };
 }
 
@@ -54,6 +56,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         row.attachments !== undefined ? JSON.stringify(row.attachments) : null;
       const nextThreadContextJson =
         row.threadContext !== undefined ? JSON.stringify(row.threadContext) : null;
+      const nextCommunicationStyle = row.communicationStyle ?? null;
       return sql`
         INSERT INTO projection_thread_messages (
           message_id,
@@ -63,6 +66,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json,
           thread_context_json,
+          communication_style,
           is_streaming,
           created_at,
           updated_at
@@ -89,6 +93,14 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
               WHERE message_id = ${row.messageId}
             )
           ),
+          COALESCE(
+            ${nextCommunicationStyle},
+            (
+              SELECT communication_style
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
           ${row.isStreaming ? 1 : 0},
           ${row.createdAt},
           ${row.updatedAt}
@@ -106,6 +118,10 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           thread_context_json = COALESCE(
             excluded.thread_context_json,
             projection_thread_messages.thread_context_json
+          ),
+          communication_style = COALESCE(
+            excluded.communication_style,
+            projection_thread_messages.communication_style
           ),
           is_streaming = excluded.is_streaming,
           created_at = excluded.created_at,
@@ -127,6 +143,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           thread_context_json AS "threadContext",
+          communication_style AS "communicationStyle",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -149,6 +166,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           thread_context_json AS "threadContext",
+          communication_style AS "communicationStyle",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"

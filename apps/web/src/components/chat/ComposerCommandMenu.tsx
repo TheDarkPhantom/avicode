@@ -3,8 +3,9 @@ import {
   type ProviderDriverKind,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
+  type ThreadId,
 } from "@t3tools/contracts";
-import { BotIcon } from "lucide-react";
+import { BotIcon, Link2Icon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
@@ -51,6 +52,17 @@ export type ComposerCommandItem =
       skill: ServerProviderSkill;
       label: string;
       description: string;
+    }
+  // Avi Code addition: thread references are reachable from the `@` menu
+  // alongside files, replacing the dedicated Threads button that used to sit in
+  // the composer footer. Referencing a thread is a mention, so it belongs in the
+  // mention flow rather than in its own control.
+  | {
+      id: string;
+      type: "thread";
+      threadId: ThreadId;
+      label: string;
+      description: string;
     };
 
 type ComposerCommandGroup = {
@@ -85,6 +97,20 @@ function groupCommandItems(
 ): ComposerCommandGroup[] {
   if (triggerKind === "skill") {
     return items.length > 0 ? [{ id: "skills", label: "Skills", items }] : [];
+  }
+  // Avi Code addition: the `@` menu can hold both files and thread references.
+  // Label the sections only when both are present — a lone "Files" header on the
+  // overwhelmingly common file-only case is noise.
+  if (triggerKind === "path") {
+    const pathItems = items.filter((item) => item.type === "path");
+    const threadItems = items.filter((item) => item.type === "thread");
+    if (pathItems.length === 0 || threadItems.length === 0) {
+      return [{ id: "default", label: null, items }];
+    }
+    return [
+      { id: "files", label: "Files", items: pathItems },
+      { id: "threads", label: "Threads", items: threadItems },
+    ];
   }
   if (triggerKind !== "slash-command" || !groupSlashCommandSections) {
     return [{ id: "default", label: null, items }];
@@ -188,7 +214,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                   ? "Searching workspace files..."
                   : (props.emptyStateText ??
                     (props.triggerKind === "path"
-                      ? "No matching files or folders."
+                      ? "No matching files, folders, or threads."
                       : "No matching command."))}
               </p>
             )}
@@ -246,6 +272,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground/80">
           <SkillGlyph className="size-3.5" />
         </span>
+      ) : null}
+      {props.item.type === "thread" ? (
+        <Link2Icon className="size-4 shrink-0 text-muted-foreground/80" />
       ) : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0">{props.item.label}</span>
