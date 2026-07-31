@@ -152,6 +152,12 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeSidebarShowWorktreeIcon: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
+  // Avi Code addition. Hides the per-thread pull request indicator in the
+  // sidebar — the icon in v1, the `#123` badge in v2. Both are shortcuts to
+  // open the PR; the branch toolbar still shows and opens it.
+  aviCodeSidebarShowPrIndicator: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code addition. How wide the chat column is allowed to grow.
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
@@ -811,6 +817,7 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowPrIndicator: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(

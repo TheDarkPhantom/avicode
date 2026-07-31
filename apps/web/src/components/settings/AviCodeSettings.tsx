@@ -408,6 +408,7 @@ function NewChatSettings() {
 function ChatListSettings() {
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
+  const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
   const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
   const providers = deriveProviderInstanceEntries(useAtomValue(primaryServerProvidersAtom));
   const updateSettings = useUpdateClientSettings();
@@ -437,6 +438,19 @@ function ChatListSettings() {
               updateSettings({ aviCodeSidebarShowWorktreeIcon: Boolean(checked) })
             }
             aria-label="Show worktree icon in the chat list"
+          />
+        }
+      />
+      <SettingsRow
+        title="Show pull request indicator"
+        description="Show the pull request marker on chats whose branch has a PR — a git-fork icon before the title, or the PR number in the Beta sidebar. Its color tracks the PR state (open, merged, closed) and clicking it opens the PR. Turning this off hides it; the branch toolbar above the chat still shows the PR."
+        control={
+          <Switch
+            checked={showPrIndicator}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeSidebarShowPrIndicator: Boolean(checked) })
+            }
+            aria-label="Show pull request indicator in the chat list"
           />
         }
       />

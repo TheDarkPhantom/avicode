@@ -131,6 +131,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   });
   const isMobile = useIsMobile();
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
+  // Avi Code addition: the PR indicator can be hidden globally from the Avi
+  // Code settings page; upstream always renders it for threads with a PR.
+  const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
   const discoveredPorts = useThreadDiscoveredPorts({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -436,7 +439,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         onContextMenu={handleRowContextMenu}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-          {prStatus && (
+          {prStatus && showPrIndicator && (
             <Tooltip>
               <TooltipTrigger
                 render={

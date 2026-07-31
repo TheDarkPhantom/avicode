@@ -97,6 +97,12 @@ import {
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
+import {
+  canReferenceMoreThreads,
+  filterThreadMentionCandidates,
+  threadMentionDescription,
+  threadReferenceLimitMessage,
+} from "./threadMentions";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { canSubmitComposerProviderState, ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -177,7 +183,6 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -192,7 +197,6 @@ import {
   LockOpenIcon,
   PenLineIcon,
   Link2Icon,
-  SearchIcon,
   SparklesIcon,
   XIcon,
 } from "lucide-react";
@@ -785,20 +789,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setComposerDraftThreadContextIds = useComposerDraftStore(
     (store) => store.setThreadContextIds,
   );
-  const [threadContextPickerOpen, setThreadContextPickerOpen] = useState(false);
-  const [threadContextSearch, setThreadContextSearch] = useState("");
-  const filteredThreadContextCandidates = useMemo(() => {
-    const query = threadContextSearch.trim().toLocaleLowerCase();
-    return threadContextCandidates
-      .filter((candidate) => !composerThreadContextIds.includes(candidate.threadId))
-      .filter(
-        (candidate) =>
-          query.length === 0 ||
-          candidate.title.toLocaleLowerCase().includes(query) ||
-          candidate.projectTitle.toLocaleLowerCase().includes(query),
-      )
-      .slice(0, 30);
-  }, [composerThreadContextIds, threadContextCandidates, threadContextSearch]);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -1229,18 +1219,40 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
+  // Avi Code addition: thread suggestions for the `@` menu, replacing the
+  // composer's dedicated Threads button.
+  const threadMentionCandidates = useMemo(
+    () =>
+      isPathTrigger
+        ? filterThreadMentionCandidates(threadContextCandidates, {
+            query: pathTriggerQuery,
+            referencedThreadIds: composerThreadContextIds,
+          })
+        : [],
+    [composerThreadContextIds, isPathTrigger, pathTriggerQuery, threadContextCandidates],
+  );
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
-      return workspaceEntries.entries.map((entry) => ({
+      const pathItems = workspaceEntries.entries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
+        type: "path" as const,
         path: entry.path,
         pathKind: entry.kind,
         label: basenameOfPath(entry.path),
         description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
       }));
+      // Threads sit below files: `@` is overwhelmingly used for paths, and
+      // keeping files first leaves the default highlight where it was.
+      const threadItems = threadMentionCandidates.map((candidate) => ({
+        id: `thread:${candidate.threadId}`,
+        type: "thread" as const,
+        threadId: candidate.threadId,
+        label: candidate.title,
+        description: threadMentionDescription(candidate),
+      }));
+      return [...pathItems, ...threadItems];
     }
     if (composerTrigger.kind === "slash-command") {
       const builtInSlashCommandItems = [
@@ -1313,7 +1325,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
     }
     return [];
-  }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries.entries]);
+  }, [
+    composerTrigger,
+    selectedProvider,
+    selectedProviderStatus,
+    threadMentionCandidates,
+    workspaceEntries.entries,
+  ]);
 
   const composerMenuOpen = Boolean(composerTrigger);
   const composerMenuSearchKey = composerTrigger
@@ -1962,6 +1980,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
+      // Avi Code addition: a thread mention attaches a reference chip rather
+      // than inserting text, so the `@query` is replaced with nothing. The cap
+      // is re-checked here because the menu is built from a snapshot that a
+      // second fast selection could outrun.
+      if (item.type === "thread") {
+        if (!canReferenceMoreThreads(composerThreadContextIds.length)) {
+          toastManager.add({ type: "error", title: threadReferenceLimitMessage() });
+          return;
+        }
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerDraftThreadContextIds(composerDraftTarget, [
+            ...composerThreadContextIds,
+            item.threadId,
+          ]);
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
       if (item.type === "slash-command") {
         if (item.command === "model") {
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
@@ -2042,7 +2081,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      applyPromptReplacement,
+      composerDraftTarget,
+      composerThreadContextIds,
+      handleInteractionModeChange,
+      resolveActiveComposerTrigger,
+      setComposerDraftThreadContextIds,
+    ],
   );
 
   const onComposerMenuItemHighlighted = useCallback(
@@ -3546,98 +3592,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             >
               <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {/*
-                  The picker has to portal out: the footer row it sits in is a horizontal scroller
-                  (`overflow-x-auto`), which computes `overflow-y` to `auto` as well, so an absolutely
-                  positioned popup opening upwards was clipped away entirely and the button looked dead.
+                  Avi Code addition: the Threads button used to live here, opening its own
+                  search popover. Referencing a thread is a mention, so it moved into the `@`
+                  menu next to files and this slot went back to the footer's budget.
                 */}
-                <Popover
-                  open={threadContextPickerOpen}
-                  onOpenChange={(open) => {
-                    setThreadContextPickerOpen(open);
-                    if (!open) {
-                      setThreadContextSearch("");
-                    }
-                  }}
-                >
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <PopoverTrigger
-                          render={
-                            <ComposerControl
-                              type="button"
-                              className="shrink-0"
-                              aria-label="Reference threads"
-                            />
-                          }
-                        />
-                      }
-                    >
-                      <ComposerControlIcon icon={Link2Icon} />
-                      <span className="sr-only sm:not-sr-only">Threads</span>
-                    </TooltipTrigger>
-                    <TooltipPopup side="top">Reference another thread</TooltipPopup>
-                  </Tooltip>
-                  <PopoverPopup
-                    side="top"
-                    align="start"
-                    className="w-80 overflow-hidden [--popup-width:20rem] [--viewport-inline-padding:0px]"
-                    viewportClassName="p-0"
-                  >
-                    <div className="flex items-center gap-2 border-b px-3">
-                      <SearchIcon className="size-4 text-muted-foreground" />
-                      <input
-                        autoFocus
-                        value={threadContextSearch}
-                        onChange={(event) => setThreadContextSearch(event.target.value)}
-                        placeholder="Search threads or projects"
-                        aria-label="Search threads"
-                        className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
-                      />
-                    </div>
-                    <div className="max-h-72 overflow-y-auto p-1">
-                      {filteredThreadContextCandidates.length === 0 ? (
-                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                          No matching threads
-                        </p>
-                      ) : (
-                        filteredThreadContextCandidates.map((candidate) => (
-                          <button
-                            key={candidate.threadId}
-                            type="button"
-                            className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
-                            onClick={() => {
-                              if (composerThreadContextIds.length >= 5) {
-                                toastManager.add({
-                                  type: "error",
-                                  title: "You can reference up to 5 threads.",
-                                });
-                                return;
-                              }
-                              setComposerDraftThreadContextIds(composerDraftTarget, [
-                                ...composerThreadContextIds,
-                                candidate.threadId,
-                              ]);
-                              setThreadContextPickerOpen(false);
-                              setThreadContextSearch("");
-                            }}
-                          >
-                            <Link2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium">
-                                {candidate.title}
-                              </span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {candidate.projectTitle}
-                                {candidate.archived ? " · Archived" : ""}
-                              </span>
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </PopoverPopup>
-                </Popover>
                 {noProviderAvailable ? (
                   <Button
                     type="button"

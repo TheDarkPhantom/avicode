@@ -18,6 +18,7 @@ const clientSettings: ClientSettings = {
   aviCodeNewThreadsStartInPlanMode: false,
   aviCodeNotificationSound: "pebble",
   aviCodeProviderBadgeLabels: {},
+  aviCodeSidebarShowPrIndicator: true,
   aviCodeSidebarShowStatusLabels: true,
   aviCodeSidebarShowWorktreeIcon: true,
   confirmThreadArchive: true,

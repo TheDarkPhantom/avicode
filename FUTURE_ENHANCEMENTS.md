@@ -61,6 +61,17 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - The Shortcuts tab's "Built in" list is hand-maintained (`AviCodeShortcuts.logic.ts`) because those
   chords are wired into components rather than declared anywhere enumerable. It can drift from the
   code; each entry names its implementation file so the list can be re-checked.
+- No cross-thread merge orchestration. `GitWorkflowService.runStackedAction` already takes a
+  per-repository lock, so two threads running `auto_merge` at once queue instead of interleaving
+  git phases — but nothing rebases the loser, so the second PR can still land stale or conflict.
+  There is no merge queue, no "merge every ready PR in this project", and no way to nominate one
+  thread as the integrator. A project-level action that walks the threads with an open PR, runs the
+  existing `auto_merge` one at a time, and stops on the first conflict by opening that thread would
+  be the smallest useful version.
+- Sidebar v2's "Merging" label (`SidebarV2.tsx`) is both v2-only and mis-named: it fires while a
+  source-control action is in flight (`prepare_pull_request_thread`, `create_pr`, `commit_push_pr`)
+  and again once the PR is merged or closed, so a settled PR reads as still merging. Sidebar v1 has
+  no equivalent, which is why the label is invisible to anyone on the default sidebar.
 - Explorer drag progress and cancellation.
 - DOCX, CSV, JSON, and source archives.
 - Encrypted PDF password prompts without persistence.
