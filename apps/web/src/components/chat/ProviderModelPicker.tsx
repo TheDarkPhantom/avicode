@@ -13,6 +13,7 @@ import { ModelPickerContent } from "./ModelPickerContent";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   ModelEsque,
+  getIconAdjacentModelName,
   getTriggerDisplayModelLabel,
   getTriggerDisplayModelName,
 } from "./providerIconUtils";
@@ -67,7 +68,16 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const selectedModel =
     selectedInstanceOptions.find((option) => option.slug === props.model) ??
     selectedInstanceOptions[0];
-  const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
+  // Avi Code addition: the trigger drops the vendor word ("Claude Opus 5" ->
+  // "Opus 5") to buy back horizontal space in a crowded composer footer. Only
+  // when `activeEntry` renders the provider icon below — without it the vendor
+  // word is the sole attribution, so the full name stays. The tooltip keeps the
+  // full name either way.
+  const triggerTitle = selectedModel
+    ? activeEntry
+      ? getIconAdjacentModelName(selectedModel)
+      : getTriggerDisplayModelName(selectedModel)
+    : props.model;
   const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
   const duplicateDriverCount = props.instanceEntries.filter(
     (entry) => activeEntry !== null && entry.driverKind === activeEntry.driverKind,

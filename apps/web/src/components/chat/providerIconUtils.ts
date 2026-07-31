@@ -54,6 +54,40 @@ export function getTriggerDisplayModelName(model: ModelEsque): string {
   return getDisplayModelName(model, { preferShortName: true });
 }
 
+/**
+ * Avi Code addition: vendor words the composer trigger drops, because the
+ * provider icon immediately to the left of the label already says who made the
+ * model. Only prefixes that leave a self-sufficient name behind belong here —
+ * "Grok 4" would degrade to a bare "4", so Grok is deliberately absent, and
+ * Codex and OpenCode models carry no vendor prefix to begin with.
+ */
+const REDUNDANT_VENDOR_PREFIXES = ["Claude"];
+
+/**
+ * Strip the vendor word from a model name for display next to a provider icon.
+ * Falls back to the full name whenever stripping would leave something that
+ * cannot stand alone, so an unforeseen "Claude 4.5" keeps its vendor word
+ * rather than rendering as "4.5".
+ */
+export function stripRedundantVendorPrefix(value: string): string {
+  for (const prefix of REDUNDANT_VENDOR_PREFIXES) {
+    const stripped = stripLeadingQualifier(value, prefix);
+    if (stripped !== value && !/^[\d.]/u.test(stripped)) {
+      return stripped;
+    }
+  }
+  return value;
+}
+
+/**
+ * The trigger label for a model rendered beside its provider icon. Callers
+ * without an icon must use {@link getTriggerDisplayModelName} instead, or the
+ * label loses the only thing naming the vendor.
+ */
+export function getIconAdjacentModelName(model: ModelEsque): string {
+  return stripRedundantVendorPrefix(getTriggerDisplayModelName(model));
+}
+
 export function getTriggerDisplayModelLabel(model: ModelEsque): string {
   return getTriggerDisplayModelName(model);
 }
