@@ -675,4 +675,89 @@ describe("vcsActionState", () => {
       }),
     ),
   );
+
+  // The server rejects `auto_merge` outright when the policy is absent, so a
+  // dropped field here reads to the user as "this repository has no Auto merge
+  // policy" even when t3.json declares one.
+  it.effect("forwards the auto merge policy to the server", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const connectionState: SupervisorConnectionState = {
+          ...AVAILABLE_CONNECTION_STATE,
+          desired: true,
+          network: "online",
+          phase: "connected",
+          attempt: 1,
+          generation: 1,
+        };
+        const targetKey = { environmentId, cwd };
+        const autoMergeActionId = "auto-merge-action";
+        const transportActionId = createVcsActionTransportId(targetKey, autoMergeActionId);
+        const sent = new Array<Record<string, unknown>>();
+        const client = {
+          [WS_METHODS.gitRunStackedAction]: (input: Record<string, unknown>) => {
+            sent.push(input);
+            return Stream.make(
+              progress({
+                kind: "action_finished",
+                actionId: transportActionId,
+                cwd,
+                action: "auto_merge",
+                result: { ...result, action: "auto_merge" },
+              }),
+            );
+          },
+        } as unknown as WsRpcProtocolClient;
+        const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+          target,
+          state: yield* SubscriptionRef.make(connectionState),
+          session: yield* SubscriptionRef.make(Option.some(session(client))),
+          prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+          connect: Effect.void,
+          disconnect: Effect.void,
+          retryNow: Effect.void,
+        } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+        const run: EnvironmentRegistry.EnvironmentRegistry["Service"]["run"] = (
+          _environmentId,
+          effect,
+        ) => Effect.provideService(effect, EnvironmentSupervisor.EnvironmentSupervisor, supervisor);
+        const runStream: EnvironmentRegistry.EnvironmentRegistry["Service"]["runStream"] = (
+          _environmentId,
+          stream,
+        ) => Stream.provideService(stream, EnvironmentSupervisor.EnvironmentSupervisor, supervisor);
+        const environmentRegistry = EnvironmentRegistry.EnvironmentRegistry.of({
+          run,
+          runStream,
+        } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+        const runtime = Atom.runtime(
+          Layer.merge(
+            Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+            Layer.succeed(
+              Persistence.EnvironmentCacheStore,
+              cacheStore(() => {}),
+            ),
+          ),
+        );
+        const manager = createVcsActionManager(runtime);
+        const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (registry) =>
+          Effect.sync(() => registry.dispose()),
+        );
+
+        const runResult = yield* Effect.promise(() =>
+          manager.runStackedAction(targetKey).run(registry, {
+            actionId: autoMergeActionId,
+            action: "auto_merge",
+            autoMerge: { promotionRefs: ["main"], requireFinalApproval: false },
+          }),
+        );
+
+        expect(AsyncResult.isSuccess(runResult)).toBe(true);
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({
+          action: "auto_merge",
+          autoMerge: { promotionRefs: ["main"], requireFinalApproval: false },
+        });
+      }),
+    ),
+  );
 });
