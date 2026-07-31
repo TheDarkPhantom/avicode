@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { serverEnvironment } from "~/state/server";
 
 import { usePrimaryEnvironment } from "~/state/environments";
@@ -23,10 +24,14 @@ export function useVoiceToken(): () => Promise<{ accessToken: string }> {
     }
     const result = await createToken({ environmentId, input: {} });
     if (result._tag !== "Success") {
-      const cause = result.cause;
+      // `result.cause` is an Effect Cause, not the failure itself, so reading
+      // `.message` off it always missed and every rejection came out as the
+      // generic fallback. Squashing first gets the decoded VoiceTokenError,
+      // whose message names what to fix.
+      const error = squashAtomCommandFailure(result);
       const message =
-        cause && typeof cause === "object" && "message" in cause
-          ? String((cause as { message: unknown }).message)
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
           : "Could not start dictation.";
       throw new Error(message);
     }

@@ -75,6 +75,20 @@ it("reports a rejected key distinctly from a transport problem", () =>
     assert.include(error.message, "Settings");
   }).pipe(Effect.runPromise));
 
+it("names the permission problem when Deepgram forbids the grant", () =>
+  Effect.gen(function* () {
+    const { layer } = makeHttpLayer(() =>
+      grantResponse({ err_code: "FORBIDDEN", err_msg: "Insufficient permissions." }, 403),
+    );
+    const error = yield* Effect.flip(
+      createVoiceToken("member-less-key").pipe(Effect.provide(layer)),
+    );
+    assert.equal(error._tag, "VoiceTokenRejectedError");
+    // A 403 key transcribes fine, so "check your key" sends the user looking
+    // in the wrong place. The permission it lacks has to be named.
+    assert.include(error.message, "Member permissions");
+  }).pipe(Effect.runPromise));
+
 it("surfaces a non-auth failure status", () =>
   Effect.gen(function* () {
     const { layer } = makeHttpLayer(() => grantResponse({}, 500));

@@ -1974,6 +1974,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onCancel: discardDictatedText,
   });
 
+  // Avi Code addition: dictation used to fail in silence. The hook set an
+  // error, nothing rendered it, and a rejected Deepgram token just made the
+  // mic button light up and go out again a fraction of a second later. Report
+  // it the way the composer reports every other failure.
+  const dictationError = dictation.error;
+  const dismissDictationError = dictation.dismissError;
+  useEffect(() => {
+    if (!dictationError) return;
+    toastManager.add({
+      type: "error",
+      title: "Dictation stopped",
+      description: dictationError,
+      data: { hideCopyButton: true },
+    });
+    dismissDictationError();
+  }, [dictationError, dismissDictationError]);
+
   // Once dictation puts text in the composer the pill disappears, so it can
   // never sit on top of the transcript. The footer mic stays available to stop.
   const showDictatePill =
