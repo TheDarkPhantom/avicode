@@ -3,10 +3,22 @@ import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 import { type PendingUserInput } from "../../session-logic";
 import {
   derivePendingUserInputProgress,
+  shouldDismissPendingUserInputForKey,
   type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
 import { CheckIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
+
+const COMPOSER_FORM_SELECTOR = "[data-chat-composer-form='true']";
+
+// Escape belongs to whatever holds focus. The composer and the bare document
+// are the questionnaire's; anything else — a menu, a popover, a dialog, a
+// sidebar field — is somebody else's and gets to close itself first.
+function isEscapeTargetOutsideComposer(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target === document.body || target === document.documentElement) return false;
+  return target.closest(COMPOSER_FORM_SELECTOR) === null;
+}
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
@@ -15,6 +27,7 @@ interface PendingUserInputPanelProps {
   questionIndex: number;
   onToggleOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
+  onDismiss: () => void;
 }
 
 export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserInputPanel({
@@ -24,6 +37,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
   questionIndex,
   onToggleOption,
   onAdvance,
+  onDismiss,
 }: PendingUserInputPanelProps) {
   if (pendingUserInputs.length === 0) return null;
   const activePrompt = pendingUserInputs[0];
@@ -38,6 +52,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
       questionIndex={questionIndex}
       onToggleOption={onToggleOption}
       onAdvance={onAdvance}
+      onDismiss={onDismiss}
     />
   );
 });
@@ -49,6 +64,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   questionIndex,
   onToggleOption,
   onAdvance,
+  onDismiss,
 }: {
   prompt: PendingUserInput;
   isResponding: boolean;
@@ -56,6 +72,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   questionIndex: number;
   onToggleOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
+  onDismiss: () => void;
 }) {
   const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
   const activeQuestion = progress.activeQuestion;
@@ -146,6 +163,41 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     return () => document.removeEventListener("keydown", handler);
   }, [activeQuestion, isResponding]);
 
+  const dismiss = useEffectEvent(() => {
+    onDismiss();
+  });
+
+  // Escape leaves the questionnaire. The provider blocks its turn inside the
+  // AskUserQuestion call until the request resolves, so there is no local-only
+  // dismissal to offer: `onDismiss` interrupts the turn, which aborts the
+  // request server side and hands the composer back with attachments, mentions,
+  // and the ordinary send path restored.
+  useEffect(() => {
+    if (!activeQuestion) return;
+    const handler = (event: globalThis.KeyboardEvent) => {
+      if (
+        !shouldDismissPendingUserInputForKey({
+          key: event.key,
+          defaultPrevented: event.defaultPrevented,
+          metaKey: event.metaKey,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          shiftKey: event.shiftKey,
+          targetOutsideComposer: isEscapeTargetOutsideComposer(event.target),
+          isResponding,
+        })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      dismiss();
+    };
+    // Capture phase: Lexical owns the composer's keydown handling, and without
+    // this the editor swallows Escape before it reaches us.
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [activeQuestion, isResponding]);
+
   if (!activeQuestion) {
     return null;
   }
@@ -163,6 +215,19 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
             {questionIndex + 1}/{prompt.questions.length}
           </span>
         ) : null}
+        {/* Touch has no Escape key, so the exit needs a control of its own. */}
+        <button
+          type="button"
+          disabled={isResponding}
+          onClick={onDismiss}
+          title="Stop the turn and go back to the normal composer"
+          className="ml-auto flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors duration-150 hover:bg-muted/55 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <kbd className="hidden h-4 items-center rounded border border-border/50 bg-background/35 px-1 text-[10px] font-medium sm:flex">
+            Esc
+          </kbd>
+          Dismiss
+        </button>
       </div>
       <p className="text-sm text-foreground/90">{activeQuestion.question}</p>
       {activeQuestion.multiSelect ? (

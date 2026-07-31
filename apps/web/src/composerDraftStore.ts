@@ -164,6 +164,9 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   activeProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
+  // Avi Code addition: the communication style this thread is currently on.
+  // Persisted per thread so a style survives a reload, unlike a menu selection.
+  communicationStyleId: Schema.optionalKey(Schema.String),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -297,6 +300,12 @@ export interface ComposerThreadDraftState {
   activeProvider: ProviderInstanceId | null;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
+  /**
+   * Avi Code addition. Null means "inherit the global last-picked style", which
+   * is what a brand-new thread does; a concrete id means the user chose one in
+   * this thread and it sticks for every following turn until changed.
+   */
+  communicationStyleId: string | null;
 }
 
 /**
@@ -477,6 +486,11 @@ interface ComposerDraftStoreState {
   setInteractionMode: (
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
+  ) => void;
+  /** Avi Code addition: set this thread's communication style. */
+  setCommunicationStyleId: (
+    threadRef: ComposerThreadTarget,
+    communicationStyleId: string | null | undefined,
   ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerAttachment[]) => void;
@@ -686,6 +700,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   activeProvider: null,
   runtimeMode: null,
   interactionMode: null,
+  communicationStyleId: null,
 });
 
 /**
@@ -709,6 +724,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     activeProvider: null,
     runtimeMode: null,
     interactionMode: null,
+    communicationStyleId: null,
   };
 }
 
@@ -782,7 +798,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
-    draft.interactionMode === null
+    draft.interactionMode === null &&
+    draft.communicationStyleId === null
   );
 }
 
@@ -1953,7 +1970,11 @@ function partializeComposerDraftStoreState(
       draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
-      draft.interactionMode === null
+      draft.interactionMode === null &&
+      // Avi Code addition: a thread whose only draft state is a chosen
+      // communication style still has to persist, or the style silently reverts
+      // to the global default on reload.
+      draft.communicationStyleId === null
     ) {
       continue;
     }
@@ -2015,6 +2036,7 @@ function partializeComposerDraftStoreState(
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
+      ...(draft.communicationStyleId ? { communicationStyleId: draft.communicationStyleId } : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2285,6 +2307,7 @@ function toHydratedThreadDraft(
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
+    communicationStyleId: persistedDraft.communicationStyleId ?? null,
   };
 }
 
@@ -3018,6 +3041,37 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...base,
               runtimeMode: nextRuntimeMode,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setCommunicationStyleId: (threadRef, communicationStyleId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          const nextStyleId =
+            typeof communicationStyleId === "string" && communicationStyleId.length > 0
+              ? communicationStyleId
+              : null;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && nextStyleId === null) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            if (base.communicationStyleId === nextStyleId) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              communicationStyleId: nextStyleId,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {

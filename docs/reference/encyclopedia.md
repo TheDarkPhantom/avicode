@@ -40,6 +40,12 @@ A single user-to-assistant work cycle inside a thread. It starts with user input
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
 
+#### Communication style
+
+_Avi Code addition._ An instruction that changes how the agent writes its reply without changing what it was asked to do. Chosen from the composer's Style control, it applies from the next message and sticks for the rest of the thread; the last style picked anywhere is where a new thread starts. Built-ins are Default, Business, ELI5, and Caveman, and users add their own on the Avi Code settings page.
+
+A style is deliberately split across two events. The label rides `thread.message-sent` and is persisted, so the timeline can show which style a turn used. The instruction rides `thread.turn-start-requested` and is not persisted; `ProviderCommandReactor` splices it into the provider-bound text next to the referenced-thread context, so it never appears in the transcript. Because every adapter receives that same text, styles need no provider capability and work identically on all five. See [communicationStyles.ts][25].
+
 ### Orchestration
 
 Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].
@@ -178,3 +184,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../apps/server/src/checkpointing/Utils.ts
 [23]: ../apps/server/src/checkpointing/Diffs.ts
 [24]: ./architecture.md
+[25]: ../packages/shared/src/communicationStyles.ts
