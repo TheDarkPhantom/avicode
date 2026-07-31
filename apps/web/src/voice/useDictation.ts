@@ -11,8 +11,8 @@ import {
 export type DictationStatus = "idle" | "starting" | "recording" | "stopping";
 
 export interface UseDictationOptions {
-  /** Fetches a short-lived Deepgram token from the server. */
-  readonly requestToken: () => Promise<{ accessToken: string }>;
+  /** Fetches the Deepgram API key the socket authenticates with. */
+  readonly requestCredential: () => Promise<{ apiKey: string }>;
   /**
    * Called on every transcript update. `isFinal` marks the last call of a
    * session, after which the consumer should stop tracking the inserted range.
@@ -83,7 +83,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
   const startingRef = useRef(false);
   /**
    * Bumped by every `start` and every `finish`. `start` awaits the microphone
-   * permission and then a token, and the user can stop or cancel during either;
+   * permission and then a credential, and the user can stop or cancel during either;
    * comparing the captured id lets everything that resolves late recognise that
    * its session is already over. Socket handlers use it the same way, so a
    * previous session's socket can never write into the current one.
@@ -168,7 +168,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       streamRef.current = stream;
 
       // Start capturing before the socket exists and buffer the chunks, so the
-      // first word isn't clipped while the token round-trip completes.
+      // first word isn't clipped while the credential round-trip completes.
       // VibeSpeak does the same (renderer/overlay.js).
       const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
       recorderRef.current = recorder;
@@ -183,16 +183,16 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       };
       recorder.start(AUDIO_TIMESLICE_MS);
 
-      const { accessToken } = await optionsRef.current.requestToken();
-      // Stopped mid-token-request; `finish` already released the recorder and
+      const { apiKey } = await optionsRef.current.requestCredential();
+      // Stopped mid-credential-request; `finish` already released the recorder and
       // the stream, so opening a socket now would leak one nothing can close.
       if (sessionRef.current !== session) return;
 
-      // Avi Code addition: browsers cannot set Deepgram's Authorization header.
-      // Authenticate the temporary JWT with the documented Bearer subprotocol.
+      // Avi Code addition: browsers cannot set Deepgram's Authorization header,
+      // so the key rides the WebSocket subprotocol instead.
       const socket = new WebSocket(
         buildDeepgramSocketUrl({}),
-        buildDeepgramSocketProtocols(accessToken),
+        buildDeepgramSocketProtocols(apiKey),
       );
       socketRef.current = socket;
 

@@ -61,7 +61,7 @@ import {
   toCommunicationStyles,
 } from "./communicationStyleState";
 import { useDictation } from "~/voice/useDictation";
-import { useVoiceToken } from "~/voice/useVoiceToken";
+import { useVoiceCredential } from "~/voice/useVoiceCredential";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -1925,7 +1925,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // span this session already inserted. `dictationRangeRef` tracks where that
   // span starts and how long it currently is.
   const dictationRangeRef = useRef<{ start: number; length: number } | null>(null);
-  const requestVoiceToken = useVoiceToken();
+  const requestVoiceCredential = useVoiceCredential();
   const hasVoiceKey = usePrimarySettings(
     (settings) => settings.voice.deepgramApiKeyRedacted === true,
   );
@@ -1969,7 +1969,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [applyPromptReplacement, promptRef]);
 
   const dictation = useDictation({
-    requestToken: requestVoiceToken,
+    requestCredential: requestVoiceCredential,
     onTranscript: writeDictatedText,
     onCancel: discardDictatedText,
   });

@@ -49,7 +49,7 @@ import {
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
 } from "./review.ts";
-import { VoiceTokenError, VoiceTokenResult } from "./voice.ts";
+import { VoiceCredentialError, VoiceCredentialResult } from "./voice.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
@@ -246,7 +246,7 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
 
   // Voice dictation
-  voiceCreateToken: "voice.createToken",
+  voiceGetCredential: "voice.getCredential",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -371,10 +371,10 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
-export const WsVoiceCreateTokenRpc = Rpc.make(WS_METHODS.voiceCreateToken, {
+export const WsVoiceGetCredentialRpc = Rpc.make(WS_METHODS.voiceGetCredential, {
   payload: Schema.Struct({}),
-  success: VoiceTokenResult,
-  error: Schema.Union([VoiceTokenError, EnvironmentAuthorizationError]),
+  success: VoiceCredentialResult,
+  error: Schema.Union([VoiceCredentialError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -836,7 +836,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
-  WsVoiceCreateTokenRpc,
+  WsVoiceGetCredentialRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsSourceControlLookupRepositoryRpc,

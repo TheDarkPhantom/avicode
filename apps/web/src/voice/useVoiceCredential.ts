@@ -6,13 +6,14 @@ import { usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 /**
- * Requests a short-lived Deepgram token from the server. The account API key
- * stays server-side; see packages/contracts/src/voice.ts for why.
+ * Fetches the Deepgram API key the dictation socket authenticates with. The key
+ * is stored server-side and released to the client only for this;
+ * see packages/contracts/src/voice.ts for the trade that implies.
  */
-export function useVoiceToken(): () => Promise<{ accessToken: string }> {
+export function useVoiceCredential(): () => Promise<{ apiKey: string }> {
   const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
-  const createToken = useAtomCommand(serverEnvironment.createVoiceToken, {
-    label: "voice token",
+  const getCredential = useAtomCommand(serverEnvironment.getVoiceCredential, {
+    label: "voice credential",
     // The dictation UI surfaces its own inline error, so the generic failure
     // toast would double up.
     reportFailure: false,
@@ -22,11 +23,11 @@ export function useVoiceToken(): () => Promise<{ accessToken: string }> {
     if (!environmentId) {
       throw new Error("Not connected to a server.");
     }
-    const result = await createToken({ environmentId, input: {} });
+    const result = await getCredential({ environmentId, input: {} });
     if (result._tag !== "Success") {
       // `result.cause` is an Effect Cause, not the failure itself, so reading
       // `.message` off it always missed and every rejection came out as the
-      // generic fallback. Squashing first gets the decoded VoiceTokenError,
+      // generic fallback. Squashing first gets the decoded VoiceCredentialError,
       // whose message names what to fix.
       const error = squashAtomCommandFailure(result);
       const message =
@@ -35,6 +36,6 @@ export function useVoiceToken(): () => Promise<{ accessToken: string }> {
           : "Could not start dictation.";
       throw new Error(message);
     }
-    return { accessToken: result.value.accessToken };
-  }, [createToken, environmentId]);
+    return { apiKey: result.value.apiKey };
+  }, [getCredential, environmentId]);
 }

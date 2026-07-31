@@ -694,9 +694,9 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
-    createVoiceToken: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:voice:create-token",
-      tag: WS_METHODS.voiceCreateToken,
+    getVoiceCredential: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:voice:get-credential",
+      tag: WS_METHODS.voiceGetCredential,
     }),
   };
 }

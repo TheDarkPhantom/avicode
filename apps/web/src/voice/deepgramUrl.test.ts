@@ -4,8 +4,10 @@ import { buildDeepgramSocketProtocols, buildDeepgramSocketUrl } from "./deepgram
 const paramsOf = (url: string) => new URL(url).searchParams;
 
 describe("buildDeepgramSocketUrl", () => {
-  it("authenticates temporary JWTs with Deepgram's Bearer websocket subprotocol", () => {
-    expect(buildDeepgramSocketProtocols("jwt-value")).toEqual(["bearer", "jwt-value"]);
+  it("authenticates the API key with Deepgram's token websocket subprotocol", () => {
+    // `bearer` is the scheme for the short-lived JWTs the fork no longer mints;
+    // an account key has to go out as `token` or the handshake is rejected.
+    expect(buildDeepgramSocketProtocols("dg-key")).toEqual(["token", "dg-key"]);
   });
 
   it("does not expose authentication credentials in the URL", () => {

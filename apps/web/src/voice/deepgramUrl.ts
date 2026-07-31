@@ -15,8 +15,14 @@ export interface DeepgramUrlOptions {
 
 export const DEEPGRAM_LISTEN_URL = "wss://api.deepgram.com/v1/listen";
 
-export function buildDeepgramSocketProtocols(accessToken: string): [string, string] {
-  return ["bearer", accessToken];
+/**
+ * Deepgram reads the credential from the WebSocket subprotocol, because a
+ * browser cannot set an Authorization header on the handshake. `token` is the
+ * scheme for account API keys; `bearer` is for the short-lived JWTs the fork no
+ * longer mints. See packages/contracts/src/voice.ts for why.
+ */
+export function buildDeepgramSocketProtocols(apiKey: string): [string, string] {
+  return ["token", apiKey];
 }
 
 export function buildDeepgramSocketUrl(options: DeepgramUrlOptions): string {

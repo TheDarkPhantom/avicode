@@ -38,12 +38,12 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetSettings]: AuthOrchestrationReadScope,
   [WS_METHODS.serverUpdateSettings]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
-  // Avi Code additions. `voiceCreateToken` mints a short-lived dictation
-  // credential, so it is an operate action rather than a read. It had no entry
-  // in the fork's old runtime map either — upstream's compile-time
+  // Avi Code additions. `voiceGetCredential` releases the stored Deepgram key
+  // to the client, so it stays an operate action rather than a read. It had no
+  // entry in the fork's old runtime map either — upstream's compile-time
   // exhaustiveness check here is what surfaced that.
   [WS_METHODS.serverGetProviderUsage]: AuthOrchestrationReadScope,
-  [WS_METHODS.voiceCreateToken]: AuthOrchestrationOperateScope,
+  [WS_METHODS.voiceGetCredential]: AuthOrchestrationOperateScope,
   // `/btw` reads the thread and runs the model with tools denied. It mutates
   // nothing — not even the thread's own transcript — so it is a read.
   [WS_METHODS.providerAskSideQuestion]: AuthOrchestrationReadScope,
