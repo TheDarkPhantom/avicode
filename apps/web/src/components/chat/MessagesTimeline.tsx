@@ -59,6 +59,7 @@ import {
   XIcon,
   ZapIcon,
   Link2Icon,
+  MessageSquareTextIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -1040,6 +1041,21 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             <Link2Icon className="size-3.5" />
             Context from {row.message.threadContext?.length}{" "}
             {row.message.threadContext?.length === 1 ? "thread" : "threads"}
+          </div>
+        ) : null}
+        {/*
+          Avi Code addition: which communication style this turn was sent with.
+          Only non-default styles are recorded, so the presence of the chip is
+          the whole signal — it answers "why does this reply read oddly" without
+          adding a row to every ordinary turn.
+        */}
+        {row.message.communicationStyle ? (
+          <div
+            className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+            title={`Sent with the ${row.message.communicationStyle} communication style`}
+          >
+            <MessageSquareTextIcon className="size-3.5" />
+            {row.message.communicationStyle} style
           </div>
         ) : null}
         {userDocuments.length > 0 && (

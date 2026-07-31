@@ -268,12 +268,39 @@ export const ThreadContextReference = Schema.Struct({
 });
 export type ThreadContextReference = typeof ThreadContextReference.Type;
 
+/**
+ * Avi Code addition. Two halves of one feature, deliberately carried on
+ * different events.
+ *
+ * The *label* rides `thread.message-sent` and is persisted, because the
+ * timeline shows it on the turn it applied to — without it, a reply written in
+ * an unusual voice is inexplicable a week later.
+ *
+ * The *instruction* rides `thread.turn-start-requested` and is not persisted.
+ * It is spliced into the provider-bound text alongside the referenced-thread
+ * context, so it shapes the reply without appearing in the transcript, and a
+ * later edit to a custom style does not rewrite history.
+ */
+export const COMMUNICATION_STYLE_MAX_LABEL_CHARS = 24;
+export const COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS = 2_000;
+
+export const CommunicationStyleLabel = Schema.String.check(
+  Schema.isMaxLength(COMMUNICATION_STYLE_MAX_LABEL_CHARS),
+);
+
+export const CommunicationStyleDirective = Schema.Struct({
+  label: CommunicationStyleLabel,
+  instruction: Schema.String.check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS)),
+});
+export type CommunicationStyleDirective = typeof CommunicationStyleDirective.Type;
+
 export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   threadContext: Schema.optional(Schema.Array(ThreadContextReference)),
+  communicationStyle: Schema.optional(CommunicationStyleLabel),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -765,6 +792,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
   threadContext: Schema.optional(
     Schema.Array(ThreadContextReference).check(Schema.isMaxLength(THREAD_CONTEXT_MAX_REFERENCES)),
   ),
+  communicationStyle: Schema.optional(CommunicationStyleDirective),
   createdAt: IsoDateTime,
 });
 
@@ -787,6 +815,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   threadContext: Schema.optional(
     Schema.Array(ThreadContextReference).check(Schema.isMaxLength(THREAD_CONTEXT_MAX_REFERENCES)),
   ),
+  communicationStyle: Schema.optional(CommunicationStyleDirective),
   createdAt: IsoDateTime,
 });
 
@@ -1178,6 +1207,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   threadContext: Schema.optional(Schema.Array(ThreadContextReference)),
+  communicationStyle: Schema.optional(CommunicationStyleLabel),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -1195,6 +1225,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   threadContext: Schema.optional(Schema.Array(ThreadContextReference)),
+  communicationStyle: Schema.optional(CommunicationStyleDirective),
   createdAt: IsoDateTime,
 });
 

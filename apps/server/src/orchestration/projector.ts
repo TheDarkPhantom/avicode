@@ -512,6 +512,12 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
+            // Avi Code addition: kept in the read model because the timeline
+            // renders the style chip from it. Unlike `threadContext`, which the
+            // projector drops, this has to survive to be shown.
+            ...(payload.communicationStyle !== undefined
+              ? { communicationStyle: payload.communicationStyle }
+              : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
             createdAt: payload.createdAt,

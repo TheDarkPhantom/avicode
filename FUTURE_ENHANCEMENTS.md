@@ -31,14 +31,19 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   migration. Wait for the V2 merge tracked in `TODO.md`, then re-check whether the behaviour is
   present. If it is wanted sooner, the cheap fork-local version is a client-side hold while
   `phase === "running"` that flushes on turn completion, with an `aviCodeSendWhileRunning`
-  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload
-  or reach mobile.
+  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload.
 - Sidebar pins are device-local. They persist in the browser's `t3code:ui-state:v1` blob, next to
   the manual project order, so they do not follow the user to another device or to the desktop
   app's settings file. Syncing would mean either moving them into `ClientSettingsSchema` or giving
   threads a server-side pin the way upstream did for settle/snooze.
 - Pinning is a single-row action: the multi-select thread menu offers no "Pin (n)", and the command
   palette still lists projects in plain activity order.
+- Communication styles are recorded per message by _label_, not by id. That keeps history honest
+  when a custom style is renamed or deleted, but it means the timeline chip cannot link back to the
+  style that produced it, and two styles that once shared a name are indistinguishable after the
+  fact. Storing an id alongside the label would fix both at the cost of a second column.
+- A style applies from the next message only. There is no "re-ask that turn in this style", which
+  would need the original prompt re-sent rather than the transcript re-rendered.
 - Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
   during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
   have not been verified to stop after proposing a plan. If a provider still auto-implements,
@@ -79,8 +84,8 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - User-selectable ALFRED title templates.
 - Explicit project-to-provider credential pinning; the shipped isolation mode learns each project's
   last selection.
-- Extend desktop Codex message forks to mobile and browser clients, add optional checkpoint-restored
-  worktree forks, and support portable transcript forks for providers without native turn forks.
+- Add optional checkpoint-restored worktree forks to Codex message forks, and support portable
+  transcript forks for providers without native turn forks.
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family
   visualization if lineage banners alone become difficult to navigate.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
@@ -114,3 +119,6 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-30: desktop Codex “Edit and fork” from earlier user messages with lineage navigation.
 - 2026-07-30: pinned sidebar threads and projects, held at the top in pin order while everything
   else keeps sorting by activity — wired into both the v1 tree/flat list and the v2 active block.
+- 2026-07-31: per-turn communication styles (Default, Business, ELI5, Caveman, plus user-authored
+  presets), picked from the composer, recorded per message, and spliced into the provider-bound
+  text so the transcript stays exactly what the user typed.

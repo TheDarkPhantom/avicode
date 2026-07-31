@@ -63,6 +63,7 @@ import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
 import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
+import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -675,6 +676,7 @@ export function AviCodeSettings() {
         <>
           <ColorThemeSettings />
           <NewChatSettings />
+          <CommunicationStyleSettings />
           <ChatLayoutSettings />
           <SidebarLayoutSettings />
           <NotificationSettings />

@@ -158,8 +158,8 @@ Full glossary with file links: `docs/reference/encyclopedia.md`
 Everything above is upstream's guidance and is kept verbatim so future merges stay clean. The rest
 of this file is fork-owned. Where the two disagree, this section wins.
 
-Two deliberate divergences from upstream, both because this fork is one developer's daily driver
-rather than a 100k-user product:
+Deliberate divergences from upstream, all because this fork is one developer's daily driver rather
+than a 100k-user product:
 
 - **Shipping is the default, not opt-in.** Upstream's "Pull requests" says never open a PR unless
   asked. Here, finished and verified work carries to `main` without asking — see Git Workflow below.
@@ -170,6 +170,30 @@ rather than a 100k-user product:
   open it yourself. This fork has been bitten by browsers refusing otherwise-reachable ports, and a
   successful `curl` does not catch that — so open the origin once in a controlled browser, then send
   the pairing URL.
+- **The desktop app is the only surface this fork targets.** See Surface Scope below.
+
+## Surface Scope
+
+Upstream's "Multi-surface" section treats web, desktop, and mobile as three surfaces that all new
+features must support. That does not apply here. **Avi Code is a desktop-only fork.** The desktop
+app is the single surface Avi uses, and it is the only one fork work has to satisfy.
+
+What that means in practice:
+
+- **Never build, test, or verify `apps/mobile`.** A fork feature that has no mobile equivalent is
+  finished, not half-finished. Do not raise mobile as a gap, do not add it to a follow-up list, and
+  do not ask whether mobile should be included — the answer is always no.
+- **`apps/web` still matters, but as the desktop app's renderer.** `apps/desktop` wraps the web
+  bundle, so web UI work _is_ desktop work. Standalone browser use (`app.t3.codes`, `npx t3` in a
+  browser) is incidental: don't break it, don't spend effort on it, and don't let a browser-only
+  concern block a desktop improvement.
+- **Shared packages keep their shape.** `packages/contracts`, `packages/shared`, and
+  `packages/client-runtime` are still shared code and still compile for every consumer. Desktop-only
+  scope is about where features are _delivered and verified_, not a licence to break mobile's build.
+  If a contract change would fail mobile's typecheck, keep it compiling; you just don't have to
+  build the mobile feature on top of it.
+- **Upstream merges are unaffected.** Mobile code arriving from upstream is merged as-is, same as
+  any other upstream directory. This scope governs fork-authored work only.
 
 ## Git Workflow
 

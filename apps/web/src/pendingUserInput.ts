@@ -139,6 +139,33 @@ export function findFirstUnansweredPendingUserInputQuestionIndex(
   return unansweredIndex === -1 ? Math.max(questions.length - 1, 0) : unansweredIndex;
 }
 
+/**
+ * Whether an Escape keypress should leave the pending user-input questionnaire.
+ *
+ * Escape is the only exit from the questionnaire, so it has to be conservative:
+ * a chord is somebody else's shortcut, and an already-handled event belongs to
+ * whoever handled it (dictation cancels this way). `targetOutsideComposer` is
+ * how an open menu, dialog, or popover keeps Escape — they trap focus, so a
+ * keypress aimed anywhere but the composer or the bare document is theirs to
+ * close, and closing one must not also stop the turn underneath it.
+ */
+export function shouldDismissPendingUserInputForKey(input: {
+  key: string;
+  defaultPrevented: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  targetOutsideComposer: boolean;
+  isResponding: boolean;
+}): boolean {
+  if (input.key !== "Escape") return false;
+  if (input.defaultPrevented) return false;
+  if (input.metaKey || input.ctrlKey || input.altKey || input.shiftKey) return false;
+  if (input.targetOutsideComposer) return false;
+  return !input.isResponding;
+}
+
 export function derivePendingUserInputProgress(
   questions: ReadonlyArray<UserInputQuestion>,
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
