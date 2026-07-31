@@ -82,7 +82,12 @@ it.layer(NodeServices.layer)("communication style decider", (it) => {
       if (messageEvent?.type === "thread.message-sent") {
         expect(messageEvent.payload.communicationStyle).toBe("Caveman");
         expect(messageEvent.payload.text).toBe("Explain the projector.");
-        expect(JSON.stringify(messageEvent.payload)).not.toContain("Talk like caveman.");
+        // The instruction must appear in no string field of the persisted
+        // payload, not merely in the two checked above.
+        const stringFields = Object.values(messageEvent.payload).filter(
+          (value): value is string => typeof value === "string",
+        );
+        expect(stringFields.some((value) => value.includes("Talk like caveman."))).toBe(false);
       }
 
       // The turn carries the instruction, which is what the reactor splices

@@ -15,6 +15,8 @@ import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
   aviCodeChatContentWidth: "comfortable",
+  aviCodeCommunicationStyleId: "default",
+  aviCodeCommunicationStyles: [],
   aviCodeNewThreadsStartInPlanMode: false,
   aviCodeNotificationSound: "pebble",
   aviCodeProviderBadgeLabels: {},
