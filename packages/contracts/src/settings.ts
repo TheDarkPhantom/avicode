@@ -4,8 +4,27 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
-import { ModelSelection } from "./orchestration.ts";
+import {
+  COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS,
+  COMMUNICATION_STYLE_MAX_LABEL_CHARS,
+  ModelSelection,
+} from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+
+// Avi Code addition. A user-authored communication style. The id is assigned by
+// the client and namespaced `custom:`; the label is what the composer chip and
+// the timeline show, so it is bounded to keep both readable.
+export const COMMUNICATION_STYLE_DEFAULT_ID = "default";
+export const COMMUNICATION_STYLE_MAX_CUSTOM = 12;
+
+export const AviCodeCommunicationStylePreset = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString.check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_LABEL_CHARS)),
+  instruction: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS),
+  ),
+});
+export type AviCodeCommunicationStylePreset = typeof AviCodeCommunicationStylePreset.Type;
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -162,6 +181,19 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
   ),
+  // Avi Code addition. Communication styles. `aviCodeCommunicationStyleId` is
+  // the last style picked anywhere and is what a brand-new chat starts on;
+  // changing the style inside a chat updates it. Deliberately global rather
+  // than per-project — a style is a per-task choice, and scoping it to a repo
+  // would tie it to the wrong thing.
+  aviCodeCommunicationStyleId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(COMMUNICATION_STYLE_DEFAULT_ID)),
+  ),
+  // User-authored styles, shown alongside the built-ins. Ids are namespaced
+  // `custom:` so a future built-in cannot collide with one.
+  aviCodeCommunicationStyles: Schema.Array(AviCodeCommunicationStylePreset)
+    .check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_CUSTOM))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -818,6 +850,12 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowPrIndicator: Schema.optionalKey(Schema.Boolean),
+  aviCodeCommunicationStyleId: Schema.optionalKey(Schema.String),
+  aviCodeCommunicationStyles: Schema.optionalKey(
+    Schema.Array(AviCodeCommunicationStylePreset).check(
+      Schema.isMaxLength(COMMUNICATION_STYLE_MAX_CUSTOM),
+    ),
+  ),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(

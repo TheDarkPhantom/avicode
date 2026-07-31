@@ -54,6 +54,8 @@ import Migration0037 from "./Migrations/037_ProjectionThreadsForkLineage.ts";
 // taken 35/36/37 and those ids are applied in users' databases. Renumbered to
 // 38 so it runs next instead of colliding with an id that has already run.
 import Migration0038 from "./Migrations/038_ProjectionThreadTitleRegeneration.ts";
+// Avi Code addition: per-turn communication style.
+import Migration0039 from "./Migrations/039_ProjectionThreadMessageCommunicationStyle.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -104,6 +106,7 @@ export const migrationEntries = [
   [36, "ProjectionThreadMessageContext", Migration0036],
   [37, "ProjectionThreadsForkLineage", Migration0037],
   [38, "ProjectionThreadTitleRegeneration", Migration0038],
+  [39, "ProjectionThreadMessageCommunicationStyle", Migration0039],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

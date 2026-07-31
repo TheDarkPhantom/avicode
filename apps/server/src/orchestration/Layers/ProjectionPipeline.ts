@@ -956,6 +956,14 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : previousMessage?.threadContext !== undefined
                 ? { threadContext: [...previousMessage.threadContext] }
                 : {}),
+            // Avi Code addition. Carried forward the same way as thread context,
+            // so a streaming delta that omits it does not erase the style the
+            // turn was actually sent with.
+            ...(event.payload.communicationStyle !== undefined
+              ? { communicationStyle: event.payload.communicationStyle }
+              : previousMessage?.communicationStyle !== undefined
+                ? { communicationStyle: previousMessage.communicationStyle }
+                : {}),
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
