@@ -33,7 +33,11 @@ vp install
 ```
 
 On Windows `vp env use` only affects the calling shell. Every new PowerShell session needs
-`. "$env:USERPROFILE\.vite-plus\env.ps1"` first, or the line added to `$PROFILE`.
+`. "$env:USERPROFILE\.vite-plus\env.ps1"` first, or the line added to `$PROFILE`. Git Bash needs the
+POSIX sibling, `. ~/.vite-plus/env`, per shell — the installer writes one file per shell family
+(`env`, `env.ps1`, `env.fish`, `env.nu`). Skipping it leaves the system Node active, which surfaces
+as `ERR_UNKNOWN_FILE_EXTENSION` or an unresolvable import rather than as a version complaint, so the
+error never points at the cause.
 
 ## Commands
 
@@ -134,6 +138,15 @@ The fork's own features have their own docs: `docs/DOCUMENT_ATTACHMENTS.md`,
 `docs/ALFRED_INTEGRATION.md`, `docs/T3_IMPORT.md` (importing an upstream `~/.t3` database), and
 `docs/UPSTREAM_SYNC.md` (the human-reviewed merge process).
 
+**`CHANGELOG.md` is code, not just prose.** `apps/web/src/changelog/changelogSource.ts` imports the
+repository-root file with `?raw` and `parseChangelog.ts` parses it into what `/changelog` renders,
+so a formatting mistake is a rendering bug. (The `?raw` import reaches outside `apps/web` and works
+in dev, in the production build, and under `vp test run` alike.) The spec is the HTML comment at the
+top of the file; `parseChangelog.test.ts` asserts the _real_ file against it, so a malformed heading
+fails the build instead of silently dropping a release. House style is enforced there too: one short
+sentence per entry, outcome-voiced, no em dashes, 100 characters or fewer. `AGENTS.md` has the
+convention for when to add an entry.
+
 ## Invariants that bite
 
 **Extending a projection schema breaks every query that feeds it.** `ProjectionThreadDbRowSchema`
@@ -172,6 +185,27 @@ stays `pingdotgg/t3code` main, releases stay `TheDarkPhantom/avicode`), forbids 
 from merging its own PR, and requires `release.yml`/`deploy-relay.yml` to stay manual-only for the
 personal alpha — adding a `push:`/`schedule:` trigger to either fails the check.
 
+**Tests import from `vite-plus/test`, never `vitest`.** All 423 test files do; `vitest` is not a
+declared dependency anywhere in the workspace, even though it is the underlying runner. Importing it
+fails typecheck with `TS2307: Cannot find module 'vitest'`, which reads like a broken install rather
+than a wrong import.
+
+**`routeTree.gen.ts` is committed, and only the Vite plugin writes it.** Adding a file under
+`apps/web/src/routes/` needs the tree regenerated, but there is no `tsr` CLI, no npm script, and
+`@tanstack/router-generator` does not resolve from `apps/web` (it is transitive through
+`@tanstack/router-plugin`). Either run `vp dev`/`vp build` once and let `tanstackRouter()` rewrite
+it, or drive the generator from `apps/web` by absolute store path:
+
+```js
+const { Generator, getConfig } =
+  await import("file:///<repo>/node_modules/.pnpm/@tanstack+router-generator@<version>/node_modules/@tanstack/router-generator/dist/esm/index.js");
+await new Generator({ config: await getConfig({}, process.cwd()), root: process.cwd() }).run();
+```
+
+The export is a `Generator` class; the bare `generator()` function in older docs is gone. A correct
+run only adds lines, so a diff containing deletions means something else drifted — check before
+committing it.
+
 **Two state directories, and the live one is not the one `AGENTS.md` names.** `AGENTS.md`'s Test
 data and "writing to the live install" guidance is upstream text and still says `~/.t3/userdata`.
 For this fork the installed desktop app's real database is **`~/.avicode/userdata`** (from
@@ -200,7 +234,12 @@ Sidebar work usually needs both, and a dev server alone will not show you the on
 shared one silently does nothing. Prefer re-exporting from shared over adding a third copy.
 
 **Known flaky tests**, unrelated to any given change: `git/GitManager.test.ts` (cross-repo PR
-metadata, can time out) and `provider/Layers/ProviderRegistry.test.ts` (codex re-probe ordering).
+metadata, can time out), `provider/Layers/ProviderRegistry.test.ts` (codex re-probe ordering), and
+`cloud/selfUpdate.test.ts`'s "restores the previous unit and permits a retry when systemd restart
+fails" (seen red once in CI on a web-only PR, green on re-run with no code change). Before assuming
+your branch broke a server test, check whether it touches server code at all —
+`git diff --stat origin/main...HEAD -- apps/server packages` answers that in one line, and a re-run
+settles the rest.
 
 On Windows a large slice of the `apps/server` suite fails locally for environment reasons — file
 permissions, systemd, process diagnostics. `keybindings.test.ts`'s "config directory is not

@@ -37,8 +37,6 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   script that turns `git log --first-parent <base>..<sync>` into the **Upstream t3code** section
   would remove the tedious half; CI could then fail a PR whose diff touches `apps/` without touching
   `CHANGELOG.md`.
-- The changelog is web and desktop only. Mobile has its own navigation and no equivalent entry, so
-  a phone cannot see what changed.
 - Releases in the changelog are not tied to release artifacts: the version heading is written by
   hand at bump time rather than by the release workflow, so a published build and its changelog
   entry can drift.
