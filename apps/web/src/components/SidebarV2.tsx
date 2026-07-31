@@ -527,6 +527,8 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
+  // Avi Code addition: same toggle as v1's PR icon, applied to v2's `#123` badge.
+  const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
   const providerBadgeLabel = badgeLabels[modelInstanceId]?.trim().toUpperCase();
   const effectiveStatus = status;
   const isMerging = isSidebarMergingSourceControlAction(vcsActionState);
@@ -819,7 +821,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   ) : null;
 
   const prBadge =
-    prStatus && pr ? (
+    prStatus && pr && showPrIndicator ? (
       <button
         type="button"
         onClick={handlePrClick}
