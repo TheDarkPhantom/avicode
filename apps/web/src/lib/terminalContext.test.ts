@@ -1,4 +1,5 @@
 import { ThreadId } from "@t3tools/contracts";
+import { formatDocumentContext } from "@t3tools/shared/documentContext";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -124,6 +125,27 @@ describe("terminalContext", () => {
       ],
       elementContexts: [],
     });
+  });
+
+  it("hides attached document text but still copies what the agent saw", () => {
+    const document = formatDocumentContext({
+      name: "standup.md",
+      mimeType: "text/markdown",
+      text: "# Notes\nJul 29, 2026\nSummary of the whole meeting",
+    });
+    // Terminal context is appended at send time, the document by the server
+    // afterwards, so both trail the prompt and both have to come off.
+    const withTerminal = appendTerminalContextsToPrompt("review the standups", [makeContext()]);
+    const prompt = `${withTerminal}\n\n${document}`;
+
+    const state = deriveDisplayedUserMessageState(prompt);
+    expect(state.visibleText).toBe("review the standups");
+    expect(state.visibleText).not.toContain("avicode_document");
+    expect(state.visibleText).not.toContain("Summary of the whole meeting");
+    // Copying a message must still reproduce the prompt exactly as sent.
+    expect(state.copyText).toBe(prompt);
+    // Stripping the document must not swallow the terminal context beside it.
+    expect(state.contextCount).toBe(1);
   });
 
   it("preserves prompt text when no trailing terminal context block exists", () => {

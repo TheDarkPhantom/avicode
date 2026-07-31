@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Attached documents show as a chip instead of dumping the whole file into the chat (#77)
 - The pinned prompt moves aside instead of covering the next message as you scroll (#76)
 - Dictation works with any Deepgram key, not only ones allowed to mint tokens (#75)
 - Dictation says why it stopped instead of switching itself off without a word (#74)

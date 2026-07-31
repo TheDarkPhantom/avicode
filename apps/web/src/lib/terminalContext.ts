@@ -1,5 +1,6 @@
 import { type ThreadId } from "@t3tools/contracts";
 
+import { extractTrailingDocumentContexts } from "@t3tools/shared/documentContext";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
@@ -246,10 +247,17 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
 }
 
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
-  // Order matters: send-time appends `<terminal_context>` first, then
-  // `<element_context>` last. Strip element first so the (now-trailing)
-  // terminal block can be matched by `extractTrailingTerminalContexts`.
-  const extractedElement = extractTrailingElementContexts(prompt);
+  // Order matters, and each extractor only matches at the end of the string.
+  // Send-time appends `<terminal_context>` first and `<element_context>` next;
+  // the server then appends `<avicode_document>` blocks last. Peel them off in
+  // reverse so each one is trailing by the time its extractor runs.
+  //
+  // Avi Code addition: attached documents are inlined into the prompt for the
+  // provider, which meant the whole extracted file was rendered in the chat
+  // under the attachment chips that already name it. `copyText` keeps the full
+  // prompt, so copying a message still yields exactly what the agent saw.
+  const extractedDocuments = extractTrailingDocumentContexts(prompt);
+  const extractedElement = extractTrailingElementContexts(extractedDocuments.promptText);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {
     visibleText: extractedTerminal.promptText,

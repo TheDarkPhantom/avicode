@@ -8,11 +8,9 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 
-import {
-  attachmentOwnerThreadId,
-  canonicalizeClientCommandTimestamps,
-  formatDocumentContext,
-} from "./Normalizer.ts";
+import { formatDocumentContext } from "@t3tools/shared/documentContext";
+
+import { attachmentOwnerThreadId, canonicalizeClientCommandTimestamps } from "./Normalizer.ts";
 
 const clientCreatedAt = "2031-01-01T00:00:00.000Z";
 const serverReceivedAt = "2026-07-18T00:00:00.000Z";
