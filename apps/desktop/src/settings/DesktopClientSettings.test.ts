@@ -19,6 +19,7 @@ const clientSettings: ClientSettings = {
   aviCodeCommunicationStyles: [],
   aviCodeNewThreadsStartInPlanMode: false,
   aviCodeNotificationSound: "pebble",
+  aviCodeOpenChatsAtLastResponse: false,
   aviCodeProviderBadgeLabels: {},
   aviCodeSidebarShowPrIndicator: true,
   aviCodeSidebarShowStatusLabels: true,

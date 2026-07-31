@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Open a finished chat at the top of its last answer instead of the bottom (#58)
 - Agents get the toolchain traps that cost real debugging time written down (#69)
 - Ctrl+W closes the open thread instead of quitting the app (#55)
 - Merge a project's ready threads one at a time from the sidebar (#64)

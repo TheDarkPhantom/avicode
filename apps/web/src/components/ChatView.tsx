@@ -3622,6 +3622,20 @@ function ChatViewContent(props: ChatViewProps) {
       anchorScrollRestoreFrameRef.current = null;
     }
   }, []);
+  // Avi Code addition. The timeline reports a chat that opened at the top of
+  // its last response rather than the live edge. That open starts off the live
+  // edge on purpose, so live follow has to stay off for it — both here and in
+  // the thread-open reset below, which would otherwise re-arm it and scroll the
+  // chat straight back to the bottom.
+  const openedAtLastResponseThreadIdRef = useRef<ThreadId | null>(null);
+  const onTimelineOpenedAtLastResponse = useCallback(() => {
+    openedAtLastResponseThreadIdRef.current = activeThread?.id ?? null;
+    cancelTimelineLiveFollowForUserNavigation();
+    // The chat deliberately opens away from the live edge, so show the way back
+    // to it straight away rather than waiting for a scroll gesture to reveal it.
+    isAtEndRef.current = false;
+    setShowScrollToBottom(true);
+  }, [activeThread?.id, cancelTimelineLiveFollowForUserNavigation]);
   const getActiveTimelineTurnMetrics = useCallback(
     (list?: LegendListRef | null) => {
       const resolvedList = list ?? legendListRef.current;
@@ -3873,16 +3887,20 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     setPullRequestDialogState(null);
-    isAtEndRef.current = true;
-    timelineScrollModeRef.current = "following-end";
-    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-    setTimelineLiveFollowEnabled(true);
-    pendingTimelineAnchorRef.current = null;
-    positionedTimelineAnchorRef.current = null;
-    settledTimelineAnchorRef.current = null;
-    activeTimelineAnchorIndexRef.current = null;
-    showScrollDebouncer.current.cancel();
-    setShowScrollToBottom(false);
+    // Avi Code addition: the timeline's own layout effect runs first, so a chat
+    // that opened at its last response has already opted out of live follow.
+    if (openedAtLastResponseThreadIdRef.current !== (activeThread?.id ?? null)) {
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = "following-end";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      pendingTimelineAnchorRef.current = null;
+      positionedTimelineAnchorRef.current = null;
+      settledTimelineAnchorRef.current = null;
+      activeTimelineAnchorIndexRef.current = null;
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+    }
     if (planSidebarOpenOnNextThreadRef.current) {
       planSidebarOpenOnNextThreadRef.current = false;
       if (activeThreadRef) {
@@ -6585,6 +6603,7 @@ function ChatViewContent(props: ChatViewProps) {
                 anchorMessageId={timelineAnchorMessageId}
                 onAnchorReady={onTimelineAnchorReady}
                 onAnchorSizeChanged={onTimelineAnchorSizeChanged}
+                onOpenedAtLastResponse={onTimelineOpenedAtLastResponse}
                 contentInsetEndAdjustment={composerOverlayHeight}
                 liveFollowEnabled={timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}

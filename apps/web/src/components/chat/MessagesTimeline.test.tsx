@@ -200,6 +200,7 @@ function buildProps() {
     liveFollowEnabled: true,
     onIsAtEndChange: () => {},
     onManualNavigation: () => {},
+    onOpenedAtLastResponse: () => {},
   };
 }
 

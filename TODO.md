@@ -34,6 +34,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
       Implement button instead of auto-building.
 - [x] Avi Code settings toggles for starting new chats in plan mode and hiding the sidebar
       worktree icon.
+- [x] Opt-in opening of finished chats at the top of their last response instead of the live edge.
 
 ## Personal alpha verification
 

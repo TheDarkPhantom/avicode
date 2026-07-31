@@ -158,6 +158,9 @@ function ChatLayoutSettings() {
   const contentWidth = useClientSettings<AviCodeChatContentWidth>(
     (settings) => settings.aviCodeChatContentWidth,
   );
+  const openAtLastResponse = useClientSettings(
+    (settings) => settings.aviCodeOpenChatsAtLastResponse,
+  );
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -188,6 +191,20 @@ function ChatLayoutSettings() {
               </SelectItem>
             </SelectPopup>
           </Select>
+        }
+      />
+      <SettingsRow
+        title="Open chats at the last response"
+        description="Opening a chat that is not working starts at the top of its last response, so a finished answer reads from its first line instead of its last. Chats that are still working keep following the newest text."
+        status="The jump-to-latest button stays one click away, and sending a message returns to the live edge as usual."
+        control={
+          <Switch
+            checked={openAtLastResponse}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeOpenChatsAtLastResponse: Boolean(checked) })
+            }
+            aria-label="Open chats at the last response"
+          />
         }
       />
     </SettingsSection>
