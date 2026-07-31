@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Merge a project's ready threads one at a time from the sidebar (#64)
+- The repository's auto merge policy now reaches the server (#62)
 - Unarchiving a thread from the sidebar opens it (#59)
 - Escape leaves an agent's question and hands the composer back (#57)
 - Pick how the agent talks to you for one turn, from the composer (#68)
