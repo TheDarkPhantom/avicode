@@ -42,7 +42,17 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Unarchiving a thread from the sidebar opens it (#59)
+- Escape leaves an agent's question and hands the composer back (#57)
+- Pick how the agent talks to you for one turn, from the composer (#68)
+- The composer's model button shows the model without the vendor name (#65)
+- Fork documentation scopes Avi Code to the desktop app (#63)
+- Reference another thread from the `@` menu instead of a separate button (#66)
+- Turn the sidebar's pull request indicator off if you do not want it (#61)
+- Planning docs track upstream orchestration V2 and the deferred queue work (#60)
+- The thread reference picker stops opening clipped behind the composer (#54)
 - See what changed in each version, and whether it came from Avi Code or upstream (#53)
+- Agents get refreshed repo guidance for the v0.0.31 upstream merge (#52)
 - Every packaging run leaves a downloadable Windows installer (#51)
 - Ask a side question with `/btw` without derailing the thread (#50)
 
