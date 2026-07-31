@@ -5,6 +5,7 @@ import {
   CloudIcon,
   ContainerIcon,
   FolderPlusIcon,
+  GitMergeIcon,
   Globe2Icon,
   LoaderIcon,
   PinIcon,
@@ -200,6 +201,7 @@ import {
   type SidebarThreadHandlers,
 } from "./sidebar/useSidebarThreadHandlers";
 import { SidebarThreadRow, SIDEBAR_ICON_ACTION_BUTTON_CLASS } from "./sidebar/SidebarThreadRow";
+import { useProjectMergeRun } from "./sidebar/useProjectMergeRun";
 import {
   resolveFlatSidebarThreads,
   SidebarFlatThreadList,
@@ -595,6 +597,21 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const openPrLink = useOpenPrLink();
   const sidebarThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
   const projectThreads = sidebarThreads;
+  // Avi Code addition: project-level sequential merge of ready worktree threads.
+  const mergeRun = useProjectMergeRun({
+    environmentId: project.environmentId,
+    projectCwd: project.workspaceRoot,
+    threads: projectThreads,
+    navigateToThread,
+  });
+  const handleMergeRunClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void mergeRun.run();
+    },
+    [mergeRun],
+  );
   const archivedEnvironmentIds = useMemo(
     () => [...new Set(project.memberProjects.map((member) => member.environmentId))],
     [project.memberProjects],
@@ -1452,6 +1469,36 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               )}
             </MenuPopup>
           </Menu>
+          {/* Avi Code addition: merge every ready worktree thread in this
+              project, one at a time. Hidden unless the repository declares an
+              Auto merge policy in t3.json and something is actually ready. */}
+          {mergeRun.hasAutoMergePolicy && mergeRun.candidateCount > 0 && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`Merge ready threads in ${project.displayName}`}
+                    data-testid="project-merge-run-button"
+                    disabled={mergeRun.isRunning}
+                    className={SIDEBAR_ICON_ACTION_BUTTON_CLASS}
+                    onClick={handleMergeRunClick}
+                  />
+                }
+              >
+                <GitMergeIcon
+                  className={`size-3.5 ${mergeRun.isRunning ? "animate-status-pulse" : ""}`}
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                {mergeRun.isRunning
+                  ? "Merging ready threads..."
+                  : `Merge ${mergeRun.candidateCount} ready ${
+                      mergeRun.candidateCount === 1 ? "thread" : "threads"
+                    }`}
+              </TooltipPopup>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger
               render={
