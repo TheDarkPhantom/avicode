@@ -7,10 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `AGENTS.md` is the shared, authoritative policy file (git workflow, worktree isolation, dev servers,
 fork conventions). Most of it is upstream's text, kept verbatim so merges stay clean; the
 **Avi Code overrides** block at the bottom wins where the two disagree. Read that block — it inverts
-three upstream rules: shipping is the default here (upstream says never PR unless asked), the
-integrated client pass is required rather than on request, and you do open a `--share` URL once to
-confirm it loads. This file covers the toolchain, the commands, and the architecture and invariants
-that only become visible after reading several files.
+four upstream rules: shipping is the default here (upstream says never PR unless asked), the
+integrated client pass is required rather than on request, you do open a `--share` URL once to
+confirm it loads, and **this fork is desktop-only** — upstream's three-surface rule does not apply,
+and `apps/mobile` is never built, tested, or treated as a gap. This file covers the toolchain, the
+commands, and the architecture and invariants that only become visible after reading several files.
 
 ## Toolchain
 
@@ -122,7 +123,9 @@ propagates into every decode site at once — see the SELECT trap below.
 
 **`packages/client-runtime`** holds the client logic shared by web and mobile, behind explicit
 subpath exports (`@t3tools/client-runtime/rpc`, `/connection`, `/environment`, …). Logic both
-clients need belongs there rather than in `apps/web`.
+clients need belongs there rather than in `apps/web`. Note the desktop-only scope in `AGENTS.md`:
+these two packages still compile for mobile and must keep doing so, but fork features are only ever
+_delivered_ on desktop, so new fork-owned client logic can live in `apps/web` without ceremony.
 
 **Not everything is TypeScript.** `native/resource-monitor` is a Rust crate (cargo, its own
 `Cargo.toml`) that CI formats and tests separately; `vp` does not cover it.
