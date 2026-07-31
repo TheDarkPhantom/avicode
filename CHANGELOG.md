@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The window title privacy setting says what it hides instead of naming an unfamiliar tool (#73)
 - Send any earlier message again from its hover actions to rerun that prompt in the thread (#56)
 - Open a finished chat at the top of its last answer instead of the bottom (#58)
 - Agents get the toolchain traps that cost real debugging time written down (#69)
