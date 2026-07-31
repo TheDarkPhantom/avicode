@@ -55,6 +55,18 @@ function describeStartFailure(error: unknown): string {
   return "Could not start dictation.";
 }
 
+/**
+ * Deepgram reports a rejected stream (unsupported model or language pair, a
+ * token that expired before connect) by closing the socket with a reason
+ * rather than by sending an error message, so the reason is the only detail
+ * available.
+ */
+function describeSocketClose(event: CloseEvent): string {
+  const reason = event.reason.trim();
+  if (reason.length > 0) return `Deepgram ended the dictation stream: ${reason}`;
+  return `Deepgram ended the dictation stream (code ${event.code}).`;
+}
+
 export function useDictation(options: UseDictationOptions): UseDictationResult {
   const [status, setStatus] = useState<DictationStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -67,9 +79,18 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
   const socketReadyRef = useRef(false);
   const audioBufferRef = useRef<Blob[]>([]);
   const transcriptRef = useRef<TranscriptState>(emptyTranscript);
-  const cancelledRef = useRef(false);
   /** Guards against a second start while the first is still awaiting a token. */
   const startingRef = useRef(false);
+  /**
+   * Bumped by every `start` and every `finish`. `start` awaits the microphone
+   * permission and then a token, and the user can stop or cancel during either;
+   * comparing the captured id lets everything that resolves late recognise that
+   * its session is already over. Socket handlers use it the same way, so a
+   * previous session's socket can never write into the current one.
+   */
+  const sessionRef = useRef(0);
+  /** Set for the flush window in `stop`, so the expected close stays quiet. */
+  const stoppingRef = useRef(false);
 
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -102,7 +123,10 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
 
   const finish = useCallback(
     (cancelled: boolean) => {
-      cancelledRef.current = cancelled;
+      // Retire the session before tearing down, so the close this triggers and
+      // anything still in flight in `start` both see themselves as stale.
+      sessionRef.current += 1;
+      stoppingRef.current = false;
       teardown();
       if (cancelled) {
         optionsRef.current.onCancel?.();
@@ -119,7 +143,8 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
   const start = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
-    cancelledRef.current = false;
+    stoppingRef.current = false;
+    const session = ++sessionRef.current;
     transcriptRef.current = emptyTranscript;
     audioBufferRef.current = [];
     socketReadyRef.current = false;
@@ -134,7 +159,9 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
-      if (cancelledRef.current) {
+      if (sessionRef.current !== session) {
+        // Stopped while the permission prompt was up. Nothing else holds this
+        // stream yet, so releasing it here is the only way the mic goes off.
         for (const track of stream.getTracks()) track.stop();
         return;
       }
@@ -157,7 +184,9 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       recorder.start(AUDIO_TIMESLICE_MS);
 
       const { accessToken } = await optionsRef.current.requestToken();
-      if (cancelledRef.current) return;
+      // Stopped mid-token-request; `finish` already released the recorder and
+      // the stream, so opening a socket now would leak one nothing can close.
+      if (sessionRef.current !== session) return;
 
       // Avi Code addition: browsers cannot set Deepgram's Authorization header.
       // Authenticate the temporary JWT with the documented Bearer subprotocol.
@@ -168,6 +197,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       socketRef.current = socket;
 
       socket.onopen = () => {
+        if (sessionRef.current !== session) return;
         for (const chunk of audioBufferRef.current) socket.send(chunk);
         audioBufferRef.current = [];
         socketReadyRef.current = true;
@@ -175,7 +205,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       };
 
       socket.onmessage = (event) => {
-        if (cancelledRef.current) return;
+        if (sessionRef.current !== session) return;
         let payload: unknown;
         try {
           payload = JSON.parse(String(event.data));
@@ -188,12 +218,30 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
         optionsRef.current.onTranscript(renderTranscript(transcriptRef.current), false);
       };
 
+      // A failed handshake surfaces as a bare error with no detail; a stream
+      // Deepgram refuses after connecting surfaces as a close with a reason.
+      // Both end the session, and both keep whatever was transcribed already —
+      // losing a minute of dictation to a dropped socket is worse than the
+      // drop itself.
       socket.onerror = () => {
-        if (cancelledRef.current) return;
+        if (sessionRef.current !== session) return;
         setError("Lost the connection to Deepgram.");
-        finish(true);
+        finish(false);
+      };
+
+      socket.onclose = (event) => {
+        // `stop` closes the stream deliberately and waits for the flush, so
+        // that close is expected and says nothing about the session.
+        if (sessionRef.current !== session || stoppingRef.current) return;
+        if (event.code !== 1000 && event.code !== 1005) {
+          setError(describeSocketClose(event));
+        }
+        finish(false);
       };
     } catch (caught) {
+      // A stop during the await already ran the whole teardown; reporting the
+      // abandoned attempt on top of it would be noise.
+      if (sessionRef.current !== session) return;
       setError(describeStartFailure(caught));
       teardown();
       transcriptRef.current = emptyTranscript;
@@ -204,6 +252,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
 
   const stop = useCallback(() => {
     if (!startingRef.current) return;
+    stoppingRef.current = true;
     setStatus("stopping");
     // Give Deepgram a moment to return the final result for audio already sent;
     // without it the last word or two is routinely dropped.
