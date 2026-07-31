@@ -2,9 +2,22 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
   push:
     branches:
       - main
+
+# Avi Code addition: `merge_group` is required, not optional. Every context in
+# the branch protection required-check list must report on the queue's temporary
+# branch; a workflow that does not run there never reports, and the queued pull
+# request stalls until it times out.
+#
+# Only pull_request runs are cancellable. Cancelling a merge_group run would drop
+# a required check and wedge the queue, and cancelling a push to main would leave
+# main unverified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:

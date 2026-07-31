@@ -2,7 +2,17 @@ name: AviCode Guardrails
 
 on:
   pull_request:
+  merge_group:
   workflow_dispatch:
+
+# Avi Code addition: see ci.yml. `AviCode boundaries` is a required check, so it
+# must report on the merge queue's temporary branch too. `desktop-smoke` and
+# `windows-package` gate on `github.head_ref`, which is empty for merge_group, so
+# they skip inside the queue — a skipped required check counts as satisfied, and
+# they already ran on the pull request itself.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
