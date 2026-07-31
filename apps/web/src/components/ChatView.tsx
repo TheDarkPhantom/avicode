@@ -175,6 +175,7 @@ import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
+import { useArchiveThreadWithFeedback } from "../hooks/useArchiveThreadWithFeedback";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useWindowActive } from "../hooks/useWindowActive";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
@@ -4486,6 +4487,35 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  // Avi Code addition: `thread.archive` (mod+w) is the tab-close analogue for a
+  // thread. Archiving is the reversible "close" — the row leaves the sidebar,
+  // `archiveThread` routes on to a fresh draft, and Settings → Archived brings
+  // it back. Upstream leaves mod+w to Electron's window-close role, which quits
+  // the desktop app.
+  const archiveThreadWithFeedback = useArchiveThreadWithFeedback();
+  const confirmThreadArchive = useClientSettings<boolean>(
+    (settings) => settings.confirmThreadArchive,
+  );
+  const closeActiveThread = useCallback(async () => {
+    // A local draft has nothing to archive — closing it would only produce
+    // another draft, which `chat.new` already does.
+    if (!isServerThread || !activeThreadRef) return;
+    const localApi = readLocalApi();
+    if (confirmThreadArchive && localApi) {
+      const confirmed = await localApi.dialogs.confirm(
+        `Archive thread "${activeThread?.title ?? "this thread"}"?`,
+      );
+      if (!confirmed) return;
+    }
+    await archiveThreadWithFeedback(activeThreadRef);
+  }, [
+    activeThread?.title,
+    activeThreadRef,
+    archiveThreadWithFeedback,
+    confirmThreadArchive,
+    isServerThread,
+  ]);
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (!activeThreadId || isCommandPaletteOpen()) {
@@ -4593,6 +4623,13 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
 
+      if (command === "thread.archive") {
+        event.preventDefault();
+        event.stopPropagation();
+        void closeActiveThread();
+        return;
+      }
+
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -4617,6 +4654,7 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,
     activeThreadId,
+    closeActiveThread,
     closeTerminal,
     closePanelTerminal,
     createNewTerminal,

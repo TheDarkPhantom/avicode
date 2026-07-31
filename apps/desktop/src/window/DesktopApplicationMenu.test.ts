@@ -137,4 +137,46 @@ describe("DesktopApplicationMenu", () => {
       assert.equal(yield* Deferred.await(selectedAction), "open-settings");
     }),
   );
+
+  // Avi Code addition: `mod+w` closes the open thread in the renderer, so no
+  // menu item may claim it — a native accelerator would close the window (and
+  // with it the app) before the page ever saw the key.
+  it.effect("keeps window close off CmdOrCtrl+W", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* Effect.gen(function* () {
+        const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+        yield* menu.configure;
+      }).pipe(
+        Effect.provide(
+          DesktopApplicationMenu.layer.pipe(
+            Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
+            Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+            Layer.provideMerge(desktopUpdatesLayer),
+            Layer.provideMerge(electronDialogLayer),
+            Layer.provideMerge(electronAppLayer),
+            Layer.provideMerge(
+              DesktopEnvironment.layer(environmentInput).pipe(
+                Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const closeItems = template.flatMap((item) =>
+        Array.isArray(item.submenu)
+          ? item.submenu.filter((entry) => entry.role === "close")
+          : ([] as Electron.MenuItemConstructorOptions[]),
+      );
+      assert.isAbove(closeItems.length, 0);
+      for (const item of closeItems) {
+        assert.equal(item.accelerator, "CmdOrCtrl+Shift+W");
+      }
+    }),
+  );
 });

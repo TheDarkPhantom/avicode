@@ -37,6 +37,10 @@ export type ModelPickerJumpKeybindingCommand =
 export const THREAD_KEYBINDING_COMMANDS = [
   "thread.previous",
   "thread.next",
+  // Avi Code addition: the tab-close analogue for a thread. Upstream leaves
+  // `mod+w` to the Electron window-close role outside a focused terminal, which
+  // quits the desktop app; here it archives the open thread instead.
+  "thread.archive",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number];

@@ -170,7 +170,13 @@ export const make = Effect.gen(function* () {
                 },
                 { type: "separator" as const },
               ]),
-          { role: environment.platform === "darwin" ? "close" : "quit" },
+          // Avi Code addition: window close moves off `CmdOrCtrl+W`, which the
+          // renderer now uses to close (archive) the open thread. A menu
+          // accelerator on macOS fires before the page ever sees the key, so
+          // leaving Close on Cmd+W would make the thread shortcut unreachable.
+          ...(environment.platform === "darwin"
+            ? [{ role: "close" as const, accelerator: "CmdOrCtrl+Shift+W" }]
+            : [{ role: "quit" as const }]),
         ],
       },
       { role: "editMenu" },
@@ -193,7 +199,21 @@ export const make = Effect.gen(function* () {
           { role: "togglefullscreen" },
         ],
       },
-      { role: "windowMenu" },
+      // Avi Code addition: Electron's default `windowMenu` puts Close on
+      // `CmdOrCtrl+W` on Windows and Linux, which quit the app instead of
+      // closing a thread. macOS keeps the stock menu — its Close lives in the
+      // File menu above and is retargeted there.
+      environment.platform === "darwin"
+        ? { role: "windowMenu" }
+        : {
+            label: "Window",
+            submenu: [
+              { role: "minimize" },
+              { role: "zoom" },
+              { type: "separator" },
+              { role: "close", accelerator: "CmdOrCtrl+Shift+W" },
+            ],
+          },
       {
         role: "help",
         submenu: [

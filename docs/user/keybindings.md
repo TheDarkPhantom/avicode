@@ -23,6 +23,7 @@ See the full schema for more details: [`packages/contracts/src/keybindings.ts`](
   { "key": "mod+d", "command": "terminal.split", "when": "terminalFocus" },
   { "key": "mod+n", "command": "terminal.new", "when": "terminalFocus" },
   { "key": "mod+w", "command": "terminal.close", "when": "terminalFocus" },
+  { "key": "mod+w", "command": "thread.archive", "when": "!terminalFocus" },
   { "key": "mod+shift+j", "command": "preview.toggle" },
   { "key": "mod+r", "command": "preview.refresh", "when": "previewFocus" },
   { "key": "mod+l", "command": "preview.focusUrl", "when": "previewFocus" },
@@ -57,6 +58,9 @@ Invalid rules are ignored. Invalid config files are ignored. Warnings are logged
 - `terminal.split`: split terminal (in focused terminal context by default)
 - `terminal.new`: create new terminal (in focused terminal context by default)
 - `terminal.close`: close/kill the focused terminal (in focused terminal context by default)
+- `thread.archive`: close the open thread by archiving it, then land on a fresh draft in the same
+  project (outside a focused terminal by default). Reversible from Settings → Archived. On desktop
+  this takes over `mod+w` from the native Close Window item, which moves to `mod+shift+w`.
 - `preview.toggle`: open/close the in-app browser preview panel (desktop app only)
 - `preview.refresh`: reload the active preview tab (in focused preview context by default)
 - `preview.focusUrl`: focus the URL input of the preview panel (in focused preview context by default)

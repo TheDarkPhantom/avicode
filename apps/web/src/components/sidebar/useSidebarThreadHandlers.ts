@@ -4,7 +4,6 @@ import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
-  scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -22,6 +21,7 @@ import { useUiStateStore } from "../../uiStateStore";
 import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { useArchiveThreadWithFeedback } from "../../hooks/useArchiveThreadWithFeedback";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -46,6 +46,7 @@ export function useSidebarThreadHandlers() {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const { archiveThread, unarchiveThread, deleteThread } = useThreadActions();
+  const attemptArchiveThread = useArchiveThreadWithFeedback();
   const handleNewThread = useNewThreadHandler();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -182,27 +183,6 @@ export function useSidebarThreadHandlers() {
       setSelectionAnchor,
       toggleThreadSelection,
     ],
-  );
-
-  const attemptArchiveThread = useCallback(
-    async (threadRef: ScopedThreadRef) => {
-      const result = await archiveThread(threadRef);
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to archive thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-        return;
-      }
-      // Avi Code addition: an archived thread leaves the list, so its pin goes
-      // with it. Unarchiving deliberately does not restore the pin.
-      setThreadPinned(scopedThreadKey(threadRef), false);
-    },
-    [archiveThread, setThreadPinned],
   );
 
   // Avi Code addition: unarchiving from the sidebar is nearly always "give me

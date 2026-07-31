@@ -26,6 +26,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
+  // Avi Code addition: outside a focused terminal `mod+w` used to fall through
+  // to Electron's window-close role and quit the desktop app. It now closes the
+  // open thread instead; window close moved to `mod+shift+w` in the native menu.
+  { key: "mod+w", command: "thread.archive", when: "!terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   // Whole-window zoom. Unconditional, so it keeps working in the terminal and
   // anywhere the preview does not own focus. `mod+shift+=` is the chord a US
