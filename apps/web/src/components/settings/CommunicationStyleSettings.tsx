@@ -51,10 +51,7 @@ export function CommunicationStyleSettings() {
       id = `${baseId}-${suffix}`;
       suffix += 1;
     }
-    writeStyles([
-      ...customStyles,
-      { id, label: trimmedLabel, instruction: trimmedInstruction },
-    ]);
+    writeStyles([...customStyles, { id, label: trimmedLabel, instruction: trimmedInstruction }]);
     setDraftLabel("");
     setDraftInstruction("");
   };

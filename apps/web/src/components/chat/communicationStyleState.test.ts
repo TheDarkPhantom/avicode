@@ -9,9 +9,9 @@ import {
 
 describe("resolveEffectiveStyleId", () => {
   it("prefers the thread's own choice over the global default", () => {
-    expect(
-      resolveEffectiveStyleId({ threadStyleId: "caveman", globalStyleId: "business" }),
-    ).toBe("caveman");
+    expect(resolveEffectiveStyleId({ threadStyleId: "caveman", globalStyleId: "business" })).toBe(
+      "caveman",
+    );
   });
 
   it("inherits the global style when the thread has never chosen", () => {
@@ -25,15 +25,15 @@ describe("resolveEffectiveStyleId", () => {
     expect(resolveEffectiveStyleId({ threadStyleId: null, globalStyleId: null })).toBe(
       COMMUNICATION_STYLE_DEFAULT_ID,
     );
-    expect(
-      resolveEffectiveStyleId({ threadStyleId: undefined, globalStyleId: undefined }),
-    ).toBe(COMMUNICATION_STYLE_DEFAULT_ID);
+    expect(resolveEffectiveStyleId({ threadStyleId: undefined, globalStyleId: undefined })).toBe(
+      COMMUNICATION_STYLE_DEFAULT_ID,
+    );
   });
 
   it("lets a thread pin Default against a non-default global", () => {
-    expect(
-      resolveEffectiveStyleId({ threadStyleId: "default", globalStyleId: "caveman" }),
-    ).toBe("default");
+    expect(resolveEffectiveStyleId({ threadStyleId: "default", globalStyleId: "caveman" })).toBe(
+      "default",
+    );
   });
 });
 
