@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Start new chats in plan mode now works instead of inheriting the mode of the chat you were in (#79)
 - A project shows a dot when it holds a prompt you typed but never sent (#78)
 - Threads you start and walk away from now show as done and chime when they finish (#78)
 - The notification sound works on a fresh app start instead of waiting for a trip to Settings (#78)

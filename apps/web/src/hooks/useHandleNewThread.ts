@@ -13,6 +13,7 @@ import {
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
+import { resolveNewThreadInteractionMode } from "../aviCodeInteractionMode";
 import { newDraftId, newThreadId } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
@@ -122,11 +123,15 @@ export function useNewThreadHandler() {
         carrySourceShell?.runtimeMode ??
         carrySourceDraft?.runtimeMode ??
         null;
-      const carryInteractionMode =
+      // Avi Code addition: the start-in-plan-mode setting outranks the carried
+      // mode. See `resolveNewThreadInteractionMode` for why the carry has to
+      // lose here rather than further down the chain.
+      const carryInteractionMode = resolveNewThreadInteractionMode(
         carrySourceComposer?.interactionMode ??
-        carrySourceShell?.interactionMode ??
-        carrySourceDraft?.interactionMode ??
-        null;
+          carrySourceShell?.interactionMode ??
+          carrySourceDraft?.interactionMode ??
+          null,
+      );
       const project = projects.find(
         (candidate) =>
           candidate.id === projectRef.projectId &&
