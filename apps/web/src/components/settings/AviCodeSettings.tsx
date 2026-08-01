@@ -403,6 +403,7 @@ function NewChatSettings() {
   const startInPlanMode = useClientSettings(
     (settings) => settings.aviCodeNewThreadsStartInPlanMode,
   );
+  const scrollToPlanTop = useClientSettings((settings) => settings.aviCodeScrollToPlanTopOnExpand);
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -418,6 +419,20 @@ function NewChatSettings() {
               updateSettings({ aviCodeNewThreadsStartInPlanMode: Boolean(checked) })
             }
             aria-label="Start new chats in plan mode"
+          />
+        }
+      />
+      <SettingsRow
+        title="Jump to the top of a plan when you expand it"
+        description="A long plan is collapsed behind an Expand plan button at its bottom edge, so expanding it grows the card downwards and leaves you looking at the middle. On, the view moves to the plan's first line instead."
+        status="The jump is instant rather than animated, because you asked to read the plan and easing the scroll only delays that."
+        control={
+          <Switch
+            checked={scrollToPlanTop}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeScrollToPlanTopOnExpand: Boolean(checked) })
+            }
+            aria-label="Jump to the top of a plan when you expand it"
           />
         }
       />

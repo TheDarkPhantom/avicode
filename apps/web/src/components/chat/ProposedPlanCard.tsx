@@ -1,4 +1,5 @@
-import { memo, useState, useId } from "react";
+import { memo, useRef, useState, useId } from "react";
+import { flushSync } from "react-dom";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -39,14 +40,36 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   threadRef,
   cwd,
   workspaceRoot,
+  onExpanded,
 }: {
   planMarkdown: string;
   environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | undefined;
   cwd: string | undefined;
   workspaceRoot: string | undefined;
+  /**
+   * Avi Code addition: called with this card's root element right after it
+   * expands, so the timeline can bring the top of the plan into view. Omitted
+   * (or a no-op) leaves the previous stay-put behaviour.
+   */
+  onExpanded?: ((planElement: HTMLElement) => void) | undefined;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Avi Code addition. Expanding grows the card downwards from a button at its
+  // bottom edge, so without this the viewport lands in the middle of the plan
+  // and the reader scrolls up to find the first line. `flushSync` is what makes
+  // the correction possible: the new height has to be in the DOM before the
+  // card's position can be measured, and waiting a frame would show the wrong
+  // scroll position first.
+  const toggleExpanded = () => {
+    const next = !expanded;
+    flushSync(() => setExpanded(next));
+    if (next && rootRef.current) {
+      onExpanded?.(rootRef.current);
+    }
+  };
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [savePath, setSavePath] = useState("");
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
@@ -146,7 +169,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   };
 
   return (
-    <div className="rounded-[24px] border border-border/80 bg-card/70 p-4 sm:p-5">
+    <div ref={rootRef} className="rounded-[24px] border border-border/80 bg-card/70 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Badge variant="secondary">Plan</Badge>
@@ -192,12 +215,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         </div>
         {canCollapse ? (
           <div className="mt-4 flex justify-center">
-            <Button
-              size="sm"
-              variant="outline"
-              data-scroll-anchor-ignore
-              onClick={() => setExpanded((value) => !value)}
-            >
+            <Button size="sm" variant="outline" data-scroll-anchor-ignore onClick={toggleExpanded}>
               {expanded ? "Collapse plan" : "Expand plan"}
             </Button>
           </div>

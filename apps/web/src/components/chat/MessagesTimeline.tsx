@@ -67,6 +67,7 @@ import {
 import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
+import { findScrollContainer, resolvePlanScrollOffset, shouldApplyPlanScroll } from "./planScroll";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { MessageCopyButton } from "./MessageCopyButton";
@@ -154,6 +155,8 @@ interface TimelineRowSharedState {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorElement?: HTMLElement) => void;
+  /** Avi Code addition: brings an expanded plan's top into view. */
+  onProposedPlanExpanded: (planElement: HTMLElement) => void;
 }
 
 interface TimelineRowActivityState {
@@ -265,6 +268,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const chatContentMaxWidth = chatContentMaxWidthPx(
     useClientSettings((settings) => settings.aviCodeChatContentWidth),
   );
+  // Avi Code addition: whether expanding a plan should jump to its first line.
+  const scrollToPlanTopOnExpand = useClientSettings(
+    (settings) => settings.aviCodeScrollToPlanTopOnExpand,
+  );
 
   const onToggleTurnFold = useCallback((turnId: TurnId) => {
     setExpandedTurnIds((existing) => {
@@ -309,6 +316,31 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       }
     },
     [listRef],
+  );
+
+  // Avi Code addition. Expanding a plan grows the card downwards from a button
+  // at its bottom edge, so the viewport is left showing the middle of the plan
+  // and the reader has to scroll up to the first line. Move the card's top to
+  // the top of the viewport instead, without animation: this is a jump to a
+  // place the user asked for, and easing it would just delay the read.
+  const onProposedPlanExpanded = useCallback(
+    (planElement: HTMLElement) => {
+      if (!scrollToPlanTopOnExpand) return;
+      const list = listRef.current;
+      const currentScroll = list?.getState?.().scroll;
+      if (!list || typeof currentScroll !== "number") return;
+      const container = findScrollContainer(planElement);
+      if (!container) return;
+
+      const nextOffset = resolvePlanScrollOffset({
+        currentScroll,
+        planTop: planElement.getBoundingClientRect().top,
+        viewportTop: container.getBoundingClientRect().top,
+      });
+      if (!shouldApplyPlanScroll({ currentScroll, nextOffset })) return;
+      list.scrollToOffset({ offset: nextOffset, animated: false });
+    },
+    [listRef, scrollToPlanTopOnExpand],
   );
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
@@ -527,6 +559,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      onProposedPlanExpanded,
     }),
     [
       timestampFormat,
@@ -545,6 +578,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      onProposedPlanExpanded,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1375,6 +1409,7 @@ function ProposedPlanTimelineRow({
         threadRef={ctx.threadRef ?? undefined}
         cwd={ctx.markdownCwd}
         workspaceRoot={ctx.workspaceRoot}
+        onExpanded={ctx.onProposedPlanExpanded}
       />
     </div>
   );
