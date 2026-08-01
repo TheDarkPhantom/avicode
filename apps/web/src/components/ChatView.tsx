@@ -291,6 +291,7 @@ import {
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
   waitForStartedServerThread,
@@ -1937,19 +1938,19 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   useEffect(() => {
-    // Only the window the user is actually looking at marks the open thread
-    // read. Turn completions stream in over the websocket whether or not the
-    // app is focused, so without this an agent finishing while the user is in
-    // their editor would mark its own work seen and the sidebar's Completed /
-    // Done indicator would never appear for a thread that needs review. The
-    // effect re-runs on refocus, so returning to a still-open thread clears
-    // the indicator exactly as before.
-    if (!windowActive) return;
+    // The rule itself, and why it is shaped that way, lives in
+    // `shouldMarkThreadVisited`. The effect re-runs on refocus, so returning
+    // to a still-open thread clears its indicator.
     if (!serverThread?.id) return;
-    const threadUpdatedAt = Date.parse(serverThread.updatedAt);
-    if (Number.isNaN(threadUpdatedAt)) return;
-    const lastVisitedAt = activeThreadLastVisitedAt ? Date.parse(activeThreadLastVisitedAt) : NaN;
-    if (!Number.isNaN(lastVisitedAt) && lastVisitedAt >= threadUpdatedAt) return;
+    if (
+      !shouldMarkThreadVisited({
+        threadUpdatedAt: serverThread.updatedAt,
+        lastVisitedAt: activeThreadLastVisitedAt,
+        windowActive,
+      })
+    ) {
+      return;
+    }
 
     markThreadVisited(
       scopedThreadKey(scopeThreadRef(serverThread.environmentId, serverThread.id)),

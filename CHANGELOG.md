@@ -42,6 +42,9 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- A project shows a dot when it holds a prompt you typed but never sent (#78)
+- Threads you start and walk away from now show as done and chime when they finish (#78)
+- The notification sound works on a fresh app start instead of waiting for a trip to Settings (#78)
 - Attached documents show as a chip instead of dumping the whole file into the chat (#77)
 - The pinned prompt moves aside instead of covering the next message as you scroll (#76)
 - Dictation works with any Deepgram key, not only ones allowed to mint tokens (#75)

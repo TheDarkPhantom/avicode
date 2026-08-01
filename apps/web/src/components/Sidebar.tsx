@@ -202,6 +202,7 @@ import {
 } from "./sidebar/useSidebarThreadHandlers";
 import { SidebarThreadRow, SIDEBAR_ICON_ACTION_BUTTON_CLASS } from "./sidebar/SidebarThreadRow";
 import { useProjectMergeRun } from "./sidebar/useProjectMergeRun";
+import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import {
   resolveFlatSidebarThreads,
   SidebarFlatThreadList,
@@ -1391,6 +1392,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 className="size-3 shrink-0 text-muted-foreground/60"
               />
             ) : null}
+            {/* Avi Code addition: composer text typed here but never sent. It
+                has no thread to appear under, so the project row carries it.
+                `projectKey` is the logical grouping key, which is the identity
+                the composer files a project's draft session under. */}
+            <ProjectUnsentDraftDot
+              logicalProjectKey={project.projectKey}
+              projectName={project.displayName}
+            />
           </span>
         </SidebarMenuButton>
         {/* Environment badge – visible by default, crossfades with the
