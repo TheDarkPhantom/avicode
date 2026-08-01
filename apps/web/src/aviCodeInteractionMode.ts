@@ -24,3 +24,30 @@ export function registerStartInPlanModeReader(reader: () => boolean): void {
 export function resolveInitialInteractionMode(): ProviderInteractionMode {
   return readStartInPlanMode() ? "plan" : DEFAULT_INTERACTION_MODE;
 }
+
+/**
+ * Avi Code addition. The mode a new chat opens in, given the mode carried over
+ * from the chat the user was looking at when they pressed New.
+ *
+ * Upstream carries model, permission mode and interaction mode forward from the
+ * viewed thread. That carry has to lose to this setting, because it wins in
+ * every realistic case: you are nearly always sitting in some chat when you
+ * start another, so a carried "default" was overriding the preference on every
+ * single new chat. The `resolveInitialInteractionMode` fallback further down
+ * the chain only ran when there was nothing at all to carry, which made the
+ * setting look like it did nothing.
+ *
+ * Carrying is still right when the setting is off: it is how a run of chats in
+ * plan mode stays in plan mode without touching the toggle each time.
+ *
+ * An explicit per-chat choice is unaffected. The composer records the mode
+ * toggle against the draft itself, and that reading outranks the seed this
+ * produces, so reopening a draft you deliberately flipped to Build leaves it in
+ * Build.
+ */
+export function resolveNewThreadInteractionMode(
+  carriedInteractionMode: ProviderInteractionMode | null | undefined,
+): ProviderInteractionMode | null {
+  if (readStartInPlanMode()) return "plan";
+  return carriedInteractionMode ?? null;
+}
