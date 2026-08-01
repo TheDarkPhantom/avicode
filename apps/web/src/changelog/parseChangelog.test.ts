@@ -141,8 +141,13 @@ describe("CHANGELOG.md", () => {
     expect(CHANGELOG_RELEASES.length).toBeGreaterThan(0);
   });
 
-  it("opens with Unreleased and never repeats a version", () => {
-    expect(CHANGELOG_RELEASES[0]?.isUnreleased).toBe(true);
+  // Unreleased sits at the top while work is waiting to ship, but a release bump renames it and
+  // leaves nothing behind. Requiring it unconditionally made cutting a version impossible without
+  // inventing a filler entry, since every section below must also be non-empty. What has to hold
+  // is that it never appears anywhere but first.
+  it("keeps Unreleased at the top when present, and never repeats a version", () => {
+    const unreleasedIndex = CHANGELOG_RELEASES.findIndex((release) => release.isUnreleased);
+    expect(unreleasedIndex, "Unreleased must come first when it exists").toBeLessThanOrEqual(0);
     const versions = CHANGELOG_RELEASES.map((release) => release.version);
     expect(new Set(versions).size).toBe(versions.length);
   });
