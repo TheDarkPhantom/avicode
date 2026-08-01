@@ -111,9 +111,14 @@ export function formatResetsIn(resetsAt: string | undefined, now: number): strin
  * Whether the meter should render in its alarm state.
  *
  * Two independent triggers, because they mean different things: the provider
- * explicitly saying a limit is reached is authoritative, while crossing
- * `QUOTA_WARNING_PERCENT` is our own early warning for a limit that is close
- * but not yet enforced.
+ * explicitly saying a limit is reached is authoritative, while running short on
+ * headroom is our own early warning for a limit that is close but not yet
+ * enforced.
+ *
+ * The early warning is measured against headroom rather than raw usage so a
+ * window that is nearly spent but about to roll over stops crying wolf. Both
+ * authoritative triggers ignore time entirely: a provider that is rejecting
+ * requests right now is doing so regardless of when the window resets.
  *
  * Pure and exported so it can be tested directly — the popover body that shows
  * the warning text renders lazily on open and so is invisible to static
@@ -122,11 +127,12 @@ export function formatResetsIn(resetsAt: string | undefined, now: number): strin
 export function isQuotaAlarming(
   quota: ProviderQuotaSnapshot,
   window: ProviderQuotaWindow,
+  now: number,
 ): boolean {
   return (
     quota.status === "exhausted" ||
     window.exhausted === true ||
-    window.usedPercent > QUOTA_WARNING_PERCENT
+    quotaHeadroomPercent(window, now) < 100 - QUOTA_WARNING_PERCENT
   );
 }
 
@@ -146,6 +152,147 @@ export function quotaRemainingPercent(window: ProviderQuotaWindow): number {
     return 0;
   }
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
+}
+
+/**
+ * How much of a window's span is still ahead, as a 0-1 fraction.
+ *
+ * Null when the provider did not report enough to say — every caller treats
+ * that as "no time information" and falls back to the raw percentage rather
+ * than guessing a window length.
+ */
+function quotaWindowTimeLeftFraction(window: ProviderQuotaWindow, now: number): number | null {
+  const { windowMinutes, resetsAt } = window;
+  if (windowMinutes === undefined || windowMinutes <= 0 || resetsAt === undefined) {
+    return null;
+  }
+  const resetsAtMs = Date.parse(resetsAt);
+  if (Number.isNaN(resetsAtMs)) {
+    return null;
+  }
+  const msLeft = resetsAtMs - now;
+  if (msLeft <= 0) {
+    return 0;
+  }
+  // Clamped at a full window: clock skew can put a reset further out than the
+  // window is long, and a fraction above 1 would understate the headroom.
+  return Math.min(1, msLeft / (windowMinutes * 60_000));
+}
+
+/**
+ * What an allowance is worth given the time it still has to cover, as an
+ * equivalent percentage of a fresh window.
+ *
+ * An allowance is only scarce relative to how long it has to last. Raw
+ * remaining percentage ignores that and so misreads the common case badly: a
+ * weekly window at 38% left with one day of seven still to run is not a
+ * constraint at all, but it reads as one, and it will out-scare a 5-hour window
+ * at 89% that is the limit actually governing the next few hours. Projecting
+ * the remainder across the whole window — 38% spread over the final 15% of the
+ * week is worth more than a full fresh window — puts the two on comparable
+ * footing.
+ *
+ * Degrades to `quotaRemainingPercent` whenever the provider reports no window
+ * length or reset time, so nothing regresses for a provider that says less.
+ */
+export function quotaHeadroomPercent(window: ProviderQuotaWindow, now: number): number {
+  return Math.min(100, quotaHeadroomRatio(window, now));
+}
+
+/**
+ * Headroom before it is capped at a full window.
+ *
+ * Ranking needs the uncapped value. Several windows can be comfortably ahead at
+ * once, and capping first would tie them all at 100 and hand the decision to an
+ * arbitrary tiebreak — which is how a weekly cap resetting within the hour ends
+ * up named as the active constraint over a 5-hour window that genuinely is one.
+ * Display uses the capped form, because a bar cannot be more than full.
+ */
+function quotaHeadroomRatio(window: ProviderQuotaWindow, now: number): number {
+  const remaining = quotaRemainingPercent(window);
+  // Nothing left is nothing left. Notably this keeps a provider-rejected window
+  // pinned at zero even once its reset time has passed: a stale snapshot should
+  // fail toward "still blocked" rather than promise a refill we have not
+  // confirmed.
+  if (remaining === 0) {
+    return 0;
+  }
+
+  const timeLeftFraction = quotaWindowTimeLeftFraction(window, now);
+  if (timeLeftFraction === null) {
+    return remaining;
+  }
+  if (timeLeftFraction === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return remaining / timeLeftFraction;
+}
+
+/**
+ * Order two windows by which constrains you more, most-constrained first.
+ *
+ * Headroom decides it; raw remaining and then the label only break genuine
+ * ties, so the ordering stays stable across re-renders instead of flickering
+ * between equally comfortable windows.
+ */
+function compareQuotaConstraint(
+  left: ProviderQuotaWindow,
+  right: ProviderQuotaWindow,
+  now: number,
+): number {
+  // Two already-reset windows subtract to NaN, which is falsy and so falls
+  // through to the tiebreaks rather than corrupting the sort.
+  return (
+    quotaHeadroomRatio(left, now) - quotaHeadroomRatio(right, now) ||
+    quotaRemainingPercent(left) - quotaRemainingPercent(right) ||
+    left.label.localeCompare(right.label)
+  );
+}
+
+/**
+ * The window that actually limits you right now — the one with least headroom.
+ *
+ * This is what a single-bar meter should track. It differs from
+ * `mostConstrainedQuotaWindow`, which answers the narrower question of which
+ * window holds the smallest raw number, and which therefore keeps naming a
+ * weekly cap that is minutes from rolling over.
+ *
+ * Returns null for an empty window set so callers can hide the meter rather
+ * than render an empty bar.
+ */
+export function leastHeadroomQuotaWindow(
+  windows: ReadonlyArray<ProviderQuotaWindow>,
+  now: number,
+): ProviderQuotaWindow | null {
+  return windows.reduce<ProviderQuotaWindow | null>(
+    (worst, window) =>
+      worst === null || compareQuotaConstraint(window, worst, now) < 0 ? window : worst,
+    null,
+  );
+}
+
+/**
+ * One sentence reconciling a full-looking meter with a small number beneath it.
+ *
+ * Only appears when the window driving the meter is not the one showing the
+ * lowest percentage — precisely the case where the reading looks self
+ * contradictory. Without the reset time there is nothing to explain with, so it
+ * says nothing rather than asserting a constraint it cannot justify.
+ */
+export function formatQuotaConstraintHint(
+  windows: ReadonlyArray<ProviderQuotaWindow>,
+  now: number,
+): string | null {
+  const driving = leastHeadroomQuotaWindow(windows, now);
+  const lowest = mostConstrainedQuotaWindow(windows);
+  if (!driving || !lowest || driving.id === lowest.id) {
+    return null;
+  }
+  const resetsIn = formatResetsIn(lowest.resetsAt, now);
+  if (!resetsIn) {
+    return null;
+  }
+  return `${lowest.label} ${resetsIn}, so your ${driving.label} window is what limits you right now.`;
 }
 
 /**
@@ -179,13 +326,15 @@ export function quotaRemainingColor(remainingPercent: number): string {
 /**
  * Windows ordered for display: most-constrained first, so the number that
  * matters is the one the eye lands on.
+ *
+ * Ordered by headroom rather than raw usage, which keeps the list agreeing with
+ * the meter above it — the window the bar is tracking is the one at the top.
  */
 export function orderQuotaWindows(
   windows: ReadonlyArray<ProviderQuotaWindow>,
+  now: number,
 ): ReadonlyArray<ProviderQuotaWindow> {
-  return [...windows].toSorted(
-    (left, right) => right.usedPercent - left.usedPercent || left.label.localeCompare(right.label),
-  );
+  return [...windows].toSorted((left, right) => compareQuotaConstraint(left, right, now));
 }
 
 /**
@@ -195,15 +344,18 @@ export function orderQuotaWindows(
  * Phrased as remaining to match the composer meter — the two must not disagree
  * about whether a number means spent or left.
  *
- * Names only the most-constrained window: a settings list needs the number
+ * Names only the window that limits you now: a settings list needs the one
  * that will bite first, and the full per-window breakdown lives in the
- * composer meter's popover.
+ * composer meter's popover. Picked the same way the composer meter picks, so
+ * the two surfaces never disagree about which limit matters. The percentage
+ * itself stays raw — the time maths chooses the subject, it does not restate
+ * the provider's number.
  */
 export function formatQuotaSummaryLine(
   quota: ProviderQuotaSnapshot | null | undefined,
   now: number,
 ): string | null {
-  const worst = quota ? mostConstrainedQuotaWindow(quota.windows) : null;
+  const worst = quota ? leastHeadroomQuotaWindow(quota.windows, now) : null;
   if (!worst) {
     return null;
   }

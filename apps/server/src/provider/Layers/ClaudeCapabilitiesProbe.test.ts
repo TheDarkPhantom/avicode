@@ -144,6 +144,9 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
               label: "5-hour",
               usedPercent: 42,
               resetsAt: "2026-07-29T15:00:00.000Z",
+              // Inferred from the id: Claude never states how long a window is,
+              // and clients need it to weigh an allowance against its time left.
+              windowMinutes: 300,
             },
           ],
           planType: "pro",

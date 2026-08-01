@@ -2170,18 +2170,23 @@ describe("ClaudeAdapterLive", () => {
       }
 
       assert.isAtLeast(harness.query.usageCalls, 1);
+      // Claude never reports how long a window lasts, so the length is inferred
+      // from its id. Clients need it to tell a nearly spent weekly that rolls
+      // over tomorrow from one that has to last all week.
       assert.deepEqual(quotaEvent.payload.quota?.windows, [
         {
           id: "five_hour",
           label: "5-hour",
           usedPercent: 24,
           resetsAt: "2026-07-29T18:00:00.000Z",
+          windowMinutes: 300,
         },
         {
           id: "seven_day",
           label: "Weekly",
           usedPercent: 61,
           resetsAt: "2026-08-02T12:00:00.000Z",
+          windowMinutes: 10_080,
         },
       ]);
       assert.equal(quotaEvent.payload.quota?.planType, "max");
@@ -2333,12 +2338,13 @@ describe("ClaudeAdapterLive", () => {
           label: "5-hour",
           usedPercent: 24,
           resetsAt: "2026-07-29T12:00:00.000Z",
+          windowMinutes: 300,
         },
       ]);
       assert.equal(first.payload.quota?.status, "ok");
 
       assert.deepEqual(second.payload.quota?.windows, [
-        { id: "seven_day_opus", label: "Weekly (Opus)", usedPercent: 91 },
+        { id: "seven_day_opus", label: "Weekly (Opus)", usedPercent: 91, windowMinutes: 10_080 },
       ]);
       assert.equal(second.payload.quota?.status, "warning");
     }).pipe(
