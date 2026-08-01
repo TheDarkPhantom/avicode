@@ -110,4 +110,63 @@ describe("ProviderQuotaMeter", () => {
     expect(full).toContain("height:100%");
     expect(empty).toContain("height:0%");
   });
+
+  it("reads full when the low-looking window is about to roll over", () => {
+    // The reported bug: a weekly cap at 38% left resetting in 1d 2h rendered a
+    // cautionary bar, while the 5-hour window that actually governs the next
+    // few hours sat at 89% and never reached the trigger.
+    const markup = renderToStaticMarkup(
+      <ProviderQuotaMeter
+        quota={snapshot({
+          windows: [
+            {
+              id: "five_hour",
+              label: "5-hour",
+              usedPercent: 11,
+              windowMinutes: 300,
+              resetsAt: "2026-07-29T16:03:00.000Z",
+            },
+            {
+              id: "seven_day",
+              label: "Weekly",
+              usedPercent: 62,
+              windowMinutes: 10_080,
+              resetsAt: "2026-07-30T14:00:00.000Z",
+            },
+          ],
+        })}
+        instanceLabel="Claude – Lawrence"
+        now={NOW}
+      />,
+    );
+
+    expect(markup).toContain("height:100%");
+    expect(markup).toContain("hsl(140.0");
+    // The announcement names the live window and keeps the provider's own
+    // number, never the projection the bar is drawn from.
+    expect(markup).toContain("Claude – Lawrence usage: 89% of 5-hour limit remaining");
+  });
+
+  it("still drains when the window has most of its span left to cover", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderQuotaMeter
+        quota={snapshot({
+          windows: [
+            {
+              id: "five_hour",
+              label: "5-hour",
+              usedPercent: 90,
+              windowMinutes: 300,
+              resetsAt: "2026-07-29T16:00:00.000Z",
+            },
+          ],
+        })}
+        now={NOW}
+      />,
+    );
+
+    // 10% left with four of five hours still to go is genuinely tight.
+    expect(markup).toContain("height:12.5%");
+    expect(markup).toContain("10% of 5-hour limit remaining");
+  });
 });

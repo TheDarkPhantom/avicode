@@ -76,6 +76,7 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { claudeQuotaWindowLabel, claudeQuotaWindowMinutes } from "../claudeQuotaWindows.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
@@ -597,24 +598,6 @@ function normalizeClaudeTaskProgressTokenUsage(
 }
 
 /**
- * Labels for the plan windows the SDK reports. Kept as a lookup rather than a
- * closed union so an unrecognized window still renders (as its raw id) instead
- * of being dropped — Anthropic adds window types without notice.
- */
-const CLAUDE_QUOTA_WINDOW_LABELS: Record<string, string> = {
-  five_hour: "5-hour",
-  seven_day: "Weekly",
-  seven_day_opus: "Weekly (Opus)",
-  seven_day_sonnet: "Weekly (Sonnet)",
-  seven_day_oauth_apps: "Weekly (apps)",
-  overage: "Overage",
-};
-
-function claudeQuotaWindowLabel(id: string): string {
-  return CLAUDE_QUOTA_WINDOW_LABELS[id] ?? id;
-}
-
-/**
  * The SDK reports reset times as epoch **seconds**; everything downstream
  * speaks ISO. Values that are not sane epochs are dropped rather than turned
  * into 1970.
@@ -650,12 +633,14 @@ function normalizeClaudeRateLimitEvent(
   }
 
   const resetsAt = claudeEpochSecondsToIso(rateLimit.resetsAt);
+  const windowMinutes = claudeQuotaWindowMinutes(id);
   const exhausted = rateLimit.status === "rejected";
   const window: ProviderQuotaWindow = {
     id,
     label: claudeQuotaWindowLabel(id),
     usedPercent,
     ...(resetsAt !== undefined ? { resetsAt } : {}),
+    ...(windowMinutes !== undefined ? { windowMinutes } : {}),
     ...(exhausted ? { exhausted } : {}),
   };
 
@@ -712,11 +697,13 @@ function normalizeClaudeUsageResponse(
       continue;
     }
     const resetsAt = typeof limit.resets_at === "string" ? limit.resets_at : undefined;
+    const windowMinutes = claudeQuotaWindowMinutes(id);
     windows.push({
       id,
       label: claudeQuotaWindowLabel(id),
       usedPercent,
       ...(resetsAt !== undefined ? { resetsAt } : {}),
+      ...(windowMinutes !== undefined ? { windowMinutes } : {}),
     });
   }
 

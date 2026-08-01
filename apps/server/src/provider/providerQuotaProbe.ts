@@ -2,6 +2,8 @@ import type { ProviderQuotaSnapshot, ProviderQuotaWindow } from "@t3tools/contra
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
+import { claudeQuotaWindowLabel, claudeQuotaWindowMinutes } from "./claudeQuotaWindows.ts";
+
 function clampUsedPercent(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.min(100, value))
@@ -71,19 +73,6 @@ export function normalizeCodexProbeQuota(
   };
 }
 
-function claudeWindowLabel(id: string): string {
-  return (
-    {
-      five_hour: "5-hour",
-      seven_day: "Weekly",
-      seven_day_opus: "Weekly (Opus)",
-      seven_day_sonnet: "Weekly (Sonnet)",
-      seven_day_oauth_apps: "Weekly (apps)",
-      overage: "Overage",
-    }[id] ?? id
-  );
-}
-
 export function normalizeClaudeProbeQuota(
   value: unknown,
   capturedAt: string,
@@ -104,11 +93,13 @@ export function normalizeClaudeProbeQuota(
     if (usedPercent === null) continue;
     const resetsAt =
       typeof limit.resets_at === "string" && limit.resets_at ? limit.resets_at : undefined;
+    const windowMinutes = claudeQuotaWindowMinutes(id);
     windows.push({
       id,
-      label: claudeWindowLabel(id),
+      label: claudeQuotaWindowLabel(id),
       usedPercent,
       ...(resetsAt ? { resetsAt } : {}),
+      ...(windowMinutes !== undefined ? { windowMinutes } : {}),
     });
   }
 

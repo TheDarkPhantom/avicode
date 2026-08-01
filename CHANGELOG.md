@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Expanding a plan jumps to its first line instead of leaving you in the middle of it (#84)
+- The usage meter accounts for how soon each limit resets, not just how much is left (#83)
 - Choose which microphone dictation records from instead of always using the system default (#82)
 - Dictation shows a live level meter, so a microphone hearing nothing is obvious (#81)
 

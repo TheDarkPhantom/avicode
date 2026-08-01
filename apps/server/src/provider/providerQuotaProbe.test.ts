@@ -57,6 +57,7 @@ describe("provider quota probes", () => {
           rate_limits: {
             five_hour: { utilization: 78, resets_at: "2026-07-29T15:00:00.000Z" },
             seven_day: { utilization: 34, resets_at: "2026-08-03T00:00:00.000Z" },
+            overage: { utilization: 5 },
           },
         },
         CAPTURED_AT,
@@ -68,13 +69,19 @@ describe("provider quota probes", () => {
           label: "5-hour",
           usedPercent: 78,
           resetsAt: "2026-07-29T15:00:00.000Z",
+          windowMinutes: 300,
         },
         {
           id: "seven_day",
           label: "Weekly",
           usedPercent: 34,
           resetsAt: "2026-08-03T00:00:00.000Z",
+          windowMinutes: 10_080,
         },
+        // Claude never states window lengths, so they are inferred from the id.
+        // Overage is not a fixed-length window and so gets none — clients need
+        // the absence to fall back rather than trust an invented duration.
+        { id: "overage", label: "Overage", usedPercent: 5 },
       ],
       planType: "max",
       capturedAt: CAPTURED_AT,
