@@ -26,6 +26,12 @@ export interface UseDictationResult {
   readonly status: DictationStatus;
   readonly error: string | null;
   readonly isActive: boolean;
+  /**
+   * Avi Code addition: the live capture stream, for the level meter. Exposed as
+   * state rather than a ref because the meter has to rebuild its audio graph
+   * when the stream changes, and refs do not re-render.
+   */
+  readonly stream: MediaStream | null;
   readonly start: () => void;
   readonly stop: () => void;
   readonly cancel: () => void;
@@ -70,6 +76,9 @@ function describeSocketClose(event: CloseEvent): string {
 export function useDictation(options: UseDictationOptions): UseDictationResult {
   const [status, setStatus] = useState<DictationStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Avi Code addition: mirrors `streamRef` for the level meter. The ref stays
+  // the source of truth for teardown, which must not wait on a render.
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   // Everything the teardown path touches is held in refs so `stop`/`cancel`
   // stay stable and usable from a keydown handler without re-subscribing.
@@ -108,6 +117,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       track.stop();
     }
     streamRef.current = null;
+    setStream(null);
 
     const socket = socketRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -166,6 +176,9 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
         return;
       }
       streamRef.current = stream;
+      // Published before the credential round trip so the meter is live during
+      // "starting" — that window is exactly when a dead microphone should show.
+      setStream(stream);
 
       // Start capturing before the socket exists and buffer the chunks, so the
       // first word isn't clipped while the credential round-trip completes.
@@ -300,5 +313,15 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
 
   const dismissError = useCallback(() => setError(null), []);
 
-  return { status, error, isActive, start: () => void start(), stop, cancel, toggle, dismissError };
+  return {
+    status,
+    error,
+    isActive,
+    stream,
+    start: () => void start(),
+    stop,
+    cancel,
+    toggle,
+    dismissError,
+  };
 }
