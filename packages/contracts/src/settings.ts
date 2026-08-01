@@ -158,6 +158,13 @@ export const ClientSettingsSchema = Schema.Struct({
   // silence. Stored per client because the right microphone is a property of
   // the machine sitting in front of the user, not of the server.
   aviCodeDictationDeviceId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  // Avi Code addition. Expanding a long plan grows the card downwards, which
+  // leaves the viewport showing its middle or end and makes the reader scroll
+  // back up to start reading. On, expanding jumps to the top of the plan
+  // instead. Off restores the previous behaviour of staying put.
+  aviCodeScrollToPlanTopOnExpand: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code additions. Keep the dense chat list scannable and let custom
   // provider instances use a memorable one- or two-character client badge.
   aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
@@ -859,6 +866,7 @@ export const ClientSettingsPatch = Schema.Struct({
   notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
   aviCodeNotificationSound: Schema.optionalKey(AviCodeNotificationSound),
   aviCodeDictationDeviceId: Schema.optionalKey(Schema.String),
+  aviCodeScrollToPlanTopOnExpand: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
   aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
   aviCodeProviderBadgeLabels: Schema.optionalKey(
