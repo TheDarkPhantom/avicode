@@ -71,12 +71,14 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
           />
         }
       >
+        {/* Avi Code addition: no pulse while recording. It ran on a fixed CSS
+            timer regardless of the microphone, so it reported liveness a muted
+            input did not have, and it repainted for the whole session. The
+            level meter beside this button carries that signal from the real
+            audio instead. */}
         <ComposerControlIcon
           icon={isActive ? SquareIcon : MicIcon}
-          className={cn(
-            isActive ? "text-current opacity-100" : undefined,
-            status === "recording" ? "animate-pulse" : undefined,
-          )}
+          className={cn(isActive ? "text-current opacity-100" : undefined)}
         />
         {expanded ? (
           <span>{isActive ? "Stop" : "Dictate"}</span>

@@ -49,6 +49,7 @@ import {
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import { ComposerDictateButton } from "./ComposerDictateButton";
+import { DictationLevelMeter } from "./DictationLevelMeter";
 import {
   useClientSettings,
   usePrimarySettings,
@@ -61,6 +62,7 @@ import {
   toCommunicationStyles,
 } from "./communicationStyleState";
 import { useDictation } from "~/voice/useDictation";
+import { useAudioLevel } from "~/voice/useAudioLevel";
 import { useVoiceCredential } from "~/voice/useVoiceCredential";
 import {
   dataTransferHasComposerMention,
@@ -1973,6 +1975,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onTranscript: writeDictatedText,
     onCancel: discardDictatedText,
   });
+  // Avi Code addition: reads the live capture stream so the composer can show
+  // whether the microphone is actually hearing anything. Null while idle, which
+  // tears the audio graph down.
+  const dictationLevel = useAudioLevel(dictation.stream);
 
   // Avi Code addition: dictation used to fail in silence. The hook set an
   // error, nothing rendered it, and a rejected Deepgram token just made the
@@ -3750,7 +3756,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
                 {/* Avi Code addition: dictation. Sits left of send so the send
-                    button keeps its position as the rightmost control. */}
+                    button keeps its position as the rightmost control. The
+                    meter appears only while dictating, so it costs no layout
+                    the rest of the time. */}
+                {dictation.isActive ? (
+                  <DictationLevelMeter
+                    levels={dictationLevel.levels}
+                    signal={dictationLevel.signal}
+                    status={dictation.status}
+                  />
+                ) : null}
                 <ComposerDictateButton
                   status={dictation.status}
                   isActive={dictation.isActive}
