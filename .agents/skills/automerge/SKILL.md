@@ -25,13 +25,13 @@ git rev-parse HEAD          # must equal headRefOid, or you are reading a differ
 
 `mergeStateStatus` is the field that decides what happens next:
 
-| Status | Meaning | Do |
-| --- | --- | --- |
-| `DIRTY` (with `mergeable: CONFLICTING`) | Real conflict with main | Step 2 |
-| `BEHIND` | Stale but clean | Step 2, the rebase resolves it |
-| `BLOCKED` | Mergeable, waiting on required checks | Step 3 |
-| `CLEAN` / `HAS_HOOKS` | Ready | Step 3 |
-| `UNSTABLE` | A non-required check failed | Read it before arming anything |
+| Status                                  | Meaning                               | Do                             |
+| --------------------------------------- | ------------------------------------- | ------------------------------ |
+| `DIRTY` (with `mergeable: CONFLICTING`) | Real conflict with main               | Step 2                         |
+| `BEHIND`                                | Stale but clean                       | Step 2, the rebase resolves it |
+| `BLOCKED`                               | Mergeable, waiting on required checks | Step 3                         |
+| `CLEAN` / `HAS_HOOKS`                   | Ready                                 | Step 3                         |
+| `UNSTABLE`                              | A non-required check failed           | Read it before arming anything |
 
 `mergeable` is computed asynchronously. `UNKNOWN` means GitHub has not finished working it out, so
 re-read rather than treating it as clean.
@@ -58,8 +58,12 @@ Re-verify before pushing. A rebase replays your commits onto code you have not r
 
 ```bash
 vp test run <tests covering your change> apps/web/src/changelog/parseChangelog.test.ts
+vp fmt --check <every file you touched>
 git push --force-with-lease
 ```
+
+CI's `Check` job gates on formatting and covers markdown, not just source, so an unformatted
+`.md` fails the build the same way a stray semicolon would.
 
 Use `--force-with-lease`, never `--force`. It refuses when the remote moved since your last fetch,
 which is the difference between rewriting your own work and destroying someone else's.
