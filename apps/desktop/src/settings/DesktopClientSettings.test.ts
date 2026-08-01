@@ -17,6 +17,7 @@ const clientSettings: ClientSettings = {
   aviCodeChatContentWidth: "comfortable",
   aviCodeCommunicationStyleId: "default",
   aviCodeCommunicationStyles: [],
+  aviCodeDictationDeviceId: "",
   aviCodeNewThreadsStartInPlanMode: false,
   aviCodeNotificationSound: "pebble",
   aviCodeOpenChatsAtLastResponse: false,
