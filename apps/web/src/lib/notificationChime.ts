@@ -148,17 +148,53 @@ export function primeNotificationChime(): void {
   }
 }
 
+/**
+ * Keep trying to unblock audio until a user gesture actually lands.
+ *
+ * Browsers refuse to start an AudioContext until the page has been interacted
+ * with, and `resume()` only takes from inside a gesture handler. Without this
+ * the only thing that ever unblocked the chime was the settings toggle, so an
+ * app launched and left alone stayed mute for the first thread to finish —
+ * which is the one case the chime exists for.
+ *
+ * Capture-phase listeners so a handler that stops propagation cannot swallow
+ * the gesture. Both are removed as soon as the context reports `running`;
+ * `resume()` is async, so the first gesture usually arms it and the second
+ * confirms it.
+ */
+export function installNotificationChimeGestureUnlock(): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  const teardown = (): void => {
+    document.removeEventListener("pointerdown", handleGesture, true);
+    document.removeEventListener("keydown", handleGesture, true);
+  };
+  function handleGesture(): void {
+    primeNotificationChime();
+    if (sharedContext?.state === "running") teardown();
+  }
+
+  document.addEventListener("pointerdown", handleGesture, true);
+  document.addEventListener("keydown", handleGesture, true);
+  return teardown;
+}
+
 export function playNotificationChime(sound: AviCodeNotificationSound): void {
   const context = ensureAudioContext();
   if (context === null) return;
+  if (context.state !== "running") {
+    // Scheduling against a suspended context does not delay the tone, it
+    // strands it: `currentTime` is frozen, so every note lands in the past and
+    // fires the instant audio is unblocked — a chime arriving on the user's
+    // next click for a thread that finished minutes ago. Stay silent and try
+    // to unblock for next time instead.
+    primeNotificationChime();
+    return;
+  }
 
   const nowMs = Date.now();
   if (nowMs - lastPlayedAtMs < MINIMUM_INTERVAL_MS) return;
   lastPlayedAtMs = nowMs;
-
-  if (context.state === "suspended") {
-    primeNotificationChime();
-  }
 
   const preset = NOTIFICATION_SOUND_PRESETS[sound];
 
@@ -194,7 +230,22 @@ export function playNotificationChime(sound: AviCodeNotificationSound): void {
  * demonstrates it immediately.
  */
 export function previewNotificationChime(sound: AviCodeNotificationSound): void {
-  primeNotificationChime();
   lastPlayedAtMs = Number.NEGATIVE_INFINITY;
+  const context = ensureAudioContext();
+  if (context === null) return;
+  // `resume()` resolves after the gesture unblocks audio. Playing before it
+  // settles would hit the suspended-context guard and demo nothing, which is
+  // exactly the cold start where the user is most likely to be testing this.
+  if (context.state === "suspended") {
+    void context
+      .resume()
+      .then(() => {
+        playNotificationChime(sound);
+      })
+      .catch((error: unknown) => {
+        console.error("Could not resume the notification audio context.", error);
+      });
+    return;
+  }
   playNotificationChime(sound);
 }

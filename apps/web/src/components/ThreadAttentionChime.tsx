@@ -4,7 +4,10 @@ import { useEffect, useRef } from "react";
 
 import { useClientSettings } from "../hooks/useSettings";
 import { useWindowActive } from "../hooks/useWindowActive";
-import { playNotificationChime } from "../lib/notificationChime";
+import {
+  installNotificationChimeGestureUnlock,
+  playNotificationChime,
+} from "../lib/notificationChime";
 import {
   resolveAttentionChimes,
   resolveThreadAttention,
@@ -37,6 +40,14 @@ export function ThreadAttentionChime(): null {
   // Null means "no baseline yet": the next pass records states without
   // sounding any of them.
   const previousAttentionRef = useRef<ReadonlyMap<string, ThreadAttentionKind | null> | null>(null);
+
+  // Audio has to be unblocked by a user gesture, and a thread finishing is
+  // never one. Arm it from any click or keypress while the setting is on, so
+  // the first chime of a session is not the one that gets swallowed.
+  useEffect(() => {
+    if (!enabled) return;
+    return installNotificationChimeGestureUnlock();
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled) {

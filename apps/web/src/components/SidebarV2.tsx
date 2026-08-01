@@ -164,6 +164,7 @@ import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./u
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 // Avi Code addition: pinned rows head the active block and the project picker.
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
+import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -2648,6 +2649,13 @@ export default function SidebarV2() {
                               className="size-4 shrink-0"
                             />
                             <span className="min-w-0 truncate text-sm">{project.displayName}</span>
+                            {/* Avi Code addition: v2 has no project rows, so
+                                the picker is the only place a project can
+                                report composer text that was never sent. */}
+                            <ProjectUnsentDraftDot
+                              logicalProjectKey={scopeKey}
+                              projectName={project.displayName}
+                            />
                             <button
                               type="button"
                               aria-label={`Project actions for ${project.displayName}`}
