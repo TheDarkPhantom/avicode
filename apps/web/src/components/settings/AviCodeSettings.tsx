@@ -59,6 +59,8 @@ import {
   NumberFieldInput,
 } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { useAudioInputDevices } from "~/voice/useAudioInputDevices";
+import { resolveSelectedDeviceId, SYSTEM_DEFAULT_DEVICE_ID } from "~/voice/micDevices";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
@@ -576,7 +578,78 @@ function VoiceSettingsSection() {
           />
         }
       />
+      <DictationMicrophoneRow disabled={!hasStoredKey} />
     </SettingsSection>
+  );
+}
+
+/**
+ * Avi Code addition. Dictation used to record from whatever the system called
+ * default. With a webcam, a headset, a board array and a virtual mixer all
+ * present, that is often not the microphone being spoken into, and the failure
+ * is silent: the session connects, transcription answers, and nothing appears.
+ */
+function DictationMicrophoneRow({ disabled }: { readonly disabled: boolean }) {
+  const savedDeviceId = useClientSettings((settings) => settings.aviCodeDictationDeviceId);
+  const updateSettings = useUpdateClientSettings();
+  const { devices, labelsHidden, refresh } = useAudioInputDevices();
+  const selectedDeviceId = resolveSelectedDeviceId({ savedDeviceId, devices });
+  const selectedLabel =
+    devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? "System default";
+
+  // Device names are withheld until microphone permission is granted, so offer
+  // to ask for it rather than showing a list of anonymous entries.
+  const revealDeviceNames = () => {
+    void navigator.mediaDevices
+      ?.getUserMedia({ audio: true })
+      .then((stream) => {
+        for (const track of stream.getTracks()) track.stop();
+        refresh();
+      })
+      .catch(() => {
+        // Declining the prompt leaves the list anonymous, which is still usable.
+      });
+  };
+
+  return (
+    <SettingsRow
+      title="Microphone"
+      description="Which microphone dictation records from. System default follows Windows, which on a machine with a webcam, a headset or a virtual mixer is often not the one you speak into."
+      status={
+        savedDeviceId.length > 0 && selectedDeviceId === ""
+          ? "The microphone you chose is not connected right now, so dictation will use the system default."
+          : "The level meter beside the composer's microphone button shows whether the chosen input is actually being heard."
+      }
+      control={
+        labelsHidden ? (
+          <Button variant="outline" size="sm" onClick={revealDeviceNames} disabled={disabled}>
+            Allow microphone access to list devices
+          </Button>
+        ) : (
+          <Select
+            value={selectedDeviceId}
+            disabled={disabled}
+            onValueChange={(value) => {
+              updateSettings({ aviCodeDictationDeviceId: value as string });
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-72" aria-label="Dictation microphone">
+              <SelectValue>{selectedLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value={SYSTEM_DEFAULT_DEVICE_ID}>
+                System default
+              </SelectItem>
+              {devices.map((device) => (
+                <SelectItem hideIndicator key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        )
+      }
+    />
   );
 }
 

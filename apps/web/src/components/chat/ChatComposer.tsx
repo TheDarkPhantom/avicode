@@ -1970,10 +1970,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
   }, [applyPromptReplacement, promptRef]);
 
+  // Avi Code addition: record from the microphone the user chose, not whatever
+  // the system calls default.
+  const dictationDeviceId = useClientSettings((settings) => settings.aviCodeDictationDeviceId);
   const dictation = useDictation({
     requestCredential: requestVoiceCredential,
     onTranscript: writeDictatedText,
     onCancel: discardDictatedText,
+    deviceId: dictationDeviceId,
   });
   // Avi Code addition: reads the live capture stream so the composer can show
   // whether the microphone is actually hearing anything. Null while idle, which
