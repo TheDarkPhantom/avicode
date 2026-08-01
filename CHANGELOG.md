@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Choose which microphone dictation records from instead of always using the system default (#82)
 - Dictation shows a live level meter, so a microphone hearing nothing is obvious (#81)
 
 ## 0.0.31-avicode.2 (2026-08-01)

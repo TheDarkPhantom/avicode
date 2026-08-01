@@ -150,6 +150,14 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeNotificationSound: AviCodeNotificationSound.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_NOTIFICATION_SOUND)),
   ),
+  // Avi Code addition. Which microphone dictation records from, as a
+  // `MediaDeviceInfo.deviceId`. Empty means the system default, which is what
+  // dictation always used: with several inputs present (a webcam, a headset, a
+  // virtual mixer) the system default is frequently not the one being spoken
+  // into, and the result is a session that looks healthy and transcribes
+  // silence. Stored per client because the right microphone is a property of
+  // the machine sitting in front of the user, not of the server.
+  aviCodeDictationDeviceId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // Avi Code additions. Keep the dense chat list scannable and let custom
   // provider instances use a memorable one- or two-character client badge.
   aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
@@ -850,6 +858,7 @@ export const ClientSettingsPatch = Schema.Struct({
   glassOpacity: Schema.optionalKey(GlassOpacity),
   notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
   aviCodeNotificationSound: Schema.optionalKey(AviCodeNotificationSound),
+  aviCodeDictationDeviceId: Schema.optionalKey(Schema.String),
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
   aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
   aviCodeProviderBadgeLabels: Schema.optionalKey(

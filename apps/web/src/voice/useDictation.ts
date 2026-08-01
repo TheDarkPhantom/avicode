@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildDeepgramSocketProtocols, buildDeepgramSocketUrl } from "./deepgramUrl.ts";
 import {
+  buildAudioConstraints,
+  isDeviceUnavailableError,
+  SYSTEM_DEFAULT_DEVICE_ID,
+} from "./micDevices.ts";
+import {
   applyDeepgramResult,
   emptyTranscript,
   parseDeepgramMessage,
@@ -20,6 +25,12 @@ export interface UseDictationOptions {
   readonly onTranscript: (text: string, isFinal: boolean) => void;
   /** Called when dictation is cancelled so the consumer can undo its insert. */
   readonly onCancel?: () => void;
+  /**
+   * Avi Code addition: which microphone to record from, as a
+   * `MediaDeviceInfo.deviceId`. Empty (the default) keeps the prior behaviour
+   * of recording from whatever the system calls default.
+   */
+  readonly deviceId?: string;
 }
 
 export interface UseDictationResult {
@@ -42,16 +53,16 @@ export interface UseDictationResult {
 /** Deepgram's recommended chunk cadence — small enough to feel live. */
 const AUDIO_TIMESLICE_MS = 100;
 
-const MIC_CONSTRAINTS: MediaTrackConstraints = {
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
-};
-
-function describeStartFailure(error: unknown): string {
+function describeStartFailure(error: unknown, hasChosenDevice: boolean): string {
   if (typeof DOMException !== "undefined" && error instanceof DOMException) {
     if (error.name === "NotAllowedError" || error.name === "SecurityError") {
       return "Microphone access was blocked. Allow it for this site and try again.";
+    }
+    // Avi Code addition: with a device explicitly chosen, "no microphone" is
+    // misleading — there may be several, just not that one. Naming the setting
+    // is the difference between a dead end and a fix.
+    if (hasChosenDevice && isDeviceUnavailableError(error)) {
+      return "The microphone chosen for dictation is not available. Pick another in Settings under Avi Code.";
     }
     if (error.name === "NotFoundError") {
       return "No microphone was found.";
@@ -160,6 +171,9 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     socketReadyRef.current = false;
     setError(null);
     setStatus("starting");
+    // Read once per session: changing the setting mid-recording must not
+    // change which device the running capture is attributed to.
+    const chosenDeviceId = optionsRef.current.deviceId ?? SYSTEM_DEFAULT_DEVICE_ID;
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -168,7 +182,9 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
         throw new Error("Microphone capture needs a secure connection (https or localhost).");
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: buildAudioConstraints(chosenDeviceId),
+      });
       if (sessionRef.current !== session) {
         // Stopped while the permission prompt was up. Nothing else holds this
         // stream yet, so releasing it here is the only way the mic goes off.
@@ -255,7 +271,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
       // A stop during the await already ran the whole teardown; reporting the
       // abandoned attempt on top of it would be noise.
       if (sessionRef.current !== session) return;
-      setError(describeStartFailure(caught));
+      setError(describeStartFailure(caught, chosenDeviceId !== SYSTEM_DEFAULT_DEVICE_ID));
       teardown();
       transcriptRef.current = emptyTranscript;
       startingRef.current = false;
