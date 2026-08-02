@@ -618,6 +618,33 @@ describe("cross-command precedence", () => {
 });
 
 describe("resolveShortcutCommand", () => {
+  // Avi Code addition: find in thread. Ctrl+F was unclaimed on every platform,
+  // and it has to stay unclaimed inside the terminal, where it is forward-char.
+  it("resolves the find shortcut outside a focused terminal", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "f", ctrlKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+      }),
+      "find.toggle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "f", metaKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+      }),
+      "find.toggle",
+    );
+  });
+
+  it("leaves the find shortcut to the shell when the terminal has focus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "f", ctrlKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      null,
+    );
+  });
+
   it("returns dynamic script commands", () => {
     const keybindings = compile([{ shortcut: modShortcut("r"), command: "script.setup.run" }]);
 
