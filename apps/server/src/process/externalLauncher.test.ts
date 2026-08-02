@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -12,6 +12,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
+import { isAbsolutePathForPlatform } from "./launchTargetPath.ts";
 
 function makeMockDetachedHandle(onUnref: () => void = () => undefined) {
   return ChildProcessSpawner.makeHandle({
@@ -165,4 +166,140 @@ it.effect("rejects unknown editors through the service API", () =>
     assert.equal(error.editor, "missing-editor");
     assert.equal(error.message, "Unknown editor: missing-editor");
   }).pipe(Effect.provide(testLayer({ platform: "linux", env: { PATH: "" } }))),
+);
+
+// Avi Code addition: the target used to reach the file manager verbatim, and
+// every one of these shapes made explorer.exe open the user's Documents folder
+// instead of saying anything. These are pure so they can assert each platform
+// without depending on the host the suite happens to run on.
+describe("splitLaunchTarget", () => {
+  it("splits a line and column off a Windows path", () => {
+    assert.deepEqual(ExternalLauncher.splitLaunchTarget("C:\\repo\\src\\index.ts:12:4", "win32"), {
+      path: "C:\\repo\\src\\index.ts",
+      position: ":12:4",
+    });
+  });
+
+  it("splits a bare line number", () => {
+    assert.deepEqual(ExternalLauncher.splitLaunchTarget("/repo/src/index.ts:12", "linux"), {
+      path: "/repo/src/index.ts",
+      position: ":12",
+    });
+  });
+
+  it("puts a git-reported forward-slashed Windows path into native form", () => {
+    assert.deepEqual(
+      ExternalLauncher.splitLaunchTarget("C:/Users/avi/repo/apps/web/x.ts", "win32"),
+      { path: "C:\\Users\\avi\\repo\\apps\\web\\x.ts", position: "" },
+    );
+  });
+
+  it("leaves a drive path with no position alone", () => {
+    assert.deepEqual(ExternalLauncher.splitLaunchTarget("C:\\repo\\src", "win32"), {
+      path: "C:\\repo\\src",
+      position: "",
+    });
+  });
+});
+
+describe("isAbsolutePathForPlatform", () => {
+  it("accepts absolute paths per platform", () => {
+    assert.equal(isAbsolutePathForPlatform("C:\\repo\\x.ts", "win32"), true);
+    assert.equal(isAbsolutePathForPlatform("/repo/x.ts", "linux"), true);
+  });
+
+  it("rejects the repo-relative path the diff panel can send", () => {
+    assert.equal(isAbsolutePathForPlatform("apps\\web\\src\\x.ts", "win32"), false);
+    assert.equal(isAbsolutePathForPlatform("apps/web/src/x.ts", "linux"), false);
+  });
+});
+
+describe("fileManagerLaunchArgs", () => {
+  it("reveals a file inside its folder on Windows", () => {
+    assert.deepEqual(
+      ExternalLauncher.fileManagerLaunchArgs({
+        platform: "win32",
+        path: "C:\\repo\\src\\index.ts",
+        isDirectory: false,
+      }),
+      ["/select,C:\\repo\\src\\index.ts"],
+    );
+  });
+
+  it("reveals a file inside its folder on macOS", () => {
+    assert.deepEqual(
+      ExternalLauncher.fileManagerLaunchArgs({
+        platform: "darwin",
+        path: "/repo/src/index.ts",
+        isDirectory: false,
+      }),
+      ["-R", "/repo/src/index.ts"],
+    );
+  });
+
+  it("opens the parent folder on Linux, which has no portable reveal", () => {
+    assert.deepEqual(
+      ExternalLauncher.fileManagerLaunchArgs({
+        platform: "linux",
+        path: "/repo/src/index.ts",
+        isDirectory: false,
+      }),
+      ["/repo/src"],
+    );
+  });
+
+  it("opens a directory target directly rather than revealing it", () => {
+    assert.deepEqual(
+      ExternalLauncher.fileManagerLaunchArgs({
+        platform: "win32",
+        path: "C:\\repo",
+        isDirectory: true,
+      }),
+      ["C:\\repo"],
+    );
+  });
+});
+
+it.effect("refuses a relative target instead of letting the file manager guess", () =>
+  Effect.gen(function* () {
+    const launcher = yield* ExternalLauncher.ExternalLauncher;
+    const error = yield* launcher
+      .launchEditor({ editor: "file-manager", cwd: "apps/web/src/components/DiffPanel.tsx" })
+      .pipe(Effect.flip);
+    assert.instanceOf(error, ExternalLauncher.ExternalLauncherRelativeTargetError);
+    assert.equal(error.target, "apps/web/src/components/DiffPanel.tsx");
+  }).pipe(Effect.provide(testLayer({ platform: "linux", env: { PATH: "" } }))),
+);
+
+it.effect("reports a target that no longer exists, which explorer cannot", () =>
+  Effect.gen(function* () {
+    const launcher = yield* ExternalLauncher.ExternalLauncher;
+    const error = yield* launcher
+      .launchEditor({ editor: "file-manager", cwd: "/t3-code-missing-target-xyz/file.md" })
+      .pipe(Effect.flip);
+    assert.instanceOf(error, ExternalLauncher.ExternalLauncherTargetNotFoundError);
+  }).pipe(Effect.provide(testLayer({ platform: "win32", env: { PATH: "" } }))),
+);
+
+it.effect("strips a line number before handing a real path to the file manager", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-reveal-" });
+    const filePath = path.join(dir, "notes.md");
+    yield* fileSystem.writeFileString(filePath, "# notes\n");
+    // Follow the host so the temp path is absolute under the simulated platform.
+    const hostPlatform = path.sep === "\\" ? ("win32" as const) : ("linux" as const);
+
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      // A `:3` from a markdown link used to reach the file manager intact, and
+      // the resulting path does not exist. Reaching the command-not-found stage
+      // proves the position was dropped and the stat found the real file.
+      const error = yield* launcher
+        .launchEditor({ editor: "file-manager", cwd: `${filePath}:3` })
+        .pipe(Effect.flip);
+      assert.instanceOf(error, ExternalLauncher.ExternalLauncherCommandNotFoundError);
+    }).pipe(Effect.provide(testLayer({ platform: hostPlatform, env: { PATH: "" } })));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
