@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  COMMUNICATION_STYLE_EDITABLE_BUILT_INS,
+  COMMUNICATION_STYLE_MAX_CUSTOM,
+  COMMUNICATION_STYLE_MAX_STORED,
+} from "@t3tools/contracts";
 
 import {
   allCommunicationStyles,
   BUILT_IN_COMMUNICATION_STYLES,
   COMMUNICATION_STYLE_DEFAULT_ID,
   customCommunicationStyleId,
+  customCommunicationStyles,
+  isBuiltInCommunicationStyleId,
+  isCommunicationStyleEdited,
   isDefaultCommunicationStyle,
   resolveCommunicationStyle,
   serializeCommunicationStyleDirective,
@@ -65,9 +73,86 @@ describe("resolveCommunicationStyle", () => {
     expect(resolveCommunicationStyle(undefined).id).toBe(COMMUNICATION_STYLE_DEFAULT_ID);
   });
 
-  it("prefers a built-in when a custom style collides with its id", () => {
-    const impostor: CommunicationStyle = { ...customStyle, id: "business", label: "Impostor" };
-    expect(resolveCommunicationStyle("business", [impostor]).label).toBe("Business");
+  it("lets a stored style under a built-in id edit that built-in", () => {
+    // This is how editing a built-in is stored: same id, user's wording. It is
+    // deliberately not treated as a separate entry, so deleting it is the reset.
+    const edited: CommunicationStyle = {
+      ...customStyle,
+      id: "business",
+      label: "Exec",
+      instruction: "One paragraph, no lists.",
+    };
+    const resolved = resolveCommunicationStyle("business", [edited]);
+    expect(resolved.label).toBe("Exec");
+    expect(resolved.instruction).toBe("One paragraph, no lists.");
+    // The built-in's own description survives, so the menu still says what the
+    // style is for rather than going blank.
+    expect(resolved.description).toBe("Answer first, three points, no filler.");
+    expect(resolved.builtIn).toBe(true);
+  });
+
+  it("restores the shipped built-in once the edit is removed", () => {
+    expect(resolveCommunicationStyle("business", []).label).toBe("Business");
+    expect(resolveCommunicationStyle("business", []).instruction).toContain(
+      "busy owner or manager",
+    );
+  });
+});
+
+describe("editing built-ins", () => {
+  const editedBusiness: CommunicationStyle = {
+    id: "business",
+    label: "Exec",
+    description: "Your own style.",
+    instruction: "One paragraph, no lists.",
+    builtIn: false,
+  };
+
+  it("does not list an edited built-in twice", () => {
+    const all = allCommunicationStyles([editedBusiness, customStyle]);
+    expect(all.filter((style) => style.id === "business")).toHaveLength(1);
+    expect(all.map((style) => style.id)).toEqual([
+      "default",
+      "business",
+      "eli5",
+      "caveman",
+      "custom:terse",
+    ]);
+  });
+
+  it("separates edits of built-ins from genuinely custom styles", () => {
+    // The custom-style limit must not be consumed by editing a built-in.
+    expect(customCommunicationStyles([editedBusiness, customStyle])).toEqual([customStyle]);
+  });
+
+  it("reports whether a built-in differs from what shipped", () => {
+    expect(isCommunicationStyleEdited("business", [editedBusiness])).toBe(true);
+    expect(isCommunicationStyleEdited("business", [])).toBe(false);
+    expect(isCommunicationStyleEdited("custom:terse", [customStyle])).toBe(false);
+  });
+
+  it("treats an edit that matches the shipped wording as no edit", () => {
+    const shipped = BUILT_IN_COMMUNICATION_STYLES.find((style) => style.id === "business");
+    const identical: CommunicationStyle = { ...editedBusiness, ...shipped } as CommunicationStyle;
+    expect(isCommunicationStyleEdited("business", [identical])).toBe(false);
+  });
+
+  it("knows which ids are built-in", () => {
+    expect(isBuiltInCommunicationStyleId("business")).toBe(true);
+    expect(isBuiltInCommunicationStyleId("custom:terse")).toBe(false);
+  });
+
+  it("keeps the contract's stored-array headroom in step with the built-ins", () => {
+    // Contracts is schema-only and cannot import the style list, so it states
+    // the editable count as a number. Adding a built-in must fail here rather
+    // than silently costing someone one of their custom slots.
+    const editable = BUILT_IN_COMMUNICATION_STYLES.filter(
+      (style) => style.instruction.length > 0,
+    ).length;
+    expect(editable).toBe(COMMUNICATION_STYLE_EDITABLE_BUILT_INS);
+    expect(COMMUNICATION_STYLE_MAX_STORED).toBe(
+      COMMUNICATION_STYLE_MAX_CUSTOM + COMMUNICATION_STYLE_EDITABLE_BUILT_INS,
+    );
   });
 });
 

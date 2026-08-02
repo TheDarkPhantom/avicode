@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Edit the built in reply styles to your own wording, and reset one when you want it back (#89)
 - The Business reply style is now short enough to read once and act on (#88)
 
 ## 0.0.31-avicode.3 (2026-08-02)
