@@ -12,6 +12,8 @@ import {
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherRelativeTargetError,
+  ExternalLauncherTargetNotFoundError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   type EditorId,
@@ -30,6 +32,12 @@ import * as Path from "effect/Path";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import {
+  isAbsolutePathForPlatform,
+  normalizePathForPlatform,
+  parentDirectoryForPlatform,
+} from "./launchTargetPath.ts";
+
 // ==============================
 // Definitions
 // ==============================
@@ -39,6 +47,8 @@ export {
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherRelativeTargetError,
+  ExternalLauncherTargetNotFoundError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   isExternalLauncherError,
@@ -232,6 +242,56 @@ function fileManagerCommandForPlatform(platform: NodeJS.Platform): string {
   }
 }
 
+/**
+ * Avi Code addition: targets used to reach the launcher exactly as the client
+ * wrote them. That is fine for an editor, which parses its own arguments and
+ * complains when they are wrong, but the OS file manager silently falls back to
+ * the user's default folder. Three shapes caused that: a trailing `:line:column`
+ * from a markdown or terminal link, a forward-slashed Windows path from git, and
+ * a repo-relative path from the diff panel.
+ *
+ * Split the position off and put the separators in platform form. The caller
+ * decides whether to keep the position (editors) or drop it (file manager).
+ */
+export function splitLaunchTarget(
+  target: string,
+  platform: NodeJS.Platform,
+): { readonly path: string; readonly position: string } {
+  const parsed = parseTargetPathAndPosition(target);
+  return {
+    path: normalizePathForPlatform(
+      Option.match(parsed, { onNone: () => target, onSome: ({ path }) => path }),
+      platform,
+    ),
+    position: Option.match(parsed, {
+      onNone: () => "",
+      onSome: ({ line, column }) =>
+        `:${line}${Option.match(column, { onNone: () => "", onSome: (value) => `:${value}` })}`,
+    }),
+  };
+}
+
+/**
+ * Reveal the file inside its folder rather than opening the folder blind, so the
+ * user lands on the thing they clicked. Linux has no portable reveal, so it
+ * opens the parent directory instead.
+ */
+export function fileManagerLaunchArgs(input: {
+  readonly platform: NodeJS.Platform;
+  readonly path: string;
+  readonly isDirectory: boolean;
+}): ReadonlyArray<string> {
+  if (input.isDirectory) return [input.path];
+  switch (input.platform) {
+    case "win32":
+      return [`/select,${input.path}`];
+    case "darwin":
+      return ["-R", input.path];
+    default:
+      return [parentDirectoryForPlatform(input.path, input.platform)];
+  }
+}
+
 function buildBrowserLaunch(
   target: string,
   platform: NodeJS.Platform,
@@ -335,16 +395,26 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
     return yield* new ExternalLauncherUnknownEditorError({ editor: input.editor });
   }
 
+  const target = splitLaunchTarget(input.cwd, platform);
+  if (!isAbsolutePathForPlatform(target.path, platform)) {
+    return yield* new ExternalLauncherRelativeTargetError({
+      editor: editorDef.id,
+      target: input.cwd,
+    });
+  }
+
   if (editorDef.commands) {
     const command = Option.getOrElse(
       yield* resolveAvailableCommand(editorDef.commands, env),
       () => editorDef.commands[0],
     );
+    // Editors keep the position; it is how they jump to the right line.
+    const editorTarget = `${target.path}${target.position}`;
     return {
       editor: editorDef.id,
-      target: input.cwd,
+      target: editorTarget,
       command,
-      args: resolveEditorArgs(editorDef, input.cwd),
+      args: resolveEditorArgs(editorDef, editorTarget),
     };
   }
 
@@ -352,11 +422,25 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
     return yield* new ExternalLauncherUnsupportedEditorError({ editor: input.editor });
   }
 
+  // The file manager cannot tell the user a path is wrong, so check first.
+  const fileSystem = yield* FileSystem.FileSystem;
+  const info = yield* fileSystem.stat(target.path).pipe(Effect.option);
+  if (Option.isNone(info)) {
+    return yield* new ExternalLauncherTargetNotFoundError({
+      editor: editorDef.id,
+      target: target.path,
+    });
+  }
+
   return {
     editor: editorDef.id,
-    target: input.cwd,
+    target: target.path,
     command: fileManagerCommandForPlatform(platform),
-    args: [input.cwd],
+    args: fileManagerLaunchArgs({
+      platform,
+      path: target.path,
+      isDirectory: info.value.type === "Directory",
+    }),
   };
 });
 
