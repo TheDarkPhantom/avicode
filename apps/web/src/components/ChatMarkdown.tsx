@@ -65,6 +65,8 @@ import {
   serializeTableElementToMarkdown,
 } from "../markdown-clipboard";
 import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation";
+import { type FileSurfaceRoot } from "./files/externalFileRoot";
+import { useProjectWorkspaceRoots } from "../state/projectWorkspaceRoots";
 import {
   normalizeMarkdownLinkDestination,
   resolveInlineCodeFileLinkMeta,
@@ -779,6 +781,7 @@ interface MarkdownFileLinkProps {
   iconPath: string;
   displayPath: string;
   workspaceRelativePath: string | null;
+  fileRoot: FileSurfaceRoot | null;
   line?: number | undefined;
   label: string;
   copyMarkdown: string;
@@ -1062,6 +1065,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   iconPath,
   displayPath,
   workspaceRelativePath,
+  fileRoot,
   line,
   label,
   copyMarkdown,
@@ -1107,12 +1111,23 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   }, [onOpen, targetPath]);
 
   const handleOpenInFilePreview = useCallback(() => {
-    if (!threadRef || !workspaceRelativePath) {
+    if (!threadRef) {
       handleOpenInEditor();
       return;
     }
-    useRightPanelStore.getState().openFile(threadRef, workspaceRelativePath, line);
-  }, [handleOpenInEditor, line, threadRef, workspaceRelativePath]);
+    if (workspaceRelativePath) {
+      useRightPanelStore.getState().openFile(threadRef, workspaceRelativePath, line);
+      return;
+    }
+    // Avi Code addition: agents work across repos, so a file outside this
+    // thread's workspace used to fall out to an external editor. Open it against
+    // its own root instead, and only leave the app when no root resolves.
+    if (fileRoot) {
+      useRightPanelStore.getState().openFile(threadRef, fileRoot.relativePath, line, fileRoot.root);
+      return;
+    }
+    handleOpenInEditor();
+  }, [fileRoot, handleOpenInEditor, line, threadRef, workspaceRelativePath]);
 
   const handleOpenInBrowser = useCallback(() => {
     if (!onOpenInBrowser) {
@@ -1282,6 +1297,8 @@ function areMarkdownFileLinkPropsEqual(
     previous.iconPath === next.iconPath &&
     previous.displayPath === next.displayPath &&
     previous.workspaceRelativePath === next.workspaceRelativePath &&
+    previous.fileRoot?.root === next.fileRoot?.root &&
+    previous.fileRoot?.relativePath === next.fileRoot?.relativePath &&
     previous.line === next.line &&
     previous.label === next.label &&
     previous.copyMarkdown === next.copyMarkdown &&
@@ -1303,6 +1320,10 @@ function ChatMarkdown({
   className,
   lineBreaks = false,
 }: ChatMarkdownProps) {
+  // Avi Code addition: lets a file link pointing outside this thread's workspace
+  // resolve a root of its own and open in the viewer. Read once per rendered
+  // message rather than per link, since a message can hold many links.
+  const projectRoots = useProjectWorkspaceRoots();
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
@@ -1326,24 +1347,24 @@ function ChatMarkdown({
     for (const href of extractMarkdownLinkHrefs(text)) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
-      const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
+      const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd, projectRoots);
       if (meta) {
         metaByHref.set(normalizedHref, meta);
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, projectRoots, text]);
   const inlineCodeFileLinkMetaByText = useMemo(() => {
     const metaByText = new Map<string, MarkdownFileLinkMeta>();
     for (const span of extractInlineCodeSpans(text)) {
       if (metaByText.has(span)) continue;
-      const meta = resolveInlineCodeFileLinkMeta(span, cwd);
+      const meta = resolveInlineCodeFileLinkMeta(span, cwd, projectRoots);
       if (meta) {
         metaByText.set(span, meta);
       }
     }
     return metaByText;
-  }, [cwd, text]);
+  }, [cwd, projectRoots, text]);
   const fileLinkParentSuffixByPath = useMemo(() => {
     const filePaths = [
       ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
@@ -1429,6 +1450,7 @@ function ChatMarkdown({
           iconPath={fileLinkMeta.filePath}
           displayPath={fileLinkMeta.displayPath}
           workspaceRelativePath={fileLinkMeta.workspaceRelativePath}
+          fileRoot={fileLinkMeta.fileRoot}
           line={fileLinkMeta.line}
           label={labelParts.join(" · ")}
           copyMarkdown={copyMarkdown}
