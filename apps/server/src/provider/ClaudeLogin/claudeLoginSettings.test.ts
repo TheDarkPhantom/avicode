@@ -83,13 +83,15 @@ describe("resolveClaudeLoginTarget", () => {
         [SECOND_INSTANCE_ID]: {
           driver: CLAUDE_DRIVER_KIND,
           config: {},
-          environment: [{ name: "ANTHROPIC_BASE_URL", value: "https://openrouter.ai/api" }],
+          environment: [
+            { name: "ANTHROPIC_BASE_URL", value: "https://openrouter.ai/api", sensitive: false },
+          ],
         },
       },
     });
 
     expect(resolveClaudeLoginTarget(settings, SECOND_INSTANCE_ID)?.environment).toEqual([
-      { name: "ANTHROPIC_BASE_URL", value: "https://openrouter.ai/api" },
+      { name: "ANTHROPIC_BASE_URL", value: "https://openrouter.ai/api", sensitive: false },
     ]);
   });
 
