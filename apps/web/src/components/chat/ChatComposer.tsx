@@ -1952,7 +1952,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         focusEditorAfterReplace: isFinal,
       });
 
-      if (!applied || isFinal) {
+      if (!applied) {
+        // Avi Code addition: the guard above rejected the write, so the words
+        // the user just spoke are gone. Say so instead of leaving the level
+        // meter implying they were captured.
+        dictationRangeRef.current = null;
+        toastManager.add({
+          type: "error",
+          title: "Dictation stopped",
+          description: "The composer changed while dictating, so the transcript was not inserted.",
+          data: { hideCopyButton: true },
+        });
+        return;
+      }
+      if (isFinal) {
         dictationRangeRef.current = null;
         return;
       }
