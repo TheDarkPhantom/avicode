@@ -92,6 +92,49 @@ export function isDefaultCommunicationStyle(styleId: string | null | undefined):
   return !styleId || styleId === COMMUNICATION_STYLE_DEFAULT_ID;
 }
 
+const BUILT_IN_COMMUNICATION_STYLE_IDS: ReadonlySet<string> = new Set(
+  BUILT_IN_COMMUNICATION_STYLES.map((style) => style.id),
+);
+
+export function isBuiltInCommunicationStyleId(styleId: string): boolean {
+  return BUILT_IN_COMMUNICATION_STYLE_IDS.has(styleId);
+}
+
+/**
+ * A stored style whose id matches a built-in is an *edit* of that built-in, not
+ * a separate entry.
+ *
+ * This is what makes the built-ins editable without a second settings field and
+ * without a reset flag: saving an edit stores a style under the built-in's id,
+ * and resetting deletes it, at which point the shipped definition applies again.
+ * The built-in's own id and description are kept so the menu still explains what
+ * the style is for and so threads that already point at `business` keep
+ * resolving after an edit.
+ */
+function applyStyleOverrides(
+  userStyles: ReadonlyArray<CommunicationStyle>,
+): ReadonlyArray<CommunicationStyle> {
+  return BUILT_IN_COMMUNICATION_STYLES.map((builtIn) => {
+    const override = userStyles.find((style) => style.id === builtIn.id);
+    if (!override) return builtIn;
+    return {
+      ...builtIn,
+      label: override.label,
+      instruction: override.instruction,
+      // Still flagged built-in: it occupies a built-in slot, cannot be deleted,
+      // and can only be reset. The UI keys its Reset control off this.
+      builtIn: true,
+    };
+  });
+}
+
+/** The user's own styles, excluding any that are edits of a built-in. */
+export function customCommunicationStyles(
+  userStyles: ReadonlyArray<CommunicationStyle> = [],
+): ReadonlyArray<CommunicationStyle> {
+  return userStyles.filter((style) => !isBuiltInCommunicationStyleId(style.id));
+}
+
 /**
  * Resolve a style id against the built-ins plus the user's own. Falls back to
  * the default rather than throwing, so a style deleted while a draft still
@@ -99,21 +142,33 @@ export function isDefaultCommunicationStyle(styleId: string | null | undefined):
  */
 export function resolveCommunicationStyle(
   styleId: string | null | undefined,
-  customStyles: ReadonlyArray<CommunicationStyle> = [],
+  userStyles: ReadonlyArray<CommunicationStyle> = [],
 ): CommunicationStyle {
-  const fallback = BUILT_IN_COMMUNICATION_STYLES[0] as CommunicationStyle;
+  const fallback = applyStyleOverrides(userStyles)[0] as CommunicationStyle;
   if (!styleId) return fallback;
-  return (
-    BUILT_IN_COMMUNICATION_STYLES.find((style) => style.id === styleId) ??
-    customStyles.find((style) => style.id === styleId) ??
-    fallback
-  );
+  return allCommunicationStyles(userStyles).find((style) => style.id === styleId) ?? fallback;
 }
 
 export function allCommunicationStyles(
-  customStyles: ReadonlyArray<CommunicationStyle> = [],
+  userStyles: ReadonlyArray<CommunicationStyle> = [],
 ): ReadonlyArray<CommunicationStyle> {
-  return [...BUILT_IN_COMMUNICATION_STYLES, ...customStyles];
+  return [...applyStyleOverrides(userStyles), ...customCommunicationStyles(userStyles)];
+}
+
+/**
+ * Whether a built-in currently differs from what shipped.
+ *
+ * Compares against the shipped definition rather than tracking a dirty flag, so
+ * an edit that happens to restore the original is correctly treated as no edit.
+ */
+export function isCommunicationStyleEdited(
+  styleId: string,
+  userStyles: ReadonlyArray<CommunicationStyle> = [],
+): boolean {
+  const shipped = BUILT_IN_COMMUNICATION_STYLES.find((style) => style.id === styleId);
+  const stored = userStyles.find((style) => style.id === styleId);
+  if (!shipped || !stored) return false;
+  return stored.label !== shipped.label || stored.instruction !== shipped.instruction;
 }
 
 /**

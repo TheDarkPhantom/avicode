@@ -11,11 +11,28 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 
-// Avi Code addition. A user-authored communication style. The id is assigned by
-// the client and namespaced `custom:`; the label is what the composer chip and
-// the timeline show, so it is bounded to keep both readable.
+// Avi Code addition. A stored communication style. Usually user-authored, with
+// an id namespaced `custom:`; a stored style whose id matches a built-in is an
+// edit of that built-in rather than a new entry, which is what makes the
+// built-ins editable and resettable. The label is what the composer chip and the
+// timeline show, so it is bounded to keep both readable.
 export const COMMUNICATION_STYLE_DEFAULT_ID = "default";
 export const COMMUNICATION_STYLE_MAX_CUSTOM = 12;
+/**
+ * Built-ins a user can edit: every built-in except Default, which has no
+ * instruction to change. Stated here as a number because contracts is
+ * schema-only and cannot import the style list; `communicationStyles.test.ts`
+ * asserts the two agree, so adding a built-in fails there rather than silently
+ * costing someone a custom slot.
+ */
+export const COMMUNICATION_STYLE_EDITABLE_BUILT_INS = 3;
+/**
+ * Cap on the stored array, which holds custom styles and built-in edits
+ * together. Deliberately larger than the custom limit: editing a built-in must
+ * not consume a slot the user expects to keep for their own styles.
+ */
+export const COMMUNICATION_STYLE_MAX_STORED =
+  COMMUNICATION_STYLE_MAX_CUSTOM + COMMUNICATION_STYLE_EDITABLE_BUILT_INS;
 
 export const AviCodeCommunicationStylePreset = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -207,7 +224,7 @@ export const ClientSettingsSchema = Schema.Struct({
   // User-authored styles, shown alongside the built-ins. Ids are namespaced
   // `custom:` so a future built-in cannot collide with one.
   aviCodeCommunicationStyles: Schema.Array(AviCodeCommunicationStylePreset)
-    .check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_CUSTOM))
+    .check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_STORED))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Avi Code addition. Opening a chat lands at the live edge, so reading a
   // finished answer from its first line means scrolling back up. With this on,
@@ -878,7 +895,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeCommunicationStyleId: Schema.optionalKey(Schema.String),
   aviCodeCommunicationStyles: Schema.optionalKey(
     Schema.Array(AviCodeCommunicationStylePreset).check(
-      Schema.isMaxLength(COMMUNICATION_STYLE_MAX_CUSTOM),
+      Schema.isMaxLength(COMMUNICATION_STYLE_MAX_STORED),
     ),
   ),
   aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
