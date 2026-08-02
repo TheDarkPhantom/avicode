@@ -1161,6 +1161,22 @@ label:has(> select#reasoning-effort) select {
   height: 100%;
 }
 
+/*
+ * Avi Code addition: find-in-thread matches.
+ *
+ * Painted through the CSS Custom Highlight API so nothing is inserted into the
+ * chat DOM: code blocks are raw HTML that React cannot reach into, and adding
+ * elements would change measured row heights and fight the virtualizer.
+ */
+::highlight(thread-find-match) {
+  background-color: color-mix(in oklab, var(--color-warning) 30%, transparent);
+}
+
+::highlight(thread-find-active) {
+  background-color: color-mix(in oklab, var(--color-warning) 65%, transparent);
+  color: var(--color-foreground);
+}
+
 /* Chat markdown rendering */
 .chat-markdown {
   min-width: 0;
