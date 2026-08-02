@@ -93,6 +93,10 @@ import {
 import { type LegendListRef } from "@legendapp/list/react";
 import { getAnchoredTurnMetrics, type TimelineScrollMode } from "./chat/timelineScrollAnchoring";
 import {
+  createPendingAnswerFocusSync,
+  type PendingAnswerFocusSync,
+} from "./chat/pendingAnswerFocusSync";
+import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
@@ -5632,6 +5636,24 @@ function ChatViewContent(props: ChatViewProps) {
     [activePendingProgress?.activeQuestion, activePendingUserInput, composerRef],
   );
 
+  // Avi Code addition: see `pendingAnswerFocusSync` for why this is deferred.
+  // Focusing the answer editor synchronously used to echo its stale value back
+  // through `onChange` and wipe whatever was just written into it.
+  const pendingAnswerFocusSyncRef = useRef<PendingAnswerFocusSync | null>(null);
+  if (pendingAnswerFocusSyncRef.current === null) {
+    pendingAnswerFocusSyncRef.current = createPendingAnswerFocusSync({
+      readSnapshot: () => composerRef.current?.readSnapshot(),
+      focusAt: (cursor) => composerRef.current?.focusAt(cursor),
+      scheduleFrame: (callback) => window.requestAnimationFrame(callback),
+      cancelFrame: (handle) => window.cancelAnimationFrame(handle),
+    });
+  }
+  // Never focus an editor the user has already navigated away from.
+  useEffect(() => {
+    const sync = pendingAnswerFocusSyncRef.current;
+    return () => sync?.cancel();
+  }, [activeThreadId]);
+
   const onChangeActivePendingUserInputCustomAnswer = useCallback(
     (
       questionId: string,
@@ -5654,16 +5676,9 @@ function ChatViewContent(props: ChatViewProps) {
           ),
         },
       }));
-      const snapshot = composerRef.current?.readSnapshot();
-      if (
-        snapshot?.value !== value ||
-        snapshot.cursor !== nextCursor ||
-        snapshot.expandedCursor !== expandedCursor
-      ) {
-        composerRef.current?.focusAt(nextCursor);
-      }
+      pendingAnswerFocusSyncRef.current?.sync({ value, cursor: nextCursor, expandedCursor });
     },
-    [activePendingUserInput, composerRef],
+    [activePendingUserInput],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {
