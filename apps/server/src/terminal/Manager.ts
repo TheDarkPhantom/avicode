@@ -1153,6 +1153,9 @@ interface TerminalManagerOptions {
     readonly threadId: string;
     readonly terminalId: string;
     readonly processIds: ReadonlyArray<number>;
+    /** Avi Code addition: lets a detected server be matched to a project. */
+    readonly cwd?: string | null;
+    readonly worktreePath?: string | null;
   }) => Effect.Effect<void>;
   unregisterTerminal?: (input: {
     readonly threadId: string;
@@ -2052,6 +2055,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         threadId: session.threadId,
         terminalId: session.terminalId,
         processIds: next.processIds,
+        // Avi Code addition: both already sit on the session, and carrying them
+        // is what lets the browser panel say which project a server belongs to.
+        cwd: session.cwd,
+        worktreePath: session.worktreePath,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
       const event = yield* modifyManagerState((state) => {
