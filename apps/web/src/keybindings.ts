@@ -52,6 +52,11 @@ const TERMINAL_DELETE_TO_LINE_START = "\u0015";
 const EVENT_CODE_KEY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   BracketLeft: ["["],
   BracketRight: ["]"],
+  // Avi Code addition: the dictation chord. Same reasoning as `Equal`/`Minus`
+  // below — on layouts where this physical key does not report `` ` `` as
+  // `event.key` (AZERTY, and several Nordic layouts), matching on the code
+  // keeps the shortcut working.
+  Backquote: ["`"],
   // `Equal`/`Minus` and their numpad twins keep the zoom chords matching on
   // layouts where `event.key` is not literally "=" / "-", and on the numpad
   // where it never is.

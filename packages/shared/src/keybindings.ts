@@ -54,11 +54,11 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   // Avi Code addition. `mod+;` matches Claude Code desktop's side-question
   // shortcut, and `;` is unclaimed everywhere else in the app.
   { key: "mod+;", command: "composer.sideQuestion", when: "!terminalFocus" },
-  // Avi Code addition. `d` for dictate. The same chord splits a terminal
-  // vertically, but only under `terminalFocus`, so the two never compete —
-  // this mirrors how `mod+d` is already split between the terminal and the
-  // diff panel.
-  { key: "mod+shift+d", command: "composer.dictate", when: "!terminalFocus" },
+  // Avi Code addition. Matches the chord Avi already uses for push-to-talk in
+  // other tools, so dictating here needs no new muscle memory. Backtick is
+  // unclaimed elsewhere in the app; `!terminalFocus` keeps it out of the way of
+  // a shell, where backtick is command substitution.
+  { key: "mod+`", command: "composer.dictate", when: "!terminalFocus" },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },
