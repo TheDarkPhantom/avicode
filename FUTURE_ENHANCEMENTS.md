@@ -17,6 +17,18 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- A local server started outside an Avi Code terminal cannot be attributed to a project. The browser
+  panel groups servers using the pid-to-terminal map the port scanner already keeps, so anything
+  started from an external shell, a task runner, or before the app opened lands under "Other".
+  Closing that gap needs pid-to-working-directory resolution, which has no cheap Windows API;
+  `native/resource-monitor` does not expose it either (`ProcessSample` has no cwd field and
+  `process_refresh_kind()` does not request one), so widening the sidecar would be the smallest
+  route and is not worth it yet.
+- `PortScanner`'s common-port fallback returns no pid at all, so on any machine without `lsof` (and
+  where the PowerShell probe fails) every row is unattributable regardless of where it was started.
+- `ProjectScript.autoOpenPreview` is defined in the contract, persisted, and bound in the scripts
+  form, but nothing reads it at runtime. Ticking it does nothing. Either wire it to open the preview
+  panel when the script starts, or take the option out of the form.
 - Image previews still fail for a file opened from another repo. The file viewer now reads text,
   code and markdown against whatever root the file belongs to, but images do not go through
   `projects.readFile` at all: they take the asset pipeline, which resolves the path against the

@@ -29,14 +29,16 @@ describe("shouldShowPreviewEmptyState", () => {
 describe("getConfiguredPreviewUrls", () => {
   it("collects configured preview URLs from project scripts", () => {
     const scripts = [
-      { previewUrl: "http://localhost:5173" },
-      {},
-      { previewUrl: "http://localhost:3000" },
+      { name: "dev", previewUrl: "http://localhost:5173" },
+      { name: "no url" },
+      { name: "storybook", previewUrl: "http://localhost:3000" },
     ] as ProjectScript[];
 
+    // Avi Code addition: the script name travels with the URL so a live
+    // configured server can be labelled by the script rather than by "node".
     expect(getConfiguredPreviewUrls(scripts)).toEqual([
-      "http://localhost:5173",
-      "http://localhost:3000",
+      { url: "http://localhost:5173", scriptName: "dev" },
+      { url: "http://localhost:3000", scriptName: "storybook" },
     ]);
   });
 });

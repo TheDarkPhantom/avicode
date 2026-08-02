@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The browser panel groups local servers so the one for the thread you are in comes first (#96)
 - Open and edit files from other repos in the file viewer without leaving the thread (#94)
 - The file viewer now says when a file is missing instead of showing a generic read failure (#94)
 - Open in Explorer now reveals the file you picked instead of opening your Documents folder (#93)
