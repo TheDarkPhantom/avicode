@@ -1,5 +1,21 @@
 # Brand icons
 
+> **Avi Code note.** Everything below is upstream's pipeline and it needs Icon Composer, which is
+> macOS only. This fork is Windows-only, so it cannot run `icons:export` or `icons:check` at all,
+> and the development slots were still holding upstream's blueprint "T3" art because of it.
+>
+> The development variant is therefore generated from an SVG instead:
+>
+> - Source: `dev/avicode-dev-logo.svg` (the production mark, recoloured blue so a dev build is
+>   still obvious in the taskbar)
+> - Command: `node scripts/avicode/generate-dev-icons.mjs`
+> - Writes: `apps/web/public/{favicon.ico,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png}`
+>   and `apps/desktop/resources/{icon.png,icon.ico,icon.icns}`
+>
+> `prod/` already holds the Avi Code mark and is what packaged builds stage from, so production is
+> unaffected. `nightly/` is left on upstream's art because this fork never builds that channel.
+> Consequently `icons:check` will report the development assets as stale; that is expected here.
+
 The three Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`

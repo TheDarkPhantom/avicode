@@ -1,0 +1,29 @@
+<!--
+  Avi Code development-build mark.
+
+  Geometry is `assets/prod/logo.svg` verbatim. Only the field and the brackets
+  are recoloured, so a dev window is obviously a dev window in the taskbar
+  without becoming a different logo. Upstream shipped a blueprint "T3" here for
+  the same reason; this keeps that dev-versus-production signal while dropping
+  the T3 mark, which the fork should not be showing anywhere.
+
+  Blue rather than red: it is the fork's own "midnight" theme primary (#4F8FF7),
+  so the dev icon still comes from the palette the app actually ships.
+
+  Regenerate the rasters after editing (from the repository root):
+
+    node scripts/avicode/generate-dev-icons.mjs
+
+  Note this is deliberately NOT the `vp run icons:export` pipeline described in
+  assets/README.md. That one drives Icon Composer, which is macOS only, so this
+  Windows-only fork cannot run it at all.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="224" fill="#0A1020"/>
+  <rect x="44" y="44" width="936" height="936" rx="188" stroke="#1E293B" stroke-width="28"/>
+  <path d="M294 315L142 512L294 709" stroke="#4F8FF7" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M730 315L882 512L730 709" stroke="#4F8FF7" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M348 704L486 314H538L676 704" stroke="#EDE7E3" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M409 567H615" stroke="#C99A2E" stroke-width="58" stroke-linecap="round"/>
+  <path d="M512 235V170M512 854V789" stroke="#4F9D69" stroke-width="30" stroke-linecap="round"/>
+</svg>
