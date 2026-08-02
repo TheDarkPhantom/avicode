@@ -58,7 +58,9 @@ export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient
   | typeof WS_METHODS.serverUpdateServerWithProgress
   | typeof WS_METHODS.gitRunStackedAction
-  | typeof WS_METHODS.providerAskSideQuestion;
+  | typeof WS_METHODS.providerAskSideQuestion
+  // Avi Code addition: in-app `claude auth login` for a provider instance.
+  | typeof WS_METHODS.claudeLoginStart;
 
 export type EnvironmentStreamRpcTag =
   | EnvironmentSubscriptionRpcTag

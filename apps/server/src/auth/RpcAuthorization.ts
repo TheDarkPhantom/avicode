@@ -47,6 +47,10 @@ export const RPC_REQUIRED_SCOPES = {
   // `/btw` reads the thread and runs the model with tools denied. It mutates
   // nothing — not even the thread's own transcript — so it is a read.
   [WS_METHODS.providerAskSideQuestion]: AuthOrchestrationReadScope,
+  // Avi Code addition: signing an instance in writes a credential into that
+  // instance's config directory, so both halves are operate-level.
+  [WS_METHODS.claudeLoginStart]: AuthOrchestrationOperateScope,
+  [WS_METHODS.claudeLoginSubmitCode]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessResourceHistory]: AuthOrchestrationReadScope,
