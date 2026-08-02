@@ -36,6 +36,14 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- The Business reply style is now short enough to read once and act on (#88)
+
 ## 0.0.31-avicode.3 (2026-08-02)
 
 Upstream: t3code 0.0.31

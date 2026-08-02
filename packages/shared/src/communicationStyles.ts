@@ -44,11 +44,19 @@ export const BUILT_IN_COMMUNICATION_STYLES: ReadonlyArray<CommunicationStyle> = 
   {
     id: "business",
     label: "Business",
-    description: "Outcomes first, a few sentences per item.",
+    // Written against a specific failure: the earlier wording capped the length
+    // of each item but never the number of them, and "business audience" alone
+    // reads as "explain thoroughly". Replies came back correct and far too long
+    // for someone who wants to decide and move on. So this caps the whole reply,
+    // names what to delete, and asks for the decision rather than the reasoning.
+    description: "Answer first, three points, no filler.",
     instruction: [
-      "Write this reply for a business audience.",
-      "Lead with the outcome and its impact, not the implementation.",
-      "Keep each item to a few sentences.",
+      "Write for a busy owner or manager who reads this once and then decides.",
+      "Open with the answer or outcome in a single sentence.",
+      "Then give at most three points, one or two sentences each.",
+      "Cut process narration, reasoning they did not ask for, caveats that change",
+      "nothing, and any detail they cannot act on.",
+      "If something needs their decision, say what it is and put it last.",
       "Do not use em dashes.",
     ].join(" "),
     builtIn: true,
