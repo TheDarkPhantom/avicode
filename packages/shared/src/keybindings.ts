@@ -50,6 +50,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+-", command: "preview.zoomOut", when: "previewFocus && previewOpen" },
   { key: "mod+0", command: "preview.resetZoom", when: "previewFocus && previewOpen" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
+  // Avi Code addition: find in the open thread. Guarded off a focused terminal
+  // the same way the palette is, because Ctrl+F is forward-char in a shell.
+  { key: "mod+f", command: "find.toggle", when: "!terminalFocus" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
   // Avi Code addition. `mod+;` matches Claude Code desktop's side-question
   // shortcut, and `;` is unclaimed everywhere else in the app.

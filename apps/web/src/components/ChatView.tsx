@@ -92,6 +92,14 @@ import {
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
 import { getAnchoredTurnMetrics, type TimelineScrollMode } from "./chat/timelineScrollAnchoring";
+import { isWithinWorkspaceRoot, workspacePathBasename } from "../workspacePathMatch";
+import { ThreadFindBar } from "./chat/find/ThreadFindBar";
+import {
+  formatMatchCount,
+  reconcileMatchIndex,
+  stepMatchIndex,
+  type ThreadFindMatch,
+} from "./chat/find/threadFindMatches";
 import {
   createPendingAnswerFocusSync,
   type PendingAnswerFocusSync,
@@ -436,6 +444,10 @@ const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
   '[role="tab"]',
 ].join(",");
 const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [
+  // Avi Code addition: the find bar is a plain positioned element rather than a
+  // popup, so without this every keystroke typed into it would be stolen by the
+  // type-to-focus rule and land in the composer.
+  '[data-thread-find-bar="true"]',
   '[data-slot="dialog"]',
   '[data-slot="menu-popup"]',
   '[data-slot="select-popup"]',
@@ -2586,6 +2598,18 @@ function ChatViewContent(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  // Avi Code addition: a file surface can carry its own root when it came from
+  // another repo, so the viewer and its tree follow the file rather than the
+  // thread. Falls back to the thread's own workspace for every other surface.
+  const activeFileSurfaceRoot = activeFileSurface?.root ?? activeWorkspaceRoot;
+  const activeFileSurfaceLabel = useMemo(() => {
+    const surfaceRoot = activeFileSurface?.root;
+    if (!surfaceRoot) return activeProject?.title ?? "";
+    const owningProject = allProjects.find((project) =>
+      isWithinWorkspaceRoot(project.workspaceRoot, surfaceRoot),
+    );
+    return owningProject?.title ?? workspacePathBasename(surfaceRoot);
+  }, [activeFileSurface?.root, activeProject?.title, allProjects]);
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
@@ -3221,12 +3245,52 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeProject, activeThreadRef]);
+  // Avi Code addition: find in thread. The matches come from the timeline,
+  // which owns the rows; this owns the query, the caret, and the bar.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findMatches, setFindMatches] = useState<readonly ThreadFindMatch[]>([]);
+  const [findMatchIndex, setFindMatchIndex] = useState(-1);
+  const activeFindMatchRef = useRef<ThreadFindMatch | null>(null);
+  activeFindMatchRef.current = findMatches[findMatchIndex] ?? null;
+
+  const onFindMatchesChange = useCallback((matches: readonly ThreadFindMatch[]) => {
+    setFindMatches(matches);
+    // Hold the caret on the match the user was reading while they keep typing,
+    // rather than throwing them back to the top of the thread each keystroke.
+    setFindMatchIndex(reconcileMatchIndex(activeFindMatchRef.current, matches));
+  }, []);
+
+  const stepFindMatch = useCallback(
+    (direction: "next" | "previous") => {
+      setFindOpen(true);
+      setFindMatchIndex((current) => stepMatchIndex(current, findMatches.length, direction));
+    },
+    [findMatches.length],
+  );
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setFindQuery("");
+    setFindMatches([]);
+    setFindMatchIndex(-1);
+  }, []);
+
+  // Leaving the thread should not carry a search into the next one.
+  useEffect(() => {
+    closeFind();
+  }, [activeThreadId, closeFind]);
+
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
-      useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
+      // Avi Code addition: carry the current surface's root so picking a second
+      // file out of an external repo's tree stays in that repo.
+      useRightPanelStore
+        .getState()
+        .openFile(activeThreadRef, relativePath, undefined, activeFileSurface?.root);
     },
-    [activeProject, activeThreadRef],
+    [activeFileSurface?.root, activeProject, activeThreadRef],
   );
   const togglePreviewPanel = useCallback(() => {
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
@@ -4643,6 +4707,22 @@ function ChatViewContent(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         onToggleDiff();
+        return;
+      }
+
+      // Avi Code addition: suppressing the browser's own find is the point. It
+      // only sees mounted rows, so on a virtualized transcript it reports a
+      // confident count that is mostly wrong.
+      if (command === "find.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(true);
+        return;
+      }
+      if (command === "find.next" || command === "find.previous") {
+        event.preventDefault();
+        event.stopPropagation();
+        stepFindMatch(command === "find.next" ? "next" : "previous");
         return;
       }
 
@@ -6611,13 +6691,14 @@ function ChatViewContent(props: ChatViewProps) {
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
-      activeWorkspaceRoot ? (
+      activeFileSurfaceRoot ? (
       <Suspense fallback={null}>
         <FilePreviewPanel
-          key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
+          key={`${activeProject.environmentId}:${activeFileSurfaceRoot}`}
           environmentId={activeProject.environmentId}
-          cwd={activeWorkspaceRoot}
-          projectName={activeProject.title}
+          cwd={activeFileSurfaceRoot}
+          projectName={activeFileSurfaceLabel}
+          isExternalRoot={activeFileSurface?.root !== undefined}
           threadRef={activeThreadRef}
           composerDraftTarget={composerDraftTarget}
           keybindings={keybindings}
@@ -6708,6 +6789,18 @@ function ChatViewContent(props: ChatViewProps) {
             </div>
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
+              {/* Avi Code addition: find in thread, above the transcript. */}
+              {findOpen ? (
+                <ThreadFindBar
+                  query={findQuery}
+                  matchCount={findMatches.length}
+                  matchIndex={findMatchIndex}
+                  statusLabel={formatMatchCount(findMatchIndex, findMatches.length, findQuery)}
+                  onQueryChange={setFindQuery}
+                  onStep={stepFindMatch}
+                  onClose={closeFind}
+                />
+              ) : null}
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               {activeThread.forkedFrom ? (
                 <div className="mx-auto mt-2 flex w-full max-w-(--chat-content-max-width) items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/35 px-3 py-2 text-xs">
@@ -6775,6 +6868,9 @@ function ChatViewContent(props: ChatViewProps) {
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeWorkspaceRoot}
+                findQuery={findOpen ? findQuery : ""}
+                findActiveMatchIndex={findOpen ? findMatchIndex : -1}
+                onFindMatchesChange={onFindMatchesChange}
                 skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
                 anchorMessageId={timelineAnchorMessageId}
                 onAnchorReady={onTimelineAnchorReady}

@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback } from "react";
 
+import { describeProjectFileError } from "./projectFileErrorMessage";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
@@ -117,6 +118,10 @@ export function clearProjectFileQueryData(
 function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | null {
   if (result._tag !== "Failure") return null;
   const cause = Cause.squash(result.cause);
+  // Avi Code addition: the server sends a reason code the panel used to discard,
+  // so a missing file read exactly like a permissions or containment failure.
+  const described = describeProjectFileError(cause);
+  if (described !== null) return described;
   return cause instanceof Error ? cause.message : "Workspace query failed.";
 }
 

@@ -67,6 +67,12 @@ interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
   cwd: string;
   projectName: string;
+  /**
+   * Avi Code addition: true when `cwd` is a repo other than the thread's own, so
+   * the breadcrumb can say which repo you are looking at rather than leaving it
+   * to be guessed from the project name.
+   */
+  isExternalRoot?: boolean;
   relativePath: string | null;
   threadRef: ScopedThreadRef;
   composerDraftTarget: ScopedThreadRef | DraftId;
@@ -659,6 +665,7 @@ export default function FilePreviewPanel({
   environmentId,
   cwd,
   projectName,
+  isExternalRoot = false,
   relativePath,
   threadRef,
   composerDraftTarget,
@@ -784,10 +791,22 @@ export default function FilePreviewPanel({
                         ? "font-medium text-foreground"
                         : "text-muted-foreground",
                     )}
-                    title={crumb.path || projectName}
+                    title={crumb.path || (isExternalRoot ? cwd : projectName)}
                   >
                     {crumb.label}
                   </span>
+                  {index === 0 && isExternalRoot ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span className="ms-1.5 shrink-0 rounded border border-border/70 px-1 py-px text-[10px] leading-none text-muted-foreground">
+                            other repo
+                          </span>
+                        }
+                      />
+                      <TooltipPopup>{cwd}</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                 </div>
               ))}
             </div>

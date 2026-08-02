@@ -61,6 +61,15 @@ export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMA
 export const APP_ZOOM_KEYBINDING_COMMANDS = ["app.zoomIn", "app.zoomOut", "app.resetZoom"] as const;
 export type AppZoomKeybindingCommand = (typeof APP_ZOOM_KEYBINDING_COMMANDS)[number];
 
+/**
+ * Avi Code addition: find within the open thread. `find.next` and
+ * `find.previous` are bound to Enter and Shift+Enter inside the find bar rather
+ * than to a global chord, but they are declared so the bar's actions are
+ * nameable and rebindable like everything else.
+ */
+export const FIND_KEYBINDING_COMMANDS = ["find.toggle", "find.next", "find.previous"] as const;
+export type FindKeybindingCommand = (typeof FIND_KEYBINDING_COMMANDS)[number];
+
 const STATIC_KEYBINDING_COMMANDS = [
   "sidebar.toggle",
   ...APP_ZOOM_KEYBINDING_COMMANDS,
@@ -78,6 +87,10 @@ const STATIC_KEYBINDING_COMMANDS = [
   "preview.zoomOut",
   "preview.resetZoom",
   "commandPalette.toggle",
+  // Avi Code addition: find within the open thread. The browser's own find only
+  // sees mounted rows, and the transcript is virtualized, so it silently misses
+  // most of a long thread; this searches the messages the client already holds.
+  ...FIND_KEYBINDING_COMMANDS,
   "composer.stash",
   // Avi Code addition: focus the composer with `/btw ` prefilled, so a side
   // question is one keystroke away rather than something you type out.

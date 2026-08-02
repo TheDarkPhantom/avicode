@@ -44,6 +44,10 @@ Upstream: t3code 0.0.31
 
 - Start and stop dictation from the keyboard instead of clicking the microphone (#91)
 - Choose to have Settings open on the Avi Code page instead of General (#91)
+- Press Ctrl+F to search the open thread, including tool calls, with match counts and jumping (#95)
+- Open and edit files from other repos in the file viewer without leaving the thread (#94)
+- The file viewer now says when a file is missing instead of showing a generic read failure (#94)
+- Open in Explorer now reveals the file you picked instead of opening your Documents folder (#93)
 - Dictation now works when an agent is waiting on your answer instead of silently discarding it (#92)
 - Sign a Claude provider in from Settings instead of running the CLI yourself (#90)
 - Edit the built in reply styles to your own wording, and reset one when you want it back (#89)

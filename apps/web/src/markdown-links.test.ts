@@ -108,6 +108,38 @@ describe("resolveMarkdownFileLinkTarget", () => {
     });
   });
 
+  // Avi Code addition: a file outside the thread's workspace used to be
+  // unopenable, so clicking it left the app for an external editor.
+  it("resolves a root of its own for a file in another registered project", () => {
+    expect(
+      resolveMarkdownFileLinkMeta("/repo/other/docs/notes.md", "/repo/project", [
+        "/repo/project",
+        "/repo/other",
+      ]),
+    ).toMatchObject({
+      workspaceRelativePath: null,
+      fileRoot: { root: "/repo/other", relativePath: "docs/notes.md" },
+    });
+  });
+
+  it("falls back to the containing folder for a file in no registered project", () => {
+    expect(
+      resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project", ["/repo/project"]),
+    ).toMatchObject({
+      workspaceRelativePath: null,
+      fileRoot: { root: "/tmp", relativePath: "report.ts" },
+    });
+  });
+
+  it("leaves fileRoot unset for a file already inside the workspace", () => {
+    expect(
+      resolveMarkdownFileLinkMeta("/repo/project/src/index.ts", "/repo/project", ["/repo/project"]),
+    ).toMatchObject({
+      workspaceRelativePath: "src/index.ts",
+      fileRoot: null,
+    });
+  });
+
   it("normalizes slash-prefixed windows drive paths before resolving", () => {
     expect(
       resolveMarkdownFileLinkTarget(

@@ -94,6 +94,12 @@ import {
   type TimelineLatestTurn,
   type TimelinePinnedRowMetrics,
 } from "./MessagesTimeline.logic";
+import {
+  findThreadMatches,
+  type ThreadFindMatch,
+  type ThreadFindSource,
+} from "./find/threadFindMatches";
+import { clearFindHighlights, paintFindHighlights } from "./find/threadFindHighlight";
 import { useChatInitialScrollTarget } from "./openChatAtLastResponse";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -155,6 +161,13 @@ interface TimelineRowSharedState {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorElement?: HTMLElement) => void;
+  /**
+   * Avi Code addition: tool-call bodies used to hold their own `expanded` flag,
+   * which the virtualizer reset every time a row scrolled out of view and back.
+   * Lifting it here also lets find open the body a match is hiding in.
+   */
+  expandedWorkEntryIds: ReadonlySet<string>;
+  onToggleWorkEntry: (entryId: string) => void;
   /** Avi Code addition: brings an expanded plan's top into view. */
   onProposedPlanExpanded: (planElement: HTMLElement) => void;
 }
@@ -204,6 +217,10 @@ interface MessagesTimelineProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  /** Avi Code addition: find in thread. Empty disables searching entirely. */
+  findQuery?: string;
+  findActiveMatchIndex?: number;
+  onFindMatchesChange?: ((matches: readonly ThreadFindMatch[]) => void) | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   anchorMessageId: MessageId | null;
   onAnchorReady: (messageId: MessageId, anchorIndex: number) => void;
@@ -248,6 +265,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
+  findQuery = "",
+  findActiveMatchIndex = -1,
+  onFindMatchesChange,
   skills = EMPTY_TIMELINE_SKILLS,
   anchorMessageId,
   onAnchorReady,
@@ -262,6 +282,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
+  const [expandedWorkEntryIds, setExpandedWorkEntryIds] = useState<ReadonlySet<string>>(new Set());
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   // Avi Code addition: the column's cap is user-configurable, and the minimap's
   // gutter maths has to agree with it or the rail drifts off the content edge.
@@ -280,6 +301,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         next.delete(turnId);
       } else {
         next.add(turnId);
+      }
+      return next;
+    });
+  }, []);
+  const onToggleWorkEntry = useCallback((entryId: string) => {
+    setExpandedWorkEntryIds((existing) => {
+      const next = new Set(existing);
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
       }
       return next;
     });
@@ -380,6 +412,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         runningTurnId,
         expandedTurnIds,
         expandedWorkGroupIds,
+        // Avi Code addition: searching has to see folded turns and collapsed
+        // work groups, which otherwise never reach the row list at all.
+        expandAll: findQuery.trim().length > 0,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
@@ -391,6 +426,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       runningTurnId,
       expandedTurnIds,
       expandedWorkGroupIds,
+      findQuery,
       isWorking,
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
@@ -559,6 +595,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      expandedWorkEntryIds,
+      onToggleWorkEntry,
       onProposedPlanExpanded,
     }),
     [
@@ -578,6 +616,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      expandedWorkEntryIds,
+      onToggleWorkEntry,
       onProposedPlanExpanded,
     ],
   );
@@ -606,6 +646,96 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     },
     [listRef, onManualNavigation],
   );
+
+  // Avi Code addition: find searches the rows the client already holds rather
+  // than the DOM. The transcript is virtualized, so a DOM search only ever sees
+  // the handful of rows near the viewport.
+  const findSources = useMemo<ThreadFindSource[]>(() => {
+    if (findQuery.trim().length === 0) return [];
+    const collected: ThreadFindSource[] = [];
+    rows.forEach((row, rowIndex) => {
+      if (row.kind === "message") {
+        if (row.message.text) {
+          collected.push({ rowIndex, rowId: row.id, text: row.message.text });
+        }
+        return;
+      }
+      if (row.kind === "proposed-plan") {
+        collected.push({ rowIndex, rowId: row.id, text: row.proposedPlan.planMarkdown });
+        return;
+      }
+      if (row.kind !== "work") return;
+      for (const entry of row.groupedEntries) {
+        const text = [
+          toolWorkEntryHeading(entry),
+          workEntryPreview(entry, workspaceRoot) ?? "",
+          buildToolCallExpandedBody(entry, workspaceRoot) ?? "",
+        ]
+          .filter((part) => part.length > 0)
+          .join("\n");
+        if (text.length === 0) continue;
+        collected.push({ rowIndex, rowId: row.id, entryId: entry.id, text });
+      }
+    });
+    return collected;
+  }, [findQuery, rows, workspaceRoot]);
+
+  const findMatches = useMemo(
+    () => findThreadMatches(findSources, findQuery),
+    [findQuery, findSources],
+  );
+
+  useEffect(() => {
+    onFindMatchesChange?.(findMatches);
+  }, [findMatches, onFindMatchesChange]);
+
+  const activeFindMatch = findActiveMatchIndex >= 0 ? findMatches[findActiveMatchIndex] : undefined;
+  const activeFindMatchKey = activeFindMatch
+    ? `${activeFindMatch.rowId}:${activeFindMatch.offset}:${findActiveMatchIndex}`
+    : null;
+  useEffect(() => {
+    if (!activeFindMatch) return;
+    // Open the tool body the match sits inside before scrolling, or the row
+    // settles at a height that does not include it.
+    if (activeFindMatch.entryId && !expandedWorkEntryIds.has(activeFindMatch.entryId)) {
+      onToggleWorkEntry(activeFindMatch.entryId);
+    }
+    // Without this, live follow drags the view back to the bottom mid-read.
+    onManualNavigation();
+    void listRef.current?.scrollToIndex({
+      index: activeFindMatch.rowIndex,
+      animated: true,
+      viewOffset: 64,
+    });
+
+    // The row is virtualized, so it may not exist yet. Retry across a few
+    // frames rather than guessing a delay, then give up quietly.
+    let attempts = 0;
+    let frame = 0;
+    const paint = () => {
+      const row = document.querySelector(
+        `[data-timeline-row-id="${CSS.escape(activeFindMatch.rowId)}"]`,
+      );
+      const occurrence = findMatches
+        .slice(0, findActiveMatchIndex)
+        .filter((match) => match.rowId === activeFindMatch.rowId).length;
+      if (row) {
+        paintFindHighlights(row, findQuery, occurrence);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 12) frame = requestAnimationFrame(paint);
+    };
+    frame = requestAnimationFrame(paint);
+    return () => cancelAnimationFrame(frame);
+    // `activeFindMatchKey` covers a repeat press on the same match.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFindMatchKey]);
+
+  useEffect(() => {
+    if (findQuery.trim().length === 0) clearFindHighlights();
+  }, [findQuery]);
+  useEffect(() => clearFindHighlights, []);
 
   // Stable renderItem — no closure deps. Row components read shared state
   // from TimelineRowCtx, which propagates through LegendList's memo.
@@ -2251,7 +2381,11 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
 }) {
   const { workEntry, workspaceRoot } = props;
   const activity = use(TimelineRowActivityCtx);
-  const [expanded, setExpanded] = useState(false);
+  const ctx = use(TimelineRowCtx);
+  // Avi Code addition: expansion is owned by the timeline now, so it survives
+  // the row scrolling out of view and find can open the body a match sits in.
+  const expanded = ctx.expandedWorkEntryIds.has(workEntry.id);
+  const toggleExpanded = () => ctx.onToggleWorkEntry(workEntry.id);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
@@ -2295,11 +2429,11 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
         role: "button" as const,
         tabIndex: 0 as const,
         "aria-label": displayText,
-        onClick: () => setExpanded((v) => !v),
+        onClick: toggleExpanded,
         onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setExpanded((v) => !v);
+            toggleExpanded();
           }
         },
       }

@@ -260,6 +260,21 @@ describe("resolveAssistantMessageCopyState", () => {
   });
 });
 
+function workEntries() {
+  return ["one", "two", "three"].map((label, index) => ({
+    id: `work-${index}`,
+    kind: "work" as const,
+    createdAt: `2026-01-01T00:00:0${index}Z`,
+    entry: {
+      id: `work-${index}`,
+      createdAt: `2026-01-01T00:00:0${index}Z`,
+      label,
+      command: `echo ${label}`,
+      tone: "tool" as const,
+    },
+  }));
+}
+
 describe("deriveMessagesTimelineRows", () => {
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
@@ -322,6 +337,38 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRows).toHaveLength(2);
     expect(assistantRows[0]?.showAssistantCopyButton).toBe(false);
     expect(assistantRows[1]?.showAssistantCopyButton).toBe(true);
+  });
+
+  // Avi Code addition: collapsed work groups never reach the row list, so a find
+  // that searched only the rows would miss them and report a count that is not
+  // true. `expandAll` is how find gets to see everything.
+  it("hides older work entries behind a toggle by default", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: workEntries(),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    const workRows = rows.filter((row) => row.kind === "work");
+    expect(workRows).toHaveLength(1);
+    expect(rows.some((row) => row.kind === "work-toggle" && row.expanded === false)).toBe(true);
+  });
+
+  it("unfolds every work entry when searching", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: workEntries(),
+      expandAll: true,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    const workRows = rows.filter((row) => row.kind === "work");
+    expect(workRows).toHaveLength(3);
+    expect(rows.some((row) => row.kind === "work-toggle" && row.expanded === true)).toBe(true);
   });
 
   it("marks only the active assistant turn as streaming for copy controls", () => {

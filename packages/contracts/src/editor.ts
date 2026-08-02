@@ -91,6 +91,39 @@ export class ExternalLauncherCommandNotFoundError extends Schema.TaggedErrorClas
   }
 }
 
+/**
+ * Avi Code addition: a relative target used to reach the OS file manager
+ * verbatim, which resolves it against its own shell context and lands on the
+ * user's default folder instead of reporting anything.
+ */
+export class ExternalLauncherRelativeTargetError extends Schema.TaggedErrorClass<ExternalLauncherRelativeTargetError>()(
+  "ExternalLauncherRelativeTargetError",
+  {
+    editor: EditorId,
+    target: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Cannot open '${this.target}' because it is not an absolute path`;
+  }
+}
+
+/**
+ * Avi Code addition: the file manager cannot report a missing path. Explorer
+ * exits 1 even on success, so the only honest check is to look before spawning.
+ */
+export class ExternalLauncherTargetNotFoundError extends Schema.TaggedErrorClass<ExternalLauncherTargetNotFoundError>()(
+  "ExternalLauncherTargetNotFoundError",
+  {
+    editor: EditorId,
+    target: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Cannot open '${this.target}' because it no longer exists`;
+  }
+}
+
 const ExternalLauncherSpawnFields = {
   command: Schema.String,
   args: Schema.Array(Schema.String),
@@ -126,6 +159,8 @@ export const ExternalLauncherError = Schema.Union([
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   ExternalLauncherCommandNotFoundError,
+  ExternalLauncherRelativeTargetError,
+  ExternalLauncherTargetNotFoundError,
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherEditorSpawnError,
 ]);
