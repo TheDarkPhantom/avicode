@@ -185,6 +185,19 @@ export function getClientSettings(): ClientSettings {
   return getClientSettingsSnapshot();
 }
 
+/**
+ * Avi Code addition: hydrate first, then read.
+ *
+ * `getClientSettings` is a synchronous snapshot, so a caller that runs before
+ * React mounts — a router `beforeLoad`, for instance — reads defaults and
+ * silently ignores whatever the user actually persisted. Awaiting hydration is
+ * cheap here because it is idempotent and already in flight for the app.
+ */
+export async function loadClientSettings(): Promise<ClientSettings> {
+  await hydrateClientSettings();
+  return getClientSettingsSnapshot();
+}
+
 export function useClientSettingsHydrated(): boolean {
   return useSyncExternalStore(
     subscribeClientSettingsHydration,

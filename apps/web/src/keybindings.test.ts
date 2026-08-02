@@ -555,6 +555,43 @@ describe("chat/editor shortcuts", () => {
   });
 });
 
+// Avi Code addition: dictation shares `mod+shift+d` with the terminal's
+// vertical split, separated only by `when`. If either rule ever loses its
+// guard the two silently fight, so both directions are asserted here.
+describe("dictation shortcut", () => {
+  it("resolves mod+shift+d to dictation outside the terminal", () => {
+    assert.equal(
+      resolveShortcutCommand(
+        event({ key: "d", metaKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+      "composer.dictate",
+    );
+  });
+
+  it("still splits the terminal when the terminal has focus", () => {
+    assert.equal(
+      resolveShortcutCommand(
+        event({ key: "d", metaKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+      "terminal.splitVertical",
+    );
+  });
+
+  it("does not claim mod+d, which already toggles the diff", () => {
+    assert.equal(
+      resolveShortcutCommand(event({ key: "d", metaKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "diff.toggle",
+    );
+  });
+});
+
 describe("cross-command precedence", () => {
   it("uses when + order so a later focused rule overrides a global rule", () => {
     const keybindings = compile([

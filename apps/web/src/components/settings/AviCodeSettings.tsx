@@ -19,6 +19,7 @@ import {
   PanelLeftIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
+  SlidersHorizontalIcon,
   SparklesIcon,
   TagsIcon,
 } from "lucide-react";
@@ -91,6 +92,38 @@ function ColorThemeSwatch({
       className="size-3 shrink-0 rounded-full border border-black/15 dark:border-white/20"
       style={{ backgroundColor: colorTheme.swatch[mode] }}
     />
+  );
+}
+
+/**
+ * Avi Code addition. Which settings page opening Settings lands on.
+ *
+ * Upstream hardcodes General, so every trip to a fork setting costs a second
+ * click. The redirect lives in `routes/settings.tsx`; this row is the switch.
+ */
+function SettingsLandingPageSettings() {
+  const openToAviCodePage = useClientSettings(
+    (settings) => settings.aviCodeOpenSettingsToAviCodePage,
+  );
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="Settings" icon={<SlidersHorizontalIcon className="size-5" />}>
+      <SettingsRow
+        title="Open Settings on this page"
+        description="Opening Settings lands here instead of on General, so the settings this fork adds are the ones you see first."
+        status="Every page stays reachable from the list on the left, and a direct link to another settings page still opens that page."
+        control={
+          <Switch
+            checked={openToAviCodePage}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeOpenSettingsToAviCodePage: Boolean(checked) })
+            }
+            aria-label="Open Settings on the Avi Code page"
+          />
+        }
+      />
+    </SettingsSection>
   );
 }
 
@@ -779,6 +812,7 @@ export function AviCodeSettings() {
 
       {tab !== "settings" ? null : (
         <>
+          <SettingsLandingPageSettings />
           <ColorThemeSettings />
           <NewChatSettings />
           <CommunicationStyleSettings />

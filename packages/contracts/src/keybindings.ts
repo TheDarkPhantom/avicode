@@ -82,6 +82,9 @@ const STATIC_KEYBINDING_COMMANDS = [
   // Avi Code addition: focus the composer with `/btw ` prefilled, so a side
   // question is one keystroke away rather than something you type out.
   "composer.sideQuestion",
+  // Avi Code addition: start and stop dictation from the keyboard. Reaching
+  // for the microphone button with the mouse defeats the point of dictating.
+  "composer.dictate",
   "chat.new",
   "chat.newLocal",
   "editor.openFavorite",

@@ -2694,6 +2694,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         scheduleComposerFocus();
         return;
       }
+      // Avi Code addition: start and stop dictation from the keyboard.
+      // Reaching for the microphone button with the mouse is exactly what
+      // dictating is meant to avoid.
+      if (command === "composer.dictate") {
+        event.preventDefault();
+        event.stopPropagation();
+        // Same gate as the button: without a voice credential the hook would
+        // only surface an error the user cannot act on from a shortcut.
+        if (!hasVoiceKey) return;
+        dictation.toggle();
+        return;
+      }
       if (command !== "composer.stash") return;
       // Always claim the shortcut so the browser save dialog never opens,
       // even when the composer is in a state that can't stash.
@@ -2714,6 +2726,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return () => window.removeEventListener("keydown", handler, true);
   }, [
     activePendingProgress,
+    // Avi Code addition: both feed the `composer.dictate` branch. A stale
+    // `hasVoiceKey` would leave the shortcut dead after a key is added.
+    dictation.toggle,
+    hasVoiceKey,
     isComposerApprovalState,
     isComposerModelPickerOpen,
     keybindings,
