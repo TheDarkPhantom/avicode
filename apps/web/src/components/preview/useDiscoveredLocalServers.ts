@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useDiscoveredPorts } from "~/portDiscoveryState";
+import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
 
 export interface PreviewableServer extends DiscoveredLocalServer {
   source: "scanner" | "configured" | "recent";
@@ -13,11 +14,16 @@ export interface PreviewableServer extends DiscoveredLocalServer {
    * `configured` entry can also be `listening` when the scan enriched it.
    */
   listening: boolean;
+  /**
+   * Avi Code addition: the project script this URL was configured on, so the row
+   * can say "dev" rather than falling back to a bare process name.
+   */
+  scriptName?: string | undefined;
 }
 
 interface UseDiscoveredLocalServersInput {
   environmentId: EnvironmentId;
-  configuredUrls?: ReadonlyArray<string> | undefined;
+  configuredUrls?: ReadonlyArray<ConfiguredPreviewUrl> | undefined;
   recentlySeenUrls?: ReadonlyArray<string> | undefined;
 }
 
@@ -46,13 +52,13 @@ export function useDiscoveredLocalServers(
 
 export function mergeServers(input: {
   scanner: ReadonlyArray<DiscoveredLocalServer>;
-  configuredUrls: ReadonlyArray<string>;
+  configuredUrls: ReadonlyArray<ConfiguredPreviewUrl>;
   recentlySeenUrls: ReadonlyArray<string>;
 }): ReadonlyArray<PreviewableServer> {
   const seen = new Map<string, PreviewableServer>();
 
-  for (const url of input.configuredUrls) {
-    const parsed = parseLocalUrl(url);
+  for (const configured of input.configuredUrls) {
+    const parsed = parseLocalUrl(configured.url);
     if (!parsed) continue;
     const key = canonicalKey(parsed.host, parsed.port);
     if (seen.has(key)) continue;
@@ -65,6 +71,7 @@ export function mergeServers(input: {
       terminal: null,
       source: "configured",
       listening: false,
+      scriptName: configured.scriptName,
     });
   }
 

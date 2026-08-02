@@ -38,6 +38,13 @@ export class PortDiscovery extends Context.Service<
       readonly threadId: string;
       readonly terminalId: string;
       readonly processIds: ReadonlyArray<number>;
+      /**
+       * Avi Code addition: where the terminal was opened. Carried through to the
+       * client so a detected server can be recognised as belonging to a project,
+       * not only to the one thread that happened to start it.
+       */
+      readonly cwd?: string | null;
+      readonly worktreePath?: string | null;
     }) => Effect.Effect<void>;
     readonly unregisterTerminal: (input: {
       readonly threadId: string;
@@ -72,6 +79,9 @@ interface ScannerState {
 interface TerminalProcessOwner {
   readonly threadId: ThreadId;
   readonly terminalId: string;
+  /** Avi Code addition: lets the client match a server to a project. */
+  readonly cwd: string | null;
+  readonly worktreePath: string | null;
 }
 
 const terminalOwnerKey = (owner: {
@@ -352,6 +362,8 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       const owner = {
         threadId: ThreadId.make(input.threadId),
         terminalId: input.terminalId,
+        cwd: input.cwd ?? null,
+        worktreePath: input.worktreePath ?? null,
       };
       const processIds = new Set(
         input.processIds.filter((processId) => Number.isInteger(processId) && processId > 0),

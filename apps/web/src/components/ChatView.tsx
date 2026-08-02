@@ -6647,6 +6647,8 @@ function ChatViewContent(props: ChatViewProps) {
           threadRef={activeThreadRef}
           tabId={activeRightPanelSurface.resourceId}
           configuredUrls={configuredPreviewUrls}
+          projectRoot={activeProjectCwd}
+          worktreePath={activeThreadWorktreePath}
           visible
         />
       </Suspense>

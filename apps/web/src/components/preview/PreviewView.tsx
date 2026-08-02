@@ -54,11 +54,18 @@ import {
   useActiveBrowserRecordingTabIds,
 } from "~/browser/browserRecording";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
 
 interface Props {
   threadRef: ScopedThreadRef;
   tabId?: string | null;
-  configuredUrls?: ReadonlyArray<string> | undefined;
+  configuredUrls?: ReadonlyArray<ConfiguredPreviewUrl> | undefined;
+  /**
+   * Avi Code addition: where this thread works, so the start page can point at
+   * the dev server the user actually came for.
+   */
+  projectRoot?: string | null;
+  worktreePath?: string | null;
   visible: boolean;
 }
 
@@ -68,7 +75,14 @@ const localApi = typeof window === "undefined" ? null : ensureLocalApi();
  * Single-tab preview surface: chrome row on top, one webview below, empty
  * state when no session exists for the thread.
  */
-export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, visible }: Props) {
+export function PreviewView({
+  threadRef,
+  tabId: requestedTabId,
+  configuredUrls,
+  projectRoot = null,
+  worktreePath = null,
+  visible,
+}: Props) {
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
   const [pickActive, setPickActive] = useState(false);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
@@ -668,6 +682,9 @@ export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, 
             environmentId={threadRef.environmentId}
             configuredUrls={configuredUrls}
             recentlySeenUrls={previewState.recentlySeenUrls}
+            threadId={threadRef.threadId}
+            projectRoot={projectRoot}
+            worktreePath={worktreePath}
             onOpenUrl={(next) => void handleOpenServerUrl(next)}
           />
         ) : null}
