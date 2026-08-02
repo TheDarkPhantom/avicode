@@ -79,6 +79,8 @@ import {
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
+// Avi Code addition: in-app `claude auth login` for a provider instance.
+import { ClaudeLoginService } from "./provider/ClaudeLogin/ClaudeLoginService.ts";
 import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
 import { rollUpProviderUsage } from "./provider/providerUsageRollup.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
@@ -356,6 +358,8 @@ const makeWsRpcLayer = (
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerService = yield* ProviderService.ProviderService;
+      // Avi Code addition: in-app `claude auth login`.
+      const claudeLogin = yield* ClaudeLoginService;
       const providerInstanceUsage = yield* ProviderInstanceUsageRepository;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -1468,6 +1472,17 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "provider" },
           ),
+        // Avi Code addition: in-app `claude auth login`. The stream's lifetime
+        // is the CLI's, so a disconnect cancels the sign-in and kills the
+        // process rather than leaving it parked on stdin.
+        [WS_METHODS.claudeLoginStart]: (input) =>
+          observeRpcStream(WS_METHODS.claudeLoginStart, claudeLogin.start(input), {
+            "rpc.aggregate": "provider",
+          }),
+        [WS_METHODS.claudeLoginSubmitCode]: (input) =>
+          observeRpcEffect(WS_METHODS.claudeLoginSubmitCode, claudeLogin.submitCode(input), {
+            "rpc.aggregate": "provider",
+          }),
         [WS_METHODS.voiceGetCredential]: (_input) =>
           observeRpcEffect(
             WS_METHODS.voiceGetCredential,

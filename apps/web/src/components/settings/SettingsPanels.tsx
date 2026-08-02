@@ -109,6 +109,10 @@ import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+// Avi Code addition: in-app `claude auth login` for a Claude provider instance.
+import { ClaudeLoginDialog } from "./ClaudeLoginDialog";
+import { ClaudeSignInButton } from "./ClaudeSignInButton";
+import { CLAUDE_DRIVER_KIND } from "./claudeDriverKind";
 import {
   canOneClickUpdateProviderCandidate,
   collectProviderUpdateCandidates,
@@ -2194,12 +2198,29 @@ export function ProviderSettingsPanel() {
             favorite.provider === row.instanceId ? Result.succeed(favorite.model) : Result.failVoid,
           );
           const resetLabel = driverOption?.label ?? String(row.driver);
-          const headerAction =
+          const resetAction =
             row.isDefault && row.isDirty ? (
               <SettingResetButton
                 label={`${resetLabel} provider settings`}
                 onClick={() => resetDefaultInstance(row.driver)}
               />
+            ) : null;
+          // Avi Code addition: in-app `claude auth login`. Composed into the
+          // existing header slot so `ProviderInstanceCard` needs no new prop.
+          const signInAction =
+            row.driver === CLAUDE_DRIVER_KIND ? (
+              <ClaudeSignInButton
+                instanceId={row.instanceId}
+                displayName={row.instance.displayName?.trim() || resetLabel}
+                needsAuth={liveProvider?.auth.status === "unauthenticated"}
+              />
+            ) : null;
+          const headerAction =
+            signInAction || resetAction ? (
+              <div className="flex items-center gap-1.5">
+                {signInAction}
+                {resetAction}
+              </div>
             ) : null;
           return (
             <ProviderInstanceCard
@@ -2267,6 +2288,8 @@ export function ProviderSettingsPanel() {
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog open onOpenChange={setIsAddInstanceDialogOpen} />
       ) : null}
+      {/* Avi Code addition: in-app `claude auth login`. */}
+      <ClaudeLoginDialog />
     </SettingsPageContainer>
   );
 }

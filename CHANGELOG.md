@@ -44,6 +44,7 @@ Upstream: t3code 0.0.31
 
 - Start and stop dictation from the keyboard instead of clicking the microphone (#91)
 - Choose to have Settings open on the Avi Code page instead of General (#91)
+- Sign a Claude provider in from Settings instead of running the CLI yourself (#90)
 - Edit the built in reply styles to your own wording, and reset one when you want it back (#89)
 - The Business reply style is now short enough to read once and act on (#88)
 

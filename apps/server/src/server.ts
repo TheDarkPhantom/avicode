@@ -29,6 +29,8 @@ import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
 import { ProviderServiceLive } from "./provider/Layers/ProviderService.ts";
+// Avi Code addition: in-app `claude auth login` for a provider instance.
+import { ClaudeLoginServiceLive } from "./provider/ClaudeLogin/ClaudeLoginService.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
 import * as OpenCodeRuntime from "./provider/opencodeRuntime.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
@@ -233,6 +235,10 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 const ProviderLayerLive = ProviderServiceLive.pipe(
   Layer.provide(ProviderAdapterRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+  // Avi Code addition: in-app `claude auth login`. Sits beside the provider
+  // stack rather than inside it — signing in is precisely what a user does
+  // when an instance has no working adapter to route through.
+  Layer.provideMerge(ClaudeLoginServiceLive),
 );
 
 // The usage repository is exposed at the runtime level (rather than only
