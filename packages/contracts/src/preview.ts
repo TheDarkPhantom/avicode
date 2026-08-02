@@ -264,6 +264,14 @@ export const DiscoveredLocalServer = Schema.Struct({
     Schema.Struct({
       threadId: ThreadId,
       terminalId: TrimmedNonEmptyString,
+      /**
+       * Avi Code addition: the folder the owning terminal was opened in. Lets a
+       * client recognise a server started from a sibling thread on the same
+       * project, not just the thread it is looking at. Nullable so an older
+       * server still decodes.
+       */
+      cwd: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+      worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     }),
   ),
 });
