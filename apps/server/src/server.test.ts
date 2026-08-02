@@ -88,6 +88,8 @@ import { ProviderInstanceUsageRepository } from "./persistence/Services/Provider
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
+// Avi Code addition: in-app `claude auth login` for a provider instance.
+import { ClaudeLoginService } from "./provider/ClaudeLogin/ClaudeLoginService.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -588,6 +590,12 @@ const buildAppUnderTest = (options?: {
           // overload ceiling.
           Layer.mock(ProviderService.ProviderService)({
             askSideQuestion: () => Stream.empty,
+          }),
+          // Avi Code addition: the in-app `claude auth login` handlers resolve
+          // ClaudeLoginService, so the router depends on it too.
+          Layer.mock(ClaudeLoginService)({
+            start: () => Stream.empty,
+            submitCode: () => Effect.void,
           }),
         ),
       ),

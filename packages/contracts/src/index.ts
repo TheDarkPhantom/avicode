@@ -10,6 +10,8 @@ export * from "./ipc.ts";
 export * from "./terminal.ts";
 export * from "./provider.ts";
 export * from "./providerInstance.ts";
+// Avi Code addition: in-app `claude auth login` for a provider instance.
+export * from "./claudeLogin.ts";
 export * from "./providerQuota.ts";
 export * from "./providerRuntime.ts";
 export * from "./model.ts";

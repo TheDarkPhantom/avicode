@@ -68,6 +68,13 @@ import {
   ProviderSideQuestionError,
   ProviderSideQuestionInput,
 } from "./provider.ts";
+// Avi Code addition: in-app `claude auth login` for a provider instance.
+import {
+  ClaudeLoginError,
+  ClaudeLoginStartInput,
+  ClaudeLoginStreamEvent,
+  ClaudeLoginSubmitCodeInput,
+} from "./claudeLogin.ts";
 import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
@@ -232,6 +239,9 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetProviderUsage: "server.getProviderUsage",
   providerAskSideQuestion: "provider.askSideQuestion",
+  // Avi Code addition: in-app `claude auth login` for a provider instance.
+  claudeLoginStart: "claudeLogin.start",
+  claudeLoginSubmitCode: "claudeLogin.submitCode",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -351,6 +361,26 @@ export const WsProviderAskSideQuestionRpc = Rpc.make(WS_METHODS.providerAskSideQ
   success: ProviderSideQuestionChunk,
   error: Schema.Union([ProviderSideQuestionError, EnvironmentAuthorizationError]),
   stream: true,
+});
+
+/**
+ * Avi Code addition: drive `claude auth login` for one provider instance.
+ *
+ * Streaming because the CLI's lifetime *is* the session — the process must stay
+ * alive between emitting its authorization URL and receiving the pasted code.
+ * Interrupting the stream kills the CLI, so closing the dialog cancels cleanly
+ * without a separate cancel RPC.
+ */
+export const WsClaudeLoginStartRpc = Rpc.make(WS_METHODS.claudeLoginStart, {
+  payload: ClaudeLoginStartInput,
+  success: ClaudeLoginStreamEvent,
+  error: Schema.Union([ClaudeLoginError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsClaudeLoginSubmitCodeRpc = Rpc.make(WS_METHODS.claudeLoginSubmitCode, {
+  payload: ClaudeLoginSubmitCodeInput,
+  error: Schema.Union([ClaudeLoginError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerGetProviderUsageRpc = Rpc.make(WS_METHODS.serverGetProviderUsage, {
@@ -824,6 +854,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetProviderUsageRpc,
   WsProviderAskSideQuestionRpc,
+  WsClaudeLoginStartRpc,
+  WsClaudeLoginSubmitCodeRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

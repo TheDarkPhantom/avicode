@@ -58,12 +58,19 @@ Claude HOME path: empty
 
 ### Set Up The Second Account
 
-Log in with a separate home:
+The easiest way is to let the app do it. Add the provider first (below), then use its **Sign in**
+button in Settings > Providers. That runs `claude auth login` against the config directory you gave
+that provider, so the credential cannot land on the wrong account.
+
+To do it by hand instead, point `CLAUDE_CONFIG_DIR` at the same directory:
 
 ```bash
 mkdir -p ~/.claude_personal_home
-HOME=~/.claude_personal_home claude auth login
+CLAUDE_CONFIG_DIR=~/.claude_personal_home claude auth login
 ```
+
+Use `CLAUDE_CONFIG_DIR`, not `HOME`. Overriding `HOME` also moves the macOS login keychain lookup,
+so the CLI cannot find its stored credentials and reports "Not logged in".
 
 Then add another Claude provider in T3 Code:
 
@@ -202,7 +209,7 @@ in with a dedicated home first:
 mkdir -p ~/.claude_router_home
 ccr start
 ccr activate
-HOME=~/.claude_router_home claude auth login
+CLAUDE_CONFIG_DIR=~/.claude_router_home claude auth login
 ```
 
 Claude Code Router's setup can change over time. Use its upstream README for the current install and
