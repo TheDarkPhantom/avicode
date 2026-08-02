@@ -1,5 +1,7 @@
+import { resolveFileSurfaceRoot, type FileSurfaceRoot } from "./components/files/externalFileRoot";
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { resolvePathLinkTarget, splitPathAndPosition } from "./terminal-links";
+import { workspaceRelativePathWithin } from "./workspacePathMatch";
 
 const WINDOWS_DRIVE_PATH_PATTERN = /^[A-Za-z]:[\\/]/;
 const WINDOWS_UNC_PATH_PATTERN = /^\\\\/;
@@ -43,6 +45,13 @@ export interface MarkdownFileLinkMeta {
   targetPath: string;
   displayPath: string;
   workspaceRelativePath: string | null;
+  /**
+   * Avi Code addition: the root to open this file against when it sits outside
+   * the thread's own workspace, so a file in another repo still opens in the
+   * viewer instead of falling out to an external editor. Null when the file is
+   * in-workspace (use `workspaceRelativePath`) or when no root could be found.
+   */
+  fileRoot: FileSurfaceRoot | null;
   basename: string;
   line?: number;
   column?: number;
@@ -313,6 +322,7 @@ function looksLikeHostname(segment: string, hasPosition: boolean): boolean {
 export function resolveInlineCodeFileLinkMeta(
   codeText: string,
   cwd?: string,
+  projectRoots?: readonly string[],
 ): MarkdownFileLinkMeta | null {
   const trimmed = codeText.trim();
   if (trimmed.length === 0 || INLINE_CODE_DISQUALIFIER_PATTERN.test(trimmed)) return null;
@@ -342,7 +352,7 @@ export function resolveInlineCodeFileLinkMeta(
     }
   }
 
-  const resolved = resolveMarkdownFileLinkMeta(candidate, cwd);
+  const resolved = resolveMarkdownFileLinkMeta(candidate, cwd, projectRoots);
   if (resolved) return resolved;
 
   // `Makefile:12` — conventional extensionless names fail the generic
@@ -353,7 +363,7 @@ export function resolveInlineCodeFileLinkMeta(
     BARE_EXTENSIONLESS_POSITION_PATTERN.test(candidate) &&
     EXTENSIONLESS_FILE_NAMES.has(candidate.replace(POSITION_SUFFIX_PATTERN, ""))
   ) {
-    return buildFileLinkMetaFromTarget(resolvePathLinkTarget(candidate, cwd), cwd);
+    return buildFileLinkMetaFromTarget(resolvePathLinkTarget(candidate, cwd), cwd, projectRoots);
   }
   return null;
 }
@@ -363,40 +373,37 @@ function basenameOfPath(path: string): string {
   return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
 }
 
-function workspaceRelativePath(path: string, workspaceRoot: string | undefined): string | null {
-  if (!workspaceRoot) return null;
-  const normalizedPath = normalizeWindowsDrivePath(path.replaceAll("\\", "/"));
-  const normalizedRoot = normalizeWindowsDrivePath(workspaceRoot.replaceAll("\\", "/")).replace(
-    /\/+$/,
-    "",
-  );
-  const pathForCompare = normalizedPath.toLowerCase();
-  const rootForCompare = normalizedRoot.toLowerCase();
-  if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
-  return normalizedPath.slice(normalizedRoot.length + 1);
-}
-
 export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
   cwd?: string,
+  projectRoots?: readonly string[],
 ): MarkdownFileLinkMeta | null {
   const targetPath = resolveMarkdownFileLinkTarget(href, cwd);
   if (!targetPath) return null;
-  return buildFileLinkMetaFromTarget(targetPath, cwd);
+  return buildFileLinkMetaFromTarget(targetPath, cwd, projectRoots);
 }
 
-function buildFileLinkMetaFromTarget(targetPath: string, cwd?: string): MarkdownFileLinkMeta {
+function buildFileLinkMetaFromTarget(
+  targetPath: string,
+  cwd?: string,
+  projectRoots?: readonly string[],
+): MarkdownFileLinkMeta {
   const { path, line, column } = splitPathAndPosition(targetPath);
   const parsedLine = line ? Number.parseInt(line, 10) : Number.NaN;
   const parsedColumn = column ? Number.parseInt(column, 10) : Number.NaN;
   const lineNumber = Number.isFinite(parsedLine) ? parsedLine : undefined;
   const columnNumber = Number.isFinite(parsedColumn) ? parsedColumn : undefined;
+  const relativeToWorkspace = workspaceRelativePathWithin(cwd, path);
 
   return {
     filePath: path,
     targetPath,
     displayPath: formatWorkspaceRelativePath(targetPath, cwd),
-    workspaceRelativePath: workspaceRelativePath(path, cwd),
+    workspaceRelativePath: relativeToWorkspace,
+    // Only worth resolving when the file is out of workspace; in-workspace files
+    // already have a root, and this runs for every link in every message.
+    fileRoot:
+      relativeToWorkspace === null ? resolveFileSurfaceRoot(path, projectRoots ?? []) : null,
     basename: basenameOfPath(path),
     ...(lineNumber !== undefined ? { line: lineNumber } : {}),
     ...(columnNumber !== undefined ? { column: columnNumber } : {}),

@@ -92,6 +92,7 @@ import {
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
 import { getAnchoredTurnMetrics, type TimelineScrollMode } from "./chat/timelineScrollAnchoring";
+import { isWithinWorkspaceRoot, workspacePathBasename } from "../workspacePathMatch";
 import {
   createPendingAnswerFocusSync,
   type PendingAnswerFocusSync,
@@ -2586,6 +2587,18 @@ function ChatViewContent(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  // Avi Code addition: a file surface can carry its own root when it came from
+  // another repo, so the viewer and its tree follow the file rather than the
+  // thread. Falls back to the thread's own workspace for every other surface.
+  const activeFileSurfaceRoot = activeFileSurface?.root ?? activeWorkspaceRoot;
+  const activeFileSurfaceLabel = useMemo(() => {
+    const surfaceRoot = activeFileSurface?.root;
+    if (!surfaceRoot) return activeProject?.title ?? "";
+    const owningProject = allProjects.find((project) =>
+      isWithinWorkspaceRoot(project.workspaceRoot, surfaceRoot),
+    );
+    return owningProject?.title ?? workspacePathBasename(surfaceRoot);
+  }, [activeFileSurface?.root, activeProject?.title, allProjects]);
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
@@ -3224,9 +3237,13 @@ function ChatViewContent(props: ChatViewProps) {
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
-      useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
+      // Avi Code addition: carry the current surface's root so picking a second
+      // file out of an external repo's tree stays in that repo.
+      useRightPanelStore
+        .getState()
+        .openFile(activeThreadRef, relativePath, undefined, activeFileSurface?.root);
     },
-    [activeProject, activeThreadRef],
+    [activeFileSurface?.root, activeProject, activeThreadRef],
   );
   const togglePreviewPanel = useCallback(() => {
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
@@ -6611,13 +6628,14 @@ function ChatViewContent(props: ChatViewProps) {
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
-      activeWorkspaceRoot ? (
+      activeFileSurfaceRoot ? (
       <Suspense fallback={null}>
         <FilePreviewPanel
-          key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
+          key={`${activeProject.environmentId}:${activeFileSurfaceRoot}`}
           environmentId={activeProject.environmentId}
-          cwd={activeWorkspaceRoot}
-          projectName={activeProject.title}
+          cwd={activeFileSurfaceRoot}
+          projectName={activeFileSurfaceLabel}
+          isExternalRoot={activeFileSurface?.root !== undefined}
           threadRef={activeThreadRef}
           composerDraftTarget={composerDraftTarget}
           keybindings={keybindings}

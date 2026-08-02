@@ -17,6 +17,13 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Image previews still fail for a file opened from another repo. The file viewer now reads text,
+  code and markdown against whatever root the file belongs to, but images do not go through
+  `projects.readFile` at all: they take the asset pipeline, which resolves the path against the
+  thread's own workspace root and rejects anything outside it
+  (`apps/server/src/assets/AssetAccess.ts`, `resolveCanonicalWorkspaceFile` and `issueAssetUrl`).
+  Fixing it means letting the asset URL carry a root the way the file surface now does, which is a
+  contract change and a second containment decision, so it was left out of the cross-repo work.
 - Opening a chat at its last response is web/desktop only. Mobile's `ThreadFeed` has its own
   scroll machinery (`initialScrollAtEnd` plus bespoke end-space suppression) and reads none of the
   Avi Code settings, so the toggle silently does nothing there — the same boundary every other
