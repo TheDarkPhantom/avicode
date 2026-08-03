@@ -26,7 +26,11 @@ export function PreviewLocalServerCard({ server, onOpen }: Props) {
   );
 }
 
-function describeServer(server: PreviewableServer): string {
+export function describeServer(server: PreviewableServer): string {
+  // Avi Code addition: the script name comes first. A URL configured on this
+  // project's scripts used to render as a bare "node" once the scanner enriched
+  // it, which is exactly the case where the label had something useful to say.
+  if (server.scriptName) return server.scriptName;
   if (server.processName) return server.processName;
   if (server.listening) return "Listening";
   if (server.source === "configured") return "Configured";

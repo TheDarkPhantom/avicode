@@ -122,6 +122,49 @@ effectIt.layer(TestPortDiscoveryLive)("PortDiscovery integration (TCP probe fall
   );
 });
 
+/**
+ * Avi Code addition: the browser panel groups detected servers by the project
+ * they belong to, which only works if the terminal's folder rides along with
+ * the pid mapping the scanner already keeps.
+ */
+effectIt("carries the owning terminal's folder onto a discovered server", () =>
+  Effect.gen(function* () {
+    const scanner = yield* PortScanner.PortDiscovery;
+    yield* scanner.registerTerminalProcesses({
+      threadId: "thread-1",
+      terminalId: "terminal-1",
+      processIds: [4321],
+      cwd: "/repo/avicode",
+      worktreePath: "/repo/avicode/.worktrees/feature",
+    });
+
+    const servers = yield* scanner.scan();
+    const found = servers.find((server) => server.port === 5173);
+
+    expect(found?.terminal).toEqual({
+      threadId: "thread-1",
+      terminalId: "terminal-1",
+      cwd: "/repo/avicode",
+      worktreePath: "/repo/avicode/.worktrees/feature",
+    });
+  }).pipe(
+    Effect.provide(
+      // A single lsof listener owned by pid 4321, so the join has something to
+      // attach the registration to.
+      makeProbeFailureLayer(() =>
+        Effect.succeed({
+          stdout: "p4321\ncvite\nnlocalhost:5173\n",
+          stderr: "",
+          code: 0 as never,
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      ),
+    ),
+  ),
+);
+
 effectIt("does not swallow process probe defects", () =>
   Effect.gen(function* () {
     const defect = new Error("unexpected process probe defect");

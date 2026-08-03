@@ -5,17 +5,29 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./PreviewPanelShell";
+import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
 import { PreviewView } from "./PreviewView";
 
 interface Props {
   mode: PreviewPanelMode;
   threadRef: ScopedThreadRef;
   tabId?: string | null;
-  configuredUrls?: ReadonlyArray<string> | undefined;
+  configuredUrls?: ReadonlyArray<ConfiguredPreviewUrl> | undefined;
+  /** Avi Code addition: passed through so the start page can group servers. */
+  projectRoot?: string | null;
+  worktreePath?: string | null;
   visible: boolean;
 }
 
-export function PreviewPanel({ mode, threadRef, tabId, configuredUrls, visible }: Props) {
+export function PreviewPanel({
+  mode,
+  threadRef,
+  tabId,
+  configuredUrls,
+  projectRoot = null,
+  worktreePath = null,
+  visible,
+}: Props) {
   if (!isPreviewSupportedInRuntime()) {
     return (
       <PreviewPanelShell mode={mode}>
@@ -34,6 +46,8 @@ export function PreviewPanel({ mode, threadRef, tabId, configuredUrls, visible }
         threadRef={threadRef}
         {...(tabId !== undefined ? { tabId } : {})}
         configuredUrls={configuredUrls}
+        projectRoot={projectRoot}
+        worktreePath={worktreePath}
         visible={visible}
       />
     </PreviewPanelShell>
