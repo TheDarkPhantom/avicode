@@ -26,9 +26,10 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   route and is not worth it yet.
 - `PortScanner`'s common-port fallback returns no pid at all, so on any machine without `lsof` (and
   where the PowerShell probe fails) every row is unattributable regardless of where it was started.
-- `ProjectScript.autoOpenPreview` is defined in the contract, persisted, and bound in the scripts
-  form, but nothing reads it at runtime. Ticking it does nothing. Either wire it to open the preview
-  panel when the script starts, or take the option out of the form.
+- Auto-opened script previews wait on the port scanner, so a script whose server the scanner cannot
+  attribute to the thread (started through a wrapper the scanner reads as a different pid, or on a
+  machine where `PortScanner` has no pid at all) gives up after a minute and opens nothing. The
+  fallback is the same missing pid-to-working-directory resolution the entry above describes.
 - Image previews still fail for a file opened from another repo. The file viewer now reads text,
   code and markdown against whatever root the file belongs to, but images do not go through
   `projects.readFile` at all: they take the asset pipeline, which resolves the path against the

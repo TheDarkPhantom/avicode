@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Agents get an inventory of what the next big upstream merge will disturb (#112)
+- An action set to open its preview automatically now does so once its server is up (#109)
 - A file an agent names from another repo now opens in that repo instead of failing to load (#106)
 
 ## 0.0.31-avicode.6 (2026-08-03)
