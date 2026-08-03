@@ -29,13 +29,13 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - `ProjectScript.autoOpenPreview` is defined in the contract, persisted, and bound in the scripts
   form, but nothing reads it at runtime. Ticking it does nothing. Either wire it to open the preview
   panel when the script starts, or take the option out of the form.
-- Image previews still fail for a file opened from another repo. The file viewer now reads text,
-  code and markdown against whatever root the file belongs to, but images do not go through
-  `projects.readFile` at all: they take the asset pipeline, which resolves the path against the
-  thread's own workspace root and rejects anything outside it
-  (`apps/server/src/assets/AssetAccess.ts`, `resolveCanonicalWorkspaceFile` and `issueAssetUrl`).
-  Fixing it means letting the asset URL carry a root the way the file surface now does, which is a
-  contract change and a second containment decision, so it was left out of the cross-repo work.
+- Cross-repo assets are limited to registered projects. `AssetWorkspaceRoot.ts` honours a
+  client-supplied root only when `getActiveProjectByWorkspaceRoot` finds it, because an asset URL is
+  a signed HTTP token and must never point at an arbitrary path. `resolveFileSurfaceRoot` can also
+  fall back to a file's own parent folder when no project matches, and an image or browser preview
+  under such a root is still refused, while text under the same root reads fine through
+  `projects.readFile`. Closing that gap needs a containment story for non-project roots, not a
+  looser check.
 - Opening a chat at its last response is web/desktop only. Mobile's `ThreadFeed` has its own
   scroll machinery (`initialScrollAtEnd` plus bespoke end-space suppression) and reads none of the
   Avi Code settings, so the toggle silently does nothing there — the same boundary every other

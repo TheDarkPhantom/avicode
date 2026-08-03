@@ -44,8 +44,6 @@ import {
   type ServerSelfUpdateProgressEvent,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
-  AssetWorkspaceContextNotFoundError,
-  AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
   ThreadId,
@@ -94,6 +92,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import { resolveWorkspaceFileAssetRoot } from "./assets/AssetWorkspaceRoot.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -1719,42 +1718,17 @@ const makeWsRpcLayer = (
               if (input.resource._tag !== "workspace-file") {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
-              const thread = yield* projectionSnapshotQuery
-                .getThreadShellById(input.resource.threadId)
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new AssetWorkspaceContextResolutionError({
-                        resource: input.resource,
-                        cause,
-                      }),
-                  ),
-                );
-              if (Option.isNone(thread)) {
-                return yield* new AssetWorkspaceContextNotFoundError({
-                  resource: input.resource,
-                });
-              }
-              const project = yield* projectionSnapshotQuery
-                .getProjectShellById(thread.value.projectId)
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new AssetWorkspaceContextResolutionError({
-                        resource: input.resource,
-                        cause,
-                      }),
-                  ),
-                );
-              if (Option.isNone(project)) {
-                return yield* new AssetWorkspaceContextNotFoundError({
-                  resource: input.resource,
-                });
-              }
-              return yield* issueAssetUrl({
+              // Avi Code addition: root resolution moved into AssetWorkspaceRoot
+              // so a file opened from another repository resolves against that
+              // repository, under an explicit containment rule.
+              const workspaceRoot = yield* resolveWorkspaceFileAssetRoot({
                 resource: input.resource,
-                workspaceRoot: thread.value.worktreePath ?? project.value.workspaceRoot,
+                getActiveProjectByWorkspaceRoot:
+                  projectionSnapshotQuery.getActiveProjectByWorkspaceRoot,
+                getThreadShellById: projectionSnapshotQuery.getThreadShellById,
+                getProjectShellById: projectionSnapshotQuery.getProjectShellById,
               });
+              return yield* issueAssetUrl({ resource: input.resource, workspaceRoot });
             }),
             { "rpc.aggregate": "workspace" },
           ),
