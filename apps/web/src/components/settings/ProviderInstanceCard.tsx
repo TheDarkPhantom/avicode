@@ -550,8 +550,12 @@ export function ProviderInstanceCard({
 
   const titleTailNode = (
     <>
+      {/* Avi Code addition: width is intrinsic rather than a fixed `w-5`. The
+          slot originally held one icon; the fork also puts a per-instance
+          sign-in control here, and two children in a 20px box overlap the
+          title. A single icon still lays out identically. */}
       {headerAction ? (
-        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+        <span className="inline-flex h-5 shrink-0 items-center justify-center gap-1">
           {headerAction}
         </span>
       ) : null}
