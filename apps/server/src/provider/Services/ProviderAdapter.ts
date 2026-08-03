@@ -37,6 +37,18 @@ export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
  */
 export type ProviderSideQuestionMode = "fork-session" | "unsupported";
 
+/**
+ * Avi Code addition: whether a plan turn is actually held to planning.
+ *
+ * "tool-denial" means the adapter refuses file-editing tools for the duration
+ * of a plan turn, so a proposed plan waits for the Implement button. Anything
+ * else is "unsupported": the backend is left to police its own plan mode, and
+ * this fork has not verified that it does. Reporting "unsupported" is what
+ * lets the UI say so, rather than showing a Plan badge that promises an
+ * enforcement nobody is applying.
+ */
+export type ProviderPlanTurnEnforcementMode = "tool-denial" | "unsupported";
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
@@ -46,6 +58,11 @@ export interface ProviderAdapterCapabilities {
    * Avi Code addition. Declares whether `/btw` side questions are answerable.
    */
   readonly sideQuestion: ProviderSideQuestionMode;
+  /**
+   * Avi Code addition. Declares whether plan turns are enforced by this adapter
+   * rather than delegated to the provider's own runtime.
+   */
+  readonly planTurnEnforcement: ProviderPlanTurnEnforcementMode;
 }
 
 export interface ProviderThreadTurnSnapshot {

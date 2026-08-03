@@ -319,6 +319,7 @@ describe("ProviderCommandReactor", () => {
         Effect.succeed({
           sessionModelSwitch: input?.sessionModelSwitch ?? "in-session",
           sideQuestion: "unsupported" as const,
+          planTurnEnforcement: "unsupported" as const,
         }),
       getInstanceInfo: (instanceId) => {
         const raw = String(instanceId);

@@ -83,11 +83,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   fact. Storing an id alongside the label would fix both at the cost of a second column.
 - A style applies from the next message only. There is no "re-ask that turn in this style", which
   would need the original prompt re-sent rather than the transcript re-rendered.
-- Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
-  during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
-  have not been verified to stop after proposing a plan. If a provider still auto-implements,
-  consider interrupting the turn as soon as the plan is captured so it settles and the Implement
-  button appears immediately.
+- Plan-mode enforcement is Claude-only, and now says so. Every adapter declares
+  `capabilities.planTurnEnforcement`; only the Claude adapter reports `"tool-denial"`, and the
+  composer tooltip, the compact mode menu, and the Avi Code setting all warn on the other four.
+  What is still missing is the enforcement itself. Codex, Cursor, Grok, and OpenCode delegate plan
+  behaviour to their runtimes and **have not been observed** stopping after proposing a plan;
+  `"unsupported"` records that absence of evidence, not a verified failure. Running a plan turn on
+  each of the four and watching whether it builds is the next step, and any that does could be
+  interrupted as soon as the plan is captured so it settles and the Implement button appears.
 - The start-in-plan-mode setting reads the client-settings snapshot through a callback registered
   by `hooks/useSettings` (module-cycle constraint), so a draft created before that module loads
   would fall back to build mode. Not observed in practice — any rendered UI loads the hook first.

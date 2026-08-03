@@ -1190,7 +1190,13 @@ export function makeCursorAdapter(
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session", sideQuestion: "unsupported" },
+      capabilities: {
+        sessionModelSwitch: "in-session",
+        sideQuestion: "unsupported",
+        // Plan behaviour is left to the Cursor runtime and has not been
+        // verified to stop after proposing, so nothing here enforces it.
+        planTurnEnforcement: "unsupported",
+      },
       startSession,
       sendTurn,
       askSideQuestion,

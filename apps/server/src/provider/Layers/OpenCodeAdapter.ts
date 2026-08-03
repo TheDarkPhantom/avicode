@@ -1730,6 +1730,9 @@ export function makeOpenCodeAdapter(
       capabilities: {
         sessionModelSwitch: "in-session",
         sideQuestion: "unsupported",
+        // Plan behaviour is left to the OpenCode runtime and has not been
+        // verified to stop after proposing, so nothing here enforces it.
+        planTurnEnforcement: "unsupported",
       },
       startSession,
       sendTurn,
