@@ -104,9 +104,6 @@ export const findClaudeConfigDirSiblings = (input: {
   readonly defaultInstanceId: ProviderInstanceId;
 }): ReadonlyArray<ClaudeConfigDirSibling> => {
   const instances = input.instances ?? {};
-  const entries = Object.entries(instances) as ReadonlyArray<
-    readonly [ProviderInstanceId, ProviderInstanceConfigMap[ProviderInstanceId]]
-  >;
 
   const configDirFor = (instanceId: ProviderInstanceId): string | undefined => {
     const entry = instances[instanceId];
@@ -137,8 +134,10 @@ export const findClaudeConfigDirSiblings = (input: {
     siblings.push({ instanceId, label: displayName?.trim() || instanceId });
   };
 
-  for (const [instanceId, entry] of entries) {
-    consider(instanceId, entry.displayName);
+  // Keys of a branded record widen to `string`; narrowing them back one at a
+  // time is accepted where casting the whole entry-tuple array is not.
+  for (const instanceId of Object.keys(instances) as ReadonlyArray<ProviderInstanceId>) {
+    consider(instanceId, instances[instanceId]?.displayName);
   }
   // The default instance is only in the map once it has been edited.
   if (!(input.defaultInstanceId in instances)) {
