@@ -16,7 +16,7 @@ release the fork was sitting on at the time.
 <!--
 Format, parsed by apps/web/src/changelog/parseChangelog.ts and rendered at /changelog:
 
-  ## <version> (<YYYY-MM-DD>)        or `## Unreleased`, with no date
+  ## <version> (<YYYY-MM-DD>)        or `## 0.0.31-avicode.6 (2026-08-03)`, with no date
 
   Upstream: t3code <version>
 
@@ -36,7 +36,7 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
-## Unreleased
+## 0.0.31-avicode.6 (2026-08-03)
 
 Upstream: t3code 0.0.31
 
