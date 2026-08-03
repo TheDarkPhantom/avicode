@@ -61,6 +61,22 @@ function fallbackMessage(error: ProjectFileErrorLike): string {
 }
 
 /**
+ * Avi Code addition: whether the read got as far as the target and failed there,
+ * which is the one shape that means the same relative path might resolve in a
+ * different repo. Containment, folder, and binary failures all say the path was
+ * reached, so looking elsewhere for those would be wrong.
+ *
+ * Deliberately wider than {@link describeProjectFileError}'s missing-file test:
+ * the platform error's `code` does not survive the wire, so a caller that
+ * demanded a confirmed ENOENT would miss the case it exists for.
+ */
+export function isProjectFileTargetUnreachable(value: unknown): boolean {
+  if (!isProjectFileError(value)) return false;
+  if (value.failure !== "operation_failed") return false;
+  return value.operation !== undefined && TARGET_OPERATIONS.has(value.operation);
+}
+
+/**
  * A sentence worth showing the user, or `null` when the cause is unrecognised
  * and the caller should keep whatever it already had.
  */

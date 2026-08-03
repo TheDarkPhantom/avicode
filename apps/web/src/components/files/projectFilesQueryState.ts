@@ -141,6 +141,24 @@ export function useProjectEntriesQuery(
   };
 }
 
+/**
+ * Avi Code addition: the squashed cause of a file read, or `null` while it is
+ * pending or fine. Reads the same atom {@link useProjectFileQuery} does, so a
+ * caller that only wants to react to the failure costs no extra request.
+ */
+export function useProjectFileQueryFailure(
+  environmentId: EnvironmentId | null,
+  cwd: string | null,
+  relativePath: string | null,
+): unknown {
+  const atom =
+    environmentId !== null && cwd !== null && relativePath !== null
+      ? getProjectFileQueryAtom(environmentId, cwd, relativePath)
+      : EMPTY_PROJECT_FILE_QUERY_ATOM;
+  const result = useAtomValue(atom);
+  return result._tag === "Failure" ? Cause.squash(result.cause) : null;
+}
+
 export function useProjectFileQuery(
   environmentId: EnvironmentId,
   cwd: string,

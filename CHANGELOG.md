@@ -36,6 +36,14 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- A file an agent names from another repo now opens in that repo instead of failing to load (#106)
+
 ## 0.0.31-avicode.6 (2026-08-03)
 
 Upstream: t3code 0.0.31

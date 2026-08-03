@@ -93,6 +93,8 @@ import {
 import { type LegendListRef } from "@legendapp/list/react";
 import { getAnchoredTurnMetrics, type TimelineScrollMode } from "./chat/timelineScrollAnchoring";
 import { isWithinWorkspaceRoot, workspacePathBasename } from "../workspacePathMatch";
+import { useCrossRepoFileFallback } from "./files/useCrossRepoFileFallback";
+import { useProjectWorkspaceRoots } from "../state/projectWorkspaceRoots";
 import { ThreadFindBar } from "./chat/find/ThreadFindBar";
 import {
   formatMatchCount,
@@ -2610,6 +2612,21 @@ function ChatViewContent(props: ChatViewProps) {
     );
     return owningProject?.title ?? workspacePathBasename(surfaceRoot);
   }, [activeFileSurface?.root, activeProject?.title, allProjects]);
+  // Avi Code addition: a path an agent wrote relative to a folder above this
+  // thread's workspace resolves to a file that is not there, so the tab opens on
+  // a read failure. Move it to the repo that owns the path. Tabs already
+  // carrying a root are excluded, which is what stops this repeating on one tab.
+  const isThreadRelativeFileSurface =
+    activeFileSurface !== null && activeFileSurface.root === undefined;
+  const projectWorkspaceRoots = useProjectWorkspaceRoots();
+  useCrossRepoFileFallback({
+    environmentId: activeProject?.environmentId ?? null,
+    threadRef: activeThreadRef,
+    surfaceId: isThreadRelativeFileSurface ? activeFileSurface.id : null,
+    workspaceRoot: isThreadRelativeFileSurface ? (activeWorkspaceRoot ?? null) : null,
+    relativePath: isThreadRelativeFileSurface ? activeFileSurface.relativePath : null,
+    projectRoots: projectWorkspaceRoots,
+  });
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
