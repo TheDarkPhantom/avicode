@@ -89,6 +89,15 @@ export const AviCodeChatContentWidth = Schema.Literals(["comfortable", "wide", "
 export type AviCodeChatContentWidth = typeof AviCodeChatContentWidth.Type;
 export const DEFAULT_AVICODE_CHAT_CONTENT_WIDTH: AviCodeChatContentWidth = "comfortable";
 
+// Avi Code addition. What a send does while the agent is still working.
+// "steer" is upstream's only behaviour: the message is injected into the
+// running turn immediately. "queue" holds it until the turn finishes and then
+// sends it as its own turn, which is what you want when the message is the
+// next instruction rather than a correction to the current one.
+export const AviCodeSendWhileRunning = Schema.Literals(["steer", "queue"]);
+export type AviCodeSendWhileRunning = typeof AviCodeSendWhileRunning.Type;
+export const DEFAULT_AVICODE_SEND_WHILE_RUNNING: AviCodeSendWhileRunning = "steer";
+
 // Avi Code addition. The chime used to be a single hard-coded rising two-note
 // sine — the same shape other desktop tools use, so hearing it did not tell you
 // which app wanted you. These five are synthesized from preset tables in
@@ -212,6 +221,11 @@ export const ClientSettingsSchema = Schema.Struct({
   // Avi Code addition. How wide the chat column is allowed to grow.
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
+  ),
+  // Avi Code addition. Steer the running turn (upstream's behaviour) or hold
+  // the send until the turn finishes.
+  aviCodeSendWhileRunning: AviCodeSendWhileRunning.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_SEND_WHILE_RUNNING)),
   ),
   // Avi Code addition. Communication styles. `aviCodeCommunicationStyleId` is
   // the last style picked anywhere and is what a brand-new chat starts on;
@@ -893,6 +907,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeScrollToPlanTopOnExpand: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
   aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
+  aviCodeSendWhileRunning: Schema.optionalKey(AviCodeSendWhileRunning),
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),
