@@ -17,6 +17,7 @@ import {
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
   resolveMouseBackForwardThreadNavigationTarget,
+  resolveSidebarChangeRequestStatus,
   resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarV2Status,
@@ -1813,5 +1814,55 @@ describe("buildFlatSidebarThreadList", () => {
 
     expect(result.renderedThreads.map((entry) => entry.id)).toEqual(["first"]);
     expect(result.hiddenThreads.map((entry) => entry.id)).toEqual(["second"]);
+  });
+});
+
+describe("resolveSidebarChangeRequestStatus", () => {
+  const idle = { isRunning: false, operation: null, action: null };
+  const preparingPr = {
+    isRunning: true,
+    operation: "prepare_pull_request_thread",
+    action: null,
+  };
+
+  it("reports merging while a pull request action is in flight", () => {
+    expect(resolveSidebarChangeRequestStatus({ vcsActionState: preparingPr, prState: null })).toBe(
+      "merging",
+    );
+    expect(
+      resolveSidebarChangeRequestStatus({
+        vcsActionState: { isRunning: true, operation: "run_change_request", action: "create_pr" },
+        prState: null,
+      }),
+    ).toBe("merging");
+  });
+
+  it("reports a settled pull request as merged or closed, never as merging", () => {
+    expect(resolveSidebarChangeRequestStatus({ vcsActionState: idle, prState: "merged" })).toBe(
+      "merged",
+    );
+    expect(resolveSidebarChangeRequestStatus({ vcsActionState: idle, prState: "closed" })).toBe(
+      "closed",
+    );
+  });
+
+  it("lets an in-flight action outrank the previous pull request's outcome", () => {
+    expect(
+      resolveSidebarChangeRequestStatus({ vcsActionState: preparingPr, prState: "merged" }),
+    ).toBe("merging");
+  });
+
+  it("reports nothing for an open pull request or no pull request at all", () => {
+    expect(resolveSidebarChangeRequestStatus({ vcsActionState: idle, prState: "open" })).toBeNull();
+    expect(resolveSidebarChangeRequestStatus({ vcsActionState: idle, prState: null })).toBeNull();
+  });
+
+  it("ignores an unrelated source control action", () => {
+    expect(
+      resolveSidebarChangeRequestStatus({
+        vcsActionState: { isRunning: true, operation: "run_change_request", action: "commit" },
+        prState: null,
+      }),
+    ).toBeNull();
   });
 });
