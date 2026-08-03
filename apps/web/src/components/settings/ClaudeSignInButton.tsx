@@ -13,6 +13,7 @@ import { LogInIcon } from "lucide-react";
 import { type ProviderInstanceId } from "@t3tools/contracts";
 
 import { Button } from "../ui/button";
+import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePrimaryEnvironment } from "../../state/environments";
@@ -47,20 +48,31 @@ export function ClaudeSignInButton({
     <Tooltip>
       <TooltipTrigger
         render={
+          // Icon-only: this sits in the card's title row beside the reset and
+          // delete icons, which is too tight for a labelled button. The label
+          // lives in the tooltip instead.
           <Button
-            size="xs"
-            variant={needsAuth ? "secondary" : "ghost"}
-            className="h-6 gap-1 px-2 text-xs"
+            size="icon-xs"
+            variant="ghost"
+            className={cn(
+              "size-5 rounded-sm p-0",
+              needsAuth ? "text-warning hover:text-warning" : "text-muted-foreground",
+              "hover:text-foreground",
+            )}
             onClick={handleClick}
             disabled={!primaryEnvironment}
+            aria-label={
+              needsAuth
+                ? `Sign in to ${displayName}, not authenticated`
+                : `Sign in to ${displayName}`
+            }
           >
             <LogInIcon className="size-3 shrink-0" aria-hidden />
-            Sign in
           </Button>
         }
       />
       <TooltipPopup side="top">
-        Run `claude auth login` against this instance's config directory
+        {needsAuth ? "Not signed in. Sign in to this instance" : "Sign in to this instance"}
       </TooltipPopup>
     </Tooltip>
   );
