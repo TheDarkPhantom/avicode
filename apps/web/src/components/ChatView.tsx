@@ -151,6 +151,7 @@ import {
   useThreadPreviewState,
 } from "../previewStateStore";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
+import { useAutoOpenScriptPreview } from "./preview/useAutoOpenScriptPreview";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
@@ -1224,6 +1225,9 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const forkThread = useAtomCommand(threadEnvironment.fork, { reportFailure: false });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  // Avi Code addition: honours the script form's "Open preview automatically",
+  // which upstream persisted and offered but never read at runtime.
+  const requestAutoOpenScriptPreview = useAutoOpenScriptPreview(openPreview);
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -3017,7 +3021,9 @@ function ChatViewContent(props: ChatViewProps) {
           activeThreadId,
           error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
         );
+        return;
       }
+      requestAutoOpenScriptPreview({ script, threadRef: activeThreadRef });
     },
     [
       activeProject,
@@ -3033,6 +3039,7 @@ function ChatViewContent(props: ChatViewProps) {
       environmentId,
       openTerminal,
       activeKnownTerminalIds,
+      requestAutoOpenScriptPreview,
       runningTerminalIds,
       terminalUiState.activeTerminalId,
       writeTerminal,

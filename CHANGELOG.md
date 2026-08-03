@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Plan mode now says when a provider is not actually held to planning (#111)
+- An action set to open its preview automatically now does so once its server is up (#109)
 - A file an agent names from another repo now opens in that repo instead of failing to load (#106)
 
 ## 0.0.31-avicode.6 (2026-08-03)
