@@ -61,6 +61,19 @@ export interface LocalServerSection {
   readonly servers: readonly PreviewableServer[];
 }
 
+/**
+ * Whether "Other local servers" should start open.
+ *
+ * A developer machine runs a lot of unrelated listeners — vendor tools, VPN
+ * clients, game clients — and the scanner cannot tell them from a dev server by
+ * port or process name. Collapsing them is what makes this thread's own server
+ * the thing you see. But collapsing the only section there is would leave an
+ * apparently empty panel, so it opens when nothing more relevant exists.
+ */
+export function shouldExpandOtherServers(sections: readonly LocalServerSection[]): boolean {
+  return !sections.some((section) => section.group !== "other");
+}
+
 const SECTION_TITLES: Record<LocalServerGroup, string> = {
   "this-thread": "This thread",
   "this-project": "This project",
