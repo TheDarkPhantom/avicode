@@ -25,6 +25,8 @@ import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 
 import * as ProcessRunner from "../processRunner.ts";
+// Avi Code addition: keeps operating system listeners out of the browser panel.
+import { filterBrowsableLocalServers } from "./localServerNoise.ts";
 
 export class PortDiscovery extends Context.Service<
   PortDiscovery,
@@ -239,7 +241,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         platform: hostPlatform,
       }).pipe(Effect.as(null));
 
-  const scanOnce = Effect.fn("PortDiscovery.scan")(function* () {
+  const scanAllListeners = Effect.fn("PortDiscovery.scanAll")(function* () {
     const state = yield* Ref.get(stateRef);
     const terminalByProcessId = new Map<number, TerminalProcessOwner>();
     for (const registration of state.terminalProcesses.values()) {
@@ -293,6 +295,17 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       );
     if (lsofResult !== null) return lsofResult;
     return yield* probeCommonPorts();
+  });
+
+  /**
+   * Avi Code addition: the probes above enumerate every listening socket on the
+   * machine, which on Windows is mostly the operating system. Filtering here
+   * rather than in each probe keeps the lsof, Windows and common-port paths
+   * consistent, and keeps the noise out of the snapshot the panel diffs
+   * against, so an OS service starting no longer counts as a change.
+   */
+  const scanOnce = Effect.fn("PortDiscovery.scan")(function* () {
+    return filterBrowsableLocalServers(yield* scanAllListeners());
   });
 
   const broadcast = Effect.fn("PortDiscovery.broadcast")(function* (
