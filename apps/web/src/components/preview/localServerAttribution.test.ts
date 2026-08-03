@@ -1,7 +1,11 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { attributeLocalServer, groupLocalServers } from "./localServerAttribution";
+import {
+  attributeLocalServer,
+  groupLocalServers,
+  shouldExpandOtherServers,
+} from "./localServerAttribution";
 import type { PreviewableServer } from "./useDiscoveredLocalServers";
 
 const THIS_THREAD = ThreadId.make("thread-1");
@@ -163,5 +167,26 @@ describe("groupLocalServers", () => {
     ];
     const total = groupLocalServers(servers, CONTEXT).flatMap((section) => section.servers);
     expect(total).toHaveLength(2);
+  });
+});
+
+describe("shouldExpandOtherServers", () => {
+  const section = (group: "this-thread" | "this-project" | "other") => ({
+    group,
+    title: group,
+    servers: [],
+  });
+
+  it("keeps unrelated listeners folded away when a relevant server exists", () => {
+    // The whole point: this thread's dev server must not be pushed down the
+    // list by a dozen vendor background apps.
+    expect(shouldExpandOtherServers([section("this-thread"), section("other")])).toBe(false);
+    expect(shouldExpandOtherServers([section("this-project"), section("other")])).toBe(false);
+  });
+
+  it("opens when there is nothing more relevant to show", () => {
+    // Collapsing the only section would leave an apparently empty panel.
+    expect(shouldExpandOtherServers([section("other")])).toBe(true);
+    expect(shouldExpandOtherServers([])).toBe(true);
   });
 });

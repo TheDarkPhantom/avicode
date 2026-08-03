@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The browser panel folds unrelated local servers away so this thread's own server is what you see (#104)
 - Set a provider's chat list badge on the provider itself, next to its name and colour (#103)
 - Provider icons in Settings now match the ones in the chat list (#103)
 - The browser panel no longer lists Windows services and background apps as things you can open (#102)
