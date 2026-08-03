@@ -555,6 +555,60 @@ describe("chat/editor shortcuts", () => {
   });
 });
 
+// Avi Code addition: dictation is on `mod+\``, deliberately outside the
+// terminal, where backtick means command substitution.
+describe("dictation shortcut", () => {
+  it("resolves mod+` to dictation outside the terminal", () => {
+    assert.equal(
+      resolveShortcutCommand(event({ key: "`", metaKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "composer.dictate",
+    );
+  });
+
+  it("leaves the chord alone inside the terminal", () => {
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "`", metaKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("matches on the Backquote code when the layout reports another key", () => {
+    // AZERTY and several Nordic layouts do not report "`" for this physical
+    // key, which would otherwise leave the shortcut dead on those keyboards.
+    assert.equal(
+      resolveShortcutCommand(
+        event({ key: "²", code: "Backquote", ctrlKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Linux", context: { terminalFocus: false } },
+      ),
+      "composer.dictate",
+    );
+  });
+
+  it("does not disturb the chords that neighbour it", () => {
+    assert.equal(
+      resolveShortcutCommand(event({ key: "d", metaKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "diff.toggle",
+    );
+    assert.equal(
+      resolveShortcutCommand(
+        event({ key: "d", metaKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+      "terminal.splitVertical",
+    );
+  });
+});
+
 describe("cross-command precedence", () => {
   it("uses when + order so a later focused rule overrides a global rule", () => {
     const keybindings = compile([

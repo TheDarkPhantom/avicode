@@ -21,6 +21,7 @@ const clientSettings: ClientSettings = {
   aviCodeNewThreadsStartInPlanMode: false,
   aviCodeNotificationSound: "pebble",
   aviCodeOpenChatsAtLastResponse: false,
+  aviCodeOpenSettingsToAviCodePage: false,
   aviCodeProviderBadgeLabels: {},
   aviCodeScrollToPlanTopOnExpand: true,
   aviCodeSidebarShowPrIndicator: true,

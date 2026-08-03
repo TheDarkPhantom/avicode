@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Start and stop dictation from the keyboard instead of clicking the microphone (#91)
+- Choose to have Settings open on the Avi Code page instead of General (#91)
 - The browser panel groups local servers so the one for the thread you are in comes first (#96)
 - Press Ctrl+F to search the open thread, including tool calls, with match counts and jumping (#95)
 - Open and edit files from other repos in the file viewer without leaving the thread (#94)

@@ -10,6 +10,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
+// Avi Code addition: lets Settings land on the Avi Code page when opted in.
+import { loadClientSettings } from "../hooks/useSettings";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { isElectron } from "../env";
@@ -129,7 +131,18 @@ export const Route = createFileRoute("/settings")({
     }
 
     if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/general", replace: true });
+      // Avi Code addition: the fork's own settings page can be the landing
+      // page instead of upstream's General. Awaited rather than read from the
+      // synchronous snapshot: client settings hydrate from storage after this
+      // runs, so reading eagerly would always see the default and ignore the
+      // user's choice on a cold load.
+      const clientSettings = await loadClientSettings();
+      throw redirect({
+        to: clientSettings.aviCodeOpenSettingsToAviCodePage
+          ? "/settings/avicode"
+          : "/settings/general",
+        replace: true,
+      });
     }
   },
   component: SettingsRouteLayout,

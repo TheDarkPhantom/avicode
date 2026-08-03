@@ -234,6 +234,13 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeOpenChatsAtLastResponse: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  // Avi Code addition. Settings always opens on General, which is upstream's
+  // page; the fork's own settings live one click further in. With this on,
+  // Settings opens on the Avi Code page instead. Off by default so the app
+  // still lands where upstream's docs and muscle memory expect.
+  aviCodeOpenSettingsToAviCodePage: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -899,6 +906,7 @@ export const ClientSettingsPatch = Schema.Struct({
     ),
   ),
   aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
+  aviCodeOpenSettingsToAviCodePage: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
