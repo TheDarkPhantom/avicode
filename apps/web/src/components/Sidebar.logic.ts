@@ -201,6 +201,33 @@ export function isSidebarMergingSourceControlAction(
   );
 }
 
+export type SidebarChangeRequestStatus = "merging" | "merged" | "closed";
+
+/**
+ * Avi Code addition: the v2 row used to fold "a source-control action is in
+ * flight" together with "the PR has settled" into one `Merging` label, so a
+ * merged or closed PR read as still merging for the rest of the thread's life.
+ * In-flight keeps `merging`; each settled state gets its own terminal answer.
+ *
+ * In-flight wins over a settled PR because a thread that already landed one PR
+ * and is pushing the next should show the live action, not the old outcome.
+ */
+export function resolveSidebarChangeRequestStatus(input: {
+  readonly vcsActionState: SidebarSourceControlActionState;
+  readonly prState: "open" | "merged" | "closed" | null;
+}): SidebarChangeRequestStatus | null {
+  if (isSidebarMergingSourceControlAction(input.vcsActionState)) {
+    return "merging";
+  }
+  if (input.prState === "merged") {
+    return "merged";
+  }
+  if (input.prState === "closed") {
+    return "closed";
+  }
+  return null;
+}
+
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
   dispose: () => void;
