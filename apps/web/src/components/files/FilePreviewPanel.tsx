@@ -128,11 +128,19 @@ function WorkspaceImagePreview(props: {
   readonly threadRef: ScopedThreadRef;
   readonly absolutePath: string;
   readonly alt: string;
+  /**
+   * Avi Code addition: the repository this file belongs to, when the surface is
+   * showing another project's root. Without it the server resolved the image
+   * against the thread's own workspace and rejected it as outside, so a
+   * cross-repo image failed to load while its text neighbours opened fine.
+   */
+  readonly workspaceRoot: string | null;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, {
     _tag: "workspace-file",
     threadId: props.threadRef.threadId,
     path: props.absolutePath,
+    ...(props.workspaceRoot === null ? {} : { workspaceRoot: props.workspaceRoot }),
   });
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
@@ -745,6 +753,7 @@ export default function FilePreviewPanel({
       const result = await openFileInPreview({
         threadRef,
         filePath: absolutePath,
+        workspaceRoot: isExternalRoot ? cwd : null,
         httpBaseUrl: environmentHttpBaseUrl,
         createAssetUrl,
         openPreview,
@@ -761,7 +770,15 @@ export default function FilePreviewPanel({
         }),
       );
     })();
-  }, [absolutePath, createAssetUrl, environmentHttpBaseUrl, openPreview, threadRef]);
+  }, [
+    absolutePath,
+    createAssetUrl,
+    cwd,
+    environmentHttpBaseUrl,
+    isExternalRoot,
+    openPreview,
+    threadRef,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
@@ -909,6 +926,7 @@ export default function FilePreviewPanel({
               threadRef={threadRef}
               absolutePath={absolutePath}
               alt={relativePath}
+              workspaceRoot={isExternalRoot ? cwd : null}
             />
           ) : relativePath && file.error && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
