@@ -35,6 +35,9 @@ import {
   type WizardNavigation,
 } from "./AddProviderInstanceDialog.logic";
 import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps";
+// Avi Code addition: keep new Claude instances off the default credential.
+import { collectClaudeConfigDirs, suggestClaudeConfigDir } from "./claudeConfigDir";
+import { CLAUDE_DRIVER_KIND } from "./claudeDriverKind";
 
 const PROVIDER_ACCENT_SWATCHES = [
   "#2563eb",
@@ -134,6 +137,9 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
   // Errors are suppressed until the user has tried to submit once. After that
   // they update live so fixing the problem clears the message in place.
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  // Avi Code addition: true once the user has taken ownership of the Claude
+  // config directory, so the prefill stops following the instance id.
+  const [claudeConfigDirEdited, setClaudeConfigDirEdited] = useState(false);
 
   const existingIds = useMemo(
     () => new Set(Object.keys(settings.providerInstances ?? {})),
@@ -152,6 +158,41 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
   const wizardStepSummaries = [driverOption.label, previewLabel, null] as const;
 
   const configDraft = configByDriver[driver] ?? EMPTY_CONFIG_DRAFT;
+  // Avi Code addition: a Claude instance left on the empty default resolves to
+  // `~/.claude`, so it shares one credential with the default instance and
+  // signing either in re-authenticates both. Prefilling a distinct directory
+  // makes the isolated case the one you get by doing nothing. Tracks the
+  // instance id while the user types, and stops the moment they edit the field
+  // — an explicitly cleared value is a choice, not an untouched default.
+  const suggestedClaudeConfigDir =
+    driver === CLAUDE_DRIVER_KIND
+      ? suggestClaudeConfigDir(
+          instanceId,
+          collectClaudeConfigDirs({
+            instances: settings.providerInstances,
+            legacyClaudeHomePath: settings.providers?.claudeAgent?.homePath,
+          }),
+        )
+      : null;
+  // The field is annotated `clearWhenEmpty: "omit"`, so clearing it removes the
+  // key entirely — indistinguishable from never having touched it. Without this
+  // flag the prefill would reinstate itself on the next render and the field
+  // could not be cleared at all.
+  const effectiveConfigDraft =
+    suggestedClaudeConfigDir !== null &&
+    !claudeConfigDirEdited &&
+    typeof configDraft.homePath !== "string"
+      ? { ...configDraft, homePath: suggestedClaudeConfigDir }
+      : configDraft;
+
+  const handleConfigChange = (config: Record<string, unknown> | undefined) => {
+    if (suggestedClaudeConfigDir !== null && !claudeConfigDirEdited) {
+      const incoming = config?.homePath;
+      const incomingValue = typeof incoming === "string" ? incoming : "";
+      if (incomingValue !== suggestedClaudeConfigDir) setClaudeConfigDirEdited(true);
+    }
+    setConfigDraft(config);
+  };
   const setConfigDraft = (config: Record<string, unknown> | undefined) => {
     setConfigByDriver((existing) => {
       const next = { ...existing };
@@ -183,7 +224,9 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
     setHasAttemptedSubmit(true);
     if (instanceIdError !== null) return;
 
-    const config = configByDriver[driver] ?? {};
+    // The prefilled Claude directory has to reach the saved config, not just
+    // the rendered field, or an untouched form would still save an empty path.
+    const config = effectiveConfigDraft;
     const hasConfig = Object.keys(config).length > 0;
     const normalizedAccentColor = normalizeProviderAccentColor(accentColor);
 
@@ -390,10 +433,10 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
                 <div className={cn("grid gap-4", wizardStep !== 2 && "hidden")}>
                   <ProviderSettingsForm
                     definition={driverOption}
-                    value={configDraft}
+                    value={effectiveConfigDraft}
                     idPrefix={`add-provider-${driver}`}
                     variant="dialog"
-                    onChange={setConfigDraft}
+                    onChange={handleConfigChange}
                   />
                 </div>
               ) : wizardStep === 2 ? (

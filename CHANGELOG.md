@@ -36,6 +36,15 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- New Claude providers get their own credential folder instead of sharing the default one (#99)
+- Signing a Claude provider in warns you when it would change another provider's account (#99)
+
 ## 0.0.31-avicode.4 (2026-08-03)
 
 Upstream: t3code 0.0.31
