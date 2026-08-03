@@ -85,7 +85,13 @@ export const collectClaudeConfigDirs = (input: {
 };
 
 export interface ClaudeConfigDirSibling {
-  readonly instanceId: ProviderInstanceId;
+  /**
+   * Plain `string`, not `ProviderInstanceId`. The ids come from
+   * `Object.entries`, which widens a branded record's keys, and narrowing them
+   * back is not a permitted conversion. Callers only render this, so the brand
+   * would buy nothing.
+   */
+  readonly instanceId: string;
   readonly label: string;
 }
 
@@ -103,10 +109,12 @@ export const findClaudeConfigDirSiblings = (input: {
   readonly instanceId: ProviderInstanceId;
   readonly defaultInstanceId: ProviderInstanceId;
 }): ReadonlyArray<ClaudeConfigDirSibling> => {
-  const instances = input.instances ?? {};
+  // Keyed by plain string so lookups take the widened ids that
+  // `Object.entries` produces, with no cast anywhere in this function.
+  const byId = new Map(Object.entries(input.instances ?? {}));
 
-  const configDirFor = (instanceId: ProviderInstanceId): string | undefined => {
-    const entry = instances[instanceId];
+  const configDirFor = (instanceId: string): string | undefined => {
+    const entry = byId.get(instanceId);
     if (entry) {
       if (entry.driver !== CLAUDE_DRIVER_KIND) return undefined;
       const homePath = (entry.config as { readonly homePath?: unknown } | undefined)?.homePath;
@@ -126,7 +134,7 @@ export const findClaudeConfigDirSiblings = (input: {
   const siblings: ClaudeConfigDirSibling[] = [];
   const seen = new Set<string>();
 
-  const consider = (instanceId: ProviderInstanceId, displayName: string | undefined) => {
+  const consider = (instanceId: string, displayName: string | undefined) => {
     if (instanceId === input.instanceId || seen.has(instanceId)) return;
     const dir = configDirFor(instanceId);
     if (dir === undefined || normalizeClaudeConfigDir(dir) !== normalizedTarget) return;
@@ -134,13 +142,11 @@ export const findClaudeConfigDirSiblings = (input: {
     siblings.push({ instanceId, label: displayName?.trim() || instanceId });
   };
 
-  // Keys of a branded record widen to `string`; narrowing them back one at a
-  // time is accepted where casting the whole entry-tuple array is not.
-  for (const instanceId of Object.keys(instances) as ReadonlyArray<ProviderInstanceId>) {
-    consider(instanceId, instances[instanceId]?.displayName);
+  for (const [instanceId, entry] of byId) {
+    consider(instanceId, entry.displayName);
   }
   // The default instance is only in the map once it has been edited.
-  if (!(input.defaultInstanceId in instances)) {
+  if (!byId.has(input.defaultInstanceId)) {
     consider(input.defaultInstanceId, "Claude");
   }
 
