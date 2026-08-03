@@ -477,8 +477,6 @@ function ChatListSettings() {
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
   const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
-  const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
-  const providers = deriveProviderInstanceEntries(useAtomValue(primaryServerProvidersAtom));
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -522,43 +520,6 @@ function ChatListSettings() {
           />
         }
       />
-      {providers.map((provider) => {
-        const value = badgeLabels[provider.instanceId] ?? "";
-        return (
-          <SettingsRow
-            key={provider.instanceId}
-            title={`${provider.displayName} badge`}
-            description="Use one or two characters to identify this client in every chat row. Leave blank to use automatic initials."
-            control={
-              <div className="flex items-center gap-2">
-                <ProviderInstanceIcon
-                  driverKind={provider.driverKind}
-                  displayName={value || provider.displayName}
-                  accentColor={provider.accentColor}
-                  showBadge
-                />
-                <Input
-                  value={value}
-                  maxLength={2}
-                  className="w-16 text-center uppercase"
-                  aria-label={`${provider.displayName} chat badge`}
-                  placeholder="Auto"
-                  onChange={(event) => {
-                    const nextValue = event.target.value
-                      .replace(/[^a-z0-9]/giu, "")
-                      .slice(0, 2)
-                      .toUpperCase();
-                    const nextLabels = { ...badgeLabels };
-                    if (nextValue) nextLabels[provider.instanceId] = nextValue;
-                    else delete nextLabels[provider.instanceId];
-                    updateSettings({ aviCodeProviderBadgeLabels: nextLabels });
-                  }}
-                />
-              </div>
-            }
-          />
-        );
-      })}
     </SettingsSection>
   );
 }

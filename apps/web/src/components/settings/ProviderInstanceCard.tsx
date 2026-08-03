@@ -27,11 +27,14 @@ import { cn } from "../../lib/utils";
 import { formatQuotaSummaryLine } from "../../lib/providerQuota";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+// Avi Code addition: the chat-row badge label is edited on this card.
+import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import { DraftInput } from "../ui/draft-input";
+import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
@@ -417,6 +420,22 @@ export function ProviderInstanceCard({
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);
+  // Avi Code addition: the chat-row badge label. Edited here rather than on the
+  // Avi Code settings page because it is per-instance, and a second editor for
+  // one value invites the two to disagree. See the exception noted in AGENTS.md.
+  const badgeLabels = useClientSettings((settings) => settings.aviCodeProviderBadgeLabels);
+  const updateClientSettings = useUpdateClientSettings();
+  const badgeLabel = badgeLabels[instanceId] ?? "";
+  const setBadgeLabel = (raw: string) => {
+    const next = raw
+      .replace(/[^a-z0-9]/giu, "")
+      .slice(0, 2)
+      .toUpperCase();
+    const nextLabels = { ...badgeLabels };
+    if (next) nextLabels[instanceId] = next;
+    else delete nextLabels[instanceId];
+    updateClientSettings({ aviCodeProviderBadgeLabels: nextLabels });
+  };
   const { copyToClipboard } = useCopyToClipboard<{ providerName: string }>({
     onCopy: ({ providerName }) => {
       toastManager.add({
@@ -505,9 +524,13 @@ export function ProviderInstanceCard({
   const titleIconNode = driverKind ? (
     <ProviderInstanceIcon
       driverKind={driverKind}
-      displayName={displayName}
+      // Avi Code addition: the chat list derives this badge from the configured
+      // label, so passing `displayName` here made the same instance look
+      // different in Settings than it does in the sidebar. Badge shows whenever
+      // either an accent colour or a label is set, matching the sidebar.
+      displayName={badgeLabel || displayName}
       accentColor={accentColor}
-      showBadge={Boolean(accentColor)}
+      showBadge={Boolean(accentColor) || badgeLabel.length > 0}
       statusDotClassName={statusStyle.dot}
       indicatorBackground="var(--card)"
       className="size-5"
@@ -760,6 +783,37 @@ export function ProviderInstanceCard({
                 />
                 <span className="mt-1 block text-xs text-muted-foreground">
                   Optional label shown in the provider list.
+                </span>
+              </label>
+            </div>
+
+            {/* Avi Code addition: moved here from the Avi Code settings page.
+                It is a per-instance value and belongs beside display name and
+                accent colour, which are the other two things that decide how
+                this instance is recognised. */}
+            <div>
+              <label htmlFor={`provider-instance-${instanceId}-badge`} className="block">
+                <span className="text-xs font-medium text-foreground">Chat list badge</span>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <ProviderInstanceIcon
+                    driverKind={driverKind ?? instance.driver}
+                    displayName={badgeLabel || displayName}
+                    accentColor={accentColor}
+                    showBadge
+                  />
+                  <Input
+                    id={`provider-instance-${instanceId}-badge`}
+                    value={badgeLabel}
+                    maxLength={2}
+                    className="w-16 text-center uppercase"
+                    placeholder="Auto"
+                    spellCheck={false}
+                    onChange={(event) => setBadgeLabel(event.target.value)}
+                  />
+                </div>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  One or two characters identifying this client on every chat row. Leave blank to
+                  use automatic initials.
                 </span>
               </label>
             </div>

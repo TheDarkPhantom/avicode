@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Set a provider's chat list badge on the provider itself, next to its name and colour (#103)
+- Provider icons in Settings now match the ones in the chat list (#103)
 - The browser panel no longer lists Windows services and background apps as things you can open (#102)
 - The provider sign in control no longer overlaps the provider's name (#101)
 
