@@ -258,6 +258,13 @@ file is a future merge conflict. Keep the fork's surface area small and easy to 
   (`apps/web/src/components/settings/AviCodeSettings.tsx`, route `settings.avicode.tsx`) — never on
   the upstream General/Appearance/Beta panels. Upstream can rewrite those panels freely without
   touching ours.
+  - **Exception: per-instance provider settings.** A setting that belongs to one provider instance
+    lives on that instance's card in `ProviderInstanceCard.tsx`, beside display name and accent
+    colour, rather than on the Avi Code page. The chat-list badge label is the worked example: it
+    was on the Avi Code page, which meant editing one instance's identity in two places and left
+    the Settings icon and the sidebar icon disagreeing. The merge cost is accepted deliberately —
+    keep such additions to a self-contained block so a conflict is resolvable without re-deriving
+    the intent.
 - Prefer new files under a fork-owned directory (e.g. `components/sidebar/`) over inline additions
   to large upstream files. When an upstream file must change, keep the edit to a thin branch or a
   single call site rather than interleaved logic.
