@@ -305,6 +305,7 @@ import {
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  shouldFollowUpWithAttachments,
   shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
@@ -4848,6 +4849,12 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // Avi Code addition: the thread whose answer was submitted with attachments
+  // still in the composer, cleared once they have been sent as their own
+  // message. Holds the thread rather than a flag so switching threads mid-flight
+  // cannot deliver one thread's screenshot into another.
+  const pendingAnswerAttachmentFollowUpRef = useRef<ThreadId | null>(null);
+
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
     if (
@@ -4863,6 +4870,19 @@ function ChatViewContent(props: ChatViewProps) {
     )
       return;
     if (activePendingProgress) {
+      // Avi Code addition: an attachment cannot ride the answer. Every
+      // provider's answer transport carries strings only, so upstream simply
+      // dropped whatever was in the composer. Remember it here and send it as
+      // its own message once the question clears.
+      if (
+        shouldFollowUpWithAttachments({
+          isLastQuestion: activePendingProgress.isLastQuestion,
+          hasResolvedAnswers: activePendingResolvedAnswers !== null,
+          attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
+        })
+      ) {
+        pendingAnswerAttachmentFollowUpRef.current = activeThread.id;
+      }
       onAdvanceActivePendingUserInput();
       return;
     }
@@ -5796,6 +5816,30 @@ function ChatViewContent(props: ChatViewProps) {
     onRespondToUserInput,
     setActivePendingUserInputQuestionIndex,
   ]);
+
+  // Avi Code addition: deliver the attachments the answer could not carry.
+  //
+  // Waits for the question to actually clear rather than firing straight after
+  // the response resolves: until then `onSend` would take the answer branch
+  // again, and the message really is a follow-up to the answer. The composer
+  // text was consumed as the answer, so only the attachments go.
+  useEffect(() => {
+    const followUpThreadId = pendingAnswerAttachmentFollowUpRef.current;
+    if (followUpThreadId === null) return;
+    if (activePendingUserInput) return;
+    if (followUpThreadId !== activeThreadId) {
+      // Left the thread before the question cleared. The attachments stay in
+      // that thread's draft rather than following the user somewhere else.
+      pendingAnswerAttachmentFollowUpRef.current = null;
+      return;
+    }
+    pendingAnswerAttachmentFollowUpRef.current = null;
+    promptRef.current = "";
+    void onSend();
+    // `onSend` is redefined every render; depending on it would run this on
+    // each one. The ref above is what decides whether there is work to do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePendingUserInput, activeThreadId]);
 
   const onPreviousActivePendingUserInputQuestion = useCallback(() => {
     if (!activePendingProgress) {

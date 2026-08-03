@@ -268,6 +268,28 @@ export function cloneComposerImageForRetry(image: ComposerAttachment): ComposerA
   }
 }
 
+/**
+ * Avi Code addition: whether answering a question should be followed by a
+ * message carrying the composer's attachments.
+ *
+ * No provider's answer transport carries image content: Claude returns the
+ * answers as tool input, Codex and the two ACP providers return a strings-only
+ * response, and OpenCode posts `string[]`. Upstream therefore dropped whatever
+ * was attached, without saying so. Sending it as its own message is the only
+ * way the file actually reaches the agent.
+ *
+ * Every condition here matters. A non-final question submits nothing, so the
+ * attachments must keep waiting; unresolved answers mean the send is a no-op
+ * for the same reason; and with nothing attached there is no follow-up to make.
+ */
+export function shouldFollowUpWithAttachments(options: {
+  isLastQuestion: boolean;
+  hasResolvedAnswers: boolean;
+  attachmentCount: number;
+}): boolean {
+  return options.isLastQuestion && options.hasResolvedAnswers && options.attachmentCount > 0;
+}
+
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;

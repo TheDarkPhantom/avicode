@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- A screenshot attached while an agent is waiting on your answer now arrives instead of vanishing (#107)
+- Attachments stay visible in the composer while an agent is waiting on your answer (#107)
 - A file an agent names from another repo now opens in that repo instead of failing to load (#106)
 
 ## 0.0.31-avicode.6 (2026-08-03)

@@ -2757,13 +2757,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const addComposerImages = async (files: File[]) => {
     if (!activeThreadId || files.length === 0) return;
-    if (pendingUserInputs.length > 0) {
-      toastManager.add({
-        type: "error",
-        title: "Attach images after answering plan questions.",
-      });
-      return;
-    }
     // Captured before the awaits below: the user may switch threads while a
     // large image is being compressed, and the attachments and errors belong
     // to the thread the paste happened in.
@@ -3503,14 +3496,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 />
               )}
 
+            {/*
+              Avi Code change: attachments stay visible while a question is
+              pending. Upstream hid them, so an image attached before the
+              question arrived vanished from the composer and was dropped on
+              send. No provider can carry an image in an answer, so it follows
+              as its own message instead, and the row says so.
+            */}
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
-              pendingUserInputs.length === 0 &&
               composerImages.some(
                 (image) =>
                   !composerPreviewAnnotations.some((annotation) => annotation.id === image.id),
               ) && (
-                <div className="mb-3 flex flex-wrap gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   {composerImages
                     .filter(
                       (image) =>
@@ -3582,6 +3581,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         </Button>
                       </div>
                     ))}
+                  {pendingUserInputs.length > 0 && (
+                    <span className="text-xs leading-tight text-muted-foreground">
+                      Sent as a follow-up message once you answer
+                    </span>
+                  )}
                 </div>
               )}
 
