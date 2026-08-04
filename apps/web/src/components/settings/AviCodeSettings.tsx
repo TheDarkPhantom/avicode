@@ -205,6 +205,9 @@ function ChatLayoutSettings() {
   const sendWhileRunning = useClientSettings<AviCodeSendWhileRunning>(
     (settings) => settings.aviCodeSendWhileRunning,
   );
+  const rightPanelFollowsThreads = useClientSettings(
+    (settings) => settings.rightPanelFollowsThreads,
+  );
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -279,6 +282,19 @@ function ChatLayoutSettings() {
           </Select>
         }
       />
+      <SettingsRow
+        title="Keep the side panel open across chats"
+        description="Carry the right panel's open or closed state between threads. Its contents stay per-thread — switching reopens that thread's own diff, files, or preview."
+        control={
+          <Switch
+            checked={rightPanelFollowsThreads}
+            onCheckedChange={(checked) =>
+              updateSettings({ rightPanelFollowsThreads: Boolean(checked) })
+            }
+            aria-label="Keep the side panel open across chats"
+          />
+        }
+      />
     </SettingsSection>
   );
 }
@@ -289,6 +305,9 @@ function SidebarLayoutSettings() {
   );
   const flatThreadCount = useClientSettings<SidebarFlatThreadCount>(
     (settings) => settings.sidebarFlatThreadCount,
+  );
+  const mouseBackForwardNavigation = useClientSettings(
+    (settings) => settings.sidebarMouseBackForwardNavigation,
   );
   const updateSettings = useUpdateClientSettings();
   const isFlat = threadGrouping === "flat";
@@ -367,6 +386,19 @@ function SidebarLayoutSettings() {
           }
         />
       ) : null}
+      <SettingsRow
+        title="Mouse back/forward buttons"
+        description="Use mouse back and forward buttons to move through visible sidebar threads instead of browser history."
+        control={
+          <Switch
+            checked={mouseBackForwardNavigation}
+            onCheckedChange={(checked) =>
+              updateSettings({ sidebarMouseBackForwardNavigation: Boolean(checked) })
+            }
+            aria-label="Use mouse back and forward buttons for sidebar thread navigation"
+          />
+        }
+      />
     </SettingsSection>
   );
 }
