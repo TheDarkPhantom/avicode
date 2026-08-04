@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Agents get an inventory of what the next big upstream merge will disturb (#112)
 - Plan mode now says when a provider is not actually held to planning (#111)
 - Images and previews from another repo now load instead of failing where text already worked (#110)
 - A merged or closed pull request reads as Merged or Closed instead of merging forever (#108)
