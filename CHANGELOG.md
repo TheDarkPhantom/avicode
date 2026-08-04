@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Scrolling back through a chat now stays put instead of snapping to the newest text (#116)
 - Merge a project's ready threads from the new sidebar's project picker (#115)
 - Choose whether a message sent mid turn steers the agent or waits for it to finish (#113)
 - The side panel and mouse navigation settings now sit on the Avi Code settings page (#114)
