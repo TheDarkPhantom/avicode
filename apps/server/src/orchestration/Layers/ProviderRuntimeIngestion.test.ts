@@ -203,7 +203,10 @@ async function waitForThread(
 
 describe("ProviderRuntimeIngestion", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    OrchestrationEngineService | ProviderRuntimeIngestionService | ProjectionSnapshotQuery,
+    | OrchestrationEngineService
+    | ProviderRuntimeIngestionService
+    | ProjectionSnapshotQuery
+    | InterruptSuppression,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
