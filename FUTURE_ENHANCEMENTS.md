@@ -17,6 +17,20 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- `/btw` silently discards attached images, terminal contexts, and preview annotations. The
+  `/plan`/`/default` branch in `ChatView`'s send handler refuses to claim the input when any of
+  those are present, so they survive; the `/btw` branch has no such guard and clears the composer
+  regardless. Whether a side question should carry an image at all is the open question, not just
+  where to put the guard.
+- With "Queue" chosen for sending mid turn, `/btw` is held as a queued turn rather than asked. The
+  hold check runs early in the send handler, long before `/btw` is parsed, so the question fires
+  after the turn settles, which is the opposite of the point. The default is "Steer", so this only
+  bites users who changed it.
+- `packages/shared/src/sideQuestionSupport.ts` hardcodes which providers can answer a side question
+  and has no compile-time link to any adapter's `capabilities.sideQuestion`. The capability is not
+  on the config push stream, so the client keeps its own copy and the two can drift silently. A new
+  fork-session-capable adapter would get a hidden command; a Claude regression would get a visible
+  one that always fails.
 - A local server started outside an Avi Code terminal cannot be attributed to a project. The browser
   panel groups servers using the pid-to-terminal map the port scanner already keeps, so anything
   started from an external shell, a task runner, or before the app opened lands under "Other".

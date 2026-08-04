@@ -141,8 +141,9 @@ export function parseStandaloneComposerSlashCommand(
  *
  * Unlike `/plan` and `/default`, this one carries an argument, so it needs its
  * own parser rather than the bare-command matcher above. A lone `/btw` returns
- * an empty question — the caller opens the panel and lets the user type there,
- * which is what the keyboard shortcut does too.
+ * an empty question, which the caller treats as an unfinished command: the text
+ * stays in the composer for the question to be typed after it, the same state
+ * the command menu and the keyboard shortcut leave you in.
  */
 export function parseComposerSideQuestionCommand(text: string): { question: string } | null {
   const match = /^\/btw(?:\s+([\s\S]*))?$/i.exec(text.trim());
