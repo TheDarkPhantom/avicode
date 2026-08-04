@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Choose whether a message sent mid turn steers the agent or waits for it to finish (#113)
 - The side panel and mouse navigation settings now sit on the Avi Code settings page (#114)
 - Agents get an inventory of what the next big upstream merge will disturb (#112)
 - Plan mode now says when a provider is not actually held to planning (#111)

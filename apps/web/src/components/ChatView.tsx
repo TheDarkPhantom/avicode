@@ -169,6 +169,7 @@ import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
   ChevronDownIcon,
+  ClockIcon,
   GitBranchIcon,
   TriangleAlertIcon,
   SquarePenIcon,
@@ -269,6 +270,12 @@ import {
 } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import {
+  addHeldSend,
+  removeHeldSend,
+  shouldFlushHeldSend,
+  shouldHoldSendWhileRunning,
+} from "./chat/sendWhileRunning.logic";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -1338,6 +1345,10 @@ function ChatViewContent(props: ChatViewProps) {
     savedDraft: ComposerThreadDraftState;
   } | null>(null);
   const [isForkingThread, setIsForkingThread] = useState(false);
+  // Avi Code addition: threads whose composer is holding a send until the
+  // running turn finishes. Keyed by thread because the hold outlives navigating
+  // away, and holds no content at all — the composer's own draft is the message.
+  const [heldSendThreadKeys, setHeldSendThreadKeys] = useState<ReadonlyArray<string>>([]);
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -1552,6 +1563,30 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  // Avi Code addition: held-send controls. `onSend` is redefined on every render,
+  // so these reach it through a ref rather than depending on it — and the ref is
+  // declared up here because the composer banner that uses them renders long
+  // before `onSend` is defined.
+  const onSendRef = useRef<
+    | ((
+        e?: { preventDefault: () => void },
+        sendOptions?: { readonly bypassRunningHold?: boolean },
+      ) => Promise<void>)
+    | null
+  >(null);
+  const releaseHeldSend = useCallback((threadKey: string) => {
+    setHeldSendThreadKeys((current) => removeHeldSend(current, threadKey));
+  }, []);
+  const isHoldingSend = activeThreadKey !== null && heldSendThreadKeys.includes(activeThreadKey);
+  const sendHeldMessageNow = useCallback(() => {
+    if (activeThreadKey === null) return;
+    releaseHeldSend(activeThreadKey);
+    void onSendRef.current?.(undefined, { bypassRunningHold: true });
+  }, [activeThreadKey, releaseHeldSend]);
+  const cancelHeldSend = useCallback(() => {
+    if (activeThreadKey === null) return;
+    releaseHeldSend(activeThreadKey);
+  }, [activeThreadKey, releaseHeldSend]);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
     readonly messageId: MessageId | null;
@@ -1581,6 +1616,8 @@ function ChatViewContent(props: ChatViewProps) {
   // separate class strings. They all read `--chat-content-max-width` now, which
   // this sets once on the chat root from the user's setting.
   const chatContentWidth = useClientSettings((settings) => settings.aviCodeChatContentWidth);
+  // Avi Code addition: steer the running turn, or hold the send until it ends.
+  const sendWhileRunning = useClientSettings((settings) => settings.aviCodeSendWhileRunning);
   const chatContentWidthStyle = useMemo(
     () =>
       ({
@@ -4409,6 +4446,30 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    // Avi Code addition: a send held until the running turn finishes. Says the
+    // reload limitation out loud, because nothing persists the hold.
+    const heldSendItems: ComposerBannerStackItem[] = isHoldingSend
+      ? [
+          {
+            id: `held-send:${activeThreadKey}`,
+            variant: "info",
+            icon: <ClockIcon />,
+            title: "Queued until this turn finishes",
+            description:
+              "Your message stays in the composer and sends as its own turn. Reloading loses the queue.",
+            actions: (
+              <>
+                <Button size="xs" variant="outline" onClick={sendHeldMessageNow}>
+                  Send now
+                </Button>
+                <Button size="xs" variant="ghost" onClick={cancelHeldSend}>
+                  Cancel
+                </Button>
+              </>
+            ),
+          },
+        ]
+      : [];
     const forkEditItems: ComposerBannerStackItem[] =
       forkEditState === null
         ? []
@@ -4461,9 +4522,15 @@ function ChatViewContent(props: ChatViewProps) {
             },
           ];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
-      return [...forkEditItems, ...systemComposerBannerItems, ...parkedThreadItems];
+      return [
+        ...heldSendItems,
+        ...forkEditItems,
+        ...systemComposerBannerItems,
+        ...parkedThreadItems,
+      ];
     }
     return [
+      ...heldSendItems,
       ...forkEditItems,
       ...systemComposerBannerItems,
       {
@@ -4508,9 +4575,13 @@ function ChatViewContent(props: ChatViewProps) {
       ...parkedThreadItems,
     ];
   }, [
+    activeThreadKey,
     cancelForkEdit,
+    cancelHeldSend,
     forkEditState,
     isForkingThread,
+    isHoldingSend,
+    sendHeldMessageNow,
     activeBranchMismatchKey,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
@@ -4855,7 +4926,10 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  const onSend = async (
+    e?: { preventDefault: () => void },
+    sendOptions?: { readonly bypassRunningHold?: boolean },
+  ) => {
     e?.preventDefault();
     if (
       !activeThread ||
@@ -4911,6 +4985,23 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerReviewComments.length,
     });
+    // Avi Code addition: with "Queue" chosen, a send during a running turn is
+    // held rather than steered. Nothing is captured — the composer keeps the
+    // draft, its attachments and its contexts, and the flush re-runs this same
+    // function once the turn settles.
+    if (
+      activeThreadKey !== null &&
+      hasSendableContent &&
+      !forkEditState &&
+      shouldHoldSendWhileRunning({
+        setting: sendWhileRunning,
+        phase,
+        bypassHold: sendOptions?.bypassRunningHold ?? false,
+      })
+    ) {
+      setHeldSendThreadKeys((current) => addHeldSend(current, activeThreadKey));
+      return;
+    }
     if (forkEditState) {
       if (
         !isElectron ||
@@ -5622,6 +5713,25 @@ function ChatViewContent(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+
+  onSendRef.current = onSend;
+  // Avi Code addition: flushing a held send once its thread is free again.
+  useEffect(() => {
+    if (activeThreadKey === null) return;
+    if (
+      !shouldFlushHeldSend({
+        heldThreadKeys: heldSendThreadKeys,
+        activeThreadKey,
+        phase,
+        isSendBusy,
+        isConnecting,
+      })
+    ) {
+      return;
+    }
+    releaseHeldSend(activeThreadKey);
+    void onSendRef.current?.(undefined, { bypassRunningHold: true });
+  }, [activeThreadKey, heldSendThreadKeys, isConnecting, isSendBusy, phase, releaseHeldSend]);
 
   const onInterrupt = async () => {
     if (!activeThread) return;

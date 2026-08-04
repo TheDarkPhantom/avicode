@@ -49,21 +49,24 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - The initial position is resolved once, on the first render with rows, and frozen for the chat's
   lifetime. A chat whose history streams in after the first non-empty batch (very long chats, slow
   links) anchors on whatever the newest response was at that moment.
-- Queue-vs-steer for messages sent while a turn is running. Today the composer always steers: a
-  send during a running turn is injected into that turn immediately (see the comment in
-  `apps/web/src/components/ChatView.logic.ts`). There is no queue and no setting, and the
-  `hasQueuedTurn` path in `ChatComposer.tsx` is the offline outbox for a disconnected environment,
-  not this. Upstream built the feature — server-side per-thread queue, auto-drained on natural turn
-  completion, with per-message Steer and Remove chips above the composer — in
-  `pingdotgg/t3code#4245` (branch `t3code/queue-steer-feature`, fetched here as
-  `origin/t3code/queue-steer-feature`). That PR was **closed unmerged** on 2026-07-30 in favour of
-  orchestration V2 (`#2829`), which reportedly has the behaviour natively; the closing note invites
-  a rebase-and-reopen if V2 turns out to be missing it. So do not merge the dead branch — its seven
-  commits sit on a base that is now well over a hundred commits stale and it adds a colliding
-  migration. Wait for the V2 merge tracked in `TODO.md`, then re-check whether the behaviour is
-  present. If it is wanted sooner, the cheap fork-local version is a client-side hold while
-  `phase === "running"` that flushes on turn completion, with an `aviCodeSendWhileRunning`
-  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload.
+- Queueing a send while a turn runs is client-side only, so it does not survive a reload. The
+  `aviCodeSendWhileRunning` setting holds nothing but a flag: the composer keeps the user's own
+  draft and the flush re-runs the same send once the turn settles, which is why there is no command,
+  event, projector fold or migration. That was deliberate — orchestration V2 would throw all four
+  away. The banner says the limitation out loud. Making it durable means either a server-side queue
+  or persisting the intent next to the composer draft.
+- Only one send is held per thread, because the hold IS the composer. Typing a second message while
+  one is queued replaces the first rather than stacking, so there is no list of queued messages and
+  no per-message Remove. Upstream's version (`pingdotgg/t3code#4245`) had a real per-thread queue
+  with Steer and Remove chips; that PR was **closed unmerged** on 2026-07-30 in favour of
+  orchestration V2 (`#2829`), which reportedly has the behaviour natively. Do not merge the dead
+  branch — its seven commits sit on a base well over a hundred commits stale and it adds a colliding
+  migration. After the V2 merge tracked in `TODO.md`, re-check whether V2 really ships this and
+  delete the fork version if it does.
+- A queued send pauses while you are looking at another thread. The flush needs the held thread's
+  own composer to read the draft from, so navigating away holds it rather than sending it, and
+  coming back resumes. Sending from a background thread would mean capturing the draft, which is
+  exactly the serialization this design avoids.
 - The changelog is hand-written. Nothing derives it from git, so a PR that forgets its `Unreleased`
   line leaves no trace, and an upstream sync means pasting the merged commit list in by hand. A
   script that turns `git log --first-parent <base>..<sync>` into the **Upstream t3code** section

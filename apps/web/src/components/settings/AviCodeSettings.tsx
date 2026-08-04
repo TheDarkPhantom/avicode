@@ -1,6 +1,7 @@
 import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@t3tools/contracts";
 import {
   type AviCodeChatContentWidth,
+  type AviCodeSendWhileRunning,
   MAX_SIDEBAR_FLAT_THREAD_COUNT,
   MIN_SIDEBAR_FLAT_THREAD_COUNT,
   type SidebarFlatThreadCount,
@@ -189,12 +190,20 @@ const CHAT_CONTENT_WIDTH_LABELS: Record<AviCodeChatContentWidth, string> = {
   full: "Full width",
 };
 
+const SEND_WHILE_RUNNING_LABELS: Record<AviCodeSendWhileRunning, string> = {
+  steer: "Steer the current turn",
+  queue: "Queue until it finishes",
+};
+
 function ChatLayoutSettings() {
   const contentWidth = useClientSettings<AviCodeChatContentWidth>(
     (settings) => settings.aviCodeChatContentWidth,
   );
   const openAtLastResponse = useClientSettings(
     (settings) => settings.aviCodeOpenChatsAtLastResponse,
+  );
+  const sendWhileRunning = useClientSettings<AviCodeSendWhileRunning>(
+    (settings) => settings.aviCodeSendWhileRunning,
   );
   const rightPanelFollowsThreads = useClientSettings(
     (settings) => settings.rightPanelFollowsThreads,
@@ -243,6 +252,34 @@ function ChatLayoutSettings() {
             }
             aria-label="Open chats at the last response"
           />
+        }
+      />
+      <SettingsRow
+        title="Sending while the agent is working"
+        description="Steer injects your message into the turn that is already running, which is right when you are correcting the work in flight. Queue holds it until that turn finishes and then sends it as its own turn, which is right when it is simply the next instruction."
+        status="A queued message stays in the composer with Send now and Cancel above it, and is lost if you reload before the turn finishes."
+        control={
+          <Select
+            value={sendWhileRunning}
+            onValueChange={(value) => {
+              updateSettings({ aviCodeSendWhileRunning: value as AviCodeSendWhileRunning });
+            }}
+          >
+            <SelectTrigger
+              className="w-full sm:w-56"
+              aria-label="Sending while the agent is working"
+            >
+              <SelectValue>{SEND_WHILE_RUNNING_LABELS[sendWhileRunning]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="steer">
+                {SEND_WHILE_RUNNING_LABELS.steer}
+              </SelectItem>
+              <SelectItem hideIndicator value="queue">
+                {SEND_WHILE_RUNNING_LABELS.queue}
+              </SelectItem>
+            </SelectPopup>
+          </Select>
         }
       />
       <SettingsRow
