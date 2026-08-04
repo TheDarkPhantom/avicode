@@ -346,9 +346,9 @@ describe("ProviderRuntimeIngestion", () => {
       drain,
       recordedUsage,
       markInterrupted: (threadId: ThreadId) =>
-        Effect.runPromise(interruptSuppression.mark(threadId)),
+        runtime!.runPromise(interruptSuppression.mark(threadId)),
       isInterruptSuppressed: (threadId: ThreadId) =>
-        Effect.runPromise(interruptSuppression.isSuppressed(threadId)),
+        runtime!.runPromise(interruptSuppression.isSuppressed(threadId)),
     };
   }
 

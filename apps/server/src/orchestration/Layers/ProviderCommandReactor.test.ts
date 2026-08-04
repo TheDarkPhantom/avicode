@@ -487,7 +487,7 @@ describe("ProviderCommandReactor", () => {
     }
 
     for (const [index, requestId] of (input?.openUserInputsBeforeStart ?? []).entries()) {
-      await Effect.runPromise(
+      await runEffect(
         engine.dispatch({
           type: "thread.activity.append",
           commandId: CommandId.make(`cmd-user-input-open-before-start-${index + 1}`),
@@ -2827,7 +2827,7 @@ describe("ProviderCommandReactor", () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("cmd-user-input-requested-no-session"),
@@ -2855,7 +2855,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.user-input.respond",
         commandId: CommandId.make("cmd-user-input-respond-no-session"),
@@ -2892,7 +2892,7 @@ describe("ProviderCommandReactor", () => {
       ),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-set-for-user-input-rejection"),
@@ -2910,7 +2910,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.user-input.respond",
         commandId: CommandId.make("cmd-user-input-respond-rejected"),
