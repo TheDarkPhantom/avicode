@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The browser panel lists only the servers you started here, not every port on your machine (#119)
 - Typing /btw without a question keeps your text instead of clearing the composer (#118)
 - Using /btw on a new chat now says to send a message first instead of doing nothing (#118)
 - Stopping the agent no longer reports an error for something you did on purpose (#117)
