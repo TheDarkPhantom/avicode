@@ -166,6 +166,7 @@ import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./u
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 // Avi Code addition: pinned rows head the active block and the project picker.
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
+import { ProjectMergeRunButton } from "./sidebar/ProjectMergeRunButton";
 import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -2678,6 +2679,15 @@ export default function SidebarV2() {
                             <ProjectUnsentDraftDot
                               logicalProjectKey={scopeKey}
                               projectName={project.displayName}
+                            />
+                            {/* Avi Code addition: merge every ready worktree
+                                thread in this project, one at a time. The
+                                picker is v2's only per-project surface. */}
+                            <ProjectMergeRunButton
+                              project={project}
+                              navigateToThread={navigateToThread}
+                              onActivate={() => setProjectScopeMenuOpen(false)}
+                              className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/55 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                             />
                             <button
                               type="button"
