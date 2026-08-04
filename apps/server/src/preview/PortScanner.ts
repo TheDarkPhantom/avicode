@@ -5,15 +5,13 @@
  * stable line-prefixed field format; this is the only `lsof` flag set we rely
  * on).
  *
- * Windows / lsof missing: checks a curated list of common dev ports through
- * the shared Net service.
+ * Windows: parses `Get-NetTCPConnection -State Listen` through PowerShell.
  *
  * Polling is reference-counted via scoped `retain`. A single layer-scoped fiber
  * polls forever, but each tick is a no-op when the retain count is zero.
  */
 import { ThreadId, type DiscoveredLocalServer } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import * as Net from "@t3tools/shared/Net";
 import { LSOF_LOCAL_HOST_TOKENS } from "@t3tools/shared/preview";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -25,7 +23,7 @@ import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 
 import * as ProcessRunner from "../processRunner.ts";
-// Avi Code addition: keeps operating system listeners out of the browser panel.
+// Avi Code addition: keeps listeners Avi Code did not start out of the browser panel.
 import { filterBrowsableLocalServers } from "./localServerNoise.ts";
 
 export class PortDiscovery extends Context.Service<
@@ -54,10 +52,6 @@ export class PortDiscovery extends Context.Service<
     }) => Effect.Effect<void>;
   }
 >()("t3/preview/PortScanner/PortDiscovery") {}
-
-export const COMMON_DEV_PORTS: ReadonlyArray<number> = Object.freeze([
-  3000, 3001, 3333, 4173, 4200, 4321, 5000, 5173, 5174, 5175, 5500, 8000, 8080, 8081, 8888, 9000,
-]);
 
 const POLL_INTERVAL = Duration.seconds(3);
 const LSOF_TIMEOUT_MS = 5_000;
@@ -199,7 +193,6 @@ const serversEqual = (
 };
 
 export const make = Effect.gen(function* PortDiscoveryMake() {
-  const net = yield* Net.NetService;
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const hostPlatform = yield* HostProcessPlatform;
   const stateRef = yield* Ref.make<ScannerState>({
@@ -209,33 +202,15 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     retainCount: 0,
   });
 
-  const probeCommonPorts = Effect.fn("PortDiscovery.probeCommonPorts")(function* () {
-    const results = yield* Effect.forEach(
-      COMMON_DEV_PORTS,
-      (port) =>
-        net.isPortAvailableOnLoopback(port).pipe(
-          Effect.map((available) => ({
-            port,
-            listening: !available,
-          })),
-        ),
-      { concurrency: "unbounded" },
-    );
-    return results
-      .filter((result) => result.listening)
-      .map<DiscoveredLocalServer>((result) => ({
-        host: "localhost",
-        port: result.port,
-        url: `http://localhost:${result.port}`,
-        processName: null,
-        pid: null,
-        terminal: null,
-      }));
-  });
-
+  /**
+   * Avi Code addition: there is no fallback probe any more. Only a listener the
+   * process probe can attribute to an Avi Code terminal is offered, and a TCP
+   * sweep of likely ports learns no owner, so everything it found was discarded
+   * a moment later. Failing to an empty snapshot says the same thing for free.
+   */
   const recoverProcessProbeFailure =
     (probe: "lsof" | "windows-listeners") => (error: ProcessRunner.ProcessRunError) =>
-      Effect.logDebug("preview port process probe failed; falling back to common-port probes", {
+      Effect.logDebug("preview port process probe failed; reporting no local servers", {
         cause: error,
         probe,
         platform: hostPlatform,
@@ -271,8 +246,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
             ProcessTimeoutError: recoverWindowsProbeFailure,
           }),
         );
-      if (listeners !== null) return listeners;
-      return yield* probeCommonPorts();
+      return listeners ?? [];
     }
     const recoverLsofProbeFailure = recoverProcessProbeFailure("lsof");
     const lsofResult = yield* processRunner
@@ -293,16 +267,16 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
           ProcessTimeoutError: recoverLsofProbeFailure,
         }),
       );
-    if (lsofResult !== null) return lsofResult;
-    return yield* probeCommonPorts();
+    return lsofResult ?? [];
   });
 
   /**
    * Avi Code addition: the probes above enumerate every listening socket on the
-   * machine, which on Windows is mostly the operating system. Filtering here
-   * rather than in each probe keeps the lsof, Windows and common-port paths
-   * consistent, and keeps the noise out of the snapshot the panel diffs
-   * against, so an OS service starting no longer counts as a change.
+   * machine, which on Windows is mostly the operating system and vendor tools.
+   * Filtering here rather than in each probe keeps the lsof and Windows paths
+   * consistent, and keeps everything Avi Code did not start out of the snapshot
+   * the panel diffs against, so a service starting no longer counts as a change
+   * and no longer costs a broadcast.
    */
   const scanOnce = Effect.fn("PortDiscovery.scan")(function* () {
     return filterBrowsableLocalServers(yield* scanAllListeners());

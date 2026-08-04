@@ -1,11 +1,7 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  attributeLocalServer,
-  groupLocalServers,
-  shouldExpandOtherServers,
-} from "./localServerAttribution";
+import { attributeLocalServer, groupLocalServers } from "./localServerAttribution";
 import type { PreviewableServer } from "./useDiscoveredLocalServers";
 
 const THIS_THREAD = ThreadId.make("thread-1");
@@ -111,8 +107,10 @@ describe("attributeLocalServer", () => {
     );
   });
 
-  it("leaves a server started outside the app unattributed rather than hidden", () => {
-    expect(attributeLocalServer(server({ terminal: null }), CONTEXT)).toBe("other");
+  it("keeps a URL you opened by hand in its own group", () => {
+    expect(attributeLocalServer(server({ source: "recent", terminal: null }), CONTEXT)).toBe(
+      "recent",
+    );
   });
 
   it("does not claim a server from an unrelated repo", () => {
@@ -132,10 +130,18 @@ describe("attributeLocalServer", () => {
 });
 
 describe("groupLocalServers", () => {
-  it("puts this thread first, then the project, then everything else", () => {
+  it("puts this thread first, then the project, then other projects, then history", () => {
     const sections = groupLocalServers(
       [
-        server({ port: 3000, terminal: null }),
+        server({ port: 3000, source: "recent", terminal: null }),
+        server({
+          port: 4000,
+          terminal: {
+            threadId: OTHER_THREAD,
+            terminalId: "t3",
+            cwd: "C:/Users/avi/dev/advisoravi-business",
+          },
+        }),
         server({
           port: 6006,
           terminal: { threadId: OTHER_THREAD, terminalId: "t2", cwd: "C:/Users/avi/dev/avicode" },
@@ -149,44 +155,30 @@ describe("groupLocalServers", () => {
       "this-thread",
       "this-project",
       "other",
+      "recent",
     ]);
     expect(sections[0]?.servers.map((entry) => entry.port)).toEqual([5173]);
-    expect(sections[2]?.servers.map((entry) => entry.port)).toEqual([3000]);
+    expect(sections[2]?.servers.map((entry) => entry.port)).toEqual([4000]);
+    expect(sections[3]?.servers.map((entry) => entry.port)).toEqual([3000]);
   });
 
   it("drops empty sections so a single group needs no heading", () => {
-    const sections = groupLocalServers([server({ terminal: null })], CONTEXT);
+    const sections = groupLocalServers(
+      [server({ terminal: { threadId: THIS_THREAD, terminalId: "t1" } })],
+      CONTEXT,
+    );
     expect(sections).toHaveLength(1);
-    expect(sections[0]?.group).toBe("other");
+    expect(sections[0]?.group).toBe("this-thread");
   });
 
-  it("never hides a server it cannot attribute", () => {
+  it("shows every server it was given", () => {
+    // Whatever reaches the client is worth an entry; the filtering that keeps
+    // the machine's own listeners out happens on the server.
     const servers = [
-      server({ port: 3000, terminal: null }),
-      server({ port: 8080, terminal: null }),
+      server({ port: 3000, source: "recent", terminal: null }),
+      server({ port: 8080, terminal: { threadId: THIS_THREAD, terminalId: "t1" } }),
     ];
     const total = groupLocalServers(servers, CONTEXT).flatMap((section) => section.servers);
     expect(total).toHaveLength(2);
-  });
-});
-
-describe("shouldExpandOtherServers", () => {
-  const section = (group: "this-thread" | "this-project" | "other") => ({
-    group,
-    title: group,
-    servers: [],
-  });
-
-  it("keeps unrelated listeners folded away when a relevant server exists", () => {
-    // The whole point: this thread's dev server must not be pushed down the
-    // list by a dozen vendor background apps.
-    expect(shouldExpandOtherServers([section("this-thread"), section("other")])).toBe(false);
-    expect(shouldExpandOtherServers([section("this-project"), section("other")])).toBe(false);
-  });
-
-  it("opens when there is nothing more relevant to show", () => {
-    // Collapsing the only section would leave an apparently empty panel.
-    expect(shouldExpandOtherServers([section("other")])).toBe(true);
-    expect(shouldExpandOtherServers([])).toBe(true);
   });
 });

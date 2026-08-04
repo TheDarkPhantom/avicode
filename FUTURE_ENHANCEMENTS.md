@@ -31,15 +31,18 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   on the config push stream, so the client keeps its own copy and the two can drift silently. A new
   fork-session-capable adapter would get a hidden command; a Claude regression would get a visible
   one that always fails.
-- A local server started outside an Avi Code terminal cannot be attributed to a project. The browser
-  panel groups servers using the pid-to-terminal map the port scanner already keeps, so anything
-  started from an external shell, a task runner, or before the app opened lands under "Other".
-  Closing that gap needs pid-to-working-directory resolution, which has no cheap Windows API;
-  `native/resource-monitor` does not expose it either (`ProcessSample` has no cwd field and
-  `process_refresh_kind()` does not request one), so widening the sidecar would be the smallest
-  route and is not worth it yet.
-- `PortScanner`'s common-port fallback returns no pid at all, so on any machine without `lsof` (and
-  where the PowerShell probe fails) every row is unattributable regardless of where it was started.
+- A local server started outside an Avi Code terminal is not listed at all. The browser panel now
+  offers only listeners the port scanner can attribute through its pid-to-terminal map, because
+  guessing by process name and port range kept admitting vendor daemons (`aw-server`,
+  `ArmouryHtmlDebugServer`, `nordvpn-service`) that in some cases genuinely serve HTTP. The cost is
+  that a dev server from an external shell, a task runner, WSL, or `docker run` has to be reached by
+  typing its URL into the panel's address bar. Closing that gap needs pid-to-working-directory
+  resolution, which has no cheap Windows API; `native/resource-monitor` does not expose it either
+  (`ProcessSample` has no cwd field and `process_refresh_kind()` does not request one), so widening
+  the sidecar would be the smallest route and is not worth it yet.
+- A machine where both `lsof` and the PowerShell probe fail now shows no local servers at all. The
+  common-port TCP fallback was removed with the same change: it could learn no owning pid, so every
+  row it produced was discarded by the ownership filter a moment later.
 - Auto-opened script previews wait on the port scanner, so a script whose server the scanner cannot
   attribute to the thread (started through a wrapper the scanner reads as a different pid, or on a
   machine where `PortScanner` has no pid at all) gives up after a minute and opens nothing. The
