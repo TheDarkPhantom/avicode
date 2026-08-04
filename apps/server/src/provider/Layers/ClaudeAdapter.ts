@@ -4478,6 +4478,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
       sideQuestion: "fork-session",
+      // `canUseTool` refuses Edit/Write/NotebookEdit for the whole plan turn,
+      // so a proposed plan waits for Implement instead of building itself.
+      planTurnEnforcement: "tool-denial",
     },
     startSession,
     sendTurn,

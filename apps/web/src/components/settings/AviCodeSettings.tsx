@@ -481,7 +481,7 @@ function NewChatSettings() {
       <SettingsRow
         title="Start new chats in plan mode"
         description="Every brand-new chat opens with the composer in Plan mode, so the agent researches and proposes a plan before touching files. You still flip any individual chat back with the mode toggle, and existing chats keep whatever mode they already use."
-        status="Only seeds the initial mode of a new chat. Implementing a plan still switches that chat to Build as usual."
+        status="Only seeds the initial mode of a new chat. Implementing a plan still switches that chat to Build as usual. Only Claude is actually held to planning; other providers police their own plan mode and may start building anyway."
         control={
           <Switch
             checked={startInPlanMode}

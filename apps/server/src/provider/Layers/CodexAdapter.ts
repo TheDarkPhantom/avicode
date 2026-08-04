@@ -2008,6 +2008,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
       sideQuestion: "unsupported",
+      // Plan behaviour is left to the Codex runtime and has not been verified
+      // to stop after proposing, so nothing here enforces it.
+      planTurnEnforcement: "unsupported",
     },
     startSession,
     sendTurn,

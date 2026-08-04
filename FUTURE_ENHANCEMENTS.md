@@ -30,13 +30,13 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   attribute to the thread (started through a wrapper the scanner reads as a different pid, or on a
   machine where `PortScanner` has no pid at all) gives up after a minute and opens nothing. The
   fallback is the same missing pid-to-working-directory resolution the entry above describes.
-- Image previews still fail for a file opened from another repo. The file viewer now reads text,
-  code and markdown against whatever root the file belongs to, but images do not go through
-  `projects.readFile` at all: they take the asset pipeline, which resolves the path against the
-  thread's own workspace root and rejects anything outside it
-  (`apps/server/src/assets/AssetAccess.ts`, `resolveCanonicalWorkspaceFile` and `issueAssetUrl`).
-  Fixing it means letting the asset URL carry a root the way the file surface now does, which is a
-  contract change and a second containment decision, so it was left out of the cross-repo work.
+- Cross-repo assets are limited to registered projects. `AssetWorkspaceRoot.ts` honours a
+  client-supplied root only when `getActiveProjectByWorkspaceRoot` finds it, because an asset URL is
+  a signed HTTP token and must never point at an arbitrary path. `resolveFileSurfaceRoot` can also
+  fall back to a file's own parent folder when no project matches, and an image or browser preview
+  under such a root is still refused, while text under the same root reads fine through
+  `projects.readFile`. Closing that gap needs a containment story for non-project roots, not a
+  looser check.
 - Opening a chat at its last response is web/desktop only. Mobile's `ThreadFeed` has its own
   scroll machinery (`initialScrollAtEnd` plus bespoke end-space suppression) and reads none of the
   Avi Code settings, so the toggle silently does nothing there — the same boundary every other
@@ -87,11 +87,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   fact. Storing an id alongside the label would fix both at the cost of a second column.
 - A style applies from the next message only. There is no "re-ask that turn in this style", which
   would need the original prompt re-sent rather than the transcript re-rendered.
-- Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
-  during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
-  have not been verified to stop after proposing a plan. If a provider still auto-implements,
-  consider interrupting the turn as soon as the plan is captured so it settles and the Implement
-  button appears immediately.
+- Plan-mode enforcement is Claude-only, and now says so. Every adapter declares
+  `capabilities.planTurnEnforcement`; only the Claude adapter reports `"tool-denial"`, and the
+  composer tooltip, the compact mode menu, and the Avi Code setting all warn on the other four.
+  What is still missing is the enforcement itself. Codex, Cursor, Grok, and OpenCode delegate plan
+  behaviour to their runtimes and **have not been observed** stopping after proposing a plan;
+  `"unsupported"` records that absence of evidence, not a verified failure. Running a plan turn on
+  each of the four and watching whether it builds is the next step, and any that does could be
+  interrupted as soon as the plan is captured so it settles and the Implement button appears.
 - The start-in-plan-mode setting reads the client-settings snapshot through a callback registered
   by `hooks/useSettings` (module-cycle constraint), so a draft created before that module loads
   would fall back to build mode. Not observed in practice — any rendered UI loads the hook first.
@@ -109,17 +112,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - The Shortcuts tab's "Built in" list is hand-maintained (`AviCodeShortcuts.logic.ts`) because those
   chords are wired into components rather than declared anywhere enumerable. It can drift from the
   code; each entry names its implementation file so the list can be re-checked.
-- No cross-thread merge orchestration. `GitWorkflowService.runStackedAction` already takes a
-  per-repository lock, so two threads running `auto_merge` at once queue instead of interleaving
-  git phases — but nothing rebases the loser, so the second PR can still land stale or conflict.
-  There is no merge queue, no "merge every ready PR in this project", and no way to nominate one
-  thread as the integrator. A project-level action that walks the threads with an open PR, runs the
-  existing `auto_merge` one at a time, and stops on the first conflict by opening that thread would
-  be the smallest useful version.
-- Sidebar v2's "Merging" label (`SidebarV2.tsx`) is both v2-only and mis-named: it fires while a
-  source-control action is in flight (`prepare_pull_request_thread`, `create_pr`, `commit_push_pr`)
-  and again once the PR is merged or closed, so a settled PR reads as still merging. Sidebar v1 has
-  no equivalent, which is why the label is invisible to anyone on the default sidebar.
+- The merge run does not rebase the loser. `useProjectMergeRun` walks a project's ready threads and
+  runs `auto_merge` one at a time, stopping on the first conflict, and
+  `GitWorkflowService.runStackedAction` takes a per-repository lock so concurrent runs queue rather
+  than interleave git phases. What is still missing is any rebase of the branches behind the one
+  that just landed, so a later PR in the run can still be stale even though it merged cleanly. A
+  real merge queue, or nominating one thread as the integrator, would close that.
 - Explorer drag progress and cancellation.
 - DOCX, CSV, JSON, and source archives.
 - Encrypted PDF password prompts without persistence.
