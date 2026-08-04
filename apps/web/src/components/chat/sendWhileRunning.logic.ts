@@ -8,20 +8,18 @@ import type { AviCodeSendWhileRunning } from "@t3tools/contracts/settings";
  * in flight and wrong when it is simply the next instruction, which arrives at
  * the running turn as an interruption nobody asked for.
  *
- * The hold is deliberately client-side and holds nothing but a flag: the
- * composer keeps the user's own draft, attachments and contexts untouched, and
- * the flush just re-runs the same send once the turn settles. That is why there
- * is no serialization here and no new command, event or migration — all of
- * which orchestration V2 would throw away. The cost is that a held send does
- * not survive a reload, which the banner says out loud.
+ * A held send is captured in full at this point: the commands are built and
+ * parked in `heldTurnStore`, and the composer is emptied. That capture is the
+ * whole point. The first version held nothing but a flag and re-read the
+ * composer when the turn settled, so a draft still being typed was sent
+ * half-finished and its remainder became the next message. The cost of the
+ * capture is that a hold does not survive a reload, which the banner says out
+ * loud.
  */
 export function shouldHoldSendWhileRunning(input: {
   readonly setting: AviCodeSendWhileRunning;
   readonly phase: string | null | undefined;
-  /** True when the caller is the "Send now" action, which must always win. */
-  readonly bypassHold: boolean;
 }): boolean {
-  if (input.bypassHold) return false;
   if (input.setting !== "queue") return false;
   return input.phase === "running";
 }
@@ -29,8 +27,13 @@ export function shouldHoldSendWhileRunning(input: {
 /**
  * A held send flushes only into the thread it was held for, and only once that
  * thread is genuinely free. Navigating away pauses the flush rather than
- * cancelling it: the draft is per-thread, so coming back resumes it with the
- * same content.
+ * cancelling it: the hold is per-thread, so coming back resumes it.
+ *
+ * `hasPendingUserInput` is not a nicety. A flush routed through the composer's
+ * send path lands on the pending-question branch first, which answers the
+ * questionnaire with whatever is drafted and returns — the questionnaire
+ * resolves from a message the user never aimed at it, and the held message is
+ * consumed without ever being sent.
  */
 export function shouldFlushHeldSend(input: {
   readonly heldThreadKeys: ReadonlyArray<string>;
@@ -38,25 +41,14 @@ export function shouldFlushHeldSend(input: {
   readonly phase: string | null | undefined;
   readonly isSendBusy: boolean;
   readonly isConnecting: boolean;
+  readonly hasPendingUserInput: boolean;
+  readonly environmentUnavailable: boolean;
 }): boolean {
   if (input.activeThreadKey === null) return false;
   if (!input.heldThreadKeys.includes(input.activeThreadKey)) return false;
   if (input.isSendBusy || input.isConnecting) return false;
+  if (input.hasPendingUserInput) return false;
+  // Dispatching into a dropped connection would only fail. The hold keeps.
+  if (input.environmentUnavailable) return false;
   return input.phase !== "running";
-}
-
-export function addHeldSend(
-  heldThreadKeys: ReadonlyArray<string>,
-  threadKey: string,
-): ReadonlyArray<string> {
-  return heldThreadKeys.includes(threadKey) ? heldThreadKeys : [...heldThreadKeys, threadKey];
-}
-
-export function removeHeldSend(
-  heldThreadKeys: ReadonlyArray<string>,
-  threadKey: string,
-): ReadonlyArray<string> {
-  return heldThreadKeys.includes(threadKey)
-    ? heldThreadKeys.filter((key) => key !== threadKey)
-    : heldThreadKeys;
 }

@@ -1,37 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  addHeldSend,
-  removeHeldSend,
-  shouldFlushHeldSend,
-  shouldHoldSendWhileRunning,
-} from "./sendWhileRunning.logic";
+import { shouldFlushHeldSend, shouldHoldSendWhileRunning } from "./sendWhileRunning.logic";
 
 describe("shouldHoldSendWhileRunning", () => {
   it("never holds on the default steer setting", () => {
-    expect(
-      shouldHoldSendWhileRunning({ setting: "steer", phase: "running", bypassHold: false }),
-    ).toBe(false);
+    expect(shouldHoldSendWhileRunning({ setting: "steer", phase: "running" })).toBe(false);
   });
 
   it("holds a send made during a running turn when queueing", () => {
-    expect(
-      shouldHoldSendWhileRunning({ setting: "queue", phase: "running", bypassHold: false }),
-    ).toBe(true);
+    expect(shouldHoldSendWhileRunning({ setting: "queue", phase: "running" })).toBe(true);
   });
 
   it("does not hold when the thread is idle", () => {
     for (const phase of ["idle", "completed", null, undefined]) {
-      expect(shouldHoldSendWhileRunning({ setting: "queue", phase, bypassHold: false })).toBe(
-        false,
-      );
+      expect(shouldHoldSendWhileRunning({ setting: "queue", phase })).toBe(false);
     }
-  });
-
-  it("lets Send now through even mid-turn", () => {
-    expect(
-      shouldHoldSendWhileRunning({ setting: "queue", phase: "running", bypassHold: true }),
-    ).toBe(false);
   });
 });
 
@@ -42,6 +25,8 @@ describe("shouldFlushHeldSend", () => {
     phase: "completed",
     isSendBusy: false,
     isConnecting: false,
+    hasPendingUserInput: false,
+    environmentUnavailable: false,
   };
 
   it("flushes once the held thread is free", () => {
@@ -65,19 +50,12 @@ describe("shouldFlushHeldSend", () => {
     expect(shouldFlushHeldSend({ ...base, activeThreadKey: null })).toBe(false);
     expect(shouldFlushHeldSend({ ...base, heldThreadKeys: [] })).toBe(false);
   });
-});
 
-describe("addHeldSend and removeHeldSend", () => {
-  it("adds a thread once and keeps the array identity when it is already held", () => {
-    const held = addHeldSend([], "a");
-    expect(held).toEqual(["a"]);
-    expect(addHeldSend(held, "a")).toBe(held);
-    expect(addHeldSend(held, "b")).toEqual(["a", "b"]);
+  it("waits while a question is on screen, so the flush cannot answer it", () => {
+    expect(shouldFlushHeldSend({ ...base, hasPendingUserInput: true })).toBe(false);
   });
 
-  it("removes only the named thread and keeps identity when there is nothing to remove", () => {
-    const held = ["a", "b"];
-    expect(removeHeldSend(held, "a")).toEqual(["b"]);
-    expect(removeHeldSend(held, "c")).toBe(held);
+  it("keeps the hold rather than dispatching into a dropped connection", () => {
+    expect(shouldFlushHeldSend({ ...base, environmentUnavailable: true })).toBe(false);
   });
 });
