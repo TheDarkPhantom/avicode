@@ -8,6 +8,19 @@ export const AssetResource = Schema.Union([
   Schema.TaggedStruct("workspace-file", {
     threadId: ThreadId,
     path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+    /**
+     * Avi Code addition: the repository the file actually belongs to, when that
+     * is not the thread's own.
+     *
+     * The file surface can sit on another registered project's root, so an
+     * image opened there resolved against the thread's workspace and was
+     * rejected as outside it. Optional so every existing caller keeps the
+     * thread-derived root, and only ever honoured after the server confirms it
+     * names a registered project.
+     */
+    workspaceRoot: Schema.optional(
+      TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+    ),
   }),
   Schema.TaggedStruct("attachment", {
     attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),

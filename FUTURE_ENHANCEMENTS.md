@@ -30,13 +30,13 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   attribute to the thread (started through a wrapper the scanner reads as a different pid, or on a
   machine where `PortScanner` has no pid at all) gives up after a minute and opens nothing. The
   fallback is the same missing pid-to-working-directory resolution the entry above describes.
-- Image previews still fail for a file opened from another repo. The file viewer now reads text,
-  code and markdown against whatever root the file belongs to, but images do not go through
-  `projects.readFile` at all: they take the asset pipeline, which resolves the path against the
-  thread's own workspace root and rejects anything outside it
-  (`apps/server/src/assets/AssetAccess.ts`, `resolveCanonicalWorkspaceFile` and `issueAssetUrl`).
-  Fixing it means letting the asset URL carry a root the way the file surface now does, which is a
-  contract change and a second containment decision, so it was left out of the cross-repo work.
+- Cross-repo assets are limited to registered projects. `AssetWorkspaceRoot.ts` honours a
+  client-supplied root only when `getActiveProjectByWorkspaceRoot` finds it, because an asset URL is
+  a signed HTTP token and must never point at an arbitrary path. `resolveFileSurfaceRoot` can also
+  fall back to a file's own parent folder when no project matches, and an image or browser preview
+  under such a root is still refused, while text under the same root reads fine through
+  `projects.readFile`. Closing that gap needs a containment story for non-project roots, not a
+  looser check.
 - Opening a chat at its last response is web/desktop only. Mobile's `ThreadFeed` has its own
   scroll machinery (`initialScrollAtEnd` plus bespoke end-space suppression) and reads none of the
   Avi Code settings, so the toggle silently does nothing there — the same boundary every other
@@ -84,11 +84,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   fact. Storing an id alongside the label would fix both at the cost of a second column.
 - A style applies from the next message only. There is no "re-ask that turn in this style", which
   would need the original prompt re-sent rather than the transcript re-rendered.
-- Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
-  during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
-  have not been verified to stop after proposing a plan. If a provider still auto-implements,
-  consider interrupting the turn as soon as the plan is captured so it settles and the Implement
-  button appears immediately.
+- Plan-mode enforcement is Claude-only, and now says so. Every adapter declares
+  `capabilities.planTurnEnforcement`; only the Claude adapter reports `"tool-denial"`, and the
+  composer tooltip, the compact mode menu, and the Avi Code setting all warn on the other four.
+  What is still missing is the enforcement itself. Codex, Cursor, Grok, and OpenCode delegate plan
+  behaviour to their runtimes and **have not been observed** stopping after proposing a plan;
+  `"unsupported"` records that absence of evidence, not a verified failure. Running a plan turn on
+  each of the four and watching whether it builds is the next step, and any that does could be
+  interrupted as soon as the plan is captured so it settles and the Implement button appears.
 - The start-in-plan-mode setting reads the client-settings snapshot through a callback registered
   by `hooks/useSettings` (module-cycle constraint), so a draft created before that module loads
   would fall back to build mode. Not observed in practice — any rendered UI loads the hook first.
