@@ -273,9 +273,10 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // Carry the right panel's open/closed state across threads instead of
-  // remembering it per thread. Surfaces stay thread-scoped either way — only
-  // visibility, and a reproducible surface kind, follow.
+  // Avi Code addition. Upstream keeps the right panel's visibility per thread with
+  // no way to change it. This carries the open/closed state across threads instead.
+  // Surfaces stay thread-scoped either way — only visibility, and a reproducible
+  // surface kind, follow. Surfaced on the Avi Code settings page, not General.
   rightPanelFollowsThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
@@ -287,6 +288,9 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Upstream leaves the mouse's back and forward buttons to
+  // browser history; this repurposes them to step through the sidebar's visible
+  // threads. Surfaced on the Avi Code settings page, not General.
   sidebarMouseBackForwardNavigation: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
