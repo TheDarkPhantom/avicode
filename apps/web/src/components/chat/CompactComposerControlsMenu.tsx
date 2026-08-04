@@ -15,6 +15,12 @@ import {
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   activePlan: boolean;
   interactionMode: ProviderInteractionMode;
+  /**
+   * Avi Code addition: false when the provider polices its own plan mode and
+   * may start building anyway, which the Plan entry says rather than implying
+   * an enforcement nobody applies.
+   */
+  planTurnEnforced: boolean;
   planSidebarLabel: string;
   planSidebarOpen: boolean;
   runtimeMode: RuntimeMode;
@@ -56,7 +62,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
               }}
             >
               <MenuRadioItem value="default">Chat</MenuRadioItem>
-              <MenuRadioItem value="plan">Plan</MenuRadioItem>
+              <MenuRadioItem value="plan">
+                {props.planTurnEnforced ? "Plan" : "Plan (not enforced)"}
+              </MenuRadioItem>
             </MenuRadioGroup>
             <MenuDivider />
           </>
