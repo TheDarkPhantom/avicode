@@ -54,6 +54,7 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { InterruptSuppression, InterruptSuppressionLive } from "../InterruptSuppression.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
@@ -265,6 +266,7 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(InterruptSuppressionLive),
       Layer.provideMerge(NodeServices.layer),
     );
     runtime = ManagedRuntime.make(layer);
@@ -334,6 +336,8 @@ describe("ProviderRuntimeIngestion", () => {
       updatedAt: createdAt,
     });
 
+    const interruptSuppression = await runtime.runPromise(Effect.service(InterruptSuppression));
+
     return {
       engine,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
@@ -341,8 +345,71 @@ describe("ProviderRuntimeIngestion", () => {
       setProviderSession: provider.setSession,
       drain,
       recordedUsage,
+      markInterrupted: (threadId: ThreadId) =>
+        Effect.runPromise(interruptSuppression.mark(threadId)),
+      isInterruptSuppressed: (threadId: ThreadId) =>
+        Effect.runPromise(interruptSuppression.isSuppressed(threadId)),
     };
   }
+
+  it("does not report a provider error the user's own stop produced", async () => {
+    const harness = await createHarness();
+    await harness.markInterrupted(asThreadId("thread-1"));
+
+    harness.emit({
+      type: "runtime.error",
+      eventId: asEventId("evt-abort-runtime-error"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-01-01T00:00:01.000Z",
+      payload: { message: "MessageAbortedError", class: "provider_error" },
+    });
+    await harness.drain();
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    // No banner, no destructive work-log row.
+    expect(thread?.session?.lastError ?? null).toBe(null);
+    expect(thread?.session?.status).not.toBe("error");
+    expect(thread?.activities.some((activity) => activity.kind === "runtime.error")).toBe(false);
+  });
+
+  it("reports a provider error again once the interrupted turn has ended", async () => {
+    const harness = await createHarness();
+    await harness.markInterrupted(asThreadId("thread-1"));
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-abort-turn-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-aborted-1"),
+      createdAt: "2026-01-01T00:00:01.000Z",
+      payload: { state: "failed", errorMessage: "aborted" },
+    });
+    await harness.drain();
+
+    // The turn that ends the stop is itself covered, and clears the guard.
+    let readModel = await harness.readModel();
+    let thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.session?.lastError ?? null).toBe(null);
+    expect(await harness.isInterruptSuppressed(asThreadId("thread-1"))).toBe(false);
+
+    harness.emit({
+      type: "runtime.error",
+      eventId: asEventId("evt-genuine-runtime-error"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-01-01T00:00:02.000Z",
+      payload: { message: "Provider crashed", class: "provider_error" },
+    });
+    await harness.drain();
+
+    readModel = await harness.readModel();
+    thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.session?.lastError).toBe("Provider crashed");
+    expect(thread?.activities.some((activity) => activity.kind === "runtime.error")).toBe(true);
+  });
 
   it("records per-turn usage against the event's provider instance", async () => {
     const harness = await createHarness();

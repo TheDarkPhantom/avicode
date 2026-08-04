@@ -40,6 +40,11 @@ import {
   type ProviderRuntimeIngestionShape,
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import {
+  USER_INPUT_EXPIRED_DETAIL,
+  USER_INPUT_EXPIRED_SUMMARY,
+} from "../pendingUserInputClosure.ts";
+import { InterruptSuppression } from "../InterruptSuppression.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -470,16 +475,21 @@ export function runtimeEventToActivities(
     }
 
     case "user-input.resolved": {
+      // Avi Code addition: an adapter closes its own pending questions when a
+      // session goes away. That is not an answer, so it reads as an expiry
+      // rather than a submission. `expired` is what the clients key off.
+      const expired = event.payload.reason === "expired";
       return [
         {
           id: event.eventId,
           createdAt: event.createdAt,
           tone: "info",
           kind: "user-input.resolved",
-          summary: "User input submitted",
+          summary: expired ? USER_INPUT_EXPIRED_SUMMARY : "User input submitted",
           payload: {
             ...(event.requestId ? { requestId: event.requestId } : {}),
             answers: event.payload.answers,
+            ...(expired ? { expired: true, detail: USER_INPUT_EXPIRED_DETAIL } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -696,6 +706,7 @@ const make = Effect.gen(function* () {
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const providerInstanceUsageRepository = yield* ProviderInstanceUsageRepository;
   const serverSettingsService = yield* ServerSettingsService;
+  const interruptSuppression = yield* InterruptSuppression;
 
   /**
    * Persist one turn's token/cost usage against the instance that served it.
@@ -1359,6 +1370,13 @@ const make = Effect.gen(function* () {
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
+      /**
+       * Avi Code addition: the user stopped this turn on purpose, so whatever
+       * the provider says on the way down is a consequence of that, not a
+       * failure to report. Read once per event and before anything clears it,
+       * because the same event both observes and ends the suppression.
+       */
+      const interruptSuppressed = yield* interruptSuppression.isSuppressed(thread.id);
       const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
         threadId: thread.id,
       });
@@ -1431,7 +1449,11 @@ const make = Effect.gen(function* () {
         const status = (() => {
           switch (event.type) {
             case "session.state.changed": {
-              const runtimeStatus = orchestrationSessionStatusFromRuntimeState(event.payload.state);
+              const reported = orchestrationSessionStatusFromRuntimeState(event.payload.state);
+              // Avi Code addition: an aborted session reports "error"; the user
+              // asking it to stop means it is simply idle again.
+              const runtimeStatus =
+                interruptSuppressed && reported === "error" ? "ready" : reported;
               return hasPendingTurnStart && runtimeStatus === "ready" ? "starting" : runtimeStatus;
             }
             case "turn.started":
@@ -1439,7 +1461,8 @@ const make = Effect.gen(function* () {
             case "session.exited":
               return "stopped";
             case "turn.completed":
-              return normalizeRuntimeTurnState(event.payload.state) === "failed"
+              return normalizeRuntimeTurnState(event.payload.state) === "failed" &&
+                !interruptSuppressed
                 ? "error"
                 : "ready";
             case "session.started":
@@ -1460,8 +1483,13 @@ const make = Effect.gen(function* () {
                   )
                 ? null
                 : activeTurnId;
-        const lastError =
-          event.type === "session.state.changed" && event.payload.state === "error"
+        // Avi Code addition: `lastError` drives the thread error banner, the red
+        // sidebar status, and the "Agent failed" push notification. A stopped
+        // turn earns none of those, and it must also clear whatever the abort
+        // already wrote before this event arrived.
+        const lastError = interruptSuppressed
+          ? null
+          : event.type === "session.state.changed" && event.payload.state === "error"
             ? (event.payload.reason ?? thread.session?.lastError ?? "Provider session error")
             : event.type === "turn.completed" &&
                 normalizeRuntimeTurnState(event.payload.state) === "failed"
@@ -1733,12 +1761,33 @@ const make = Effect.gen(function* () {
         yield* clearTurnStateForSession(thread.id);
       }
 
+      // Avi Code addition: the interrupted turn is over, so stop suppressing.
+      // Bounded by a definite event rather than a timer, so a genuine error
+      // after the stop is still reported. `interruptSuppressed` was read
+      // before this, so the event that ends the turn is still covered.
+      if (
+        interruptSuppressed &&
+        (event.type === "turn.completed" ||
+          event.type === "turn.aborted" ||
+          event.type === "session.exited")
+      ) {
+        yield* interruptSuppression.clear(thread.id);
+      }
+
       if (event.type === "runtime.error") {
         const runtimeErrorMessage = event.payload.message;
 
-        const shouldApplyRuntimeError = !STRICT_PROVIDER_LIFECYCLE_GUARD
-          ? true
-          : activeTurnId === null || eventTurnId === undefined || sameId(activeTurnId, eventTurnId);
+        // Avi Code addition: `interruptSuppressed` is the abort filter no
+        // single adapter provides. OpenCode reports its abort as a
+        // MessageAbortedError session error and codex can report a cancelled
+        // request as an error notification; both land here as a runtime error.
+        const shouldApplyRuntimeError = interruptSuppressed
+          ? false
+          : !STRICT_PROVIDER_LIFECYCLE_GUARD
+            ? true
+            : activeTurnId === null ||
+              eventTurnId === undefined ||
+              sameId(activeTurnId, eventTurnId);
 
         if (shouldApplyRuntimeError) {
           yield* orchestrationEngine.dispatch({
@@ -1823,7 +1872,13 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle);
+      // Avi Code addition: a stopped turn leaves no destructive "Runtime error"
+      // row in the work log. The session write above is already suppressed;
+      // this is the same decision applied to the timeline.
+      const activities =
+        interruptSuppressed && event.type === "runtime.error"
+          ? []
+          : runtimeEventToActivities(event, taskTitle);
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

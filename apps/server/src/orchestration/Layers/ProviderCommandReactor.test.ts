@@ -53,6 +53,7 @@ import {
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
 } from "./ProviderCommandReactor.ts";
+import { InterruptSuppressionLive } from "../InterruptSuppression.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -148,6 +149,8 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    /** Request ids left open on thread-1 before the reactor starts. */
+    readonly openUserInputsBeforeStart?: ReadonlyArray<string>;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -411,6 +414,7 @@ describe("ProviderCommandReactor", () => {
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+      Layer.provideMerge(InterruptSuppressionLive),
       Layer.provideMerge(NodeServices.layer),
     );
     runtime = ManagedRuntime.make(layer);
@@ -482,6 +486,38 @@ describe("ProviderCommandReactor", () => {
       );
     }
 
+    for (const [index, requestId] of (input?.openUserInputsBeforeStart ?? []).entries()) {
+      await Effect.runPromise(
+        engine.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`cmd-user-input-open-before-start-${index + 1}`),
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make(`activity-user-input-open-before-start-${index + 1}`),
+            tone: "info",
+            kind: "user-input.requested",
+            summary: "User input requested",
+            payload: {
+              requestId,
+              questions: [
+                {
+                  id: "sandbox_mode",
+                  header: "Sandbox",
+                  question: "Which mode should be used?",
+                  options: [
+                    { label: "workspace-write", description: "Allow workspace writes only" },
+                  ],
+                },
+              ],
+            },
+            turnId: null,
+            createdAt: now,
+          },
+          createdAt: now,
+        }),
+      );
+    }
+
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
     const drain = () => Effect.runPromise(reactor.drain);
@@ -507,6 +543,26 @@ describe("ProviderCommandReactor", () => {
         return titleRegenerationCompletionDispatchAttempts;
       },
     };
+  }
+
+  type Harness = Awaited<ReturnType<typeof createHarness>>;
+
+  async function readThread(harness: Harness, threadId = "thread-1") {
+    const readModel = await harness.readModel();
+    return readModel.threads.find((entry) => entry.id === ThreadId.make(threadId));
+  }
+
+  function findUserInputResolved(
+    thread: Awaited<ReturnType<typeof readThread>>,
+    requestId: string,
+  ) {
+    return thread?.activities.find(
+      (activity) =>
+        activity.kind === "user-input.resolved" &&
+        typeof activity.payload === "object" &&
+        activity.payload !== null &&
+        (activity.payload as Record<string, unknown>).requestId === requestId,
+    );
   }
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
@@ -2664,7 +2720,7 @@ describe("ProviderCommandReactor", () => {
     expect(resolvedActivity).toBeUndefined();
   });
 
-  it("surfaces non-resumable provider user-input callbacks as stale failures", async () => {
+  it("closes a non-resumable provider user-input request as expired, not failed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
     harness.respondToUserInput.mockImplementation(() =>
@@ -2742,35 +2798,189 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(async () => {
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      if (!thread) return false;
-      return thread.activities.some(
-        (activity) => activity.kind === "provider.user-input.respond.failed",
+      const thread = await readThread(harness);
+      return (
+        thread?.activities.some((activity) => activity.kind === "user-input.resolved") === true
       );
     });
 
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    const thread = await readThread(harness);
     expect(thread).toBeDefined();
 
+    const expiredActivity = findUserInputResolved(thread, "user-input-request-1");
+    expect(expiredActivity).toBeDefined();
+    expect(expiredActivity?.tone).toBe("info");
+    expect(expiredActivity?.summary).toBe("Question expired");
+    expect(expiredActivity?.payload).toMatchObject({
+      requestId: "user-input-request-1",
+      expired: true,
+    });
+
+    // Nothing failed: the session outlived the question, which is not the
+    // user's doing and must not read as an error.
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.user-input.respond.failed"),
+    ).toBe(false);
+  });
+
+  it("closes a user-input request as expired when no provider session is bound", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("cmd-user-input-requested-no-session"),
+        threadId: ThreadId.make("thread-1"),
+        activity: {
+          id: EventId.make("activity-user-input-requested-no-session"),
+          tone: "info",
+          kind: "user-input.requested",
+          summary: "User input requested",
+          payload: {
+            requestId: "user-input-request-2",
+            questions: [
+              {
+                id: "sandbox_mode",
+                header: "Sandbox",
+                question: "Which mode should be used?",
+                options: [{ label: "workspace-write", description: "Allow workspace writes only" }],
+              },
+            ],
+          },
+          turnId: null,
+          createdAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.user-input.respond",
+        commandId: CommandId.make("cmd-user-input-respond-no-session"),
+        threadId: ThreadId.make("thread-1"),
+        requestId: asApprovalRequestId("user-input-request-2"),
+        answers: { sandbox_mode: "workspace-write" },
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(async () => {
+      const thread = await readThread(harness);
+      return findUserInputResolved(thread, "user-input-request-2") !== undefined;
+    });
+
+    const thread = await readThread(harness);
+    expect(findUserInputResolved(thread, "user-input-request-2")?.summary).toBe("Question expired");
+    expect(harness.respondToUserInput).not.toHaveBeenCalled();
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.user-input.respond.failed"),
+    ).toBe(false);
+  });
+
+  it("still reports a genuine provider rejection of a user-input answer as a failure", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    harness.respondToUserInput.mockImplementation(() =>
+      Effect.fail(
+        new ProviderAdapterRequestError({
+          provider: ProviderDriverKind.make("claudeAgent"),
+          method: "item/tool/respondToUserInput",
+          detail: "Answer 'workspace-write' is not one of the offered options.",
+        }),
+      ),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-for-user-input-rejection"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "running",
+          providerName: "claudeAgent",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.user-input.respond",
+        commandId: CommandId.make("cmd-user-input-respond-rejected"),
+        threadId: ThreadId.make("thread-1"),
+        requestId: asApprovalRequestId("user-input-request-3"),
+        answers: { sandbox_mode: "workspace-write" },
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(async () => {
+      const thread = await readThread(harness);
+      return (
+        thread?.activities.some(
+          (activity) => activity.kind === "provider.user-input.respond.failed",
+        ) === true
+      );
+    });
+
+    const thread = await readThread(harness);
     const failureActivity = thread?.activities.find(
       (activity) => activity.kind === "provider.user-input.respond.failed",
     );
-    expect(failureActivity).toBeDefined();
-    expect(failureActivity?.payload).toMatchObject({
-      requestId: "user-input-request-1",
-      detail: expect.stringContaining("Stale pending user-input request: user-input-request-1"),
+    expect(failureActivity?.tone).toBe("error");
+    expect(findUserInputResolved(thread, "user-input-request-3")).toBeUndefined();
+  });
+
+  it("closes questions left open by a previous run when the reactor starts", async () => {
+    // A question whose provider callback died with the last process. Nothing
+    // can answer it, so it must not survive the restart as a live prompt.
+    const harness = await createHarness({
+      openUserInputsBeforeStart: ["boot-request-1", "boot-request-2"],
     });
 
-    const resolvedActivity = thread?.activities.find(
-      (activity) =>
-        activity.kind === "user-input.resolved" &&
-        typeof activity.payload === "object" &&
-        activity.payload !== null &&
-        (activity.payload as Record<string, unknown>).requestId === "user-input-request-1",
+    await waitFor(async () => {
+      const thread = await readThread(harness);
+      return (
+        findUserInputResolved(thread, "boot-request-1") !== undefined &&
+        findUserInputResolved(thread, "boot-request-2") !== undefined
+      );
+    });
+
+    const thread = await readThread(harness);
+    for (const requestId of ["boot-request-1", "boot-request-2"]) {
+      const closure = findUserInputResolved(thread, requestId);
+      expect(closure?.tone).toBe("info");
+      expect(closure?.summary).toBe("Question expired");
+      expect(closure?.payload).toMatchObject({ requestId, expired: true });
+    }
+
+    // One closure per request, not one per boot: a request already closed no
+    // longer reads as open, so a later start is a no-op.
+    const closures = thread?.activities.filter(
+      (activity) => activity.kind === "user-input.resolved",
     );
-    expect(resolvedActivity).toBeUndefined();
+    expect(closures?.length).toBe(2);
+  });
+
+  it("leaves an already-resolved question alone when the reactor starts", async () => {
+    const harness = await createHarness({ openUserInputsBeforeStart: ["boot-request-1"] });
+    await waitFor(async () => {
+      const thread = await readThread(harness);
+      return findUserInputResolved(thread, "boot-request-1") !== undefined;
+    });
+    await harness.drain();
+
+    const thread = await readThread(harness);
+    expect(
+      thread?.activities.filter((activity) => activity.kind === "user-input.resolved").length,
+    ).toBe(1);
   });
 
   it("reacts to thread.session.stop by stopping provider session and clearing thread session state", async () => {

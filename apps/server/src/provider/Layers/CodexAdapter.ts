@@ -61,6 +61,7 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import {
   CodexResumeCursorSchema,
+  CODEX_USER_INPUT_EXPIRED_METHOD,
   CodexSessionRuntimeThreadIdMissingError,
   makeCodexSessionRuntime,
   type CodexSessionRuntimeError,
@@ -1245,6 +1246,21 @@ function mapToRuntimeEvents(
         payload: {
           requestType,
           ...(event.payload !== undefined ? { resolution: event.payload } : {}),
+        },
+      },
+    ];
+  }
+
+  // Avi Code addition: the session took this question down instead of
+  // answering it, so it closes with no answers and an expiry marker.
+  if (event.method === CODEX_USER_INPUT_EXPIRED_METHOD) {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "user-input.resolved",
+        payload: {
+          answers: {},
+          reason: "expired",
         },
       },
     ];
