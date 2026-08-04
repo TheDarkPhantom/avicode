@@ -1,6 +1,7 @@
 import {
   type ApprovalRequestId,
   type ClientOrchestrationCommand,
+  type CommandId,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
@@ -209,6 +210,7 @@ import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerAttachment,
   type ComposerThreadDraftState,
+  createEmptyThreadDraft,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
@@ -278,12 +280,7 @@ import {
 } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import {
-  addHeldSend,
-  removeHeldSend,
-  shouldFlushHeldSend,
-  shouldHoldSendWhileRunning,
-} from "./chat/sendWhileRunning.logic";
+import { shouldFlushHeldSend, shouldHoldSendWhileRunning } from "./chat/sendWhileRunning.logic";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -321,6 +318,7 @@ import {
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  snapshotComposerThreadDraft,
   shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
@@ -356,6 +354,8 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { queuedTurnChatMessage, useOfflineTurnOutboxStore } from "../offlineTurnOutboxStore";
+import { findHeldTurnForThread, useHeldTurnStore, type HeldTurnItem } from "../heldTurnStore";
+import { dispatchQueuedTurnCommands } from "./OfflineTurnOutboxFlusher";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -1361,10 +1361,13 @@ function ChatViewContent(props: ChatViewProps) {
     savedDraft: ComposerThreadDraftState;
   } | null>(null);
   const [isForkingThread, setIsForkingThread] = useState(false);
-  // Avi Code addition: threads whose composer is holding a send until the
-  // running turn finishes. Keyed by thread because the hold outlives navigating
-  // away, and holds no content at all — the composer's own draft is the message.
-  const [heldSendThreadKeys, setHeldSendThreadKeys] = useState<ReadonlyArray<string>>([]);
+  // Avi Code addition: turns captured when their send was held until the running
+  // turn finishes. Keyed by thread because a hold outlives navigating away, and
+  // holding the built commands rather than a flag is what keeps later typing out
+  // of an already-queued message.
+  const heldTurnItems = useHeldTurnStore((state) => state.items);
+  const heldTurnFailuresById = useHeldTurnStore((state) => state.failuresById);
+  const heldTurnInFlightRef = useRef(new Set<CommandId>());
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -1584,30 +1587,17 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
-  // Avi Code addition: held-send controls. `onSend` is redefined on every render,
-  // so these reach it through a ref rather than depending on it — and the ref is
-  // declared up here because the composer banner that uses them renders long
-  // before `onSend` is defined.
-  const onSendRef = useRef<
-    | ((
-        e?: { preventDefault: () => void },
-        sendOptions?: { readonly bypassRunningHold?: boolean },
-      ) => Promise<void>)
-    | null
-  >(null);
-  const releaseHeldSend = useCallback((threadKey: string) => {
-    setHeldSendThreadKeys((current) => removeHeldSend(current, threadKey));
-  }, []);
-  const isHoldingSend = activeThreadKey !== null && heldSendThreadKeys.includes(activeThreadKey);
-  const sendHeldMessageNow = useCallback(() => {
-    if (activeThreadKey === null) return;
-    releaseHeldSend(activeThreadKey);
-    void onSendRef.current?.(undefined, { bypassRunningHold: true });
-  }, [activeThreadKey, releaseHeldSend]);
-  const cancelHeldSend = useCallback(() => {
-    if (activeThreadKey === null) return;
-    releaseHeldSend(activeThreadKey);
-  }, [activeThreadKey, releaseHeldSend]);
+  // Avi Code addition: the turn this thread is holding, if any. Declared up here
+  // because the composer banner and the timeline both read it long before the
+  // send path that creates it.
+  const activeHeldTurn = useMemo(
+    () => findHeldTurnForThread(heldTurnItems, activeThreadKey),
+    [activeThreadKey, heldTurnItems],
+  );
+  const isHoldingSend = activeHeldTurn !== null;
+  const activeHeldTurnFailure = activeHeldTurn
+    ? (heldTurnFailuresById[activeHeldTurn.id] ?? null)
+    : null;
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
     readonly messageId: MessageId | null;
@@ -1840,9 +1830,15 @@ function ChatViewContent(props: ChatViewProps) {
           ),
     [activeThread, offlineTurnOutboxItems],
   );
+  // Avi Code addition: a held turn renders the same pending row an offline one
+  // does. It is built from the stored command rather than the optimistic list so
+  // it survives navigating away and back, which a hold is allowed to do.
   const queuedTurnMessages = useMemo(
-    () => activeQueuedTurnItems.flatMap((item) => queuedTurnChatMessage(item) ?? []),
-    [activeQueuedTurnItems],
+    () =>
+      [...activeQueuedTurnItems, ...(activeHeldTurn ? [activeHeldTurn] : [])].flatMap(
+        (item) => queuedTurnChatMessage(item) ?? [],
+      ),
+    [activeHeldTurn, activeQueuedTurnItems],
   );
   const hasQueuedTurn = activeQueuedTurnItems.length > 0;
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
@@ -4500,6 +4496,88 @@ function ChatViewContent(props: ChatViewProps) {
     setForkEditState(null);
     scheduleComposerFocus();
   }, [forkEditState, isForkingThread, restoreComposerDraft, scheduleComposerFocus]);
+  // Avi Code addition: dispatching a held turn. The commands were built when the
+  // send was held, so this never consults the composer — that is the difference
+  // between sending what the user wrote and sending whatever they had reached.
+  const flushHeldTurn = useCallback(
+    async (held: HeldTurnItem) => {
+      if (heldTurnInFlightRef.current.has(held.id)) return;
+      heldTurnInFlightRef.current.add(held.id);
+      useHeldTurnStore.getState().setFailure(held.id, null);
+      try {
+        const failure = await dispatchQueuedTurnCommands(
+          held,
+          async (heldEnvironmentId, command) => {
+            switch (command.type) {
+              case "thread.meta.update": {
+                const { type: _, ...input } = command;
+                return updateThreadMetadata({ environmentId: heldEnvironmentId, input });
+              }
+              case "thread.runtime-mode.set": {
+                const { type: _, ...input } = command;
+                return setThreadRuntimeMode({ environmentId: heldEnvironmentId, input });
+              }
+              case "thread.interaction-mode.set": {
+                const { type: _, ...input } = command;
+                return setThreadInteractionMode({ environmentId: heldEnvironmentId, input });
+              }
+              case "thread.turn.start": {
+                const { type: _, ...input } = command;
+                return startThreadTurn({ environmentId: heldEnvironmentId, input });
+              }
+              default:
+                throw new Error(`Unsupported held command: ${command.type}`);
+            }
+          },
+        );
+        if (failure) {
+          if (!isAtomCommandInterrupted(failure)) {
+            const error = squashAtomCommandFailure(failure);
+            const message =
+              error instanceof Error ? error.message : "Failed to send the queued message.";
+            // The hold stays put so "Send now" can retry it rather than the
+            // message disappearing along with the error.
+            useHeldTurnStore.getState().setFailure(held.id, message);
+            setThreadError(held.threadId, sanitizeThreadErrorMessage(message));
+          }
+          return;
+        }
+        // Hand the row to the optimistic list before dropping the hold, so the
+        // message does not blink out between the dispatch and the server echo.
+        const dispatchedMessage = queuedTurnChatMessage(held);
+        if (dispatchedMessage) {
+          setOptimisticUserMessages((existing) =>
+            existing.some((message) => message.id === dispatchedMessage.id)
+              ? existing
+              : [...existing, dispatchedMessage],
+          );
+        }
+        useHeldTurnStore.getState().remove(held.id);
+      } finally {
+        heldTurnInFlightRef.current.delete(held.id);
+      }
+    },
+    [
+      setThreadError,
+      setThreadInteractionMode,
+      setThreadRuntimeMode,
+      startThreadTurn,
+      updateThreadMetadata,
+    ],
+  );
+  const sendHeldMessageNow = useCallback(() => {
+    if (activeHeldTurn === null) return;
+    void flushHeldTurn(activeHeldTurn);
+  }, [activeHeldTurn, flushHeldTurn]);
+  // Cancelling puts the queued message back exactly as it was sent, over
+  // anything typed since — same trade as `cancelForkEdit`. Giving the queued
+  // message back is the button's whole job, so it wins the composer.
+  const cancelHeldSend = useCallback(() => {
+    if (activeHeldTurn === null || heldTurnInFlightRef.current.has(activeHeldTurn.id)) return;
+    useHeldTurnStore.getState().remove(activeHeldTurn.id);
+    restoreComposerDraft(activeHeldTurn.draft);
+    scheduleComposerFocus();
+  }, [activeHeldTurn, restoreComposerDraft, scheduleComposerFocus]);
   const onEditAndForkUserMessage = useCallback(
     (messageId: MessageId) => {
       if (!isElectron || !activeThread || !isServerThread || isForkingThread || isWorking) return;
@@ -4560,11 +4638,15 @@ function ChatViewContent(props: ChatViewProps) {
       ? [
           {
             id: `held-send:${activeThreadKey}`,
-            variant: "info",
+            variant: activeHeldTurnFailure === null ? "info" : "error",
             icon: <ClockIcon />,
-            title: "Queued until this turn finishes",
+            title:
+              activeHeldTurnFailure === null
+                ? "Queued until this turn finishes"
+                : "Queued message could not be sent",
             description:
-              "Your message stays in the composer and sends as its own turn. Reloading loses the queue.",
+              activeHeldTurnFailure ??
+              "Your message is queued as it was written and sends as its own turn. Reloading loses the queue.",
             actions: (
               <>
                 <Button size="xs" variant="outline" onClick={sendHeldMessageNow}>
@@ -4683,6 +4765,7 @@ function ChatViewContent(props: ChatViewProps) {
       ...parkedThreadItems,
     ];
   }, [
+    activeHeldTurnFailure,
     activeThreadKey,
     cancelForkEdit,
     cancelHeldSend,
@@ -5034,10 +5117,7 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (
-    e?: { preventDefault: () => void },
-    sendOptions?: { readonly bypassRunningHold?: boolean },
-  ) => {
+  const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
     if (
       !activeThread ||
@@ -5094,22 +5174,16 @@ function ChatViewContent(props: ChatViewProps) {
         composerReviewComments.length,
     });
     // Avi Code addition: with "Queue" chosen, a send during a running turn is
-    // held rather than steered. Nothing is captured — the composer keeps the
-    // draft, its attachments and its contexts, and the flush re-runs this same
-    // function once the turn settles.
-    if (
+    // captured and dispatched when the turn settles rather than steered into it.
+    // Decided here but acted on much further down, beside the offline queue:
+    // mode switches, `/btw` and plan follow-ups all return before that point and
+    // none of them is a turn worth queueing.
+    const holdUntilTurnFinishes =
       activeThreadKey !== null &&
       hasSendableContent &&
       !forkEditState &&
-      shouldHoldSendWhileRunning({
-        setting: sendWhileRunning,
-        phase,
-        bypassHold: sendOptions?.bypassRunningHold ?? false,
-      })
-    ) {
-      setHeldSendThreadKeys((current) => addHeldSend(current, activeThreadKey));
-      return;
-    }
+      !activeEnvironmentUnavailable &&
+      shouldHoldSendWhileRunning({ setting: sendWhileRunning, phase });
     if (forkEditState) {
       if (
         !isElectron ||
@@ -5507,7 +5581,9 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    if (!activeEnvironmentUnavailable) {
+    // A queued send clears the composer only once its commands are safely
+    // stored, so a rejected queue leaves the draft where the user can see it.
+    if (!activeEnvironmentUnavailable && !holdUntilTurnFinishes) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -5539,7 +5615,25 @@ function ChatViewContent(props: ChatViewProps) {
       ctxSelectedModelSelection.options,
     );
 
-    if (activeEnvironmentUnavailable) {
+    // Avi Code change: two reasons to store a turn rather than send it — the
+    // environment is offline, or the user chose to queue behind a running turn.
+    // Both want the same fully-built commands, which is what fixes the message
+    // to what was written instead of to whatever the composer holds later.
+    if (activeEnvironmentUnavailable || holdUntilTurnFinishes) {
+      // Taken before the composer is cleared below, so cancelling the hold can
+      // give the whole draft back rather than only its text.
+      const draftBehindHeldTurn = holdUntilTurnFinishes
+        ? useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+        : null;
+      const heldTurnTarget =
+        holdUntilTurnFinishes && activeThreadKey !== null
+          ? {
+              threadKey: activeThreadKey,
+              draft: draftBehindHeldTurn
+                ? snapshotComposerThreadDraft(draftBehindHeldTurn)
+                : { ...createEmptyThreadDraft(), prompt: promptForSend },
+            }
+          : null;
       const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
       if (turnAttachmentsResult._tag === "Failure") {
         setOptimisticUserMessages((existing) =>
@@ -5647,14 +5741,18 @@ function ChatViewContent(props: ChatViewProps) {
         ...(composerCommunicationStyle ? { communicationStyle: composerCommunicationStyle } : {}),
         createdAt: messageCreatedAt,
       });
-      const queued = useOfflineTurnOutboxStore.getState().enqueue({
+      const storedTurn = {
         id: startCommandId,
         environmentId: activeThread.environmentId,
         threadId: threadIdForSend,
         messageId: messageIdForSend,
         createdAt: messageCreatedAt,
         commands: queuedCommands,
-      });
+      };
+      const queued =
+        heldTurnTarget === null
+          ? useOfflineTurnOutboxStore.getState().enqueue(storedTurn)
+          : useHeldTurnStore.getState().enqueue({ ...storedTurn, ...heldTurnTarget });
       if (!queued.queued) {
         setOptimisticUserMessages((existing) =>
           existing.filter((message) => message.id !== messageIdForSend),
@@ -5672,15 +5770,25 @@ function ChatViewContent(props: ChatViewProps) {
         resetLocalDispatch();
         return;
       }
+      // The held turn now owns the pending row, so the optimistic copy would
+      // only be a second source of truth for the same message.
+      if (heldTurnTarget !== null) {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageIdForSend),
+        );
+      }
 
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      toastManager.add({
-        type: "success",
-        title: "Message queued",
-        description: `It will send automatically when ${activeEnvironmentUnavailableLabel ?? "the environment"} reconnects.`,
-      });
+      if (heldTurnTarget === null) {
+        // A held send has the composer banner; a toast on top of it is noise.
+        toastManager.add({
+          type: "success",
+          title: "Message queued",
+          description: `It will send automatically when ${activeEnvironmentUnavailableLabel ?? "the environment"} reconnects.`,
+        });
+      }
       sendInFlightRef.current = false;
       resetLocalDispatch();
       return;
@@ -5842,24 +5950,37 @@ function ChatViewContent(props: ChatViewProps) {
     }
   };
 
-  onSendRef.current = onSend;
-  // Avi Code addition: flushing a held send once its thread is free again.
+  // Avi Code addition: dispatching a held turn once its thread is free again.
+  // It goes straight to the stored commands rather than back through `onSend`,
+  // which would re-read the composer and, with a question on screen, answer the
+  // questionnaire instead of sending.
   useEffect(() => {
-    if (activeThreadKey === null) return;
     if (
+      activeHeldTurn === null ||
       !shouldFlushHeldSend({
-        heldThreadKeys: heldSendThreadKeys,
+        heldThreadKeys: heldTurnItems.map((item) => item.threadKey),
         activeThreadKey,
         phase,
         isSendBusy,
         isConnecting,
+        hasPendingUserInput: activePendingProgress !== null,
+        environmentUnavailable: activeEnvironmentUnavailable,
       })
     ) {
       return;
     }
-    releaseHeldSend(activeThreadKey);
-    void onSendRef.current?.(undefined, { bypassRunningHold: true });
-  }, [activeThreadKey, heldSendThreadKeys, isConnecting, isSendBusy, phase, releaseHeldSend]);
+    void flushHeldTurn(activeHeldTurn);
+  }, [
+    activeEnvironmentUnavailable,
+    activeHeldTurn,
+    activePendingProgress,
+    activeThreadKey,
+    flushHeldTurn,
+    heldTurnItems,
+    isConnecting,
+    isSendBusy,
+    phase,
+  ]);
 
   const onInterrupt = async () => {
     if (!activeThread) return;

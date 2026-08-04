@@ -14,7 +14,11 @@ import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } fr
 // `ComposerAttachment` rather than upstream's `ComposerImageAttachment`: the
 // fork widened attachments to a union so PDF/TXT/Markdown documents ride the
 // same retry path as images.
-import { type ComposerAttachment, type DraftThreadState } from "../composerDraftStore";
+import {
+  type ComposerAttachment,
+  type ComposerThreadDraftState,
+  type DraftThreadState,
+} from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
@@ -266,6 +270,29 @@ export function cloneComposerImageForRetry(image: ComposerAttachment): ComposerA
   } catch {
     return image;
   }
+}
+
+/**
+ * A detached copy of a composer draft, safe to restore after the composer has
+ * been cleared. Preview URLs are re-created from the retained files because
+ * clearing revokes the originals, which would otherwise leave the restored
+ * draft showing broken thumbnails.
+ */
+export function snapshotComposerThreadDraft(
+  draft: ComposerThreadDraftState,
+): ComposerThreadDraftState {
+  return {
+    ...draft,
+    images: draft.images.map(cloneComposerImageForRetry),
+    nonPersistedImageIds: [...draft.nonPersistedImageIds],
+    persistedAttachments: [...draft.persistedAttachments],
+    terminalContexts: [...draft.terminalContexts],
+    threadContextIds: [...draft.threadContextIds],
+    elementContexts: [...draft.elementContexts],
+    previewAnnotations: [...draft.previewAnnotations],
+    reviewComments: [...draft.reviewComments],
+    modelSelectionByProvider: { ...draft.modelSelectionByProvider },
+  };
 }
 
 export function deriveComposerSendState(options: {

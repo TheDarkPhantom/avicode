@@ -42,6 +42,9 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- A message queued behind a running turn now sends what you wrote, not what you kept typing (#120)
+- A queued message now leaves the composer and waits in the chat, and cancelling gives it back
+  (#120)
 - The browser panel lists only the servers you started here, not every port on your machine (#119)
 - Typing /btw without a question keeps your text instead of clearing the composer (#118)
 - Using /btw on a new chat now says to send a message first instead of doing nothing (#118)
