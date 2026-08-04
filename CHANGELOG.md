@@ -42,6 +42,10 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Stopping the agent no longer reports an error for something you did on purpose (#117)
+- A question whose session ended now expires quietly and hands your answer back to the composer
+  (#117)
+- Dismissing the red error banner now actually dismisses it (#117)
 - Scrolling back through a chat now stays put instead of snapping to the newest text (#116)
 - Merge a project's ready threads from the new sidebar's project picker (#115)
 - Choose whether a message sent mid turn steers the agent or waits for it to finish (#113)

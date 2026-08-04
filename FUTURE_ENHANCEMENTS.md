@@ -129,6 +129,26 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   resend. It is also hidden while the environment is unavailable instead of queueing through the
   offline turn outbox, and it resends the original text verbatim, so a prompt-effort prefix baked
   in at first send is kept even if the effort picker has since changed.
+- Approvals have the same orphaning problem questions had: a pending approval is an in-memory
+  `Deferred` whose request survives as a durable activity, so a restart leaves an approval prompt
+  nobody can answer, and answering one still reports a red "Provider approval response failed".
+  Everything the question fix needed already exists (`user-input.resolved` with `reason: "expired"`,
+  the boot sweep in `ProviderCommandReactor.start`, `appendUserInputExpiredActivity`) and the
+  approval twin was deliberately left byte-identical so the two can be compared. Doing it means the
+  same treatment for `request.resolved`, `processApprovalResponseRequested`, and
+  `respondToRequest`'s `allowRecovery`.
+- Three adapters still misclassify a user-initiated abort and rely on the central
+  `InterruptSuppression` guard rather than getting it right themselves. Cursor has no suppression at
+  all, so a cancelled ACP prompt RPC becomes a `ProviderAdapterRequestError`
+  (`CursorAdapter.ts:1007-1015` via `AcpAdapterSupport.ts:17-44`). Grok fails a prompt it just
+  cancelled cleanly (`GrokAdapter.ts:1013-1017`) and `settlePromptInFlight` (`:360-432`) misses the
+  `interruptedTurnIds` guard in its belonging branch. OpenCode never checks
+  `error.name === "MessageAbortedError"` in its `session.error` handler
+  (`OpenCodeAdapter.ts:1077-1115`), which is why its `lastError` used to stick.
+- The stale-request detail predicate is duplicated across `decider.ts`, `ProjectionPipeline.ts`,
+  `session-logic.ts`, and migration 024. They are currently in sync and this work added no new
+  strings, but the approval follow-up above would be the moment to consolidate the three TypeScript
+  copies behind one shared predicate.
 - Add optional checkpoint-restored worktree forks to Codex message forks, and support portable
   transcript forks for providers without native turn forks.
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family

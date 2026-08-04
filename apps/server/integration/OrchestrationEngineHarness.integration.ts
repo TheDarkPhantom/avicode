@@ -37,6 +37,7 @@ import { ProviderAdapterRegistry } from "../src/provider/Services/ProviderAdapte
 import { makeProviderRegistryLayer } from "../src/provider/testUtils/providerRegistryMock.ts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
+import { InterruptSuppressionLive } from "../src/orchestration/InterruptSuppression.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
 import {
@@ -385,6 +386,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(RepositoryIdentityResolver.layer),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
+      Layer.provideMerge(InterruptSuppressionLive),
       Layer.provideMerge(NodeServices.layer),
     );
 

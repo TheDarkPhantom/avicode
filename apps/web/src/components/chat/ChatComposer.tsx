@@ -3233,7 +3233,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
                 <ComposerPendingUserInputPanel
                   pendingUserInputs={pendingUserInputs}
-                  respondingRequestIds={respondingRequestIds}
+                  isResponding={activePendingIsResponding}
                   answers={activePendingDraftAnswers}
                   questionIndex={activePendingQuestionIndex}
                   onToggleOption={onSelectActivePendingUserInputOption}
@@ -3274,7 +3274,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             >
               <ComposerPendingUserInputPanel
                 pendingUserInputs={pendingUserInputs}
-                respondingRequestIds={respondingRequestIds}
+                isResponding={activePendingIsResponding}
                 answers={activePendingDraftAnswers}
                 questionIndex={activePendingQuestionIndex}
                 onToggleOption={onSelectActivePendingUserInputOption}

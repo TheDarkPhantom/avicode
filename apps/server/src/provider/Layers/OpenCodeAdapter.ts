@@ -666,6 +666,33 @@ export function makeOpenCodeAdapter(
       },
     ) => writeNativeEvent(threadId, event).pipe(Effect.catchCause(() => Effect.void));
 
+    /**
+     * Avi Code addition: close every question this session still owes an
+     * answer to. `question.replied` / `question.rejected` are server-pushed
+     * and never arrive once the session is gone, so without this the durable
+     * `user-input.requested` activity stays open and clients keep rendering a
+     * prompt with no answer path. Must run before the session scope closes,
+     * for the same reason the exit events do.
+     */
+    const expirePendingQuestions = Effect.fn("expirePendingQuestions")(function* (
+      context: OpenCodeSessionContext,
+    ) {
+      const pending = [...context.pendingQuestions.keys()];
+      context.pendingQuestions.clear();
+      const turnId = context.activeTurnId;
+      for (const requestId of pending) {
+        yield* emit({
+          ...(yield* buildEventBase({
+            threadId: context.session.threadId,
+            turnId,
+            requestId,
+          })),
+          type: "user-input.resolved",
+          payload: { answers: {}, reason: "expired" },
+        }).pipe(Effect.ignore);
+      }
+    });
+
     const emitUnexpectedExit = Effect.fn("emitUnexpectedExit")(function* (
       context: OpenCodeSessionContext,
       message: string,
@@ -679,6 +706,7 @@ export function makeOpenCodeAdapter(
       }
       const turnId = context.activeTurnId;
       sessions.delete(context.session.threadId);
+      yield* expirePendingQuestions(context);
       // Emit lifecycle events BEFORE tearing down the scope. Both call sites
       // run this inside a fiber forked via `Effect.forkIn(context.sessionScope)`;
       // closing that scope triggers the fiber-interrupt finalizer, so any
@@ -1608,6 +1636,8 @@ export function makeOpenCodeAdapter(
             threadId,
           });
         }
+        // Avi Code addition: before the scope closes and the emit path dies.
+        yield* expirePendingQuestions(context);
         const stopped = yield* stopOpenCodeContext(context);
         sessions.delete(threadId);
         if (!stopped) {

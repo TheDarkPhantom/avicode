@@ -5,6 +5,8 @@ import {
   countAnsweredPendingUserInputQuestions,
   derivePendingUserInputProgress,
   findFirstUnansweredPendingUserInputQuestionIndex,
+  formatExpiredUserInputDraft,
+  omitPendingUserInputRequestIds,
   resolvePendingUserInputAnswer,
   setPendingUserInputCustomAnswer,
   shouldDismissPendingUserInputForKey,
@@ -291,6 +293,57 @@ describe("pending user input question progress", () => {
       resolvedAnswer: ["Server", "Web"],
       canAdvance: true,
       isComplete: true,
+    });
+  });
+});
+
+describe("formatExpiredUserInputDraft", () => {
+  it("returns null when nothing was drafted", () => {
+    expect(formatExpiredUserInputDraft([singleSelectQuestion, multiSelectQuestion], {})).toBe(null);
+  });
+
+  it("renders a single-select answer", () => {
+    expect(
+      formatExpiredUserInputDraft([singleSelectQuestion], {
+        scope: { selectedOptionLabels: ["Orchestration-first"] },
+      }),
+    ).toBe("Scope: Orchestration-first");
+  });
+
+  it("joins a multi-select answer", () => {
+    expect(
+      formatExpiredUserInputDraft([multiSelectQuestion], {
+        areas: { selectedOptionLabels: ["Server", "Web"] },
+      }),
+    ).toBe("Areas: Server, Web");
+  });
+
+  it("prefers a custom answer over selected options", () => {
+    expect(
+      formatExpiredUserInputDraft([singleSelectQuestion], {
+        scope: { selectedOptionLabels: ["Orchestration-first"], customAnswer: "Neither" },
+      }),
+    ).toBe("Scope: Neither");
+  });
+
+  it("skips questions that were never answered", () => {
+    expect(
+      formatExpiredUserInputDraft([singleSelectQuestion, multiSelectQuestion], {
+        areas: { selectedOptionLabels: ["Web"] },
+      }),
+    ).toBe("Areas: Web");
+  });
+});
+
+describe("omitPendingUserInputRequestIds", () => {
+  it("returns the same object when nothing matches, so state setters do not re-render", () => {
+    const entries = { "req-1": 0 };
+    expect(omitPendingUserInputRequestIds(entries, new Set(["req-2"]))).toBe(entries);
+  });
+
+  it("drops only the matching request ids", () => {
+    expect(omitPendingUserInputRequestIds({ "req-1": 0, "req-2": 1 }, new Set(["req-1"]))).toEqual({
+      "req-2": 1,
     });
   });
 });

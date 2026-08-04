@@ -119,6 +119,54 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
+/**
+ * Avi Code addition: the answer a user had already chosen when their question
+ * expired, rendered as composer text.
+ *
+ * A question dies with its provider session, and the draft answer only lives in
+ * client state keyed by a request id nothing will ever accept again. Rather
+ * than drop it, it becomes an ordinary message the user can send to restart the
+ * turn. Returns null when nothing was drafted, so the caller can tell "no
+ * answer to recover" from "an empty one".
+ */
+export function formatExpiredUserInputDraft(
+  questions: ReadonlyArray<UserInputQuestion>,
+  draftAnswers: Record<string, PendingUserInputDraftAnswer>,
+): string | null {
+  const lines: string[] = [];
+
+  for (const question of questions) {
+    const answer = resolvePendingUserInputAnswer(question, draftAnswers[question.id]);
+    if (!answer) continue;
+    const rendered = Array.isArray(answer) ? answer.join(", ") : answer;
+    lines.push(`${question.header}: ${rendered}`);
+  }
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/**
+ * Avi Code addition: drop entries for request ids that will never be answered.
+ * The per-request draft maps are keyed by a request id and had no eviction, so
+ * every question a thread ever asked stayed in memory for the session.
+ * Returns the original object when nothing matched, so callers can pass it
+ * straight to a state setter without forcing a re-render.
+ */
+export function omitPendingUserInputRequestIds<Value>(
+  entriesByRequestId: Record<string, Value>,
+  requestIds: ReadonlySet<string>,
+): Record<string, Value> {
+  const matching = Object.keys(entriesByRequestId).filter((key) => requestIds.has(key));
+  if (matching.length === 0) {
+    return entriesByRequestId;
+  }
+  const next = { ...entriesByRequestId };
+  for (const key of matching) {
+    delete next[key];
+  }
+  return next;
+}
+
 export function countAnsweredPendingUserInputQuestions(
   questions: ReadonlyArray<UserInputQuestion>,
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,

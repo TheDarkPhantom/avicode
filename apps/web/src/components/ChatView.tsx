@@ -80,6 +80,7 @@ import {
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
+  deriveExpiredUserInputs,
   derivePhase,
   deriveTimelineEntries,
   deriveActiveWorkStartedAt,
@@ -109,6 +110,8 @@ import {
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
+  formatExpiredUserInputDraft,
+  omitPendingUserInputRequestIds,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
@@ -1340,6 +1343,14 @@ function ChatViewContent(props: ChatViewProps) {
   const [localServerErrorsByThreadKey, setLocalServerErrorsByThreadKey] = useState<
     Record<string, LocalThreadErrorEntry>
   >({});
+  // Avi Code addition: the error banner's dismiss button used to be a no-op
+  // whenever the error came from the server, because clearing the local error
+  // just fell through to `session.lastError` again. Remembering the exact
+  // message that was dismissed hides that one and no other, so a different
+  // error arriving later still shows.
+  const [dismissedServerErrorsByThreadKey, setDismissedServerErrorsByThreadKey] = useState<
+    Record<string, string>
+  >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
   // Avi Code addition: ephemeral desktop composer state for non-destructive message forks.
@@ -1517,8 +1528,13 @@ function ChatViewContent(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const serverSessionError = activeServerThread?.session?.lastError ?? null;
+  const dismissedServerError = dismissedServerErrorsByThreadKey[routeThreadKey] ?? null;
   const threadError = isServerThread
-    ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
+    ? (localServerError ??
+      (serverSessionError !== null && serverSessionError === dismissedServerError
+        ? null
+        : serverSessionError))
     : localDraftError;
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Avi Code addition: the final fallback (an unmaterialized new draft) honours
@@ -2227,6 +2243,57 @@ function ChatViewContent(props: ChatViewProps) {
   const activePendingIsResponding = activePendingUserInput
     ? respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
     : false;
+  // Avi Code addition: a question dies with its provider session, but the
+  // answer already chosen for it should not. Hand it back as composer text so
+  // one send restarts the turn carrying it, and drop the per-request draft
+  // state, which nothing will ever accept again. Recovery is deliberately
+  // gated on that draft still existing in this session: an expiry from a
+  // previous run has no answer to return and must not surprise anyone by
+  // writing into their composer when they open an old thread.
+  const expiredUserInputs = useMemo(
+    () => deriveExpiredUserInputs(threadActivities),
+    [threadActivities],
+  );
+  const recoveredExpiredUserInputIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const unseen = expiredUserInputs.filter(
+      (entry) => !recoveredExpiredUserInputIdsRef.current.has(entry.requestId),
+    );
+    if (unseen.length === 0) return;
+
+    let recoveredPrompt: string | null = null;
+    for (const entry of unseen) {
+      recoveredExpiredUserInputIdsRef.current.add(entry.requestId);
+      if (recoveredPrompt !== null) continue;
+      const draft = pendingUserInputAnswersByRequestId[entry.requestId];
+      if (!draft) continue;
+      recoveredPrompt = formatExpiredUserInputDraft(entry.questions, draft);
+    }
+
+    const expiredRequestIds = new Set(unseen.map((entry) => entry.requestId));
+    setPendingUserInputAnswersByRequestId((existing) =>
+      omitPendingUserInputRequestIds(existing, expiredRequestIds),
+    );
+    setPendingUserInputQuestionIndexByRequestId((existing) =>
+      omitPendingUserInputRequestIds(existing, expiredRequestIds),
+    );
+
+    // Never clobber something the user is already typing.
+    if (recoveredPrompt === null || promptRef.current.trim().length > 0) return;
+    promptRef.current = recoveredPrompt;
+    setComposerDraftPrompt(composerDraftTarget, recoveredPrompt);
+    composerRef.current?.resetCursorState({
+      cursor: collapseExpandedComposerCursor(recoveredPrompt, recoveredPrompt.length),
+      prompt: recoveredPrompt,
+      detectTrigger: true,
+    });
+  }, [
+    composerDraftTarget,
+    composerRef,
+    expiredUserInputs,
+    pendingUserInputAnswersByRequestId,
+    setComposerDraftPrompt,
+  ]);
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {
       return null;
@@ -6950,7 +7017,18 @@ function ChatViewContent(props: ChatViewProps) {
 
         <ThreadErrorBanner
           error={threadError}
-          onDismiss={() => setThreadError(activeThread.id, null)}
+          onDismiss={() => {
+            setThreadError(activeThread.id, null);
+            // Avi Code addition: also hide the server-owned error, which the
+            // local clear above cannot reach.
+            if (serverSessionError !== null) {
+              setDismissedServerErrorsByThreadKey((existing) =>
+                existing[routeThreadKey] === serverSessionError
+                  ? existing
+                  : { ...existing, [routeThreadKey]: serverSessionError },
+              );
+            }
+          }}
         />
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">

@@ -1,4 +1,3 @@
-import { type ApprovalRequestId } from "@t3tools/contracts";
 import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 import { type PendingUserInput } from "../../session-logic";
 import {
@@ -22,7 +21,10 @@ function isEscapeTargetOutsideComposer(target: EventTarget | null): boolean {
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
-  respondingRequestIds: ApprovalRequestId[];
+  // Whether the active prompt's answer is in flight. Callers pass the
+  // user-input responding state, not the approval one — the two are separate
+  // sets and mixing them leaves the questionnaire live during a submit.
+  isResponding: boolean;
   answers: Record<string, PendingUserInputDraftAnswer>;
   questionIndex: number;
   onToggleOption: (questionId: string, optionLabel: string) => void;
@@ -32,7 +34,7 @@ interface PendingUserInputPanelProps {
 
 export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserInputPanel({
   pendingUserInputs,
-  respondingRequestIds,
+  isResponding,
   answers,
   questionIndex,
   onToggleOption,
@@ -47,7 +49,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
     <ComposerPendingUserInputCard
       key={activePrompt.requestId}
       prompt={activePrompt}
-      isResponding={respondingRequestIds.includes(activePrompt.requestId)}
+      isResponding={isResponding}
       answers={answers}
       questionIndex={questionIndex}
       onToggleOption={onToggleOption}

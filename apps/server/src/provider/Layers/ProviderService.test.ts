@@ -1185,6 +1185,65 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("does not resume a stale session just to answer a user-input request", () =>
+    Effect.gen(function* () {
+      // Recovery would start a session whose pending-request map is empty, so
+      // the answer would fail anyway after paying for a CLI resume. Failing
+      // fast is what tells the reactor the question expired.
+      const provider = yield* ProviderService.ProviderService;
+
+      const initial = yield* provider.startSession(asThreadId("thread-user-input-no-recover"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-user-input-no-recover"),
+        cwd: "/tmp/project-user-input",
+        runtimeMode: "full-access",
+      });
+
+      yield* routing.codex.stopAll();
+      routing.codex.startSession.mockClear();
+      routing.codex.respondToUserInput.mockClear();
+
+      yield* Effect.exit(
+        provider.respondToUserInput({
+          threadId: initial.threadId,
+          requestId: ApprovalRequestId.make("req-user-input-gone"),
+          answers: { scope: "server" },
+        }),
+      );
+
+      // No resume, and the call still goes to the adapter, which is what
+      // raises ProviderAdapterSessionNotFoundError in the real thing.
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.codex.respondToUserInput.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect("still resumes a stale session to answer an approval request", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+
+      const initial = yield* provider.startSession(asThreadId("thread-approval-recover"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-approval-recover"),
+        cwd: "/tmp/project-approval",
+        runtimeMode: "full-access",
+      });
+
+      yield* routing.codex.stopAll();
+      routing.codex.startSession.mockClear();
+
+      yield* provider.respondToRequest({
+        threadId: initial.threadId,
+        requestId: ApprovalRequestId.make("req-approval-recover"),
+        decision: "accept",
+      });
+
+      assert.equal(routing.codex.startSession.mock.calls.length, 1);
+    }),
+  );
+
   it.effect("recovers stale claudeAgent sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
