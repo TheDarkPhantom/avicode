@@ -8,6 +8,7 @@ import {
   isCollapsedCursorAdjacentToInlineToken,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
+  resolveSideQuestionSubmission,
   shouldSubmitComposerOnEnter,
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
@@ -370,5 +371,31 @@ describe("parseStandaloneComposerSlashCommand", () => {
 
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
+  });
+});
+
+describe("resolveSideQuestionSubmission", () => {
+  it("asks when there is a question and a server thread to branch from", () => {
+    expect(
+      resolveSideQuestionSubmission({ question: "why did that fail?", hasProviderThread: true }),
+    ).toEqual({ kind: "ask", question: "why did that fail?" });
+  });
+
+  it("treats a bare /btw as unfinished rather than sending", () => {
+    expect(resolveSideQuestionSubmission({ question: "", hasProviderThread: true })).toEqual({
+      kind: "incomplete",
+    });
+  });
+
+  it("keeps a bare /btw unfinished on a draft instead of reporting a missing thread", () => {
+    expect(resolveSideQuestionSubmission({ question: "", hasProviderThread: false })).toEqual({
+      kind: "incomplete",
+    });
+  });
+
+  it("reports the missing thread when a real question has nothing to branch from", () => {
+    expect(
+      resolveSideQuestionSubmission({ question: "what changed?", hasProviderThread: false }),
+    ).toEqual({ kind: "no-thread" });
   });
 });

@@ -76,6 +76,7 @@ import {
   collapseExpandedComposerCursor,
   parseComposerSideQuestionCommand,
   parseStandaloneComposerSlashCommand,
+  resolveSideQuestionSubmission,
 } from "../composer-logic";
 import {
   derivePendingApprovals,
@@ -5286,21 +5287,43 @@ function ChatViewContent(props: ChatViewProps) {
       composerRef.current?.resetCursorState();
       return;
     }
-    // Avi Code addition: `/btw` never becomes a turn. It clears the composer
-    // like the mode switches above, but instead of changing thread state it
-    // asks on a discarded fork and shows the answer in a dismissible panel.
+    // Avi Code addition: `/btw` never becomes a turn. Given a question it clears
+    // the composer like the mode switches above, but instead of changing thread
+    // state it asks on a discarded fork and shows the answer in a dismissible
+    // panel.
     //
     // Claimed even on a draft, where there is no conversation to branch from.
-    // Falling through there would send the raw "/btw …" text as a prompt,
-    // which is never what was meant.
+    // Falling through there would send the raw "/btw …" text as a prompt, which
+    // is never what was meant. The composer is only cleared once we know we are
+    // acting: a bare "/btw" is an unfinished command, and eating the text the
+    // user is still typing into is worse than not sending.
     const sideQuestion = parseComposerSideQuestionCommand(trimmed);
     if (sideQuestion !== null) {
-      const sideQuestionThreadRef = activeThreadRef;
-      const sideQuestionThreadKey = activeThreadKey;
+      // Only a thread the server knows about can be branched from. A draft has
+      // a pre-allocated id and so a non-null ref, which is why this guard reads
+      // `isServerThread` rather than testing the ref for null.
+      const sideQuestionTarget =
+        isServerThread && activeThreadRef !== null && activeThreadKey !== null
+          ? { ref: activeThreadRef, key: activeThreadKey }
+          : null;
+      const submission = resolveSideQuestionSubmission({
+        question: sideQuestion.question,
+        hasProviderThread: sideQuestionTarget !== null,
+      });
+      if (submission.kind === "incomplete") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Add your question after /btw.",
+            description: "For example: /btw why did that test fail?",
+          }),
+        );
+        return;
+      }
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      if (sideQuestionThreadRef === null || sideQuestionThreadKey === null) {
+      if (submission.kind === "no-thread" || sideQuestionTarget === null) {
         toastManager.add(
           stackedThreadToast({
             type: "info",
@@ -5310,14 +5333,12 @@ function ChatViewContent(props: ChatViewProps) {
         );
         return;
       }
-      if (sideQuestion.question.length > 0) {
-        void askSideQuestion({
-          threadKey: sideQuestionThreadKey,
-          environmentId: sideQuestionThreadRef.environmentId,
-          threadId: sideQuestionThreadRef.threadId,
-          question: sideQuestion.question,
-        });
-      }
+      void askSideQuestion({
+        threadKey: sideQuestionTarget.key,
+        environmentId: sideQuestionTarget.ref.environmentId,
+        threadId: sideQuestionTarget.ref.threadId,
+        question: submission.question,
+      });
       return;
     }
     if (!hasSendableContent) {

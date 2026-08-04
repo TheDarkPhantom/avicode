@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Typing /btw without a question keeps your text instead of clearing the composer (#118)
+- Using /btw on a new chat now says to send a message first instead of doing nothing (#118)
 - Stopping the agent no longer reports an error for something you did on purpose (#117)
 - A question whose session ended now expires quietly and hands your answer back to the composer
   (#117)
