@@ -258,6 +258,10 @@ import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import {
+  shouldRearmTimelineLiveFollow,
+  type TimelineUserScrollDirection,
+} from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
@@ -3737,6 +3741,9 @@ function ChatViewContent(props: ChatViewProps) {
     readonly userScrollGeneration: number;
   } | null>(null);
   const anchorScrollRestoreFrameRef = useRef<number | null>(null);
+  // Avi Code addition: which way the user's last scroll gesture was heading, so
+  // arriving at the live edge can be told apart from being dragged back to it.
+  const timelineUserScrollDirectionRef = useRef<TimelineUserScrollDirection | null>(null);
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
     anchorUserScrollGenerationRef.current += 1;
     timelineScrollModeRef.current = "free-scrolling";
@@ -3752,6 +3759,24 @@ function ChatViewContent(props: ChatViewProps) {
       anchorScrollRestoreFrameRef.current = null;
     }
   }, []);
+  // Avi Code addition. A scroll the user drove themselves, as opposed to a
+  // programmatic jump. LegendList re-reads `maintainScrollAtEnd` live from its
+  // own prop store and decides whether to snap to the end from a near-end flag
+  // cached before this gesture's scroll event was dispatched. Letting the opt-out
+  // ride an ordinary state update leaves the list armed for a render, and while
+  // an assistant message streams a data change lands inside that window almost
+  // every frame, which is what dragged the reader back to the live edge. The
+  // flush is what makes the opt-out win the race; it is safe here because this
+  // only ever runs from a DOM event handler.
+  const cancelTimelineLiveFollowForUserScroll = useCallback(
+    (direction: TimelineUserScrollDirection) => {
+      timelineUserScrollDirectionRef.current = direction;
+      flushSync(() => {
+        cancelTimelineLiveFollowForUserNavigation();
+      });
+    },
+    [cancelTimelineLiveFollowForUserNavigation],
+  );
   // Avi Code addition. The timeline reports a chat that opened at the top of
   // its last response rather than the live edge. That open starts off the live
   // edge on purpose, so live follow has to stay off for it — both here and in
@@ -3760,6 +3785,7 @@ function ChatViewContent(props: ChatViewProps) {
   const openedAtLastResponseThreadIdRef = useRef<ThreadId | null>(null);
   const onTimelineOpenedAtLastResponse = useCallback(() => {
     openedAtLastResponseThreadIdRef.current = activeThread?.id ?? null;
+    timelineUserScrollDirectionRef.current = null;
     cancelTimelineLiveFollowForUserNavigation();
     // The chat deliberately opens away from the live edge, so show the way back
     // to it straight away rather than waiting for a scroll gesture to reveal it.
@@ -3818,6 +3844,8 @@ function ChatViewContent(props: ChatViewProps) {
   // gesture opts out.
   const scrollToEnd = useCallback((animated = false) => {
     isAtEndRef.current = true;
+    // Asking for the live edge is consent to follow it again.
+    timelineUserScrollDirectionRef.current = "toward-end";
     timelineScrollModeRef.current = "following-end";
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
     setTimelineLiveFollowEnabled(true);
@@ -3919,26 +3947,37 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, []);
 
-  const onIsAtEndChange = useCallback((isAtEnd: boolean, isAbsoluteEnd: boolean) => {
+  // Avi Code addition: keyed off the absolute live edge rather than LegendList's
+  // `isNearEnd`, which counts half a viewport as "at the end". Under the old
+  // reading, a shorter scroll up left live follow off with the pill still hidden,
+  // so there was no way back to the live edge; and reaching the end re-armed live
+  // follow whatever brought the list there, including an auto-scroll the reader
+  // had just opted out of.
+  const onIsAtEndChange = useCallback((isAbsoluteEnd: boolean) => {
     if (
-      isAbsoluteEnd &&
-      liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current
+      liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current &&
+      shouldRearmTimelineLiveFollow({
+        isAbsoluteEnd,
+        lastUserScrollDirection: timelineUserScrollDirectionRef.current,
+      })
     ) {
       timelineScrollModeRef.current = "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
     }
     if (
-      !isAtEnd &&
+      !isAbsoluteEnd &&
       liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current
     ) {
+      // Still following: a send anchors the list away from the end on purpose,
+      // and streaming content keeps pushing the edge out of reach between frames.
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
       return;
     }
-    if (isAtEndRef.current === isAtEnd) return;
-    isAtEndRef.current = isAtEnd;
-    if (isAtEnd) {
+    if (isAtEndRef.current === isAbsoluteEnd) return;
+    isAtEndRef.current = isAbsoluteEnd;
+    if (isAbsoluteEnd) {
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
     } else {
@@ -4021,6 +4060,7 @@ function ChatViewContent(props: ChatViewProps) {
     // that opened at its last response has already opted out of live follow.
     if (openedAtLastResponseThreadIdRef.current !== (activeThread?.id ?? null)) {
       isAtEndRef.current = true;
+      timelineUserScrollDirectionRef.current = null;
       timelineScrollModeRef.current = "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
@@ -7016,6 +7056,7 @@ function ChatViewContent(props: ChatViewProps) {
                 liveFollowEnabled={timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                onManualScroll={cancelTimelineLiveFollowForUserScroll}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
               />

@@ -77,6 +77,8 @@ import {
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
+  resolveTimelineUserScrollDirectionForKey,
+  resolveTimelineUserScrollDirectionForWheel,
   resolveTimelinePinnedMessageIndex,
   resolveTimelinePinnedMessagePushOffset,
   resolveTimelineMinimapHasPersistentGutter,
@@ -88,6 +90,7 @@ import {
   shouldCancelTimelineLiveFollowForWheel,
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
+  type TimelineUserScrollDirection,
   TIMELINE_MINIMAP_MIN_ITEMS,
   TIMELINE_PINNED_MESSAGE_FADED_REVEAL_OFFSET,
   TIMELINE_PINNED_MESSAGE_REVEAL_OFFSET,
@@ -227,8 +230,15 @@ interface MessagesTimelineProps {
   onAnchorSizeChanged: (messageId: MessageId, size: number) => void;
   contentInsetEndAdjustment: number;
   liveFollowEnabled: boolean;
-  onIsAtEndChange: (isAtEnd: boolean, isAbsoluteEnd: boolean) => void;
+  onIsAtEndChange: (isAbsoluteEnd: boolean) => void;
   onManualNavigation: () => void;
+  /**
+   * Avi Code addition. A scroll the user drove themselves, reported separately
+   * from `onManualNavigation` so the owner can record which way it was heading
+   * and apply the opt-out synchronously — LegendList re-reads
+   * `maintainScrollAtEnd` live, so a deferred opt-out arrives too late.
+   */
+  onManualScroll: (direction: TimelineUserScrollDirection) => void;
   // Avi Code addition. Fires when this chat opened at the top of its last
   // response instead of the live edge, so the owner can leave live follow off.
   onOpenedAtLastResponse: () => void;
@@ -276,6 +286,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   liveFollowEnabled,
   onIsAtEndChange,
   onManualNavigation,
+  onManualScroll,
   onOpenedAtLastResponse,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
@@ -487,9 +498,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   const handleScroll = useCallback(() => {
     const state = listRef.current?.getState?.();
-    const isAtEnd = resolveTimelineIsAtEnd(state);
-    if (isAtEnd !== undefined) {
-      onIsAtEndChange(isAtEnd, state?.isAtEnd ?? isAtEnd);
+    // `isNearEnd` only tells us LegendList has measured the list; the live-follow
+    // state machine keys off the absolute edge, so a short scroll away from it
+    // still counts as leaving.
+    if (resolveTimelineIsAtEnd(state) !== undefined) {
+      onIsAtEndChange(state?.isAtEnd ?? false);
     }
     if (!state || minimapItems.length === 0) {
       setPinnedMessageIndex(null);
@@ -772,10 +785,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           className="relative h-full min-h-0"
           onPointerDownCapture={(event) => {
             if (event.target === listRef.current?.getScrollableNode()) {
-              onManualNavigation();
+              onManualScroll("unknown");
             }
           }}
-          onTouchMoveCapture={onManualNavigation}
+          onTouchMoveCapture={() => onManualScroll("unknown")}
           onWheelCapture={(event) => {
             if (
               shouldCancelTimelineLiveFollowForWheel({
@@ -783,7 +796,23 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 isAtAbsoluteEnd: listRef.current?.getState?.().isAtEnd ?? false,
               })
             ) {
-              onManualNavigation();
+              onManualScroll(resolveTimelineUserScrollDirectionForWheel(event.deltaY));
+            }
+          }}
+          // Avi Code addition: paging and arrowing through the timeline scrolls
+          // it just as a wheel does, but used to bypass the opt-out entirely and
+          // leave live follow armed. Typing targets are skipped so a space in a
+          // message input is not read as a page down.
+          onKeyDownCapture={(event) => {
+            if (isTimelineTypingTarget(event.target)) {
+              return;
+            }
+            const direction = resolveTimelineUserScrollDirectionForKey({
+              key: event.key,
+              shiftKey: event.shiftKey,
+            });
+            if (direction !== null) {
+              onManualScroll(direction);
             }
           }}
         >
@@ -843,6 +872,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     </TimelineRowCtx>
   );
 });
+
+/**
+ * Avi Code addition. True when a key event is being typed into an editable
+ * element inside the timeline rather than scrolling the list.
+ */
+function isTimelineTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tagName = target.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
 
 function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
