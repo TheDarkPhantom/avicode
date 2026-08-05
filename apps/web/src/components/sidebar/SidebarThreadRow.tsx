@@ -515,7 +515,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                 <ProjectFavicon
                   environmentId={projectIdentity.environmentId}
                   cwd={projectIdentity.cwd}
-                  className="size-3"
+                  className="size-4"
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">{projectIdentity.label}</TooltipPopup>
