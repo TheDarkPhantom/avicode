@@ -6,8 +6,13 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { ChevronsDownUp, ChevronsUpDown, FilePlus, FolderPlus, RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -153,6 +158,23 @@ export default function FileBrowserPanel({
   const renameEntryCommand = useAtomCommand(projectEnvironment.renameEntry);
   const deleteEntryCommand = useAtomCommand(projectEnvironment.deleteEntry);
 
+  // Avi Code addition: entry mutations used to swallow every non-success result,
+  // so a rejected create/rename/delete reverted its optimistic row and the panel
+  // looked unchanged with no reason given. Surface the failure so a create that
+  // never appears is explained instead of silent.
+  const reportEntryMutationFailure = (
+    result: AtomCommandResult<unknown, unknown>,
+    title: string,
+  ): void => {
+    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    toastManager.add({
+      type: "error",
+      title,
+      description: error instanceof Error ? error.message : "An error occurred.",
+    });
+  };
+
   const startCreateEntry = (kind: ProjectEntry["kind"], directoryPrefix: string) => {
     const model = treeModelRef.current;
     if (!model) return;
@@ -191,6 +213,10 @@ export default function FileBrowserPanel({
     }
     // The tree already applied the placeholder→name rename; drop it on failure.
     treeModelRef.current?.remove(destinationPath, { recursive: true });
+    reportEntryMutationFailure(
+      result,
+      kind === "directory" ? "Couldn't create folder" : "Couldn't create file",
+    );
   };
 
   const commitRenameEntry = async (sourcePath: string, destinationPath: string) => {
@@ -207,6 +233,7 @@ export default function FileBrowserPanel({
     }
     // Undo the optimistic move the tree already applied.
     treeModelRef.current?.move(destinationPath, sourcePath);
+    reportEntryMutationFailure(result, "Couldn't rename");
   };
 
   const handleTreeRename = async (event: FileTreeRenameEvent) => {
@@ -244,7 +271,9 @@ export default function FileBrowserPanel({
     if (result._tag === "Success") {
       treeModelRef.current?.remove(item.path, { recursive: true });
       entriesQuery.refresh();
+      return;
     }
+    reportEntryMutationFailure(result, "Couldn't delete");
   };
 
   const toggleCollapseAll = () => {
@@ -345,6 +374,35 @@ export default function FileBrowserPanel({
     showEntryContextMenuRef.current = showEntryContextMenu;
   });
 
+  // Avi Code addition: the tree library only opens its context menu when the
+  // right-click lands on a row, so clicking empty space fell through to the
+  // native browser menu (Cut/Copy/Paste). Handle those misses on the panel and
+  // offer the root-level create actions instead.
+  const showRootContextMenu = async (position: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (!api) return;
+    const clicked = await api.contextMenu.show(
+      [
+        { id: "new-file", label: "New File" },
+        { id: "new-folder", label: "New Folder" },
+      ],
+      position,
+    );
+    if (clicked === "new-file") startCreateEntry("file", "");
+    else if (clicked === "new-folder") startCreateEntry("directory", "");
+  };
+  const handlePanelContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    // A right-click on a tree row is handled by the tree, which prevents the
+    // default menu before this bubbles up; only unhandled misses get here.
+    if (event.defaultPrevented) return;
+    // Leave the toolbar and search field their native menu (e.g. paste).
+    if (event.target instanceof HTMLElement && event.target.closest("[data-surface-subheader]")) {
+      return;
+    }
+    event.preventDefault();
+    void showRootContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
   const dragMention = useMemo(
     () =>
       createFileTreeDragMentionController({
@@ -442,6 +500,7 @@ export default function FileBrowserPanel({
       ref={panelRef}
       className="flex min-h-0 flex-1 flex-col bg-background"
       data-file-browser-panel={`${environmentId}:${cwd}`}
+      onContextMenu={handlePanelContextMenu}
     >
       <div className="surface-subheader gap-1 px-2" data-surface-subheader>
         <Tooltip>
