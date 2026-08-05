@@ -66,6 +66,12 @@ interface Props {
    */
   projectRoot?: string | null;
   worktreePath?: string | null;
+  /**
+   * Avi Code addition: lets the empty state start the project's dev server itself
+   * when this thread has none running yet.
+   */
+  startDevServerLabel?: string | null;
+  onStartDevServer?: (() => void) | undefined;
   visible: boolean;
 }
 
@@ -81,6 +87,8 @@ export function PreviewView({
   configuredUrls,
   projectRoot = null,
   worktreePath = null,
+  startDevServerLabel = null,
+  onStartDevServer,
   visible,
 }: Props) {
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
@@ -685,6 +693,8 @@ export function PreviewView({
             threadId={threadRef.threadId}
             projectRoot={projectRoot}
             worktreePath={worktreePath}
+            startDevServerLabel={startDevServerLabel}
+            onStartDevServer={onStartDevServer}
             onOpenUrl={(next) => void handleOpenServerUrl(next)}
           />
         ) : null}

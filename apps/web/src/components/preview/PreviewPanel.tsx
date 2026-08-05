@@ -16,6 +16,9 @@ interface Props {
   /** Avi Code addition: passed through so the start page can group servers. */
   projectRoot?: string | null;
   worktreePath?: string | null;
+  /** Avi Code addition: lets the empty state start the project's dev server. */
+  startDevServerLabel?: string | null;
+  onStartDevServer?: (() => void) | undefined;
   visible: boolean;
 }
 
@@ -26,6 +29,8 @@ export function PreviewPanel({
   configuredUrls,
   projectRoot = null,
   worktreePath = null,
+  startDevServerLabel = null,
+  onStartDevServer,
   visible,
 }: Props) {
   if (!isPreviewSupportedInRuntime()) {
@@ -48,6 +53,8 @@ export function PreviewPanel({
         configuredUrls={configuredUrls}
         projectRoot={projectRoot}
         worktreePath={worktreePath}
+        startDevServerLabel={startDevServerLabel}
+        onStartDevServer={onStartDevServer}
         visible={visible}
       />
     </PreviewPanelShell>

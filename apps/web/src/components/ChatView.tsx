@@ -195,6 +195,7 @@ import {
   buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
+  primaryProjectScript,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
@@ -3195,6 +3196,16 @@ function ChatViewContent(props: ChatViewProps) {
       writeTerminal,
     ],
   );
+
+  // Avi Code addition: the preview panel starts the dev server itself when a
+  // thread has none running, by running the project's primary action.
+  const activePrimaryScript = useMemo(
+    () => primaryProjectScript(activeProject?.scripts ?? []),
+    [activeProject?.scripts],
+  );
+  const handleStartDevServer = useCallback(() => {
+    if (activePrimaryScript) void runProjectScript(activePrimaryScript);
+  }, [activePrimaryScript, runProjectScript]);
 
   const persistProjectScripts = useCallback(
     async (input: {
@@ -7162,6 +7173,8 @@ function ChatViewContent(props: ChatViewProps) {
           configuredUrls={configuredPreviewUrls}
           projectRoot={activeProjectCwd}
           worktreePath={activeThreadWorktreePath}
+          startDevServerLabel={activePrimaryScript?.name ?? null}
+          onStartDevServer={activePrimaryScript ? handleStartDevServer : undefined}
           visible
         />
       </Suspense>
