@@ -366,8 +366,29 @@ describe("deriveExpiredUserInputs", () => {
             multiSelect: false,
           },
         ],
+        submittedAnswers: null,
       },
     ]);
+  });
+
+  it("returns answers persisted with an expired response", () => {
+    const activities = expiredUserInputActivities();
+    activities[1] = makeActivity({
+      id: "user-input-expired-with-answers",
+      createdAt: "2026-02-23T00:00:02.000Z",
+      kind: "user-input.resolved",
+      summary: "Question expired",
+      tone: "info",
+      payload: {
+        requestId: "req-user-input-expired-1",
+        expired: true,
+        answers: { sandbox_mode: "A long custom answer", areas: ["Server", "Web"] },
+      },
+    });
+    expect(deriveExpiredUserInputs(activities)[0]?.submittedAnswers).toEqual({
+      sandbox_mode: "A long custom answer",
+      areas: ["Server", "Web"],
+    });
   });
 
   it("ignores an ordinary answered resolution", () => {

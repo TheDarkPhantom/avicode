@@ -104,6 +104,7 @@ export interface ExpiredUserInput {
   requestId: ApprovalRequestId;
   expiredAt: string;
   questions: ReadonlyArray<UserInputQuestion>;
+  submittedAnswers: Readonly<Record<string, string | string[]>> | null;
 }
 
 export interface ActivePlanState {
@@ -554,7 +555,25 @@ export function deriveExpiredUserInputs(
       const questions = openByRequestId.get(requestId);
       openByRequestId.delete(requestId);
       if (questions && payload?.expired === true) {
-        expired.push({ requestId, questions, expiredAt: activity.createdAt });
+        const rawAnswers = payload.answers;
+        const submittedAnswers =
+          rawAnswers && typeof rawAnswers === "object" && !Array.isArray(rawAnswers)
+            ? Object.fromEntries(
+                Object.entries(rawAnswers).filter(
+                  (entry): entry is [string, string | string[]] =>
+                    typeof entry[1] === "string" ||
+                    (Array.isArray(entry[1]) &&
+                      entry[1].every((value) => typeof value === "string")),
+                ),
+              )
+            : null;
+        expired.push({
+          requestId,
+          questions,
+          expiredAt: activity.createdAt,
+          submittedAnswers:
+            submittedAnswers && Object.keys(submittedAnswers).length > 0 ? submittedAnswers : null,
+        });
       }
     }
   }

@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Answers rejected by an expired question now return after restarting Avi Code (#123)
 - A stuck provider question can always be dismissed without restarting Avi Code (#122)
 - Restarting Avi Code keeps your provider choices while provider discovery finishes (#122)
 - Files in unregistered sibling repositories now open from the repository that owns them (#121)

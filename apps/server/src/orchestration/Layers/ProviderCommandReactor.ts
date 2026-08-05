@@ -364,6 +364,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly requestId: string;
     readonly createdAt: string;
+    readonly answers?: Readonly<Record<string, unknown>>;
   }) =>
     Effect.all({
       commandId: serverCommandId("user-input-expired-activity"),
@@ -381,7 +382,7 @@ const make = Effect.gen(function* () {
             summary: USER_INPUT_EXPIRED_SUMMARY,
             payload: {
               requestId: input.requestId,
-              answers: {},
+              answers: input.answers ?? {},
               expired: true,
               detail: USER_INPUT_EXPIRED_DETAIL,
             },
@@ -1380,6 +1381,21 @@ const make = Effect.gen(function* () {
       if (!thread) {
         return;
       }
+      // Avi Code addition: response commands are durable and may be replayed
+      // after a restart or submitted repeatedly while the first is settling.
+      // Once the request is closed, later copies have nothing left to do.
+      if (
+        thread.activities.some((activity) => {
+          if (activity.kind !== "user-input.resolved") return false;
+          const payload =
+            typeof activity.payload === "object" && activity.payload !== null
+              ? (activity.payload as Record<string, unknown>)
+              : null;
+          return payload?.requestId === event.payload.requestId;
+        })
+      ) {
+        return;
+      }
       const hasSession = thread.session && thread.session.status !== "stopped";
       // Avi Code addition: no session means the question outlived the thing
       // that asked it. That is an expiry, not a failure the user caused.
@@ -1388,6 +1404,7 @@ const make = Effect.gen(function* () {
           threadId: event.payload.threadId,
           requestId: event.payload.requestId,
           createdAt: event.payload.createdAt,
+          answers: event.payload.answers,
         });
       }
 
@@ -1407,6 +1424,7 @@ const make = Effect.gen(function* () {
                   threadId: event.payload.threadId,
                   requestId: event.payload.requestId,
                   createdAt: event.payload.createdAt,
+                  answers: event.payload.answers,
                 })
               : appendProviderFailureActivity({
                   threadId: event.payload.threadId,
