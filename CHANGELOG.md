@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- A thread finishing or asking for your answer no longer flickers back to its resting look (#128)
 - Create files and folders in the Files panel by right-click or the new toolbar buttons (#127)
 - Rename and delete files and folders straight from the file explorer right-click menu (#127)
 - Collapse or expand every folder in the file tree with one button (#127)
