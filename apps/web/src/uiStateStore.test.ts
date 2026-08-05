@@ -15,6 +15,8 @@ import {
   setProjectExpanded,
   setProjectPinned,
   setThreadChangedFilesExpanded,
+  setThreadPlanExpanded,
+  setThreadPlanReadingAnchor,
   setThreadPinned,
   type UiState,
 } from "./uiStateStore";
@@ -27,6 +29,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     pinnedThreadKeys: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
+    threadPlanReadingStateById: {},
     defaultAdvertisedEndpointKey: null,
     ...overrides,
   };
@@ -137,6 +140,35 @@ describe("uiStateStore pure functions", () => {
         "turn-1": true,
       },
     });
+  });
+
+  it("stores plan expansion and reading anchors by scoped thread", () => {
+    const expanded = setThreadPlanExpanded(makeUiState(), "env:thread-1", "plan-1", true, 1);
+    const anchored = setThreadPlanReadingAnchor(
+      expanded,
+      "env:thread-1",
+      { rowId: "plan-1", offsetWithinRow: 42 },
+      2,
+    );
+    expect(anchored.threadPlanReadingStateById["env:thread-1"]).toEqual({
+      expandedPlanIds: ["plan-1"],
+      anchor: { rowId: "plan-1", offsetWithinRow: 42 },
+      lastAccessedAt: 2,
+    });
+    expect(
+      setThreadPlanExpanded(anchored, "env:thread-1", "plan-1", false, 3)
+        .threadPlanReadingStateById["env:thread-1"]?.expandedPlanIds,
+    ).toEqual([]);
+  });
+
+  it("bounds transient plan reading state to fifty recent threads", () => {
+    let state = makeUiState();
+    for (let index = 0; index < 51; index++) {
+      state = setThreadPlanExpanded(state, `env:thread-${index}`, "plan", true, index);
+    }
+    expect(Object.keys(state.threadPlanReadingStateById)).toHaveLength(50);
+    expect(state.threadPlanReadingStateById["env:thread-0"]).toBeUndefined();
+    expect(state.threadPlanReadingStateById["env:thread-50"]).toBeDefined();
   });
 
   it("stores the endpoint preference by stable key", () => {
@@ -259,6 +291,7 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      threadPlanReadingStateById: {},
     });
   });
 
@@ -382,6 +415,7 @@ describe("uiStateStore persistence", () => {
         },
       },
     });
+    expect(persisted).not.toHaveProperty("threadPlanReadingStateById");
     expect(parsePersistedState(persisted)).toEqual({
       ...state,
     });

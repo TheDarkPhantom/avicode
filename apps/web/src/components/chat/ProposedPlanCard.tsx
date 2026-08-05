@@ -41,6 +41,8 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   cwd,
   workspaceRoot,
   onExpanded,
+  expanded,
+  onExpandedChange,
 }: {
   planMarkdown: string;
   environmentId: EnvironmentId;
@@ -53,8 +55,9 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
    * (or a no-op) leaves the previous stay-put behaviour.
    */
   onExpanded?: ((planElement: HTMLElement) => void) | undefined;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Avi Code addition. Expanding grows the card downwards from a button at its
@@ -65,7 +68,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   // scroll position first.
   const toggleExpanded = () => {
     const next = !expanded;
-    flushSync(() => setExpanded(next));
+    flushSync(() => onExpandedChange(next));
     if (next && rootRef.current) {
       onExpanded?.(rootRef.current);
     }
