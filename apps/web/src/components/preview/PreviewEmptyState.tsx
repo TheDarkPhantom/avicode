@@ -1,11 +1,10 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { ChevronRight, Globe, RadioTower } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Globe, RadioTower } from "lucide-react";
+import { useMemo } from "react";
 
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
 
-import { cn } from "~/lib/utils";
-import { groupLocalServers, shouldExpandOtherServers } from "./localServerAttribution";
+import { groupLocalServers } from "./localServerAttribution";
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
@@ -44,11 +43,6 @@ export function PreviewEmptyState({
     [projectRoot, servers, threadId, worktreePath],
   );
 
-  // Avi Code addition: null until the user decides, so the default tracks the
-  // sections as servers come and go. Once they open it, it stays open.
-  const [otherExpanded, setOtherExpanded] = useState<boolean | null>(null);
-  const expandOther = otherExpanded ?? shouldExpandOtherServers(sections);
-
   if (servers.length === 0) {
     return (
       <Empty>
@@ -57,8 +51,9 @@ export function PreviewEmptyState({
         </EmptyMedia>
         <EmptyTitle>No preview yet</EmptyTitle>
         <EmptyDescription>
-          Type a URL above, or run a dev script. Listening localhost ports will show up here
-          automatically.
+          {/* Avi Code addition: the list is limited to servers this app started, so the
+              old promise of every listening localhost port would be a lie. */}
+          Type a URL above, or run a dev script. Servers you start here show up automatically.
         </EmptyDescription>
       </Empty>
     );
@@ -74,28 +69,10 @@ export function PreviewEmptyState({
         {sections.map((section) => (
           <div key={section.group} className="flex flex-col gap-1.5">
             {/* Only worth a heading once there is more than one group to tell apart. */}
-            {section.group === "other" && !expandOther ? (
-              // Avi Code addition: a machine's unrelated listeners outnumber the
-              // dev server you came for, so they fold away behind a count rather
-              // than pushing it off the top.
-              <button
-                type="button"
-                className="flex items-center gap-1.5 px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                onClick={() => setOtherExpanded(true)}
-                aria-expanded={false}
-              >
-                <ChevronRight className="size-3.5 shrink-0" aria-hidden />
-                {section.title} ({section.servers.length})
-              </button>
-            ) : sections.length > 1 ? (
+            {sections.length > 1 ? (
               <h3 className="px-1 text-xs font-medium text-muted-foreground">{section.title}</h3>
             ) : null}
-            <div
-              className={cn(
-                "flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background",
-                section.group === "other" && !expandOther && "hidden",
-              )}
-            >
+            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
               {section.servers.map((server) => (
                 <PreviewLocalServerCard
                   key={`${server.host}:${server.port}`}

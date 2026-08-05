@@ -172,6 +172,14 @@ interface PendingApproval {
 interface PendingUserInput {
   readonly questions: ReadonlyArray<UserInputQuestion>;
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
+  /**
+   * Avi Code addition: set by the session-stop path, which emits the closing
+   * `user-input.resolved` itself so the durable activity log learns the
+   * question died even though nothing answered it. The awaiting fiber checks
+   * this flag rather than the map, because the map entry is already gone by
+   * the time it wakes.
+   */
+  expired: boolean;
 }
 
 interface ToolInFlight {
@@ -354,6 +362,17 @@ function resultErrorsText(result: SDKResultMessage): string {
 }
 
 function isInterruptedResult(result: SDKResultMessage): boolean {
+  // Avi Code addition: the SDK says so structurally. Read that first — the
+  // substring checks below miss an abort whose wording differs or that arrives
+  // with `is_error: true`, and misclassifying one as a failure turns pressing
+  // Stop into a red error banner and an "Agent failed" notification.
+  if (
+    result.terminal_reason === "aborted_streaming" ||
+    result.terminal_reason === "aborted_tools"
+  ) {
+    return true;
+  }
+
   const errors = resultErrorsText(result);
   if (errors.includes("interrupt")) {
     return true;
@@ -3462,6 +3481,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
     context.pendingApprovals.clear();
 
+    // Avi Code addition: mirror the approval loop above for questions. Without
+    // this the SDK stays blocked inside AskUserQuestion and, worse, the durable
+    // `user-input.requested` activity is never closed — so every client keeps
+    // rendering a prompt whose answer path died with this session. The flag is
+    // set before the deferred settles so the awaiting fiber skips its own emit.
+    for (const [requestId, pending] of context.pendingUserInputs) {
+      pending.expired = true;
+      const stamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "user-input.resolved",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        createdAt: stamp.createdAt,
+        threadId: context.session.threadId,
+        ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+        requestId: asRuntimeRequestId(requestId),
+        payload: { answers: {}, reason: "expired" },
+        providerRefs: nativeProviderRefs(context),
+      });
+      yield* Deferred.succeed(pending.answers, {} as ProviderUserInputAnswers);
+    }
+    context.pendingUserInputs.clear();
+
     if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Session stopped.");
     }
@@ -3643,6 +3685,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         const pendingInput: PendingUserInput = {
           questions,
           answers: answersDeferred,
+          expired: false,
         };
 
         // Emit user-input.requested so the UI can present the questions.
@@ -3691,6 +3734,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // Block until the user provides answers.
         const answers = yield* Deferred.await(answersDeferred);
         pendingUserInputs.delete(requestId);
+
+        // Avi Code addition: the session-stop path already emitted the closing
+        // event for this request, so emitting again would duplicate the row.
+        if (pendingInput.expired) {
+          return {
+            behavior: "deny",
+            message: "User cancelled tool execution.",
+          } satisfies PermissionResult;
+        }
 
         // Emit user-input.resolved so the UI knows the interaction completed.
         const resolvedStamp = yield* makeEventStamp();
@@ -4478,6 +4530,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
       sideQuestion: "fork-session",
+      // `canUseTool` refuses Edit/Write/NotebookEdit for the whole plan turn,
+      // so a proposed plan waits for Implement instead of building itself.
+      planTurnEnforcement: "tool-denial",
     },
     startSession,
     sendTurn,

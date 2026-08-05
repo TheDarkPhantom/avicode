@@ -13,11 +13,13 @@ import type { PreviewableServer } from "./useDiscoveredLocalServers";
  * terminal that started it, and the sidebar has used that for its badge all
  * along.
  *
- * Servers started outside an Avi Code terminal carry no owner at all and stay
- * in `other`. They are never hidden: a dev server you started yourself is still
- * one you want to open.
+ * The scanner no longer reports listeners Avi Code did not start, so `other` no
+ * longer means "the machine's background noise". It means a server this app
+ * started for a different project, which is worth showing and worth labelling as
+ * someone else's. `recent` is the separate case of a URL you typed in yourself,
+ * remembered per thread.
  */
-export type LocalServerGroup = "this-thread" | "this-project" | "other";
+export type LocalServerGroup = "this-thread" | "this-project" | "other" | "recent";
 
 export interface LocalServerAttributionInput {
   readonly threadId: ThreadId | null;
@@ -37,6 +39,10 @@ export function attributeLocalServer(
   // A URL configured on this project's own scripts belongs to it by definition,
   // even when nothing is listening yet.
   if (server.source === "configured") return "this-project";
+
+  // Recently-seen URLs are this thread's own browsing history, not something
+  // the scanner found, so no amount of path matching will place them better.
+  if (server.source === "recent") return "recent";
 
   const owners = [terminal?.cwd, terminal?.worktreePath];
   const roots = [input.projectRoot, input.worktreePath];
@@ -61,23 +67,11 @@ export interface LocalServerSection {
   readonly servers: readonly PreviewableServer[];
 }
 
-/**
- * Whether "Other local servers" should start open.
- *
- * A developer machine runs a lot of unrelated listeners — vendor tools, VPN
- * clients, game clients — and the scanner cannot tell them from a dev server by
- * port or process name. Collapsing them is what makes this thread's own server
- * the thing you see. But collapsing the only section there is would leave an
- * apparently empty panel, so it opens when nothing more relevant exists.
- */
-export function shouldExpandOtherServers(sections: readonly LocalServerSection[]): boolean {
-  return !sections.some((section) => section.group !== "other");
-}
-
 const SECTION_TITLES: Record<LocalServerGroup, string> = {
   "this-thread": "This thread",
   "this-project": "This project",
-  other: "Other local servers",
+  other: "Other projects",
+  recent: "Recently opened",
 };
 
 /**
@@ -99,7 +93,7 @@ export function groupLocalServers(
     }
   }
 
-  const order: LocalServerGroup[] = ["this-thread", "this-project", "other"];
+  const order: LocalServerGroup[] = ["this-thread", "this-project", "other", "recent"];
   return order.flatMap((group) => {
     const groupServers = byGroup.get(group);
     if (!groupServers || groupServers.length === 0) return [];

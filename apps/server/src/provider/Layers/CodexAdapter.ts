@@ -61,6 +61,7 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import {
   CodexResumeCursorSchema,
+  CODEX_USER_INPUT_EXPIRED_METHOD,
   CodexSessionRuntimeThreadIdMissingError,
   makeCodexSessionRuntime,
   type CodexSessionRuntimeError,
@@ -1250,6 +1251,21 @@ function mapToRuntimeEvents(
     ];
   }
 
+  // Avi Code addition: the session took this question down instead of
+  // answering it, so it closes with no answers and an expiry marker.
+  if (event.method === CODEX_USER_INPUT_EXPIRED_METHOD) {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "user-input.resolved",
+        payload: {
+          answers: {},
+          reason: "expired",
+        },
+      },
+    ];
+  }
+
   if (event.method === "item/tool/requestUserInput/answered") {
     const payload = readPayload(EffectCodexSchema.ToolRequestUserInputResponse, event.payload);
     if (!payload) {
@@ -2008,6 +2024,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
       sideQuestion: "unsupported",
+      // Plan behaviour is left to the Codex runtime and has not been verified
+      // to stop after proposing, so nothing here enforces it.
+      planTurnEnforcement: "unsupported",
     },
     startSession,
     sendTurn,

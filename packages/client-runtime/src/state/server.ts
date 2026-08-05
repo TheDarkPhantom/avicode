@@ -180,7 +180,17 @@ export function applyServerConfigProjection(
   switch (event.type) {
     case "snapshot":
       return Option.some({
-        config: event.config,
+        // Avi Code addition: provider discovery can still be warming up when
+        // the first post-restart snapshot is assembled. Do not let that
+        // transient empty list erase a useful cached catalogue. A subsequent
+        // providerStatuses event is authoritative, including when it is empty.
+        config:
+          Option.isSome(current) &&
+          current.value.source === "cache" &&
+          current.value.config.providers.length > 0 &&
+          event.config.providers.length === 0
+            ? { ...event.config, providers: current.value.config.providers }
+            : event.config,
         latestEvent: event,
         source: "live",
       });

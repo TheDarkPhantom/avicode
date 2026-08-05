@@ -832,10 +832,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     });
     let metricProvider = "unknown";
     return yield* Effect.gen(function* () {
+      // Avi Code addition: no recovery here, unlike sendTurn. Recovery either
+      // adopts a session that `hasSession` already found, or resumes a brand
+      // new one whose pending-request map is empty — so it cannot make this
+      // response succeed, it only pays for a CLI resume before failing.
+      // Failing fast leaves a `ProviderAdapterSessionNotFoundError`, which the
+      // reactor reads as "this question expired".
       const routed = yield* resolveRoutableSession({
         threadId: input.threadId,
         operation: "ProviderService.respondToUserInput",
-        allowRecovery: true,
+        allowRecovery: false,
       });
       metricProvider = routed.adapter.provider;
       yield* Effect.annotateCurrentSpan({

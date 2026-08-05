@@ -1,6 +1,7 @@
 import {
   type ApprovalRequestId,
   type ClientOrchestrationCommand,
+  type CommandId,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
@@ -76,10 +77,12 @@ import {
   collapseExpandedComposerCursor,
   parseComposerSideQuestionCommand,
   parseStandaloneComposerSlashCommand,
+  resolveSideQuestionSubmission,
 } from "../composer-logic";
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
+  deriveExpiredUserInputs,
   derivePhase,
   deriveTimelineEntries,
   deriveActiveWorkStartedAt,
@@ -109,6 +112,12 @@ import {
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
+  formatExpiredUserInputAnswers,
+  formatExpiredUserInputDraft,
+  hasHandledExpiredUserInputRecovery,
+  markExpiredUserInputRecoveryHandled,
+  mergeExpiredUserInputWithComposerDraft,
+  omitPendingUserInputRequestIds,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
@@ -151,6 +160,7 @@ import {
   useThreadPreviewState,
 } from "../previewStateStore";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
+import { useAutoOpenScriptPreview } from "./preview/useAutoOpenScriptPreview";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
@@ -168,6 +178,8 @@ import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
   ChevronDownIcon,
+  ClockIcon,
+  MessageSquareReplyIcon,
   GitBranchIcon,
   TriangleAlertIcon,
   SquarePenIcon,
@@ -203,6 +215,7 @@ import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerAttachment,
   type ComposerThreadDraftState,
+  createEmptyThreadDraft,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
@@ -256,6 +269,10 @@ import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import {
+  shouldRearmTimelineLiveFollow,
+  type TimelineUserScrollDirection,
+} from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
@@ -268,6 +285,7 @@ import {
 } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { shouldFlushHeldSend, shouldHoldSendWhileRunning } from "./chat/sendWhileRunning.logic";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -306,6 +324,7 @@ import {
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldFollowUpWithAttachments,
+  snapshotComposerThreadDraft,
   shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
@@ -341,6 +360,8 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { queuedTurnChatMessage, useOfflineTurnOutboxStore } from "../offlineTurnOutboxStore";
+import { findHeldTurnForThread, useHeldTurnStore, type HeldTurnItem } from "../heldTurnStore";
+import { dispatchQueuedTurnCommands } from "./OfflineTurnOutboxFlusher";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -1225,6 +1246,9 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const forkThread = useAtomCommand(threadEnvironment.fork, { reportFailure: false });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  // Avi Code addition: honours the script form's "Open preview automatically",
+  // which upstream persisted and offered but never read at runtime.
+  const requestAutoOpenScriptPreview = useAutoOpenScriptPreview(openPreview);
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -1326,6 +1350,14 @@ function ChatViewContent(props: ChatViewProps) {
   const [localServerErrorsByThreadKey, setLocalServerErrorsByThreadKey] = useState<
     Record<string, LocalThreadErrorEntry>
   >({});
+  // Avi Code addition: the error banner's dismiss button used to be a no-op
+  // whenever the error came from the server, because clearing the local error
+  // just fell through to `session.lastError` again. Remembering the exact
+  // message that was dismissed hides that one and no other, so a different
+  // error arriving later still shows.
+  const [dismissedServerErrorsByThreadKey, setDismissedServerErrorsByThreadKey] = useState<
+    Record<string, string>
+  >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
   // Avi Code addition: ephemeral desktop composer state for non-destructive message forks.
@@ -1335,6 +1367,13 @@ function ChatViewContent(props: ChatViewProps) {
     savedDraft: ComposerThreadDraftState;
   } | null>(null);
   const [isForkingThread, setIsForkingThread] = useState(false);
+  // Avi Code addition: turns captured when their send was held until the running
+  // turn finishes. Keyed by thread because a hold outlives navigating away, and
+  // holding the built commands rather than a flag is what keeps later typing out
+  // of an already-queued message.
+  const heldTurnItems = useHeldTurnStore((state) => state.items);
+  const heldTurnFailuresById = useHeldTurnStore((state) => state.failuresById);
+  const heldTurnInFlightRef = useRef(new Set<CommandId>());
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -1342,6 +1381,9 @@ function ChatViewContent(props: ChatViewProps) {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
+  // Requests placed here were abandoned by an explicit Stop. Their command
+  // may still settle later, but that completion no longer owns visible state.
+  const dismissedUserInputRequestIdsRef = useRef(new Set<ApprovalRequestId>());
   const [pendingUserInputAnswersByRequestId, setPendingUserInputAnswersByRequestId] = useState<
     Record<string, Record<string, PendingUserInputDraftAnswer>>
   >({});
@@ -1499,8 +1541,13 @@ function ChatViewContent(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const serverSessionError = activeServerThread?.session?.lastError ?? null;
+  const dismissedServerError = dismissedServerErrorsByThreadKey[routeThreadKey] ?? null;
   const threadError = isServerThread
-    ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
+    ? (localServerError ??
+      (serverSessionError !== null && serverSessionError === dismissedServerError
+        ? null
+        : serverSessionError))
     : localDraftError;
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Avi Code addition: the final fallback (an unmaterialized new draft) honours
@@ -1549,6 +1596,17 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  // Avi Code addition: the turn this thread is holding, if any. Declared up here
+  // because the composer banner and the timeline both read it long before the
+  // send path that creates it.
+  const activeHeldTurn = useMemo(
+    () => findHeldTurnForThread(heldTurnItems, activeThreadKey),
+    [activeThreadKey, heldTurnItems],
+  );
+  const isHoldingSend = activeHeldTurn !== null;
+  const activeHeldTurnFailure = activeHeldTurn
+    ? (heldTurnFailuresById[activeHeldTurn.id] ?? null)
+    : null;
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
     readonly messageId: MessageId | null;
@@ -1578,6 +1636,8 @@ function ChatViewContent(props: ChatViewProps) {
   // separate class strings. They all read `--chat-content-max-width` now, which
   // this sets once on the chat root from the user's setting.
   const chatContentWidth = useClientSettings((settings) => settings.aviCodeChatContentWidth);
+  // Avi Code addition: steer the running turn, or hold the send until it ends.
+  const sendWhileRunning = useClientSettings((settings) => settings.aviCodeSendWhileRunning);
   const chatContentWidthStyle = useMemo(
     () =>
       ({
@@ -1779,9 +1839,15 @@ function ChatViewContent(props: ChatViewProps) {
           ),
     [activeThread, offlineTurnOutboxItems],
   );
+  // Avi Code addition: a held turn renders the same pending row an offline one
+  // does. It is built from the stored command rather than the optimistic list so
+  // it survives navigating away and back, which a hold is allowed to do.
   const queuedTurnMessages = useMemo(
-    () => activeQueuedTurnItems.flatMap((item) => queuedTurnChatMessage(item) ?? []),
-    [activeQueuedTurnItems],
+    () =>
+      [...activeQueuedTurnItems, ...(activeHeldTurn ? [activeHeldTurn] : [])].flatMap(
+        (item) => queuedTurnChatMessage(item) ?? [],
+      ),
+    [activeHeldTurn, activeQueuedTurnItems],
   );
   const hasQueuedTurn = activeQueuedTurnItems.length > 0;
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
@@ -2134,6 +2200,8 @@ function ChatViewContent(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
+  const providerDiscoveryState =
+    serverConfig === null && activeEnvironmentUnavailableState === null ? "loading" : "ready";
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
@@ -2183,6 +2251,83 @@ function ChatViewContent(props: ChatViewProps) {
   const activePendingIsResponding = activePendingUserInput
     ? respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
     : false;
+  // Avi Code addition: a question dies with its provider session, but the
+  // answer already chosen for it should not. Hand it back as composer text so
+  // one send restarts the turn carrying it, and drop the per-request draft
+  // state, which nothing will ever accept again. Recovery is deliberately
+  // gated on that draft still existing in this session: an expiry from a
+  // previous run has no answer to return and must not surprise anyone by
+  // writing into their composer when they open an old thread.
+  const expiredUserInputs = useMemo(
+    () => deriveExpiredUserInputs(threadActivities),
+    [threadActivities],
+  );
+  const recoveredExpiredUserInputIdsRef = useRef<Set<string>>(new Set());
+  const [deferredExpiredUserInputRecovery, setDeferredExpiredUserInputRecovery] = useState<{
+    requestId: string;
+    prompt: string;
+  } | null>(null);
+  const restoreExpiredUserInput = useCallback(
+    (recovery: { requestId: string; prompt: string }) => {
+      const nextPrompt = mergeExpiredUserInputWithComposerDraft(promptRef.current, recovery.prompt);
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(nextPrompt, nextPrompt.length),
+        prompt: nextPrompt,
+        detectTrigger: true,
+      });
+      markExpiredUserInputRecoveryHandled(window.localStorage, recovery.requestId);
+      setDeferredExpiredUserInputRecovery(null);
+    },
+    [composerDraftTarget, composerRef, setComposerDraftPrompt],
+  );
+  useEffect(() => {
+    const unseen = expiredUserInputs.filter(
+      (entry) =>
+        !recoveredExpiredUserInputIdsRef.current.has(entry.requestId) &&
+        !hasHandledExpiredUserInputRecovery(window.localStorage, entry.requestId),
+    );
+    if (unseen.length === 0) return;
+
+    let recoveredPrompt: string | null = null;
+    let recoveredRequestId: string | null = null;
+    for (const entry of unseen) {
+      recoveredExpiredUserInputIdsRef.current.add(entry.requestId);
+      if (recoveredPrompt !== null) continue;
+      recoveredPrompt = entry.submittedAnswers
+        ? formatExpiredUserInputAnswers(entry.questions, entry.submittedAnswers)
+        : null;
+      if (recoveredPrompt === null) {
+        const draft = pendingUserInputAnswersByRequestId[entry.requestId];
+        if (draft) {
+          recoveredPrompt = formatExpiredUserInputDraft(entry.questions, draft);
+        }
+      }
+      if (recoveredPrompt !== null) {
+        recoveredRequestId = entry.requestId;
+        setDeferredExpiredUserInputRecovery({
+          requestId: entry.requestId,
+          prompt: recoveredPrompt,
+        });
+      }
+    }
+
+    const expiredRequestIds = new Set(unseen.map((entry) => entry.requestId));
+    setPendingUserInputAnswersByRequestId((existing) =>
+      omitPendingUserInputRequestIds(existing, expiredRequestIds),
+    );
+    setPendingUserInputQuestionIndexByRequestId((existing) =>
+      omitPendingUserInputRequestIds(existing, expiredRequestIds),
+    );
+
+    // Restore immediately when safe. Otherwise the banner below offers an
+    // explicit restore that appends without overwriting the current draft.
+    if (recoveredPrompt === null || promptRef.current.trim().length > 0) return;
+    if (recoveredRequestId !== null) {
+      restoreExpiredUserInput({ requestId: recoveredRequestId, prompt: recoveredPrompt });
+    }
+  }, [expiredUserInputs, pendingUserInputAnswersByRequestId, restoreExpiredUserInput]);
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {
       return null;
@@ -3018,7 +3163,9 @@ function ChatViewContent(props: ChatViewProps) {
           activeThreadId,
           error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
         );
+        return;
       }
+      requestAutoOpenScriptPreview({ script, threadRef: activeThreadRef });
     },
     [
       activeProject,
@@ -3034,6 +3181,7 @@ function ChatViewContent(props: ChatViewProps) {
       environmentId,
       openTerminal,
       activeKnownTerminalIds,
+      requestAutoOpenScriptPreview,
       runningTerminalIds,
       terminalUiState.activeTerminalId,
       writeTerminal,
@@ -3694,6 +3842,9 @@ function ChatViewContent(props: ChatViewProps) {
     readonly userScrollGeneration: number;
   } | null>(null);
   const anchorScrollRestoreFrameRef = useRef<number | null>(null);
+  // Avi Code addition: which way the user's last scroll gesture was heading, so
+  // arriving at the live edge can be told apart from being dragged back to it.
+  const timelineUserScrollDirectionRef = useRef<TimelineUserScrollDirection | null>(null);
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
     anchorUserScrollGenerationRef.current += 1;
     timelineScrollModeRef.current = "free-scrolling";
@@ -3709,6 +3860,24 @@ function ChatViewContent(props: ChatViewProps) {
       anchorScrollRestoreFrameRef.current = null;
     }
   }, []);
+  // Avi Code addition. A scroll the user drove themselves, as opposed to a
+  // programmatic jump. LegendList re-reads `maintainScrollAtEnd` live from its
+  // own prop store and decides whether to snap to the end from a near-end flag
+  // cached before this gesture's scroll event was dispatched. Letting the opt-out
+  // ride an ordinary state update leaves the list armed for a render, and while
+  // an assistant message streams a data change lands inside that window almost
+  // every frame, which is what dragged the reader back to the live edge. The
+  // flush is what makes the opt-out win the race; it is safe here because this
+  // only ever runs from a DOM event handler.
+  const cancelTimelineLiveFollowForUserScroll = useCallback(
+    (direction: TimelineUserScrollDirection) => {
+      timelineUserScrollDirectionRef.current = direction;
+      flushSync(() => {
+        cancelTimelineLiveFollowForUserNavigation();
+      });
+    },
+    [cancelTimelineLiveFollowForUserNavigation],
+  );
   // Avi Code addition. The timeline reports a chat that opened at the top of
   // its last response rather than the live edge. That open starts off the live
   // edge on purpose, so live follow has to stay off for it — both here and in
@@ -3717,6 +3886,7 @@ function ChatViewContent(props: ChatViewProps) {
   const openedAtLastResponseThreadIdRef = useRef<ThreadId | null>(null);
   const onTimelineOpenedAtLastResponse = useCallback(() => {
     openedAtLastResponseThreadIdRef.current = activeThread?.id ?? null;
+    timelineUserScrollDirectionRef.current = null;
     cancelTimelineLiveFollowForUserNavigation();
     // The chat deliberately opens away from the live edge, so show the way back
     // to it straight away rather than waiting for a scroll gesture to reveal it.
@@ -3775,6 +3945,8 @@ function ChatViewContent(props: ChatViewProps) {
   // gesture opts out.
   const scrollToEnd = useCallback((animated = false) => {
     isAtEndRef.current = true;
+    // Asking for the live edge is consent to follow it again.
+    timelineUserScrollDirectionRef.current = "toward-end";
     timelineScrollModeRef.current = "following-end";
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
     setTimelineLiveFollowEnabled(true);
@@ -3876,26 +4048,37 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, []);
 
-  const onIsAtEndChange = useCallback((isAtEnd: boolean, isAbsoluteEnd: boolean) => {
+  // Avi Code addition: keyed off the absolute live edge rather than LegendList's
+  // `isNearEnd`, which counts half a viewport as "at the end". Under the old
+  // reading, a shorter scroll up left live follow off with the pill still hidden,
+  // so there was no way back to the live edge; and reaching the end re-armed live
+  // follow whatever brought the list there, including an auto-scroll the reader
+  // had just opted out of.
+  const onIsAtEndChange = useCallback((isAbsoluteEnd: boolean) => {
     if (
-      isAbsoluteEnd &&
-      liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current
+      liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current &&
+      shouldRearmTimelineLiveFollow({
+        isAbsoluteEnd,
+        lastUserScrollDirection: timelineUserScrollDirectionRef.current,
+      })
     ) {
       timelineScrollModeRef.current = "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
     }
     if (
-      !isAtEnd &&
+      !isAbsoluteEnd &&
       liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current
     ) {
+      // Still following: a send anchors the list away from the end on purpose,
+      // and streaming content keeps pushing the edge out of reach between frames.
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
       return;
     }
-    if (isAtEndRef.current === isAtEnd) return;
-    isAtEndRef.current = isAtEnd;
-    if (isAtEnd) {
+    if (isAtEndRef.current === isAbsoluteEnd) return;
+    isAtEndRef.current = isAbsoluteEnd;
+    if (isAbsoluteEnd) {
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
     } else {
@@ -3978,6 +4161,7 @@ function ChatViewContent(props: ChatViewProps) {
     // that opened at its last response has already opted out of live follow.
     if (openedAtLastResponseThreadIdRef.current !== (activeThread?.id ?? null)) {
       isAtEndRef.current = true;
+      timelineUserScrollDirectionRef.current = null;
       timelineScrollModeRef.current = "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
@@ -4349,6 +4533,88 @@ function ChatViewContent(props: ChatViewProps) {
     setForkEditState(null);
     scheduleComposerFocus();
   }, [forkEditState, isForkingThread, restoreComposerDraft, scheduleComposerFocus]);
+  // Avi Code addition: dispatching a held turn. The commands were built when the
+  // send was held, so this never consults the composer — that is the difference
+  // between sending what the user wrote and sending whatever they had reached.
+  const flushHeldTurn = useCallback(
+    async (held: HeldTurnItem) => {
+      if (heldTurnInFlightRef.current.has(held.id)) return;
+      heldTurnInFlightRef.current.add(held.id);
+      useHeldTurnStore.getState().setFailure(held.id, null);
+      try {
+        const failure = await dispatchQueuedTurnCommands(
+          held,
+          async (heldEnvironmentId, command) => {
+            switch (command.type) {
+              case "thread.meta.update": {
+                const { type: _, ...input } = command;
+                return updateThreadMetadata({ environmentId: heldEnvironmentId, input });
+              }
+              case "thread.runtime-mode.set": {
+                const { type: _, ...input } = command;
+                return setThreadRuntimeMode({ environmentId: heldEnvironmentId, input });
+              }
+              case "thread.interaction-mode.set": {
+                const { type: _, ...input } = command;
+                return setThreadInteractionMode({ environmentId: heldEnvironmentId, input });
+              }
+              case "thread.turn.start": {
+                const { type: _, ...input } = command;
+                return startThreadTurn({ environmentId: heldEnvironmentId, input });
+              }
+              default:
+                throw new Error(`Unsupported held command: ${command.type}`);
+            }
+          },
+        );
+        if (failure) {
+          if (!isAtomCommandInterrupted(failure)) {
+            const error = squashAtomCommandFailure(failure);
+            const message =
+              error instanceof Error ? error.message : "Failed to send the queued message.";
+            // The hold stays put so "Send now" can retry it rather than the
+            // message disappearing along with the error.
+            useHeldTurnStore.getState().setFailure(held.id, message);
+            setThreadError(held.threadId, sanitizeThreadErrorMessage(message));
+          }
+          return;
+        }
+        // Hand the row to the optimistic list before dropping the hold, so the
+        // message does not blink out between the dispatch and the server echo.
+        const dispatchedMessage = queuedTurnChatMessage(held);
+        if (dispatchedMessage) {
+          setOptimisticUserMessages((existing) =>
+            existing.some((message) => message.id === dispatchedMessage.id)
+              ? existing
+              : [...existing, dispatchedMessage],
+          );
+        }
+        useHeldTurnStore.getState().remove(held.id);
+      } finally {
+        heldTurnInFlightRef.current.delete(held.id);
+      }
+    },
+    [
+      setThreadError,
+      setThreadInteractionMode,
+      setThreadRuntimeMode,
+      startThreadTurn,
+      updateThreadMetadata,
+    ],
+  );
+  const sendHeldMessageNow = useCallback(() => {
+    if (activeHeldTurn === null) return;
+    void flushHeldTurn(activeHeldTurn);
+  }, [activeHeldTurn, flushHeldTurn]);
+  // Cancelling puts the queued message back exactly as it was sent, over
+  // anything typed since — same trade as `cancelForkEdit`. Giving the queued
+  // message back is the button's whole job, so it wins the composer.
+  const cancelHeldSend = useCallback(() => {
+    if (activeHeldTurn === null || heldTurnInFlightRef.current.has(activeHeldTurn.id)) return;
+    useHeldTurnStore.getState().remove(activeHeldTurn.id);
+    restoreComposerDraft(activeHeldTurn.draft);
+    scheduleComposerFocus();
+  }, [activeHeldTurn, restoreComposerDraft, scheduleComposerFocus]);
   const onEditAndForkUserMessage = useCallback(
     (messageId: MessageId) => {
       if (!isElectron || !activeThread || !isServerThread || isForkingThread || isWorking) return;
@@ -4403,6 +4669,63 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const expiredAnswerItems: ComposerBannerStackItem[] = deferredExpiredUserInputRecovery
+      ? [
+          {
+            id: `expired-user-input:${deferredExpiredUserInputRecovery.requestId}`,
+            variant: "info",
+            icon: <MessageSquareReplyIcon />,
+            title: "Your answer is safe",
+            description:
+              "The provider session ended before it received your answer. Restore it as a new message to continue.",
+            actions: (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => restoreExpiredUserInput(deferredExpiredUserInputRecovery)}
+              >
+                Restore answer
+              </Button>
+            ),
+            dismissLabel: "Dismiss recovered answer",
+            onDismiss: () => {
+              markExpiredUserInputRecoveryHandled(
+                window.localStorage,
+                deferredExpiredUserInputRecovery.requestId,
+              );
+              setDeferredExpiredUserInputRecovery(null);
+            },
+          },
+        ]
+      : [];
+    // Avi Code addition: a send held until the running turn finishes. Says the
+    // reload limitation out loud, because nothing persists the hold.
+    const heldSendItems: ComposerBannerStackItem[] = isHoldingSend
+      ? [
+          {
+            id: `held-send:${activeThreadKey}`,
+            variant: activeHeldTurnFailure === null ? "info" : "error",
+            icon: <ClockIcon />,
+            title:
+              activeHeldTurnFailure === null
+                ? "Queued until this turn finishes"
+                : "Queued message could not be sent",
+            description:
+              activeHeldTurnFailure ??
+              "Your message is queued as it was written and sends as its own turn. Reloading loses the queue.",
+            actions: (
+              <>
+                <Button size="xs" variant="outline" onClick={sendHeldMessageNow}>
+                  Send now
+                </Button>
+                <Button size="xs" variant="ghost" onClick={cancelHeldSend}>
+                  Cancel
+                </Button>
+              </>
+            ),
+          },
+        ]
+      : [];
     const forkEditItems: ComposerBannerStackItem[] =
       forkEditState === null
         ? []
@@ -4455,10 +4778,18 @@ function ChatViewContent(props: ChatViewProps) {
             },
           ];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
-      return [...forkEditItems, ...systemComposerBannerItems, ...parkedThreadItems];
+      return [
+        ...heldSendItems,
+        ...forkEditItems,
+        ...expiredAnswerItems,
+        ...systemComposerBannerItems,
+        ...parkedThreadItems,
+      ];
     }
     return [
+      ...heldSendItems,
       ...forkEditItems,
+      ...expiredAnswerItems,
       ...systemComposerBannerItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
@@ -4502,14 +4833,21 @@ function ChatViewContent(props: ChatViewProps) {
       ...parkedThreadItems,
     ];
   }, [
+    activeHeldTurnFailure,
+    activeThreadKey,
     cancelForkEdit,
+    cancelHeldSend,
+    deferredExpiredUserInputRecovery,
     forkEditState,
     isForkingThread,
+    isHoldingSend,
+    sendHeldMessageNow,
     activeBranchMismatchKey,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
+    restoreExpiredUserInput,
     showBranchMismatchBanner,
     systemComposerBannerItems,
   ]);
@@ -4924,6 +5262,17 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerReviewComments.length,
     });
+    // Avi Code addition: with "Queue" chosen, a send during a running turn is
+    // captured and dispatched when the turn settles rather than steered into it.
+    // Decided here but acted on much further down, beside the offline queue:
+    // mode switches, `/btw` and plan follow-ups all return before that point and
+    // none of them is a turn worth queueing.
+    const holdUntilTurnFinishes =
+      activeThreadKey !== null &&
+      hasSendableContent &&
+      !forkEditState &&
+      !activeEnvironmentUnavailable &&
+      shouldHoldSendWhileRunning({ setting: sendWhileRunning, phase });
     if (forkEditState) {
       if (
         !isElectron ||
@@ -5101,21 +5450,43 @@ function ChatViewContent(props: ChatViewProps) {
       composerRef.current?.resetCursorState();
       return;
     }
-    // Avi Code addition: `/btw` never becomes a turn. It clears the composer
-    // like the mode switches above, but instead of changing thread state it
-    // asks on a discarded fork and shows the answer in a dismissible panel.
+    // Avi Code addition: `/btw` never becomes a turn. Given a question it clears
+    // the composer like the mode switches above, but instead of changing thread
+    // state it asks on a discarded fork and shows the answer in a dismissible
+    // panel.
     //
     // Claimed even on a draft, where there is no conversation to branch from.
-    // Falling through there would send the raw "/btw …" text as a prompt,
-    // which is never what was meant.
+    // Falling through there would send the raw "/btw …" text as a prompt, which
+    // is never what was meant. The composer is only cleared once we know we are
+    // acting: a bare "/btw" is an unfinished command, and eating the text the
+    // user is still typing into is worse than not sending.
     const sideQuestion = parseComposerSideQuestionCommand(trimmed);
     if (sideQuestion !== null) {
-      const sideQuestionThreadRef = activeThreadRef;
-      const sideQuestionThreadKey = activeThreadKey;
+      // Only a thread the server knows about can be branched from. A draft has
+      // a pre-allocated id and so a non-null ref, which is why this guard reads
+      // `isServerThread` rather than testing the ref for null.
+      const sideQuestionTarget =
+        isServerThread && activeThreadRef !== null && activeThreadKey !== null
+          ? { ref: activeThreadRef, key: activeThreadKey }
+          : null;
+      const submission = resolveSideQuestionSubmission({
+        question: sideQuestion.question,
+        hasProviderThread: sideQuestionTarget !== null,
+      });
+      if (submission.kind === "incomplete") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Add your question after /btw.",
+            description: "For example: /btw why did that test fail?",
+          }),
+        );
+        return;
+      }
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      if (sideQuestionThreadRef === null || sideQuestionThreadKey === null) {
+      if (submission.kind === "no-thread" || sideQuestionTarget === null) {
         toastManager.add(
           stackedThreadToast({
             type: "info",
@@ -5125,14 +5496,12 @@ function ChatViewContent(props: ChatViewProps) {
         );
         return;
       }
-      if (sideQuestion.question.length > 0) {
-        void askSideQuestion({
-          threadKey: sideQuestionThreadKey,
-          environmentId: sideQuestionThreadRef.environmentId,
-          threadId: sideQuestionThreadRef.threadId,
-          question: sideQuestion.question,
-        });
-      }
+      void askSideQuestion({
+        threadKey: sideQuestionTarget.key,
+        environmentId: sideQuestionTarget.ref.environmentId,
+        threadId: sideQuestionTarget.ref.threadId,
+        question: submission.question,
+      });
       return;
     }
     if (!hasSendableContent) {
@@ -5301,7 +5670,9 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    if (!activeEnvironmentUnavailable) {
+    // A queued send clears the composer only once its commands are safely
+    // stored, so a rejected queue leaves the draft where the user can see it.
+    if (!activeEnvironmentUnavailable && !holdUntilTurnFinishes) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -5333,7 +5704,25 @@ function ChatViewContent(props: ChatViewProps) {
       ctxSelectedModelSelection.options,
     );
 
-    if (activeEnvironmentUnavailable) {
+    // Avi Code change: two reasons to store a turn rather than send it — the
+    // environment is offline, or the user chose to queue behind a running turn.
+    // Both want the same fully-built commands, which is what fixes the message
+    // to what was written instead of to whatever the composer holds later.
+    if (activeEnvironmentUnavailable || holdUntilTurnFinishes) {
+      // Taken before the composer is cleared below, so cancelling the hold can
+      // give the whole draft back rather than only its text.
+      const draftBehindHeldTurn = holdUntilTurnFinishes
+        ? useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+        : null;
+      const heldTurnTarget =
+        holdUntilTurnFinishes && activeThreadKey !== null
+          ? {
+              threadKey: activeThreadKey,
+              draft: draftBehindHeldTurn
+                ? snapshotComposerThreadDraft(draftBehindHeldTurn)
+                : { ...createEmptyThreadDraft(), prompt: promptForSend },
+            }
+          : null;
       const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
       if (turnAttachmentsResult._tag === "Failure") {
         setOptimisticUserMessages((existing) =>
@@ -5441,14 +5830,18 @@ function ChatViewContent(props: ChatViewProps) {
         ...(composerCommunicationStyle ? { communicationStyle: composerCommunicationStyle } : {}),
         createdAt: messageCreatedAt,
       });
-      const queued = useOfflineTurnOutboxStore.getState().enqueue({
+      const storedTurn = {
         id: startCommandId,
         environmentId: activeThread.environmentId,
         threadId: threadIdForSend,
         messageId: messageIdForSend,
         createdAt: messageCreatedAt,
         commands: queuedCommands,
-      });
+      };
+      const queued =
+        heldTurnTarget === null
+          ? useOfflineTurnOutboxStore.getState().enqueue(storedTurn)
+          : useHeldTurnStore.getState().enqueue({ ...storedTurn, ...heldTurnTarget });
       if (!queued.queued) {
         setOptimisticUserMessages((existing) =>
           existing.filter((message) => message.id !== messageIdForSend),
@@ -5466,15 +5859,25 @@ function ChatViewContent(props: ChatViewProps) {
         resetLocalDispatch();
         return;
       }
+      // The held turn now owns the pending row, so the optimistic copy would
+      // only be a second source of truth for the same message.
+      if (heldTurnTarget !== null) {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageIdForSend),
+        );
+      }
 
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      toastManager.add({
-        type: "success",
-        title: "Message queued",
-        description: `It will send automatically when ${activeEnvironmentUnavailableLabel ?? "the environment"} reconnects.`,
-      });
+      if (heldTurnTarget === null) {
+        // A held send has the composer banner; a toast on top of it is noise.
+        toastManager.add({
+          type: "success",
+          title: "Message queued",
+          description: `It will send automatically when ${activeEnvironmentUnavailableLabel ?? "the environment"} reconnects.`,
+        });
+      }
       sendInFlightRef.current = false;
       resetLocalDispatch();
       return;
@@ -5636,8 +6039,48 @@ function ChatViewContent(props: ChatViewProps) {
     }
   };
 
+  // Avi Code addition: dispatching a held turn once its thread is free again.
+  // It goes straight to the stored commands rather than back through `onSend`,
+  // which would re-read the composer and, with a question on screen, answer the
+  // questionnaire instead of sending.
+  useEffect(() => {
+    if (
+      activeHeldTurn === null ||
+      !shouldFlushHeldSend({
+        heldThreadKeys: heldTurnItems.map((item) => item.threadKey),
+        activeThreadKey,
+        phase,
+        isSendBusy,
+        isConnecting,
+        hasPendingUserInput: activePendingProgress !== null,
+        environmentUnavailable: activeEnvironmentUnavailable,
+      })
+    ) {
+      return;
+    }
+    void flushHeldTurn(activeHeldTurn);
+  }, [
+    activeEnvironmentUnavailable,
+    activeHeldTurn,
+    activePendingProgress,
+    activeThreadKey,
+    flushHeldTurn,
+    heldTurnItems,
+    isConnecting,
+    isSendBusy,
+    phase,
+  ]);
+
   const onInterrupt = async () => {
     if (!activeThread) return;
+    if (activePendingUserInput) {
+      if (respondingUserInputRequestIds.includes(activePendingUserInput.requestId)) {
+        dismissedUserInputRequestIdsRef.current.add(activePendingUserInput.requestId);
+      }
+      setRespondingUserInputRequestIds((existing) =>
+        existing.filter((id) => id !== activePendingUserInput.requestId),
+      );
+    }
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),
@@ -5694,7 +6137,8 @@ function ChatViewContent(props: ChatViewProps) {
           answers,
         },
       });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const wasDismissed = dismissedUserInputRequestIdsRef.current.delete(requestId);
+      if (!wasDismissed && result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
           activeThreadId,
@@ -6837,7 +7281,18 @@ function ChatViewContent(props: ChatViewProps) {
 
         <ThreadErrorBanner
           error={threadError}
-          onDismiss={() => setThreadError(activeThread.id, null)}
+          onDismiss={() => {
+            setThreadError(activeThread.id, null);
+            // Avi Code addition: also hide the server-owned error, which the
+            // local clear above cannot reach.
+            if (serverSessionError !== null) {
+              setDismissedServerErrorsByThreadKey((existing) =>
+                existing[routeThreadKey] === serverSessionError
+                  ? existing
+                  : { ...existing, [routeThreadKey]: serverSessionError },
+              );
+            }
+          }}
         />
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
@@ -6943,6 +7398,7 @@ function ChatViewContent(props: ChatViewProps) {
                 liveFollowEnabled={timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                onManualScroll={cancelTimelineLiveFollowForUserScroll}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
               />
@@ -7064,6 +7520,7 @@ function ChatViewContent(props: ChatViewProps) {
                             interactionMode={interactionMode}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
+                            providerDiscoveryState={providerDiscoveryState}
                             activeProjectDefaultModelSelection={
                               activeProject?.defaultModelSelection
                             }

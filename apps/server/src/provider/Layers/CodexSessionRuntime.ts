@@ -250,6 +250,14 @@ interface PendingUserInput {
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
 }
 
+/**
+ * Avi Code addition: a synthetic method, not something codex sends. It closes a
+ * question the session took down rather than answered, and it is deliberately
+ * distinct from `.../answered` so it can carry no answers payload without
+ * failing `ToolRequestUserInputResponse` decoding in the adapter.
+ */
+export const CODEX_USER_INPUT_EXPIRED_METHOD = "item/tool/requestUserInput/expired";
+
 type CodexServerNotification = {
   readonly [M in CodexRpc.ServerNotificationMethod]: {
     readonly method: M;
@@ -747,6 +755,15 @@ export const makeCodexSessionRuntime = (
     const pendingUserInputsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingUserInput>());
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
     const closedRef = yield* Ref.make(false);
+    /**
+     * Avi Code addition: set between `turn/interrupt` and the notification that
+     * ends the turn. The app server can report a cancelled request as an
+     * ordinary `error`, which would otherwise become a session error and a red
+     * banner for something the user asked for. Cleared by `turn/aborted`,
+     * `turn/completed`, and the next `sendTurn`, so it cannot outlive the turn
+     * it belongs to and silence a real error later.
+     */
+    const interruptInFlightRef = yield* Ref.make(false);
 
     // `~` is not shell-expanded when env vars are set via
     // `child_process.spawn`; `expandHomePath` lets a configured
@@ -850,13 +867,34 @@ export const makeCodexSessionRuntime = (
         ),
       );
 
+    /**
+     * Avi Code addition: unblocking codex is only half of a close. The
+     * awaiting handler settles and returns its answer to the app server
+     * without emitting anything, so before this the durable
+     * `user-input.requested` activity stayed open forever and every client kept
+     * rendering a question whose answer path had died with this session. The
+     * expiry notification is emitted before the deferred settles, and before
+     * `close` tears the runtime scope down and shuts the event queue.
+     */
     const settlePendingUserInputs = (answers: ProviderUserInputAnswers) =>
       Ref.get(pendingUserInputsRef).pipe(
         Effect.flatMap((pendingUserInputs) =>
           Effect.forEach(
             Array.from(pendingUserInputs.values()),
             (pendingUserInput) =>
-              Deferred.succeed(pendingUserInput.answers, answers).pipe(Effect.ignore),
+              emitEvent({
+                kind: "notification",
+                threadId: options.threadId,
+                method: CODEX_USER_INPUT_EXPIRED_METHOD,
+                requestId: pendingUserInput.requestId,
+                ...(pendingUserInput.turnId ? { turnId: pendingUserInput.turnId } : {}),
+                ...(pendingUserInput.itemId ? { itemId: pendingUserInput.itemId } : {}),
+              }).pipe(
+                Effect.ignore,
+                Effect.andThen(
+                  Deferred.succeed(pendingUserInput.answers, answers).pipe(Effect.ignore),
+                ),
+              ),
             { discard: true },
           ),
         ),
@@ -864,6 +902,15 @@ export const makeCodexSessionRuntime = (
 
     const handleRawNotification = (notification: CodexServerNotification) =>
       Effect.gen(function* () {
+        // Avi Code addition: an error the interrupt itself provoked is not one
+        // to report. `turn/completed` is how codex ends an aborted turn, and
+        // clearing the flag there means anything after it is reported normally.
+        if (notification.method === "turn/completed") {
+          yield* Ref.set(interruptInFlightRef, false);
+        } else if (notification.method === "error" && (yield* Ref.get(interruptInFlightRef))) {
+          return;
+        }
+
         const payload = notification.params;
         const route = readRouteFields(notification);
         const collabReceiverTurns = yield* Ref.get(collabReceiverTurnsRef);
@@ -979,10 +1026,17 @@ export const makeCodexSessionRuntime = (
           }
           const errorMessage = payload.error.message;
           const willRetry = payload.willRetry;
-          return updateSession(sessionRef, {
-            status: willRetry ? "running" : "error",
-            ...(errorMessage ? { lastError: errorMessage } : {}),
-          });
+          // Avi Code addition: same rule as the raw-notification path above.
+          return Ref.get(interruptInFlightRef).pipe(
+            Effect.flatMap((interrupting) =>
+              interrupting
+                ? Effect.void
+                : updateSession(sessionRef, {
+                    status: willRetry ? "running" : "error",
+                    ...(errorMessage ? { lastError: errorMessage } : {}),
+                  }),
+            ),
+          );
         }),
       ),
     );
@@ -1302,6 +1356,9 @@ export const makeCodexSessionRuntime = (
       getSession: Ref.get(sessionRef),
       sendTurn: (input) =>
         Effect.gen(function* () {
+          // Avi Code addition: a new turn ends any previous abort's grace
+          // period, in case its terminal notification never arrived.
+          yield* Ref.set(interruptInFlightRef, false);
           const providerThreadId = yield* readProviderThreadId;
           if (hasConfiguredMcpServer(options.appServerArgs)) {
             yield* client.request("config/mcpServer/reload", undefined).pipe(
@@ -1358,6 +1415,9 @@ export const makeCodexSessionRuntime = (
           if (!effectiveTurnId) {
             return;
           }
+          // Avi Code addition: set before the request, so an error the abort
+          // provokes is already covered by the time it arrives.
+          yield* Ref.set(interruptInFlightRef, true);
           yield* client.request("turn/interrupt", {
             threadId: providerThreadId,
             turnId: effectiveTurnId,

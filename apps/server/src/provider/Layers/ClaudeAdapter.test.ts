@@ -1564,6 +1564,60 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "treats a terminal_reason abort as interrupted even when the SDK marks it an error",
+    () => {
+      // The substring allowlist misses this shape, and misclassifying it as a
+      // failure turns pressing Stop into a red banner and an "Agent failed" push.
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "hello",
+          attachments: [],
+        });
+
+        harness.query.emit({
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          errors: ["Stream closed."],
+          terminal_reason: "aborted_streaming",
+          stop_reason: "tool_use",
+          session_id: "sdk-session-abort-terminal-reason",
+          uuid: "result-abort-terminal-reason",
+        } as unknown as SDKMessage);
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        assert.equal(
+          runtimeEvents.some((event) => event.type === "runtime.error"),
+          false,
+        );
+        const turnCompleted = runtimeEvents[runtimeEvents.length - 1];
+        assert.equal(turnCompleted?.type, "turn.completed");
+        if (turnCompleted?.type === "turn.completed") {
+          assert.equal(turnCompleted.payload.state, "interrupted");
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
   it.effect("closes the session when the Claude stream aborts after a turn starts", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -4316,6 +4370,78 @@ describe("ClaudeAdapterLive", () => {
         .join(", ");
       assert.notEqual(v121Rendered, "", "Expected non-empty SDK 2.1.121 tool_result (#2388)");
       assert.equal(v121Rendered, '"Which framework?"="React"');
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("closes an open question when the session stops, so no prompt outlives it", () => {
+    // The question is durable but the SDK callback is not. Without this the
+    // activity log keeps the request open and every client renders a prompt
+    // whose answer path died with the session.
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "question turn",
+        attachments: [],
+      });
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+
+      const canUseTool = harness.getLastCreateQueryInput()?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) return;
+
+      const permissionPromise = canUseTool(
+        "AskUserQuestion",
+        {
+          questions: [
+            {
+              question: "Which framework?",
+              header: "Framework",
+              options: [{ label: "React", description: "React.js" }],
+              multiSelect: false,
+            },
+          ],
+        },
+        { signal: new AbortController().signal, toolUseID: "tool-ask-expire" },
+      );
+
+      const requestedEvent = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(requestedEvent._tag, "Some");
+      if (requestedEvent._tag !== "Some" || requestedEvent.value.type !== "user-input.requested") {
+        return assert.fail("Expected user-input.requested event");
+      }
+      const requestId = requestedEvent.value.requestId;
+
+      const stopEventsFiber = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.stopSession(session.threadId);
+      const stopEvents = Array.from(yield* Fiber.join(stopEventsFiber));
+
+      const closures = stopEvents.filter((event) => event.type === "user-input.resolved");
+      assert.equal(closures.length, 1, "Expected exactly one closure, not a duplicate");
+      const closure = closures[0];
+      if (closure?.type !== "user-input.resolved") return;
+      assert.equal(closure.requestId, requestId);
+      assert.equal(closure.payload.reason, "expired");
+      assert.deepEqual(closure.payload.answers, {});
+
+      // The deferred is settled, so the SDK is no longer blocked on us.
+      const permissionResult = yield* Effect.promise(() => permissionPromise);
+      assert.equal((permissionResult as PermissionResult).behavior, "deny");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

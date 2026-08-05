@@ -89,6 +89,15 @@ export const AviCodeChatContentWidth = Schema.Literals(["comfortable", "wide", "
 export type AviCodeChatContentWidth = typeof AviCodeChatContentWidth.Type;
 export const DEFAULT_AVICODE_CHAT_CONTENT_WIDTH: AviCodeChatContentWidth = "comfortable";
 
+// Avi Code addition. What a send does while the agent is still working.
+// "steer" is upstream's only behaviour: the message is injected into the
+// running turn immediately. "queue" holds it until the turn finishes and then
+// sends it as its own turn, which is what you want when the message is the
+// next instruction rather than a correction to the current one.
+export const AviCodeSendWhileRunning = Schema.Literals(["steer", "queue"]);
+export type AviCodeSendWhileRunning = typeof AviCodeSendWhileRunning.Type;
+export const DEFAULT_AVICODE_SEND_WHILE_RUNNING: AviCodeSendWhileRunning = "steer";
+
 // Avi Code addition. The chime used to be a single hard-coded rising two-note
 // sine — the same shape other desktop tools use, so hearing it did not tell you
 // which app wanted you. These five are synthesized from preset tables in
@@ -213,6 +222,11 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
   ),
+  // Avi Code addition. Steer the running turn (upstream's behaviour) or hold
+  // the send until the turn finishes.
+  aviCodeSendWhileRunning: AviCodeSendWhileRunning.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_SEND_WHILE_RUNNING)),
+  ),
   // Avi Code addition. Communication styles. `aviCodeCommunicationStyleId` is
   // the last style picked anywhere and is what a brand-new chat starts on;
   // changing the style inside a chat updates it. Deliberately global rather
@@ -273,9 +287,10 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // Carry the right panel's open/closed state across threads instead of
-  // remembering it per thread. Surfaces stay thread-scoped either way — only
-  // visibility, and a reproducible surface kind, follow.
+  // Avi Code addition. Upstream keeps the right panel's visibility per thread with
+  // no way to change it. This carries the open/closed state across threads instead.
+  // Surfaces stay thread-scoped either way — only visibility, and a reproducible
+  // surface kind, follow. Surfaced on the Avi Code settings page, not General.
   rightPanelFollowsThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
@@ -287,6 +302,9 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Avi Code addition. Upstream leaves the mouse's back and forward buttons to
+  // browser history; this repurposes them to step through the sidebar's visible
+  // threads. Surfaced on the Avi Code settings page, not General.
   sidebarMouseBackForwardNavigation: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -893,6 +911,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeScrollToPlanTopOnExpand: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
   aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
+  aviCodeSendWhileRunning: Schema.optionalKey(AviCodeSendWhileRunning),
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),

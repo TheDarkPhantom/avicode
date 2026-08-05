@@ -96,6 +96,13 @@ type PendingUserInputResolution =
 
 interface PendingUserInput {
   readonly resolution: Deferred.Deferred<PendingUserInputResolution>;
+  /**
+   * Avi Code addition: set by the session-stop path, which emits the closing
+   * event itself because closing the session scope interrupts the awaiting
+   * fiber before it can. The fiber checks this flag to avoid a duplicate row
+   * on the rare occasion it does get to run.
+   */
+  expired: boolean;
 }
 
 interface GrokSessionContext {
@@ -512,7 +519,24 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         if (ctx.stopped) return;
         ctx.stopped = true;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        // Avi Code addition: emit the closing event here rather than relying on
+        // the awaiting fiber, which `Scope.close` below usually interrupts
+        // first. Without it the durable `user-input.requested` activity stays
+        // open and clients keep rendering a prompt with no answer path.
+        for (const [requestId, pending] of ctx.pendingUserInputs) {
+          pending.expired = true;
+          yield* offerRuntimeEvent({
+            type: "user-input.resolved",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId: ctx.threadId,
+            turnId: ctx.activeTurnId,
+            requestId: RuntimeRequestId.make(requestId),
+            payload: { answers: {}, reason: "expired" },
+          });
+        }
         yield* settlePendingUserInputsAsCancelled(ctx.pendingUserInputs);
+        ctx.pendingUserInputs.clear();
         if (ctx.notificationFiber) {
           yield* Fiber.interrupt(ctx.notificationFiber);
         }
@@ -620,7 +644,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                       const runtimeRequestId = RuntimeRequestId.make(requestId);
                       const resolution = yield* Deferred.make<PendingUserInputResolution>();
                       const turnId = resolveSessionCallbackTurnId(sessions, input.threadId);
-                      pendingUserInputs.set(requestId, { resolution });
+                      const pendingInput: PendingUserInput = { resolution, expired: false };
+                      pendingUserInputs.set(requestId, pendingInput);
                       yield* offerRuntimeEvent({
                         type: "user-input.requested",
                         ...(yield* makeEventStamp()),
@@ -638,20 +663,23 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                       const resolved = yield* Deferred.await(resolution);
                       pendingUserInputs.delete(requestId);
                       const resolvedAnswers = resolved._tag === "answered" ? resolved.answers : {};
-                      yield* offerRuntimeEvent({
-                        type: "user-input.resolved",
-                        ...(yield* makeEventStamp()),
-                        provider: PROVIDER,
-                        threadId: input.threadId,
-                        turnId,
-                        requestId: runtimeRequestId,
-                        payload: { answers: resolvedAnswers },
-                        raw: {
-                          source: "acp.grok.extension",
-                          method,
-                          payload: params,
-                        },
-                      });
+                      // Avi Code addition: the stop path already closed this one.
+                      if (!pendingInput.expired) {
+                        yield* offerRuntimeEvent({
+                          type: "user-input.resolved",
+                          ...(yield* makeEventStamp()),
+                          provider: PROVIDER,
+                          threadId: input.threadId,
+                          turnId,
+                          requestId: runtimeRequestId,
+                          payload: { answers: resolvedAnswers },
+                          raw: {
+                            source: "acp.grok.extension",
+                            method,
+                            payload: params,
+                          },
+                        });
+                      }
                       switch (resolved._tag) {
                         case "answered":
                           return makeXAiAskUserQuestionResponse(params, resolved.answers);
@@ -1472,7 +1500,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session", sideQuestion: "unsupported" },
+      capabilities: {
+        sessionModelSwitch: "in-session",
+        sideQuestion: "unsupported",
+        // Plan behaviour is left to the Grok runtime and has not been verified
+        // to stop after proposing, so nothing here enforces it.
+        planTurnEnforcement: "unsupported",
+      },
       startSession,
       sendTurn,
       askSideQuestion,

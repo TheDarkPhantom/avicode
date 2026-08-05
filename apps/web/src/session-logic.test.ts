@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
+  deriveExpiredUserInputs,
   derivePendingApprovals,
   derivePendingUserInputs,
   deriveTimelineEntries,
@@ -177,6 +178,43 @@ describe("derivePendingApprovals", () => {
   });
 });
 
+/** A question the provider closed because its session went away. */
+function expiredUserInputActivities(): OrchestrationThreadActivity[] {
+  return [
+    makeActivity({
+      id: "user-input-open-expired",
+      createdAt: "2026-02-23T00:00:01.000Z",
+      kind: "user-input.requested",
+      summary: "User input requested",
+      tone: "info",
+      payload: {
+        requestId: "req-user-input-expired-1",
+        questions: [
+          {
+            id: "sandbox_mode",
+            header: "Sandbox",
+            question: "Which mode should be used?",
+            options: [{ label: "workspace-write", description: "Allow workspace writes only" }],
+            multiSelect: false,
+          },
+        ],
+      },
+    }),
+    makeActivity({
+      id: "user-input-expired",
+      createdAt: "2026-02-23T00:00:02.000Z",
+      kind: "user-input.resolved",
+      summary: "Question expired",
+      tone: "info",
+      payload: {
+        requestId: "req-user-input-expired-1",
+        answers: {},
+        expired: true,
+      },
+    }),
+  ];
+}
+
 describe("derivePendingUserInputs", () => {
   it("tracks open structured prompts and removes resolved ones", () => {
     const activities: OrchestrationThreadActivity[] = [
@@ -306,6 +344,74 @@ describe("derivePendingUserInputs", () => {
     ];
 
     expect(derivePendingUserInputs(activities)).toEqual([]);
+  });
+
+  it("clears a prompt the provider closed as expired", () => {
+    expect(derivePendingUserInputs(expiredUserInputActivities())).toEqual([]);
+  });
+});
+
+describe("deriveExpiredUserInputs", () => {
+  it("pairs an expired closure with the questions that were asked", () => {
+    expect(deriveExpiredUserInputs(expiredUserInputActivities())).toEqual([
+      {
+        requestId: "req-user-input-expired-1",
+        expiredAt: "2026-02-23T00:00:02.000Z",
+        questions: [
+          {
+            id: "sandbox_mode",
+            header: "Sandbox",
+            question: "Which mode should be used?",
+            options: [{ label: "workspace-write", description: "Allow workspace writes only" }],
+            multiSelect: false,
+          },
+        ],
+        submittedAnswers: null,
+      },
+    ]);
+  });
+
+  it("returns answers persisted with an expired response", () => {
+    const activities = expiredUserInputActivities();
+    activities[1] = makeActivity({
+      id: "user-input-expired-with-answers",
+      createdAt: "2026-02-23T00:00:02.000Z",
+      kind: "user-input.resolved",
+      summary: "Question expired",
+      tone: "info",
+      payload: {
+        requestId: "req-user-input-expired-1",
+        expired: true,
+        answers: { sandbox_mode: "A long custom answer", areas: ["Server", "Web"] },
+      },
+    });
+    expect(deriveExpiredUserInputs(activities)[0]?.submittedAnswers).toEqual({
+      sandbox_mode: "A long custom answer",
+      areas: ["Server", "Web"],
+    });
+  });
+
+  it("ignores an ordinary answered resolution", () => {
+    expect(
+      deriveExpiredUserInputs([
+        expiredUserInputActivities()[0]!,
+        makeActivity({
+          id: "user-input-answered",
+          createdAt: "2026-02-23T00:00:02.000Z",
+          kind: "user-input.resolved",
+          summary: "User input submitted",
+          tone: "info",
+          payload: {
+            requestId: "req-user-input-expired-1",
+            answers: { sandbox_mode: "workspace-write" },
+          },
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("ignores a question that is still open", () => {
+    expect(deriveExpiredUserInputs([expiredUserInputActivities()[0]!])).toEqual([]);
   });
 });
 

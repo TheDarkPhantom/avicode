@@ -200,6 +200,7 @@ function buildProps() {
     liveFollowEnabled: true,
     onIsAtEndChange: () => {},
     onManualNavigation: () => {},
+    onManualScroll: () => {},
     onOpenedAtLastResponse: () => {},
   };
 }
@@ -408,6 +409,72 @@ describe("MessagesTimeline", () => {
     expect(shouldCancelTimelineLiveFollowForWheel({ deltaY: 1, isAtAbsoluteEnd: true })).toBe(
       false,
     );
+  });
+
+  it("only re-arms live follow when the user was heading for the live edge", async () => {
+    const { shouldRearmTimelineLiveFollow } = await import("./MessagesTimeline.logic");
+
+    // The bug this guards: LegendList snaps back to the end off a near-end flag
+    // it cached before the user's scroll was dispatched. Re-arming on that
+    // arrival erased the opt-out and pinned the reader to the bottom.
+    expect(
+      shouldRearmTimelineLiveFollow({
+        isAbsoluteEnd: true,
+        lastUserScrollDirection: "away-from-end",
+      }),
+    ).toBe(false);
+    expect(
+      shouldRearmTimelineLiveFollow({ isAbsoluteEnd: true, lastUserScrollDirection: "toward-end" }),
+    ).toBe(true);
+    // A scrollbar drag or a touch move has no readable direction, so landing on
+    // the live edge with one counts as asking to follow again.
+    expect(
+      shouldRearmTimelineLiveFollow({ isAbsoluteEnd: true, lastUserScrollDirection: "unknown" }),
+    ).toBe(true);
+    // A chat opened at its last response is off the live edge with no gesture
+    // behind it; reaching the end on its own must not pull it back.
+    expect(
+      shouldRearmTimelineLiveFollow({ isAbsoluteEnd: true, lastUserScrollDirection: null }),
+    ).toBe(false);
+    expect(
+      shouldRearmTimelineLiveFollow({
+        isAbsoluteEnd: false,
+        lastUserScrollDirection: "toward-end",
+      }),
+    ).toBe(false);
+  });
+
+  it("reads a scroll direction from wheel and keyboard gestures", async () => {
+    const { resolveTimelineUserScrollDirectionForKey, resolveTimelineUserScrollDirectionForWheel } =
+      await import("./MessagesTimeline.logic");
+
+    expect(resolveTimelineUserScrollDirectionForWheel(-1)).toBe("away-from-end");
+    expect(resolveTimelineUserScrollDirectionForWheel(1)).toBe("toward-end");
+    expect(resolveTimelineUserScrollDirectionForWheel(0)).toBe("toward-end");
+
+    // Keyboard scrolling used to bypass the opt-out entirely.
+    expect(resolveTimelineUserScrollDirectionForKey({ key: "PageUp", shiftKey: false })).toBe(
+      "away-from-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: "ArrowUp", shiftKey: false })).toBe(
+      "away-from-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: "Home", shiftKey: false })).toBe(
+      "away-from-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: "PageDown", shiftKey: false })).toBe(
+      "toward-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: "End", shiftKey: false })).toBe(
+      "toward-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: " ", shiftKey: false })).toBe(
+      "toward-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: " ", shiftKey: true })).toBe(
+      "away-from-end",
+    );
+    expect(resolveTimelineUserScrollDirectionForKey({ key: "a", shiftKey: false })).toBeNull();
   });
 
   it("pins the prompt of the turn currently being read", async () => {

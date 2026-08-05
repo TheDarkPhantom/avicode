@@ -72,6 +72,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       idleTtlMs: 5 * 60_000,
     }),
+    resolveFileFallback: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:resolve-file-fallback",
+      tag: WS_METHODS.projectsResolveFileFallback,
+      staleTimeMs: 30_000,
+      idleTtlMs: 5 * 60_000,
+    }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),
     create: createEnvironmentCommand(runtime, {

@@ -11,6 +11,36 @@ export type ComposerSlashCommand = "model" | "plan" | "default" | "btw";
  */
 export { parseComposerSideQuestionCommand } from "@t3tools/shared/composerTrigger";
 
+/**
+ * Avi Code addition: what submitting a parsed `/btw` should do.
+ *
+ * Split out of the composer's send handler so the three outcomes are testable —
+ * the handler itself lives in a component with no test harness, which is how a
+ * bare `/btw` came to clear the composer and then do nothing at all.
+ */
+export type SideQuestionSubmission =
+  | { readonly kind: "incomplete" }
+  | { readonly kind: "no-thread" }
+  | { readonly kind: "ask"; readonly question: string };
+
+/**
+ * `incomplete` is deliberately checked before `no-thread`: on a draft, a bare
+ * `/btw` is still just an unfinished command, and telling the user to send a
+ * message first would be answering a question they have not asked yet.
+ */
+export function resolveSideQuestionSubmission(input: {
+  readonly question: string;
+  readonly hasProviderThread: boolean;
+}): SideQuestionSubmission {
+  if (input.question.length === 0) {
+    return { kind: "incomplete" };
+  }
+  if (!input.hasProviderThread) {
+    return { kind: "no-thread" };
+  }
+  return { kind: "ask", question: input.question };
+}
+
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
   query: string;

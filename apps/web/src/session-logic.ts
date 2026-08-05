@@ -99,6 +99,14 @@ export interface PendingUserInput {
   questions: ReadonlyArray<UserInputQuestion>;
 }
 
+/** Avi Code addition: a question closed without an answer. See deriveExpiredUserInputs. */
+export interface ExpiredUserInput {
+  requestId: ApprovalRequestId;
+  expiredAt: string;
+  questions: ReadonlyArray<UserInputQuestion>;
+  submittedAnswers: Readonly<Record<string, string | string[]>> | null;
+}
+
 export interface ActivePlanState {
   createdAt: string;
   turnId: TurnId | null;
@@ -505,6 +513,72 @@ export function derivePendingUserInputs(
   return [...openByRequestId.values()].toSorted((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
   );
+}
+
+/**
+ * Avi Code addition: questions the server closed because their provider session
+ * went away, paired with the questions that were asked.
+ *
+ * Derived from the same durable activity stream as `derivePendingUserInputs`,
+ * so it survives a reload and needs no extra client state: `user-input.resolved`
+ * carrying `expired` is the server's marker that nobody answered this. Callers
+ * use it to hand a half-finished answer back to the composer rather than lose
+ * it. Ordered oldest-first, matching its sibling.
+ */
+export function deriveExpiredUserInputs(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ExpiredUserInput[] {
+  const openByRequestId = new Map<ApprovalRequestId, ReadonlyArray<UserInputQuestion>>();
+  const expired: ExpiredUserInput[] = [];
+  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+
+  for (const activity of ordered) {
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const requestId =
+      payload && typeof payload.requestId === "string"
+        ? ApprovalRequestId.make(payload.requestId)
+        : null;
+    if (!requestId) continue;
+
+    if (activity.kind === "user-input.requested") {
+      const questions = parseUserInputQuestions(payload);
+      if (questions) {
+        openByRequestId.set(requestId, questions);
+      }
+      continue;
+    }
+
+    if (activity.kind === "user-input.resolved") {
+      const questions = openByRequestId.get(requestId);
+      openByRequestId.delete(requestId);
+      if (questions && payload?.expired === true) {
+        const rawAnswers = payload.answers;
+        const submittedAnswers =
+          rawAnswers && typeof rawAnswers === "object" && !Array.isArray(rawAnswers)
+            ? Object.fromEntries(
+                Object.entries(rawAnswers).filter(
+                  (entry): entry is [string, string | string[]] =>
+                    typeof entry[1] === "string" ||
+                    (Array.isArray(entry[1]) &&
+                      entry[1].every((value) => typeof value === "string")),
+                ),
+              )
+            : null;
+        expired.push({
+          requestId,
+          questions,
+          expiredAt: activity.createdAt,
+          submittedAnswers:
+            submittedAnswers && Object.keys(submittedAnswers).length > 0 ? submittedAnswers : null,
+        });
+      }
+    }
+  }
+
+  return expired;
 }
 
 export function deriveActivePlanState(

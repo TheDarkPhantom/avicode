@@ -52,6 +52,73 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 });
 
 it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (it) => {
+  describe("resolveFileFallback", () => {
+    it.effect("finds an unregistered sibling Git repository", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const base = yield* makeTempDir;
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = path.join(base, "dev", "business");
+        const repo = path.join(base, "dev", "alfred");
+        const target = path.join(repo, "docs", "setup.md");
+        yield* fileSystem.makeDirectory(cwd, { recursive: true });
+        yield* fileSystem.makeDirectory(path.join(repo, ".git"), { recursive: true });
+        yield* writeTextFile(repo, "docs/setup.md", "# Setup\n");
+
+        const result = yield* workspaceFileSystem.resolveFileFallback({
+          cwd,
+          relativePath: "dev/alfred/docs/setup.md",
+          ancestorCandidates: [path.join(base, "dev", "dev", "alfred", "docs", "setup.md"), target],
+          registeredProjectRoots: [],
+        });
+
+        expect(result).toEqual({ root: repo, relativePath: path.join("docs", "setup.md") });
+      }),
+    );
+
+    it.effect("prefers a registered nested project and rejects unvalidated candidates", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const base = yield* makeTempDir;
+        const path = yield* Path.Path;
+        const cwd = path.join(base, "dev", "business");
+        const nested = path.join(base, "dev", "monorepo", "packages", "ui");
+        const target = path.join(nested, "src", "button.tsx");
+        yield* writeTextFile(nested, "src/button.tsx", "export {};\n");
+
+        const result = yield* workspaceFileSystem.resolveFileFallback({
+          cwd,
+          relativePath: "dev/monorepo/packages/ui/src/button.tsx",
+          ancestorCandidates: [target, path.join(base, "unrelated", "button.tsx")],
+          registeredProjectRoots: [path.join(base, "dev", "monorepo"), nested],
+        });
+
+        expect(result).toEqual({ root: nested, relativePath: path.join("src", "button.tsx") });
+      }),
+    );
+
+    it.effect("returns no match for missing files and directories", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const base = yield* makeTempDir;
+        const path = yield* Path.Path;
+        const cwd = path.join(base, "dev", "business");
+        const directory = path.join(base, "dev", "alfred", "docs");
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* fileSystem.makeDirectory(directory, { recursive: true });
+
+        const result = yield* workspaceFileSystem.resolveFileFallback({
+          cwd,
+          relativePath: "dev/alfred/docs",
+          ancestorCandidates: [directory, path.join(base, "dev", "alfred", "missing.md")],
+          registeredProjectRoots: [],
+        });
+        expect(result).toBeNull();
+      }),
+    );
+  });
+
   describe("readFile", () => {
     it.effect("reads UTF-8 files relative to the workspace root", () =>
       Effect.gen(function* () {

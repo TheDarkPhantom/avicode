@@ -120,6 +120,13 @@ interface PendingApproval {
 
 interface PendingUserInput {
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
+  /**
+   * Avi Code addition: set by the session-stop path, which emits the closing
+   * event itself because closing the session scope interrupts the awaiting
+   * fiber before it can. The fiber checks this flag to avoid a duplicate row
+   * on the rare occasion it does get to run.
+   */
+  expired: boolean;
 }
 
 interface CursorSessionContext {
@@ -461,7 +468,24 @@ export function makeCursorAdapter(
         if (ctx.stopped) return;
         ctx.stopped = true;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        // Avi Code addition: emit the closing event here rather than relying on
+        // the awaiting fiber, which `Scope.close` below usually interrupts
+        // first. Without it the durable `user-input.requested` activity stays
+        // open and clients keep rendering a prompt with no answer path.
+        for (const [requestId, pending] of ctx.pendingUserInputs) {
+          pending.expired = true;
+          yield* offerRuntimeEvent({
+            type: "user-input.resolved",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId: ctx.threadId,
+            turnId: ctx.activeTurnId,
+            requestId: RuntimeRequestId.make(requestId),
+            payload: { answers: {}, reason: "expired" },
+          });
+        }
         yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
+        ctx.pendingUserInputs.clear();
         if (ctx.notificationFiber) {
           yield* Fiber.interrupt(ctx.notificationFiber);
         }
@@ -583,7 +607,8 @@ export function makeCursorAdapter(
                   const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
                   const runtimeRequestId = RuntimeRequestId.make(requestId);
                   const answers = yield* Deferred.make<ProviderUserInputAnswers>();
-                  pendingUserInputs.set(requestId, { answers });
+                  const pendingInput: PendingUserInput = { answers, expired: false };
+                  pendingUserInputs.set(requestId, pendingInput);
                   yield* offerRuntimeEvent({
                     type: "user-input.requested",
                     ...(yield* makeEventStamp()),
@@ -600,15 +625,18 @@ export function makeCursorAdapter(
                   });
                   const resolved = yield* Deferred.await(answers);
                   pendingUserInputs.delete(requestId);
-                  yield* offerRuntimeEvent({
-                    type: "user-input.resolved",
-                    ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
-                    threadId: input.threadId,
-                    turnId: ctx?.activeTurnId,
-                    requestId: runtimeRequestId,
-                    payload: { answers: resolved },
-                  });
+                  // Avi Code addition: the stop path already closed this one.
+                  if (!pendingInput.expired) {
+                    yield* offerRuntimeEvent({
+                      type: "user-input.resolved",
+                      ...(yield* makeEventStamp()),
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      turnId: ctx?.activeTurnId,
+                      requestId: runtimeRequestId,
+                      payload: { answers: resolved },
+                    });
+                  }
                   return { answers: resolved };
                 }),
               ),
@@ -1190,7 +1218,13 @@ export function makeCursorAdapter(
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session", sideQuestion: "unsupported" },
+      capabilities: {
+        sessionModelSwitch: "in-session",
+        sideQuestion: "unsupported",
+        // Plan behaviour is left to the Cursor runtime and has not been
+        // verified to stop after proposing, so nothing here enforces it.
+        planTurnEnforcement: "unsupported",
+      },
       startSession,
       sendTurn,
       askSideQuestion,

@@ -119,6 +119,119 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
+/**
+ * Avi Code addition: the answer a user had already chosen when their question
+ * expired, rendered as composer text.
+ *
+ * A question dies with its provider session, and the draft answer only lives in
+ * client state keyed by a request id nothing will ever accept again. Rather
+ * than drop it, it becomes an ordinary message the user can send to restart the
+ * turn. Returns null when nothing was drafted, so the caller can tell "no
+ * answer to recover" from "an empty one".
+ */
+export function formatExpiredUserInputDraft(
+  questions: ReadonlyArray<UserInputQuestion>,
+  draftAnswers: Record<string, PendingUserInputDraftAnswer>,
+): string | null {
+  const lines: string[] = [];
+
+  for (const question of questions) {
+    const answer = resolvePendingUserInputAnswer(question, draftAnswers[question.id]);
+    if (!answer) continue;
+    const rendered = Array.isArray(answer) ? answer.join(", ") : answer;
+    lines.push(`${question.header}: ${rendered}`);
+  }
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/** Format answers persisted with an expired response after client state is gone. */
+export function formatExpiredUserInputAnswers(
+  questions: ReadonlyArray<UserInputQuestion>,
+  answers: Readonly<Record<string, string | string[]>>,
+): string | null {
+  const lines = questions.flatMap((question) => {
+    const answer = answers[question.id];
+    if (typeof answer === "string" && answer.trim().length > 0) {
+      return [`${question.header}: ${answer}`];
+    }
+    if (Array.isArray(answer) && answer.length > 0) {
+      return [`${question.header}: ${answer.join(", ")}`];
+    }
+    return [];
+  });
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/** Append a recovered answer without replacing a draft already in progress. */
+export function mergeExpiredUserInputWithComposerDraft(
+  existingPrompt: string,
+  recoveredPrompt: string,
+): string {
+  return existingPrompt.trim().length > 0
+    ? `${existingPrompt}\n\n${recoveredPrompt}`
+    : recoveredPrompt;
+}
+
+const EXPIRED_USER_INPUT_RECOVERY_STORAGE_KEY = "t3code:expired-user-input-recovery:v1";
+const MAX_REMEMBERED_EXPIRED_USER_INPUTS = 200;
+
+function readRecoveredExpiredUserInputIds(storage: Pick<Storage, "getItem">): string[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      storage.getItem(EXPIRED_USER_INPUT_RECOVERY_STORAGE_KEY) ?? "[]",
+    );
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Whether this browser already restored or deliberately dismissed the answer. */
+export function hasHandledExpiredUserInputRecovery(
+  storage: Pick<Storage, "getItem">,
+  requestId: string,
+): boolean {
+  return readRecoveredExpiredUserInputIds(storage).includes(requestId);
+}
+
+/** Prevent a durable expiry activity from restoring the same answer on every reload. */
+export function markExpiredUserInputRecoveryHandled(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  requestId: string,
+): void {
+  const ids = readRecoveredExpiredUserInputIds(storage).filter((id) => id !== requestId);
+  ids.push(requestId);
+  storage.setItem(
+    EXPIRED_USER_INPUT_RECOVERY_STORAGE_KEY,
+    JSON.stringify(ids.slice(-MAX_REMEMBERED_EXPIRED_USER_INPUTS)),
+  );
+}
+
+/**
+ * Avi Code addition: drop entries for request ids that will never be answered.
+ * The per-request draft maps are keyed by a request id and had no eviction, so
+ * every question a thread ever asked stayed in memory for the session.
+ * Returns the original object when nothing matched, so callers can pass it
+ * straight to a state setter without forcing a re-render.
+ */
+export function omitPendingUserInputRequestIds<Value>(
+  entriesByRequestId: Record<string, Value>,
+  requestIds: ReadonlySet<string>,
+): Record<string, Value> {
+  const matching = Object.keys(entriesByRequestId).filter((key) => requestIds.has(key));
+  if (matching.length === 0) {
+    return entriesByRequestId;
+  }
+  const next = { ...entriesByRequestId };
+  for (const key of matching) {
+    delete next[key];
+  }
+  return next;
+}
+
 export function countAnsweredPendingUserInputQuestions(
   questions: ReadonlyArray<UserInputQuestion>,
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
@@ -142,12 +255,14 @@ export function findFirstUnansweredPendingUserInputQuestionIndex(
 /**
  * Whether an Escape keypress should leave the pending user-input questionnaire.
  *
- * Escape is the only exit from the questionnaire, so it has to be conservative:
+ * Escape is an exit from the questionnaire, so it has to be conservative:
  * a chord is somebody else's shortcut, and an already-handled event belongs to
  * whoever handled it (dictation cancels this way). `targetOutsideComposer` is
  * how an open menu, dialog, or popover keeps Escape — they trap focus, so a
  * keypress aimed anywhere but the composer or the bare document is theirs to
- * close, and closing one must not also stop the turn underneath it.
+ * close, and closing one must not also stop the turn underneath it. Submission
+ * does not suppress Escape because this is also the recovery path for a request
+ * that never settles.
  */
 export function shouldDismissPendingUserInputForKey(input: {
   key: string;
@@ -163,7 +278,9 @@ export function shouldDismissPendingUserInputForKey(input: {
   if (input.defaultPrevented) return false;
   if (input.metaKey || input.ctrlKey || input.altKey || input.shiftKey) return false;
   if (input.targetOutsideComposer) return false;
-  return !input.isResponding;
+  // Dismiss is the escape hatch when submission itself stalls. Answer controls
+  // remain inert while responding, but stopping the turn must always work.
+  return true;
 }
 
 export function derivePendingUserInputProgress(

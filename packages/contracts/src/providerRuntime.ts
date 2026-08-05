@@ -464,6 +464,10 @@ export type UserInputRequestedPayload = typeof UserInputRequestedPayload.Type;
 
 const UserInputResolvedPayload = Schema.Struct({
   answers: UnknownRecordSchema,
+  // Avi Code addition: "expired" marks a question the provider closed on the
+  // user's behalf because its session went away, rather than one the user
+  // answered. Optional so every existing emitter and decode site is unchanged.
+  reason: Schema.optional(Schema.Literal("expired")),
 });
 export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 

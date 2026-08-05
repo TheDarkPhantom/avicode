@@ -982,6 +982,32 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("closes a question the session expired rather than answered", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-user-input-expired"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/tool/requestUserInput/expired",
+        requestId: ApprovalRequestId.make("req-user-input-expired"),
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "user-input.resolved") {
+        return NodeAssert.fail("Expected user-input.resolved event");
+      }
+      NodeAssert.equal(firstEvent.value.requestId, "req-user-input-expired");
+      NodeAssert.equal(firstEvent.value.payload.reason, "expired");
+      NodeAssert.deepEqual(firstEvent.value.payload.answers, {});
+    }),
+  );
+
   it.effect("maps windowsSandbox/setupCompleted to session state and warning on failure", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

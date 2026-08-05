@@ -1,5 +1,4 @@
-import { toComparableWorkspacePath, workspaceRelativePathWithin } from "~/workspacePathMatch";
-import type { FileSurfaceRoot } from "./externalFileRoot";
+import { toComparableWorkspacePath } from "~/workspacePathMatch";
 
 /**
  * Avi Code addition: finds the repo a thread-relative path really belongs to.
@@ -15,60 +14,28 @@ import type { FileSurfaceRoot } from "./externalFileRoot";
  *
  * The paths that go wrong this way are written relative to some folder above the
  * thread's workspace, so that is what this walks: each ancestor in turn, deepest
- * first, asking whether the path lands inside a registered project from there.
- * A registered project is the whole test. Anchoring on a bare folder would
- * invent a repo out of any two matching segments, and the answer has to be one
- * the user would recognise.
+ * first. The server then verifies those candidates and identifies the owning
+ * registered project, Git repository, or file parent.
  *
  * This runs only after the thread's own read has already failed, which is what
  * keeps it from ever outranking a file that is really there.
  */
 const DRIVE_ROOT_PATTERN = /^[A-Za-z]:$/;
 
-export function resolveCrossRepoFileFallback(
+export function buildAncestorFileCandidates(
   workspaceRoot: string,
   relativePath: string,
-  projectRoots: readonly string[],
-): FileSurfaceRoot | null {
+): readonly string[] {
   const normalizedRoot = toComparableWorkspacePath(workspaceRoot);
   const normalizedRelativePath = toComparableWorkspacePath(relativePath);
-  if (normalizedRoot.length === 0 || normalizedRelativePath.length === 0) return null;
+  if (normalizedRoot.length === 0 || normalizedRelativePath.length === 0) return [];
 
   const segments = normalizedRoot.split("/");
-  // Ancestors only, and never the drive or filesystem root: nobody writes a
-  // path relative to `C:\`, and anchoring there would search the whole disk.
+  const candidates: string[] = [];
   for (let depth = segments.length - 1; depth > 0; depth--) {
     const ancestor = segments.slice(0, depth).join("/");
     if (ancestor.length === 0 || DRIVE_ROOT_PATTERN.test(ancestor)) continue;
-    const owner = deepestOwningProject(
-      `${ancestor}/${normalizedRelativePath}`,
-      projectRoots,
-      normalizedRoot,
-    );
-    if (owner) return owner;
+    candidates.push(`${ancestor}/${normalizedRelativePath}`);
   }
-  return null;
-}
-
-/**
- * The most specific registered project holding `absolutePath`, skipping the
- * thread's own workspace because resolving there is what already failed.
- */
-function deepestOwningProject(
-  absolutePath: string,
-  projectRoots: readonly string[],
-  excludedRoot: string,
-): FileSurfaceRoot | null {
-  let best: FileSurfaceRoot | null = null;
-  let bestRootLength = -1;
-  for (const projectRoot of projectRoots) {
-    const normalizedProjectRoot = toComparableWorkspacePath(projectRoot);
-    if (normalizedProjectRoot.toLowerCase() === excludedRoot.toLowerCase()) continue;
-    const relativePath = workspaceRelativePathWithin(projectRoot, absolutePath);
-    if (relativePath === null) continue;
-    if (normalizedProjectRoot.length <= bestRootLength) continue;
-    best = { root: projectRoot, relativePath };
-    bestRootLength = normalizedProjectRoot.length;
-  }
-  return best;
+  return candidates;
 }

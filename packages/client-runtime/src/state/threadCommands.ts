@@ -41,6 +41,7 @@ import {
   updateThreadMetadata,
 } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import type { AtomCommandScheduler } from "./runtime.ts";
 
 export type {
   ArchiveThreadInput,
@@ -63,10 +64,25 @@ export type {
   UpdateThreadMetadataInput,
 } from "../operations/commands.ts";
 
+export function createThreadCommandSchedulers(): {
+  readonly regular: AtomCommandScheduler;
+  readonly interrupt: AtomCommandScheduler;
+} {
+  return {
+    regular: createAtomCommandScheduler(),
+    interrupt: createAtomCommandScheduler(),
+  };
+}
+
 export function createThreadEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Crypto.Crypto | R, E>,
 ) {
-  const scheduler = createAtomCommandScheduler();
+  const schedulers = createThreadCommandSchedulers();
+  const scheduler = schedulers.regular;
+  // Avi Code addition: Stop is the recovery path for a command that never
+  // settles. Giving it its own scheduler prevents a stalled approval or user
+  // input response from occupying the thread lane ahead of its interrupt.
+  const interruptScheduler = schedulers.interrupt;
   const concurrency = {
     mode: "serial" as const,
     key: ({ environmentId, input }: { environmentId: string; input: { threadId: string } }) =>
@@ -148,7 +164,7 @@ export function createThreadEnvironmentAtoms<R, E>(
     interruptTurn: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:interrupt-turn",
       execute: (input: InterruptThreadTurnInput) => interruptThreadTurn(input),
-      scheduler,
+      scheduler: interruptScheduler,
       concurrency,
     }),
     respondToApproval: createEnvironmentCommand(runtime, {

@@ -36,6 +36,71 @@ export function shouldCancelTimelineLiveFollowForWheel({
 }
 
 /**
+ * Which way the user's last scroll gesture was heading. `"unknown"` covers
+ * gestures whose direction is not readable from the event (a scrollbar drag, a
+ * touch move), which are treated as consent to follow again if they land on the
+ * live edge.
+ */
+export type TimelineUserScrollDirection = "toward-end" | "away-from-end" | "unknown";
+
+export function resolveTimelineUserScrollDirectionForWheel(
+  deltaY: number,
+): TimelineUserScrollDirection {
+  return deltaY < 0 ? "away-from-end" : "toward-end";
+}
+
+/**
+ * Keyboard scrolling never reached the live-follow state machine, so paging up
+ * with the timeline focused left the list following the live edge and snapping
+ * back. Returns null for keys that do not scroll the list.
+ */
+export function resolveTimelineUserScrollDirectionForKey({
+  key,
+  shiftKey,
+}: {
+  readonly key: string;
+  readonly shiftKey: boolean;
+}): TimelineUserScrollDirection | null {
+  switch (key) {
+    case "ArrowUp":
+    case "PageUp":
+    case "Home":
+      return "away-from-end";
+    case "ArrowDown":
+    case "PageDown":
+    case "End":
+      return "toward-end";
+    case " ":
+    case "Spacebar":
+      return shiftKey ? "away-from-end" : "toward-end";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whether reaching the live edge should re-arm live follow. Reaching it is not
+ * on its own consent: LegendList runs its own `maintainScrollAtEnd` on a flag it
+ * cached before the gesture was dispatched, so a scroll away from the end can be
+ * answered by a snap back to it. Re-arming on that would erase the opt-out and
+ * pin the reader to the bottom for the rest of the response, so a scroll that
+ * was heading away from the end never re-arms.
+ */
+export function shouldRearmTimelineLiveFollow({
+  isAbsoluteEnd,
+  lastUserScrollDirection,
+}: {
+  readonly isAbsoluteEnd: boolean;
+  readonly lastUserScrollDirection: TimelineUserScrollDirection | null;
+}) {
+  if (!isAbsoluteEnd) {
+    return false;
+  }
+
+  return lastUserScrollDirection === "toward-end" || lastUserScrollDirection === "unknown";
+}
+
+/**
  * How far past the viewport top a user message must travel before its pinned
  * copy takes over. With the top fade on, the last rows under the header are
  * already masked out, so the handoff happens deeper to avoid showing the

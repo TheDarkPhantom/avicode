@@ -171,6 +171,10 @@
       "types": "./src/sideQuestionSupport.ts",
       "import": "./src/sideQuestionSupport.ts"
     },
+    "./planTurnEnforcementSupport": {
+      "types": "./src/planTurnEnforcementSupport.ts",
+      "import": "./src/planTurnEnforcementSupport.ts"
+    },
     "./composerInlineTokens": {
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"

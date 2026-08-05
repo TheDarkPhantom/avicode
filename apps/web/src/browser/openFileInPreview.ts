@@ -55,6 +55,11 @@ export async function openUrlInPreview<E>(input: {
 export async function openFileInPreview<AssetError, PreviewError>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly filePath: string;
+  /**
+   * Avi Code addition: the registered project this file belongs to, when it is
+   * not the thread's own. Omitted keeps the thread-derived root.
+   */
+  readonly workspaceRoot?: string | null;
   readonly httpBaseUrl: string;
   readonly createAssetUrl: (input: {
     readonly environmentId: EnvironmentId;
@@ -78,6 +83,7 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
         _tag: "workspace-file",
         threadId: input.threadRef.threadId,
         path: input.filePath,
+        ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
       },
     },
   });

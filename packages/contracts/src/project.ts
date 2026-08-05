@@ -130,6 +130,25 @@ export const ProjectReadFileResult = Schema.Struct({
 });
 export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
 
+// Avi Code addition: resolve a failed thread-relative file against an ancestor
+// without requiring the owning repository to be registered as a project.
+export const ProjectResolveFileFallbackInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+  ancestorCandidates: Schema.Array(TrimmedNonEmptyString),
+  registeredProjectRoots: Schema.Array(TrimmedNonEmptyString),
+});
+export type ProjectResolveFileFallbackInput = typeof ProjectResolveFileFallbackInput.Type;
+
+export const ProjectResolvedFileFallback = Schema.Struct({
+  root: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString,
+});
+export type ProjectResolvedFileFallback = typeof ProjectResolvedFileFallback.Type;
+
+export const ProjectResolveFileFallbackResult = Schema.NullOr(ProjectResolvedFileFallback);
+export type ProjectResolveFileFallbackResult = typeof ProjectResolveFileFallbackResult.Type;
+
 export const ProjectFileFailure = Schema.Literals([
   "workspace_path_outside_root",
   "resolved_path_outside_root",

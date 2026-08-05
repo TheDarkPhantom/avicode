@@ -22,6 +22,7 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { driverEnforcesPlanTurns } from "@t3tools/shared/planTurnEnforcementSupport";
 import { driverSupportsSideQuestion } from "@t3tools/shared/sideQuestionSupport";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { ComposerSideQuestionPanel } from "./ComposerSideQuestionPanel";
@@ -312,6 +313,13 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
+  /**
+   * Avi Code addition: whether this provider is actually held to planning while
+   * a plan turn runs. False means the backend polices its own plan mode and may
+   * start building straight away, which the tooltip has to say rather than
+   * imply an enforcement nobody is applying.
+   */
+  planTurnEnforced: boolean;
   runtimeMode: RuntimeMode;
   showPlanToggle: boolean;
   planSidebarLabel: string;
@@ -323,9 +331,12 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
   const interactionModeTooltip =
-    props.interactionMode === "plan"
+    (props.interactionMode === "plan"
       ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode";
+      : "Default mode — click to enter plan mode") +
+    (props.planTurnEnforced
+      ? ""
+      : ". This provider is not held to planning and may start building.");
   const planSidebarTooltip = props.planSidebarOpen
     ? `Hide ${props.planSidebarLabel.toLowerCase()} sidebar`
     : `Show ${props.planSidebarLabel.toLowerCase()} sidebar`;
@@ -648,6 +659,7 @@ export interface ChatComposerProps {
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
+  providerDiscoveryState: "loading" | "ready";
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
@@ -748,6 +760,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     interactionMode,
     lockedProvider,
     providerStatuses,
+    providerDiscoveryState,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
@@ -983,6 +996,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
   // Avi Code addition: gates the `/btw` entry in the command menu.
   const sideQuestionSupported = driverSupportsSideQuestion(selectedProvider);
+  // Avi Code addition: describes plan mode honestly for backends whose plan
+  // turns nothing enforces.
+  const planTurnEnforced = driverEnforcesPlanTurns(selectedProvider);
   // The answer panel is keyed per thread. Drafts have no thread to branch from,
   // so there is nothing to ask about until the first message lands.
   const sideQuestionThreadKey = useMemo(
@@ -3212,7 +3228,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
                 <ComposerPendingUserInputPanel
                   pendingUserInputs={pendingUserInputs}
-                  respondingRequestIds={respondingRequestIds}
+                  isResponding={activePendingIsResponding}
                   answers={activePendingDraftAnswers}
                   questionIndex={activePendingQuestionIndex}
                   onToggleOption={onSelectActivePendingUserInputOption}
@@ -3253,7 +3269,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             >
               <ComposerPendingUserInputPanel
                 pendingUserInputs={pendingUserInputs}
-                respondingRequestIds={respondingRequestIds}
+                isResponding={activePendingIsResponding}
                 answers={activePendingDraftAnswers}
                 questionIndex={activePendingQuestionIndex}
                 onToggleOption={onSelectActivePendingUserInputOption}
@@ -3331,7 +3347,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ? activePendingProgress.customAnswer ||
                     "Type your own answer, or leave this blank to use the selected option"
                   : prompt.trim() ||
-                    (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
+                    (noProviderAvailable
+                      ? providerDiscoveryState === "loading"
+                        ? "Loading providers"
+                        : "Enable a provider in Settings"
+                      : "Ask anything...")}
               </button>
               <button
                 type="button"
@@ -3638,7 +3658,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : projectSelectionRequired
                           ? "Choose a project above to start a thread"
                           : noProviderAvailable
-                            ? "Enable a provider in Settings to send a message"
+                            ? providerDiscoveryState === "loading"
+                              ? "Loading providers"
+                              : "Enable a provider in Settings to send a message"
                             : phase === "disconnected"
                               ? "Ask for follow-up changes or attach images"
                               : "Ask anything, @tag files/folders, $use skills, or / for commands"
@@ -3719,8 +3741,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     data-chat-provider-unavailable="true"
                     className="shrink-0 gap-2 px-2 text-muted-foreground/70 sm:px-3"
                   >
-                    <CircleAlertIcon className="size-4" />
-                    No provider available
+                    {providerDiscoveryState === "loading" ? null : (
+                      <CircleAlertIcon className="size-4" />
+                    )}
+                    {providerDiscoveryState === "loading"
+                      ? "Loading providers"
+                      : "No provider available"}
                   </Button>
                 ) : (
                   <ProviderModelPicker
@@ -3752,6 +3778,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <CompactComposerControlsMenu
                     activePlan={showPlanSidebarToggle}
                     interactionMode={interactionMode}
+                    planTurnEnforced={planTurnEnforced}
                     planSidebarLabel={planSidebarLabel}
                     planSidebarOpen={planSidebarOpen}
                     runtimeMode={runtimeMode}
@@ -3772,6 +3799,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <ComposerFooterModeControls
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       interactionMode={interactionMode}
+                      planTurnEnforced={planTurnEnforced}
                       runtimeMode={runtimeMode}
                       showPlanToggle={showPlanSidebarToggle}
                       planSidebarLabel={planSidebarLabel}

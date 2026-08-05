@@ -17,6 +17,7 @@ import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shar
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -28,7 +29,10 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
-import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import {
+  ProviderAdapterRequestError,
+  ProviderAdapterSessionNotFoundError,
+} from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -50,7 +54,16 @@ import {
   type ReferencedThreadTranscript,
 } from "../threadContext.ts";
 import { serializeCommunicationStyleDirective } from "@t3tools/shared/communicationStyles";
+import {
+  deriveOpenUserInputRequestIds,
+  USER_INPUT_EXPIRED_DETAIL,
+  USER_INPUT_EXPIRED_SUMMARY,
+} from "../pendingUserInputClosure.ts";
+import { InterruptSuppression } from "../InterruptSuppression.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
+const isProviderAdapterSessionNotFoundError = Schema.is(ProviderAdapterSessionNotFoundError);
+// Boot-time work has no originating event to take a timestamp from.
+const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
 type ProviderIntentEvent = Extract<
@@ -220,6 +233,24 @@ function isUnknownPendingUserInputRequestError(cause: Cause.Cause<ProviderServic
   );
 }
 
+/**
+ * Avi Code addition: the answer had nowhere to go, rather than somewhere that
+ * rejected it. Either the adapter no longer knows the request (the session
+ * outlived it and its in-memory callback map was rebuilt) or there is no
+ * adapter session at all, which is what `respondToUserInput` now fails with
+ * since it stopped resuming a session it could not use. Both mean the question
+ * expired; a provider that rejected a real answer is a different thing and
+ * still reports as a failure.
+ */
+function isExpiredPendingUserInputCause(cause: Cause.Cause<ProviderServiceError>): boolean {
+  if (isUnknownPendingUserInputRequestError(cause)) {
+    return true;
+  }
+  return cause.reasons.some(
+    (reason) => Cause.isFailReason(reason) && isProviderAdapterSessionNotFoundError(reason.error),
+  );
+}
+
 function stalePendingRequestDetail(
   requestKind: "approval" | "user-input",
   requestId: string,
@@ -260,6 +291,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const interruptSuppression = yield* InterruptSuppression;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -311,6 +343,50 @@ const make = Effect.gen(function* () {
               ...(input.requestId ? { requestId: input.requestId } : {}),
             },
             turnId: input.turnId,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
+  /**
+   * Avi Code addition: close a question whose answer path is gone.
+   *
+   * Deliberately not routed through `appendProviderFailureActivity`, which
+   * hard-codes `tone: "error"` for the approval twin: nothing failed here, the
+   * session simply outlived the question. Reusing the `user-input.resolved`
+   * kind a real answer produces means every consumer that already clears on it
+   * clears on this too, with no new failure-detail strings to keep in sync
+   * across the decider, the projection pipeline, and the clients.
+   */
+  const appendUserInputExpiredActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly requestId: string;
+    readonly createdAt: string;
+    readonly answers?: Readonly<Record<string, unknown>>;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("user-input-expired-activity"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: "user-input.resolved",
+            summary: USER_INPUT_EXPIRED_SUMMARY,
+            payload: {
+              requestId: input.requestId,
+              answers: input.answers ?? {},
+              expired: true,
+              detail: USER_INPUT_EXPIRED_DETAIL,
+            },
+            turnId: null,
             createdAt: input.createdAt,
           },
           createdAt: input.createdAt,
@@ -937,6 +1013,56 @@ const make = Effect.gen(function* () {
       { discard: true },
     );
   });
+  /**
+   * Avi Code addition: a question whose provider session did not survive the
+   * restart. The adapters now close their own pending questions on the way
+   * down, but nothing can close the ones whose process died without running a
+   * finalizer, or the ones asked by a server build that predates that fix.
+   * Left alone they render as a live prompt forever, and answering one fails.
+   *
+   * The shell snapshot's `hasPendingUserInput` narrows this to the handful of
+   * threads that actually have an open question, so the per-thread detail read
+   * (the expensive half) runs only for those. Idempotent: a request closed on a
+   * previous boot no longer appears open, so a second start is a no-op.
+   */
+  const closeOrphanedPendingUserInputs = Effect.fn("closeOrphanedPendingUserInputs")(function* () {
+    const shells = yield* projectionSnapshotQuery.getShellSnapshot();
+    const blockedThreadIds = shells.threads
+      .filter((shell) => shell.hasPendingUserInput)
+      .map((shell) => shell.id);
+    if (blockedThreadIds.length === 0) {
+      return;
+    }
+    const createdAt = yield* nowIso;
+    yield* Effect.forEach(
+      blockedThreadIds,
+      (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* resolveThread(threadId);
+          if (!thread) {
+            return;
+          }
+          const openRequestIds = deriveOpenUserInputRequestIds(thread.activities);
+          yield* Effect.forEach(
+            openRequestIds,
+            (requestId) => appendUserInputExpiredActivity({ threadId, requestId, createdAt }),
+            { discard: true },
+          );
+        }).pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.interrupt;
+            }
+            return Effect.logWarning(
+              "provider command reactor failed to close orphaned pending user input",
+              { threadId, cause: Cause.pretty(cause) },
+            );
+          }),
+        ),
+      { discard: true },
+    );
+  });
+
   const processThreadTitleRegenerationSafely = Effect.fn("processThreadTitleRegenerationSafely")(
     function* (event: Extract<ProviderIntentEvent, { type: "thread.meta-updated" }>) {
       if (event.payload.regenerateTitle !== true) {
@@ -1009,6 +1135,10 @@ const make = Effect.gen(function* () {
     if (yield* hasHandledTurnStartRecently(key)) {
       return;
     }
+
+    // Avi Code addition: a new turn ends the previous stop's grace period, so
+    // errors in it are reported normally again.
+    yield* interruptSuppression.clear(event.payload.threadId);
 
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
@@ -1114,29 +1244,32 @@ const make = Effect.gen(function* () {
       }
     }
 
-    const handleTurnStartFailure = (cause: Cause.Cause<unknown>) => {
+    const handleTurnStartFailure = Effect.fnUntraced(function* (cause: Cause.Cause<unknown>) {
       if (Cause.hasInterruptsOnly(cause)) {
-        return Effect.void;
+        return;
+      }
+      // Avi Code addition: a prompt that fails because the user pressed Stop is
+      // not a turn-start failure. Several adapters surface an abort as a typed
+      // failure here rather than as a fiber interrupt, so `hasInterruptsOnly`
+      // above does not catch them.
+      if (yield* interruptSuppression.isSuppressed(event.payload.threadId)) {
+        return;
       }
       const detail = formatFailureDetail(cause);
-      return setThreadSessionErrorOnTurnStartFailure({
+      yield* setThreadSessionErrorOnTurnStartFailure({
         threadId: event.payload.threadId,
         detail,
         createdAt: event.payload.createdAt,
-      }).pipe(
-        Effect.flatMap(() =>
-          appendProviderFailureActivity({
-            threadId: event.payload.threadId,
-            kind: "provider.turn.start.failed",
-            summary: "Provider turn start failed",
-            detail,
-            turnId: null,
-            createdAt: event.payload.createdAt,
-          }),
-        ),
-        Effect.asVoid,
-      );
-    };
+      });
+      yield* appendProviderFailureActivity({
+        threadId: event.payload.threadId,
+        kind: "provider.turn.start.failed",
+        summary: "Provider turn start failed",
+        detail,
+        turnId: null,
+        createdAt: event.payload.createdAt,
+      });
+    });
 
     const recoverTurnStartFailure = (cause: Cause.Cause<unknown>) =>
       handleTurnStartFailure(cause).pipe(
@@ -1180,17 +1313,18 @@ const make = Effect.gen(function* () {
     if (!thread) {
       return;
     }
+    // Avi Code addition: nothing to interrupt is not a failure. Pressing Stop
+    // just after the session row flipped to "stopped" used to append a red
+    // "Provider turn interrupt failed" row for a turn that had already ended.
     const hasSession = thread.session && thread.session.status !== "stopped";
     if (!hasSession) {
-      return yield* appendProviderFailureActivity({
-        threadId: event.payload.threadId,
-        kind: "provider.turn.interrupt.failed",
-        summary: "Provider turn interrupt failed",
-        detail: "No active provider session is bound to this thread.",
-        turnId: event.payload.turnId ?? null,
-        createdAt: event.payload.createdAt,
-      });
+      return;
     }
+
+    // Avi Code addition: mark before interrupting, so the errors the abort
+    // provokes are already suppressed by the time they arrive. Cleared when
+    // this thread next starts or finishes a turn.
+    yield* interruptSuppression.mark(event.payload.threadId);
 
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
     yield* providerService.interruptTurn({ threadId: event.payload.threadId });
@@ -1247,16 +1381,30 @@ const make = Effect.gen(function* () {
       if (!thread) {
         return;
       }
+      // Avi Code addition: response commands are durable and may be replayed
+      // after a restart or submitted repeatedly while the first is settling.
+      // Once the request is closed, later copies have nothing left to do.
+      if (
+        thread.activities.some((activity) => {
+          if (activity.kind !== "user-input.resolved") return false;
+          const payload =
+            typeof activity.payload === "object" && activity.payload !== null
+              ? (activity.payload as Record<string, unknown>)
+              : null;
+          return payload?.requestId === event.payload.requestId;
+        })
+      ) {
+        return;
+      }
       const hasSession = thread.session && thread.session.status !== "stopped";
+      // Avi Code addition: no session means the question outlived the thing
+      // that asked it. That is an expiry, not a failure the user caused.
       if (!hasSession) {
-        return yield* appendProviderFailureActivity({
+        return yield* appendUserInputExpiredActivity({
           threadId: event.payload.threadId,
-          kind: "provider.user-input.respond.failed",
-          summary: "Provider user input response failed",
-          detail: "No active provider session is bound to this thread.",
-          turnId: null,
-          createdAt: event.payload.createdAt,
           requestId: event.payload.requestId,
+          createdAt: event.payload.createdAt,
+          answers: event.payload.answers,
         });
       }
 
@@ -1268,17 +1416,25 @@ const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.catchCause((cause) =>
-            appendProviderFailureActivity({
-              threadId: event.payload.threadId,
-              kind: "provider.user-input.respond.failed",
-              summary: "Provider user input response failed",
-              detail: isUnknownPendingUserInputRequestError(cause)
-                ? stalePendingRequestDetail("user-input", event.payload.requestId)
-                : Cause.pretty(cause),
-              turnId: null,
-              createdAt: event.payload.createdAt,
-              requestId: event.payload.requestId,
-            }),
+            // Avi Code addition: an answer with nowhere to go closes the
+            // question quietly; a provider that rejected a real answer still
+            // reports as a failure.
+            isExpiredPendingUserInputCause(cause)
+              ? appendUserInputExpiredActivity({
+                  threadId: event.payload.threadId,
+                  requestId: event.payload.requestId,
+                  createdAt: event.payload.createdAt,
+                  answers: event.payload.answers,
+                })
+              : appendProviderFailureActivity({
+                  threadId: event.payload.threadId,
+                  kind: "provider.user-input.respond.failed",
+                  summary: "Provider user input response failed",
+                  detail: Cause.pretty(cause),
+                  turnId: null,
+                  createdAt: event.payload.createdAt,
+                  requestId: event.payload.requestId,
+                }),
           ),
         );
     },
@@ -1405,6 +1561,23 @@ const make = Effect.gen(function* () {
         }
         return Effect.logWarning(
           "provider command reactor failed to clear interrupted title regenerations",
+          {
+            cause: Cause.pretty(cause),
+          },
+        );
+      }),
+    );
+
+    // Avi Code addition: same rationale — a question waiting on an in-memory
+    // provider callback cannot be resumed once that callback's process is
+    // gone, so close it rather than leave a prompt nobody can answer.
+    yield* closeOrphanedPendingUserInputs().pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.interrupt;
+        }
+        return Effect.logWarning(
+          "provider command reactor failed to close orphaned pending user inputs",
           {
             cause: Cause.pretty(cause),
           },

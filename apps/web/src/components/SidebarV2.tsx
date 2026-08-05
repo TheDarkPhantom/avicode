@@ -26,6 +26,8 @@ import {
   FolderIcon,
   FolderPlusIcon,
   GitBranchIcon,
+  GitMergeIcon,
+  GitPullRequestClosedIcon,
   EllipsisIcon,
   MessageSquareIcon,
   PinIcon,
@@ -112,11 +114,11 @@ import {
   formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
-  isSidebarMergingSourceControlAction,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveAdjacentThreadId,
   resolveSettledTimestamp,
+  resolveSidebarChangeRequestStatus,
   resolveSidebarV2Status,
   resolveWorkingStartedAt,
   shouldNavigateAfterProjectRemoval,
@@ -164,6 +166,7 @@ import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./u
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 // Avi Code addition: pinned rows head the active block and the project picker.
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
+import { ProjectMergeRunButton } from "./sidebar/ProjectMergeRunButton";
 import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -532,7 +535,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
   const providerBadgeLabel = badgeLabels[modelInstanceId]?.trim().toUpperCase();
   const effectiveStatus = status;
-  const isMerging = isSidebarMergingSourceControlAction(vcsActionState);
+  const changeRequestStatus = resolveSidebarChangeRequestStatus({ vcsActionState, prState });
   const topStatus =
     effectiveStatus === "needs_resume"
       ? {
@@ -562,7 +565,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 chip: false,
                 className: "text-indigo-600 dark:text-indigo-300",
               }
-            : isMerging || prState === "merged" || prState === "closed"
+            : changeRequestStatus === "merging"
               ? {
                   label: "Merging",
                   icon: "merging" as const,
@@ -591,7 +594,24 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                         chip: true,
                         className: "text-emerald-700 dark:text-emerald-300",
                       }
-                    : null;
+                    : // Avi Code addition: a settled PR is an outcome, not activity, so
+                      // it sits below Working and below an unseen completion instead of
+                      // masking either one.
+                      changeRequestStatus === "merged"
+                      ? {
+                          label: "Merged",
+                          icon: "merged" as const,
+                          chip: false,
+                          className: "text-violet-700 dark:text-violet-300",
+                        }
+                      : changeRequestStatus === "closed"
+                        ? {
+                            label: "Closed",
+                            icon: "closed" as const,
+                            chip: false,
+                            className: "text-red-700 dark:text-red-300",
+                          }
+                        : null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
@@ -1043,6 +1063,10 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                         <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
                       ) : topStatus.icon === "merging" ? (
                         <GitBranchIcon aria-hidden className="size-4 shrink-0" />
+                      ) : topStatus.icon === "merged" ? (
+                        <GitMergeIcon aria-hidden className="size-4 shrink-0" />
+                      ) : topStatus.icon === "closed" ? (
+                        <GitPullRequestClosedIcon aria-hidden className="size-4 shrink-0" />
                       ) : topStatus.icon === "woke" ? (
                         <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
                       ) : (
@@ -2655,6 +2679,15 @@ export default function SidebarV2() {
                             <ProjectUnsentDraftDot
                               logicalProjectKey={scopeKey}
                               projectName={project.displayName}
+                            />
+                            {/* Avi Code addition: merge every ready worktree
+                                thread in this project, one at a time. The
+                                picker is v2's only per-project surface. */}
+                            <ProjectMergeRunButton
+                              project={project}
+                              navigateToThread={navigateToThread}
+                              onActivate={() => setProjectScopeMenuOpen(false)}
+                              className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/55 outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                             />
                             <button
                               type="button"

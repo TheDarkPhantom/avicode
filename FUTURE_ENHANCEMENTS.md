@@ -17,25 +17,46 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
-- A local server started outside an Avi Code terminal cannot be attributed to a project. The browser
-  panel groups servers using the pid-to-terminal map the port scanner already keeps, so anything
-  started from an external shell, a task runner, or before the app opened lands under "Other".
-  Closing that gap needs pid-to-working-directory resolution, which has no cheap Windows API;
-  `native/resource-monitor` does not expose it either (`ProcessSample` has no cwd field and
-  `process_refresh_kind()` does not request one), so widening the sidecar would be the smallest
-  route and is not worth it yet.
-- `PortScanner`'s common-port fallback returns no pid at all, so on any machine without `lsof` (and
-  where the PowerShell probe fails) every row is unattributable regardless of where it was started.
-- `ProjectScript.autoOpenPreview` is defined in the contract, persisted, and bound in the scripts
-  form, but nothing reads it at runtime. Ticking it does nothing. Either wire it to open the preview
-  panel when the script starts, or take the option out of the form.
-- Image previews still fail for a file opened from another repo. The file viewer now reads text,
-  code and markdown against whatever root the file belongs to, but images do not go through
-  `projects.readFile` at all: they take the asset pipeline, which resolves the path against the
-  thread's own workspace root and rejects anything outside it
-  (`apps/server/src/assets/AssetAccess.ts`, `resolveCanonicalWorkspaceFile` and `issueAssetUrl`).
-  Fixing it means letting the asset URL carry a root the way the file surface now does, which is a
-  contract change and a second containment decision, so it was left out of the cross-repo work.
+- Expired questionnaire answers are restored as plain composer text so the user can confirm and
+  resend them. Reconstructing the original multi-step questionnaire would require a durable client
+  draft schema and is unnecessary while the plain-text recovery preserves every submitted value.
+- `/btw` silently discards attached images, terminal contexts, and preview annotations. The
+  `/plan`/`/default` branch in `ChatView`'s send handler refuses to claim the input when any of
+  those are present, so they survive; the `/btw` branch has no such guard and clears the composer
+  regardless. Whether a side question should carry an image at all is the open question, not just
+  where to put the guard.
+- With "Queue" chosen for sending mid turn, `/btw` is held as a queued turn rather than asked. The
+  hold check runs early in the send handler, long before `/btw` is parsed, so the question fires
+  after the turn settles, which is the opposite of the point. The default is "Steer", so this only
+  bites users who changed it.
+- `packages/shared/src/sideQuestionSupport.ts` hardcodes which providers can answer a side question
+  and has no compile-time link to any adapter's `capabilities.sideQuestion`. The capability is not
+  on the config push stream, so the client keeps its own copy and the two can drift silently. A new
+  fork-session-capable adapter would get a hidden command; a Claude regression would get a visible
+  one that always fails.
+- A local server started outside an Avi Code terminal is not listed at all. The browser panel now
+  offers only listeners the port scanner can attribute through its pid-to-terminal map, because
+  guessing by process name and port range kept admitting vendor daemons (`aw-server`,
+  `ArmouryHtmlDebugServer`, `nordvpn-service`) that in some cases genuinely serve HTTP. The cost is
+  that a dev server from an external shell, a task runner, WSL, or `docker run` has to be reached by
+  typing its URL into the panel's address bar. Closing that gap needs pid-to-working-directory
+  resolution, which has no cheap Windows API; `native/resource-monitor` does not expose it either
+  (`ProcessSample` has no cwd field and `process_refresh_kind()` does not request one), so widening
+  the sidecar would be the smallest route and is not worth it yet.
+- A machine where both `lsof` and the PowerShell probe fail now shows no local servers at all. The
+  common-port TCP fallback was removed with the same change: it could learn no owning pid, so every
+  row it produced was discarded by the ownership filter a moment later.
+- Auto-opened script previews wait on the port scanner, so a script whose server the scanner cannot
+  attribute to the thread (started through a wrapper the scanner reads as a different pid, or on a
+  machine where `PortScanner` has no pid at all) gives up after a minute and opens nothing. The
+  fallback is the same missing pid-to-working-directory resolution the entry above describes.
+- Cross-repo assets are limited to registered projects. `AssetWorkspaceRoot.ts` honours a
+  client-supplied root only when `getActiveProjectByWorkspaceRoot` finds it, because an asset URL is
+  a signed HTTP token and must never point at an arbitrary path. `resolveFileSurfaceRoot` can also
+  fall back to a file's own parent folder when no project matches, and an image or browser preview
+  under such a root is still refused, while text under the same root reads fine through
+  `projects.readFile`. Closing that gap needs a containment story for non-project roots, not a
+  looser check.
 - Opening a chat at its last response is web/desktop only. Mobile's `ThreadFeed` has its own
   scroll machinery (`initialScrollAtEnd` plus bespoke end-space suppression) and reads none of the
   Avi Code settings, so the toggle silently does nothing there — the same boundary every other
@@ -48,21 +69,24 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - The initial position is resolved once, on the first render with rows, and frozen for the chat's
   lifetime. A chat whose history streams in after the first non-empty batch (very long chats, slow
   links) anchors on whatever the newest response was at that moment.
-- Queue-vs-steer for messages sent while a turn is running. Today the composer always steers: a
-  send during a running turn is injected into that turn immediately (see the comment in
-  `apps/web/src/components/ChatView.logic.ts`). There is no queue and no setting, and the
-  `hasQueuedTurn` path in `ChatComposer.tsx` is the offline outbox for a disconnected environment,
-  not this. Upstream built the feature — server-side per-thread queue, auto-drained on natural turn
-  completion, with per-message Steer and Remove chips above the composer — in
-  `pingdotgg/t3code#4245` (branch `t3code/queue-steer-feature`, fetched here as
-  `origin/t3code/queue-steer-feature`). That PR was **closed unmerged** on 2026-07-30 in favour of
-  orchestration V2 (`#2829`), which reportedly has the behaviour natively; the closing note invites
-  a rebase-and-reopen if V2 turns out to be missing it. So do not merge the dead branch — its seven
-  commits sit on a base that is now well over a hundred commits stale and it adds a colliding
-  migration. Wait for the V2 merge tracked in `TODO.md`, then re-check whether the behaviour is
-  present. If it is wanted sooner, the cheap fork-local version is a client-side hold while
-  `phase === "running"` that flushes on turn completion, with an `aviCodeSendWhileRunning`
-  setting on the Avi Code settings page — at the cost of a queue that does not survive a reload.
+- Queueing a send while a turn runs is client-side only, so it does not survive a reload. The
+  `aviCodeSendWhileRunning` setting holds nothing but a flag: the composer keeps the user's own
+  draft and the flush re-runs the same send once the turn settles, which is why there is no command,
+  event, projector fold or migration. That was deliberate — orchestration V2 would throw all four
+  away. The banner says the limitation out loud. Making it durable means either a server-side queue
+  or persisting the intent next to the composer draft.
+- Only one send is held per thread, because the hold IS the composer. Typing a second message while
+  one is queued replaces the first rather than stacking, so there is no list of queued messages and
+  no per-message Remove. Upstream's version (`pingdotgg/t3code#4245`) had a real per-thread queue
+  with Steer and Remove chips; that PR was **closed unmerged** on 2026-07-30 in favour of
+  orchestration V2 (`#2829`), which reportedly has the behaviour natively. Do not merge the dead
+  branch — its seven commits sit on a base well over a hundred commits stale and it adds a colliding
+  migration. After the V2 merge tracked in `TODO.md`, re-check whether V2 really ships this and
+  delete the fork version if it does.
+- A queued send pauses while you are looking at another thread. The flush needs the held thread's
+  own composer to read the draft from, so navigating away holds it rather than sending it, and
+  coming back resumes. Sending from a background thread would mean capturing the draft, which is
+  exactly the serialization this design avoids.
 - The changelog is hand-written. Nothing derives it from git, so a PR that forgets its `Unreleased`
   line leaves no trace, and an upstream sync means pasting the merged commit list in by hand. A
   script that turns `git log --first-parent <base>..<sync>` into the **Upstream t3code** section
@@ -83,11 +107,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   fact. Storing an id alongside the label would fix both at the cost of a second column.
 - A style applies from the next message only. There is no "re-ask that turn in this style", which
   would need the original prompt re-sent rather than the transcript re-rendered.
-- Plan-mode enforcement is Claude-only: the Claude adapter now hard-denies Edit/Write/NotebookEdit
-  during plan turns, but Codex, Cursor, and OpenCode delegate plan behaviour to their runtimes and
-  have not been verified to stop after proposing a plan. If a provider still auto-implements,
-  consider interrupting the turn as soon as the plan is captured so it settles and the Implement
-  button appears immediately.
+- Plan-mode enforcement is Claude-only, and now says so. Every adapter declares
+  `capabilities.planTurnEnforcement`; only the Claude adapter reports `"tool-denial"`, and the
+  composer tooltip, the compact mode menu, and the Avi Code setting all warn on the other four.
+  What is still missing is the enforcement itself. Codex, Cursor, Grok, and OpenCode delegate plan
+  behaviour to their runtimes and **have not been observed** stopping after proposing a plan;
+  `"unsupported"` records that absence of evidence, not a verified failure. Running a plan turn on
+  each of the four and watching whether it builds is the next step, and any that does could be
+  interrupted as soon as the plan is captured so it settles and the Implement button appears.
 - The start-in-plan-mode setting reads the client-settings snapshot through a callback registered
   by `hooks/useSettings` (module-cycle constraint), so a draft created before that module loads
   would fall back to build mode. Not observed in practice — any rendered UI loads the hook first.
@@ -105,17 +132,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - The Shortcuts tab's "Built in" list is hand-maintained (`AviCodeShortcuts.logic.ts`) because those
   chords are wired into components rather than declared anywhere enumerable. It can drift from the
   code; each entry names its implementation file so the list can be re-checked.
-- No cross-thread merge orchestration. `GitWorkflowService.runStackedAction` already takes a
-  per-repository lock, so two threads running `auto_merge` at once queue instead of interleaving
-  git phases — but nothing rebases the loser, so the second PR can still land stale or conflict.
-  There is no merge queue, no "merge every ready PR in this project", and no way to nominate one
-  thread as the integrator. A project-level action that walks the threads with an open PR, runs the
-  existing `auto_merge` one at a time, and stops on the first conflict by opening that thread would
-  be the smallest useful version.
-- Sidebar v2's "Merging" label (`SidebarV2.tsx`) is both v2-only and mis-named: it fires while a
-  source-control action is in flight (`prepare_pull_request_thread`, `create_pr`, `commit_push_pr`)
-  and again once the PR is merged or closed, so a settled PR reads as still merging. Sidebar v1 has
-  no equivalent, which is why the label is invisible to anyone on the default sidebar.
+- The merge run does not rebase the loser. `useProjectMergeRun` walks a project's ready threads and
+  runs `auto_merge` one at a time, stopping on the first conflict, and
+  `GitWorkflowService.runStackedAction` takes a per-repository lock so concurrent runs queue rather
+  than interleave git phases. What is still missing is any rebase of the branches behind the one
+  that just landed, so a later PR in the run can still be stale even though it merged cleanly. A
+  real merge queue, or nominating one thread as the integrator, would close that.
 - Explorer drag progress and cancellation.
 - DOCX, CSV, JSON, and source archives.
 - Encrypted PDF password prompts without persistence.
@@ -127,6 +149,26 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   resend. It is also hidden while the environment is unavailable instead of queueing through the
   offline turn outbox, and it resends the original text verbatim, so a prompt-effort prefix baked
   in at first send is kept even if the effort picker has since changed.
+- Approvals have the same orphaning problem questions had: a pending approval is an in-memory
+  `Deferred` whose request survives as a durable activity, so a restart leaves an approval prompt
+  nobody can answer, and answering one still reports a red "Provider approval response failed".
+  Everything the question fix needed already exists (`user-input.resolved` with `reason: "expired"`,
+  the boot sweep in `ProviderCommandReactor.start`, `appendUserInputExpiredActivity`) and the
+  approval twin was deliberately left byte-identical so the two can be compared. Doing it means the
+  same treatment for `request.resolved`, `processApprovalResponseRequested`, and
+  `respondToRequest`'s `allowRecovery`.
+- Three adapters still misclassify a user-initiated abort and rely on the central
+  `InterruptSuppression` guard rather than getting it right themselves. Cursor has no suppression at
+  all, so a cancelled ACP prompt RPC becomes a `ProviderAdapterRequestError`
+  (`CursorAdapter.ts:1007-1015` via `AcpAdapterSupport.ts:17-44`). Grok fails a prompt it just
+  cancelled cleanly (`GrokAdapter.ts:1013-1017`) and `settlePromptInFlight` (`:360-432`) misses the
+  `interruptedTurnIds` guard in its belonging branch. OpenCode never checks
+  `error.name === "MessageAbortedError"` in its `session.error` handler
+  (`OpenCodeAdapter.ts:1077-1115`), which is why its `lastError` used to stick.
+- The stale-request detail predicate is duplicated across `decider.ts`, `ProjectionPipeline.ts`,
+  `session-logic.ts`, and migration 024. They are currently in sync and this work added no new
+  strings, but the approval follow-up above would be the moment to consolidate the three TypeScript
+  copies behind one shared predicate.
 - Add optional checkpoint-restored worktree forks to Codex message forks, and support portable
   transcript forks for providers without native turn forks.
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family

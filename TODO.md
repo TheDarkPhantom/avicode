@@ -2,7 +2,7 @@
 
 Prioritized work. Structure: **shipped foundation → alpha verification → next work**.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-05
 
 ## Shipped foundation
 
@@ -35,6 +35,8 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Avi Code settings toggles for starting new chats in plan mode and hiding the sidebar
       worktree icon.
 - [x] Opt-in opening of finished chats at the top of their last response instead of the live edge.
+- [x] Stuck provider questions remain dismissible and provider choices survive desktop restart.
+- [x] Durable recovery of answers submitted to questions whose provider session already ended.
 
 ## Personal alpha verification
 
@@ -49,12 +51,18 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 
 ## Upstream tracking
 
-- [ ] Plan the merge of upstream orchestration V2 (`pingdotgg/t3code#2829`, open as of 2026-07-31,
+- [x] Inventory the fork's touchpoints in the orchestration V2 blast radius —
+      `docs/UPSTREAM_ORCHESTRATION_V2.md`, written 2026-08-04, covering migrations, projection
+      columns, decider, projector, adapters, and RPC scopes, each with a merge cost.
+- [ ] Work the pre-merge extraction candidates listed at the bottom of that document, so the
+      expensive conflicts stop existing before `pingdotgg/t3code#2829` lands.
+- [ ] Merge upstream orchestration V2 (`pingdotgg/t3code#2829`, open as of 2026-07-31,
       810 files / +154k / −74k). It replaces the V1 orchestration engine wholesale, so the decider,
       projector, projection tables, migrations, and every provider adapter are in its blast radius.
       The weekly `sync-upstream.yml` will surface it on the Monday after it lands — most likely as
       an `upstream-sync-blocked` issue rather than a clean PR, given the size. Budget real time for
-      it rather than treating it as a routine sync.
+      it rather than treating it as a routine sync, and follow the "When V2 lands" checklist in
+      `docs/UPSTREAM_ORCHESTRATION_V2.md`.
 
 ## Before public alpha
 

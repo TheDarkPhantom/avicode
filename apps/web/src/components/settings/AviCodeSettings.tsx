@@ -1,6 +1,7 @@
 import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@t3tools/contracts";
 import {
   type AviCodeChatContentWidth,
+  type AviCodeSendWhileRunning,
   MAX_SIDEBAR_FLAT_THREAD_COUNT,
   MIN_SIDEBAR_FLAT_THREAD_COUNT,
   type SidebarFlatThreadCount,
@@ -189,12 +190,23 @@ const CHAT_CONTENT_WIDTH_LABELS: Record<AviCodeChatContentWidth, string> = {
   full: "Full width",
 };
 
+const SEND_WHILE_RUNNING_LABELS: Record<AviCodeSendWhileRunning, string> = {
+  steer: "Steer the current turn",
+  queue: "Queue until it finishes",
+};
+
 function ChatLayoutSettings() {
   const contentWidth = useClientSettings<AviCodeChatContentWidth>(
     (settings) => settings.aviCodeChatContentWidth,
   );
   const openAtLastResponse = useClientSettings(
     (settings) => settings.aviCodeOpenChatsAtLastResponse,
+  );
+  const sendWhileRunning = useClientSettings<AviCodeSendWhileRunning>(
+    (settings) => settings.aviCodeSendWhileRunning,
+  );
+  const rightPanelFollowsThreads = useClientSettings(
+    (settings) => settings.rightPanelFollowsThreads,
   );
   const updateSettings = useUpdateClientSettings();
 
@@ -242,6 +254,47 @@ function ChatLayoutSettings() {
           />
         }
       />
+      <SettingsRow
+        title="Sending while the agent is working"
+        description="Steer injects your message into the turn that is already running, which is right when you are correcting the work in flight. Queue holds it until that turn finishes and then sends it as its own turn, which is right when it is simply the next instruction."
+        status="A queued message stays in the composer with Send now and Cancel above it, and is lost if you reload before the turn finishes."
+        control={
+          <Select
+            value={sendWhileRunning}
+            onValueChange={(value) => {
+              updateSettings({ aviCodeSendWhileRunning: value as AviCodeSendWhileRunning });
+            }}
+          >
+            <SelectTrigger
+              className="w-full sm:w-56"
+              aria-label="Sending while the agent is working"
+            >
+              <SelectValue>{SEND_WHILE_RUNNING_LABELS[sendWhileRunning]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="steer">
+                {SEND_WHILE_RUNNING_LABELS.steer}
+              </SelectItem>
+              <SelectItem hideIndicator value="queue">
+                {SEND_WHILE_RUNNING_LABELS.queue}
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+      <SettingsRow
+        title="Keep the side panel open across chats"
+        description="Carry the right panel's open or closed state between threads. Its contents stay per-thread — switching reopens that thread's own diff, files, or preview."
+        control={
+          <Switch
+            checked={rightPanelFollowsThreads}
+            onCheckedChange={(checked) =>
+              updateSettings({ rightPanelFollowsThreads: Boolean(checked) })
+            }
+            aria-label="Keep the side panel open across chats"
+          />
+        }
+      />
     </SettingsSection>
   );
 }
@@ -252,6 +305,9 @@ function SidebarLayoutSettings() {
   );
   const flatThreadCount = useClientSettings<SidebarFlatThreadCount>(
     (settings) => settings.sidebarFlatThreadCount,
+  );
+  const mouseBackForwardNavigation = useClientSettings(
+    (settings) => settings.sidebarMouseBackForwardNavigation,
   );
   const updateSettings = useUpdateClientSettings();
   const isFlat = threadGrouping === "flat";
@@ -330,6 +386,19 @@ function SidebarLayoutSettings() {
           }
         />
       ) : null}
+      <SettingsRow
+        title="Mouse back/forward buttons"
+        description="Use mouse back and forward buttons to move through visible sidebar threads instead of browser history."
+        control={
+          <Switch
+            checked={mouseBackForwardNavigation}
+            onCheckedChange={(checked) =>
+              updateSettings({ sidebarMouseBackForwardNavigation: Boolean(checked) })
+            }
+            aria-label="Use mouse back and forward buttons for sidebar thread navigation"
+          />
+        }
+      />
     </SettingsSection>
   );
 }
@@ -444,7 +513,7 @@ function NewChatSettings() {
       <SettingsRow
         title="Start new chats in plan mode"
         description="Every brand-new chat opens with the composer in Plan mode, so the agent researches and proposes a plan before touching files. You still flip any individual chat back with the mode toggle, and existing chats keep whatever mode they already use."
-        status="Only seeds the initial mode of a new chat. Implementing a plan still switches that chat to Build as usual."
+        status="Only seeds the initial mode of a new chat. Implementing a plan still switches that chat to Build as usual. Only Claude is actually held to planning; other providers police their own plan mode and may start building anyway."
         control={
           <Switch
             checked={startInPlanMode}

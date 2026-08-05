@@ -1,4 +1,3 @@
-import { type ApprovalRequestId } from "@t3tools/contracts";
 import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 import { type PendingUserInput } from "../../session-logic";
 import {
@@ -22,7 +21,10 @@ function isEscapeTargetOutsideComposer(target: EventTarget | null): boolean {
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
-  respondingRequestIds: ApprovalRequestId[];
+  // Whether the active prompt's answer is in flight. Callers pass the
+  // user-input responding state, not the approval one — the two are separate
+  // sets and mixing them leaves the questionnaire live during a submit.
+  isResponding: boolean;
   answers: Record<string, PendingUserInputDraftAnswer>;
   questionIndex: number;
   onToggleOption: (questionId: string, optionLabel: string) => void;
@@ -32,7 +34,7 @@ interface PendingUserInputPanelProps {
 
 export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserInputPanel({
   pendingUserInputs,
-  respondingRequestIds,
+  isResponding,
   answers,
   questionIndex,
   onToggleOption,
@@ -47,7 +49,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
     <ComposerPendingUserInputCard
       key={activePrompt.requestId}
       prompt={activePrompt}
-      isResponding={respondingRequestIds.includes(activePrompt.requestId)}
+      isResponding={isResponding}
       answers={answers}
       questionIndex={questionIndex}
       onToggleOption={onToggleOption}
@@ -218,10 +220,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
         {/* Touch has no Escape key, so the exit needs a control of its own. */}
         <button
           type="button"
-          disabled={isResponding}
           onClick={onDismiss}
           title="Stop the turn and go back to the normal composer"
-          className="ml-auto flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors duration-150 hover:bg-muted/55 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+          className="ml-auto flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors duration-150 hover:bg-muted/55 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary/25"
         >
           <kbd className="hidden h-4 items-center rounded border border-border/50 bg-background/35 px-1 text-[10px] font-medium sm:flex">
             Esc
