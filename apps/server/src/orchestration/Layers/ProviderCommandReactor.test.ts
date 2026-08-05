@@ -2814,6 +2814,7 @@ describe("ProviderCommandReactor", () => {
     expect(expiredActivity?.payload).toMatchObject({
       requestId: "user-input-request-1",
       expired: true,
+      answers: { sandbox_mode: "workspace-write" },
     });
 
     // Nothing failed: the session outlived the question, which is not the
@@ -2821,6 +2822,29 @@ describe("ProviderCommandReactor", () => {
     expect(
       thread?.activities.some((activity) => activity.kind === "provider.user-input.respond.failed"),
     ).toBe(false);
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.user-input.respond",
+        commandId: CommandId.make("cmd-user-input-respond-stale-duplicate"),
+        threadId: ThreadId.make("thread-1"),
+        requestId: asApprovalRequestId("user-input-request-1"),
+        answers: { sandbox_mode: "workspace-write" },
+        createdAt: now,
+      }),
+    );
+    await harness.drain();
+    const afterDuplicate = await readThread(harness);
+    expect(
+      afterDuplicate?.activities.filter(
+        (activity) =>
+          activity.kind === "user-input.resolved" &&
+          typeof activity.payload === "object" &&
+          activity.payload !== null &&
+          (activity.payload as Record<string, unknown>).requestId === "user-input-request-1",
+      ),
+    ).toHaveLength(1);
+    expect(harness.respondToUserInput).toHaveBeenCalledTimes(1);
   });
 
   it("closes a user-input request as expired when no provider session is bound", async () => {
@@ -2873,6 +2897,9 @@ describe("ProviderCommandReactor", () => {
 
     const thread = await readThread(harness);
     expect(findUserInputResolved(thread, "user-input-request-2")?.summary).toBe("Question expired");
+    expect(findUserInputResolved(thread, "user-input-request-2")?.payload).toMatchObject({
+      answers: { sandbox_mode: "workspace-write" },
+    });
     expect(harness.respondToUserInput).not.toHaveBeenCalled();
     expect(
       thread?.activities.some((activity) => activity.kind === "provider.user-input.respond.failed"),

@@ -17,6 +17,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Expired questionnaire answers are restored as plain composer text so the user can confirm and
+  resend them. Reconstructing the original multi-step questionnaire would require a durable client
+  draft schema and is unnecessary while the plain-text recovery preserves every submitted value.
 - `/btw` silently discards attached images, terminal contexts, and preview annotations. The
   `/plan`/`/default` branch in `ChatView`'s send handler refuses to claim the input when any of
   those are present, so they survive; the `/btw` branch has no such guard and clears the composer

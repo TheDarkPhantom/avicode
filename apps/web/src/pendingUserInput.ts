@@ -145,6 +145,71 @@ export function formatExpiredUserInputDraft(
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
+/** Format answers persisted with an expired response after client state is gone. */
+export function formatExpiredUserInputAnswers(
+  questions: ReadonlyArray<UserInputQuestion>,
+  answers: Readonly<Record<string, string | string[]>>,
+): string | null {
+  const lines = questions.flatMap((question) => {
+    const answer = answers[question.id];
+    if (typeof answer === "string" && answer.trim().length > 0) {
+      return [`${question.header}: ${answer}`];
+    }
+    if (Array.isArray(answer) && answer.length > 0) {
+      return [`${question.header}: ${answer.join(", ")}`];
+    }
+    return [];
+  });
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/** Append a recovered answer without replacing a draft already in progress. */
+export function mergeExpiredUserInputWithComposerDraft(
+  existingPrompt: string,
+  recoveredPrompt: string,
+): string {
+  return existingPrompt.trim().length > 0
+    ? `${existingPrompt}\n\n${recoveredPrompt}`
+    : recoveredPrompt;
+}
+
+const EXPIRED_USER_INPUT_RECOVERY_STORAGE_KEY = "t3code:expired-user-input-recovery:v1";
+const MAX_REMEMBERED_EXPIRED_USER_INPUTS = 200;
+
+function readRecoveredExpiredUserInputIds(storage: Pick<Storage, "getItem">): string[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      storage.getItem(EXPIRED_USER_INPUT_RECOVERY_STORAGE_KEY) ?? "[]",
+    );
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Whether this browser already restored or deliberately dismissed the answer. */
+export function hasHandledExpiredUserInputRecovery(
+  storage: Pick<Storage, "getItem">,
+  requestId: string,
+): boolean {
+  return readRecoveredExpiredUserInputIds(storage).includes(requestId);
+}
+
+/** Prevent a durable expiry activity from restoring the same answer on every reload. */
+export function markExpiredUserInputRecoveryHandled(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  requestId: string,
+): void {
+  const ids = readRecoveredExpiredUserInputIds(storage).filter((id) => id !== requestId);
+  ids.push(requestId);
+  storage.setItem(
+    EXPIRED_USER_INPUT_RECOVERY_STORAGE_KEY,
+    JSON.stringify(ids.slice(-MAX_REMEMBERED_EXPIRED_USER_INPUTS)),
+  );
+}
+
 /**
  * Avi Code addition: drop entries for request ids that will never be answered.
  * The per-request draft maps are keyed by a request id and had no eviction, so

@@ -36,6 +36,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
       worktree icon.
 - [x] Opt-in opening of finished chats at the top of their last response instead of the live edge.
 - [x] Stuck provider questions remain dismissible and provider choices survive desktop restart.
+- [x] Durable recovery of answers submitted to questions whose provider session already ended.
 
 ## Personal alpha verification
 

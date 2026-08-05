@@ -5,7 +5,11 @@ import {
   countAnsweredPendingUserInputQuestions,
   derivePendingUserInputProgress,
   findFirstUnansweredPendingUserInputQuestionIndex,
+  formatExpiredUserInputAnswers,
   formatExpiredUserInputDraft,
+  hasHandledExpiredUserInputRecovery,
+  markExpiredUserInputRecoveryHandled,
+  mergeExpiredUserInputWithComposerDraft,
   omitPendingUserInputRequestIds,
   resolvePendingUserInputAnswer,
   setPendingUserInputCustomAnswer,
@@ -332,6 +336,47 @@ describe("formatExpiredUserInputDraft", () => {
         areas: { selectedOptionLabels: ["Web"] },
       }),
     ).toBe("Areas: Web");
+  });
+});
+
+describe("formatExpiredUserInputAnswers", () => {
+  it("restores persisted custom and multiple-choice answers", () => {
+    expect(
+      formatExpiredUserInputAnswers([singleSelectQuestion, multiSelectQuestion], {
+        scope: "A long custom answer",
+        areas: ["Server", "Web"],
+      }),
+    ).toBe("Scope: A long custom answer\nAreas: Server, Web");
+  });
+
+  it("returns null for an old expiry without persisted answers", () => {
+    expect(formatExpiredUserInputAnswers([singleSelectQuestion], {})).toBe(null);
+  });
+});
+
+describe("mergeExpiredUserInputWithComposerDraft", () => {
+  it("does not overwrite text already in the composer", () => {
+    expect(mergeExpiredUserInputWithComposerDraft("Current draft", "Recovered answer")).toBe(
+      "Current draft\n\nRecovered answer",
+    );
+  });
+
+  it("uses the recovered answer directly for an empty composer", () => {
+    expect(mergeExpiredUserInputWithComposerDraft("", "Recovered answer")).toBe("Recovered answer");
+  });
+});
+
+describe("expired user-input recovery receipt", () => {
+  it("remembers a restored request across renderer reloads", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+    expect(hasHandledExpiredUserInputRecovery(storage, "req-1")).toBe(false);
+    markExpiredUserInputRecoveryHandled(storage, "req-1");
+    expect(hasHandledExpiredUserInputRecovery(storage, "req-1")).toBe(true);
+    expect(hasHandledExpiredUserInputRecovery(storage, "req-2")).toBe(false);
   });
 });
 

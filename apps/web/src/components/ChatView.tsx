@@ -112,7 +112,11 @@ import {
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
+  formatExpiredUserInputAnswers,
   formatExpiredUserInputDraft,
+  hasHandledExpiredUserInputRecovery,
+  markExpiredUserInputRecoveryHandled,
+  mergeExpiredUserInputWithComposerDraft,
   omitPendingUserInputRequestIds,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -175,6 +179,7 @@ import {
   AlarmClockIcon,
   ChevronDownIcon,
   ClockIcon,
+  MessageSquareReplyIcon,
   GitBranchIcon,
   TriangleAlertIcon,
   SquarePenIcon,
@@ -2257,19 +2262,54 @@ function ChatViewContent(props: ChatViewProps) {
     [threadActivities],
   );
   const recoveredExpiredUserInputIdsRef = useRef<Set<string>>(new Set());
+  const [deferredExpiredUserInputRecovery, setDeferredExpiredUserInputRecovery] = useState<{
+    requestId: string;
+    prompt: string;
+  } | null>(null);
+  const restoreExpiredUserInput = useCallback(
+    (recovery: { requestId: string; prompt: string }) => {
+      const nextPrompt = mergeExpiredUserInputWithComposerDraft(promptRef.current, recovery.prompt);
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(nextPrompt, nextPrompt.length),
+        prompt: nextPrompt,
+        detectTrigger: true,
+      });
+      markExpiredUserInputRecoveryHandled(window.localStorage, recovery.requestId);
+      setDeferredExpiredUserInputRecovery(null);
+    },
+    [composerDraftTarget, composerRef, setComposerDraftPrompt],
+  );
   useEffect(() => {
     const unseen = expiredUserInputs.filter(
-      (entry) => !recoveredExpiredUserInputIdsRef.current.has(entry.requestId),
+      (entry) =>
+        !recoveredExpiredUserInputIdsRef.current.has(entry.requestId) &&
+        !hasHandledExpiredUserInputRecovery(window.localStorage, entry.requestId),
     );
     if (unseen.length === 0) return;
 
     let recoveredPrompt: string | null = null;
+    let recoveredRequestId: string | null = null;
     for (const entry of unseen) {
       recoveredExpiredUserInputIdsRef.current.add(entry.requestId);
       if (recoveredPrompt !== null) continue;
-      const draft = pendingUserInputAnswersByRequestId[entry.requestId];
-      if (!draft) continue;
-      recoveredPrompt = formatExpiredUserInputDraft(entry.questions, draft);
+      recoveredPrompt = entry.submittedAnswers
+        ? formatExpiredUserInputAnswers(entry.questions, entry.submittedAnswers)
+        : null;
+      if (recoveredPrompt === null) {
+        const draft = pendingUserInputAnswersByRequestId[entry.requestId];
+        if (draft) {
+          recoveredPrompt = formatExpiredUserInputDraft(entry.questions, draft);
+        }
+      }
+      if (recoveredPrompt !== null) {
+        recoveredRequestId = entry.requestId;
+        setDeferredExpiredUserInputRecovery({
+          requestId: entry.requestId,
+          prompt: recoveredPrompt,
+        });
+      }
     }
 
     const expiredRequestIds = new Set(unseen.map((entry) => entry.requestId));
@@ -2280,22 +2320,13 @@ function ChatViewContent(props: ChatViewProps) {
       omitPendingUserInputRequestIds(existing, expiredRequestIds),
     );
 
-    // Never clobber something the user is already typing.
+    // Restore immediately when safe. Otherwise the banner below offers an
+    // explicit restore that appends without overwriting the current draft.
     if (recoveredPrompt === null || promptRef.current.trim().length > 0) return;
-    promptRef.current = recoveredPrompt;
-    setComposerDraftPrompt(composerDraftTarget, recoveredPrompt);
-    composerRef.current?.resetCursorState({
-      cursor: collapseExpandedComposerCursor(recoveredPrompt, recoveredPrompt.length),
-      prompt: recoveredPrompt,
-      detectTrigger: true,
-    });
-  }, [
-    composerDraftTarget,
-    composerRef,
-    expiredUserInputs,
-    pendingUserInputAnswersByRequestId,
-    setComposerDraftPrompt,
-  ]);
+    if (recoveredRequestId !== null) {
+      restoreExpiredUserInput({ requestId: recoveredRequestId, prompt: recoveredPrompt });
+    }
+  }, [expiredUserInputs, pendingUserInputAnswersByRequestId, restoreExpiredUserInput]);
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {
       return null;
@@ -4637,6 +4668,35 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const expiredAnswerItems: ComposerBannerStackItem[] = deferredExpiredUserInputRecovery
+      ? [
+          {
+            id: `expired-user-input:${deferredExpiredUserInputRecovery.requestId}`,
+            variant: "info",
+            icon: <MessageSquareReplyIcon />,
+            title: "Your answer is safe",
+            description:
+              "The provider session ended before it received your answer. Restore it as a new message to continue.",
+            actions: (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => restoreExpiredUserInput(deferredExpiredUserInputRecovery)}
+              >
+                Restore answer
+              </Button>
+            ),
+            dismissLabel: "Dismiss recovered answer",
+            onDismiss: () => {
+              markExpiredUserInputRecoveryHandled(
+                window.localStorage,
+                deferredExpiredUserInputRecovery.requestId,
+              );
+              setDeferredExpiredUserInputRecovery(null);
+            },
+          },
+        ]
+      : [];
     // Avi Code addition: a send held until the running turn finishes. Says the
     // reload limitation out loud, because nothing persists the hold.
     const heldSendItems: ComposerBannerStackItem[] = isHoldingSend
@@ -4720,6 +4780,7 @@ function ChatViewContent(props: ChatViewProps) {
       return [
         ...heldSendItems,
         ...forkEditItems,
+        ...expiredAnswerItems,
         ...systemComposerBannerItems,
         ...parkedThreadItems,
       ];
@@ -4727,6 +4788,7 @@ function ChatViewContent(props: ChatViewProps) {
     return [
       ...heldSendItems,
       ...forkEditItems,
+      ...expiredAnswerItems,
       ...systemComposerBannerItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
@@ -4774,6 +4836,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadKey,
     cancelForkEdit,
     cancelHeldSend,
+    deferredExpiredUserInputRecovery,
     forkEditState,
     isForkingThread,
     isHoldingSend,
@@ -4783,6 +4846,7 @@ function ChatViewContent(props: ChatViewProps) {
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
+    restoreExpiredUserInput,
     showBranchMismatchBanner,
     systemComposerBannerItems,
   ]);
