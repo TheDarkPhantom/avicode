@@ -161,6 +161,27 @@ describe("uiStateStore pure functions", () => {
     ).toEqual([]);
   });
 
+  it("clears a stored reading anchor while keeping plan expansion", () => {
+    const expanded = setThreadPlanExpanded(makeUiState(), "env:thread-1", "plan-1", true, 1);
+    const anchored = setThreadPlanReadingAnchor(
+      expanded,
+      "env:thread-1",
+      { rowId: "plan-1", offsetWithinRow: 42 },
+      2,
+    );
+    const cleared = setThreadPlanReadingAnchor(anchored, "env:thread-1", null, 3);
+    expect(cleared.threadPlanReadingStateById["env:thread-1"]).toEqual({
+      expandedPlanIds: ["plan-1"],
+      anchor: null,
+      lastAccessedAt: 3,
+    });
+  });
+
+  it("leaves state untouched when clearing a thread with no anchor", () => {
+    const state = makeUiState();
+    expect(setThreadPlanReadingAnchor(state, "env:thread-1", null, 1)).toBe(state);
+  });
+
   it("bounds transient plan reading state to fifty recent threads", () => {
     let state = makeUiState();
     for (let index = 0; index < 51; index++) {

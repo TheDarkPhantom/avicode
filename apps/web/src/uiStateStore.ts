@@ -367,8 +367,20 @@ export function setThreadPlanReadingAnchor(
   anchor: ThreadPlanReadingState["anchor"],
   now = Date.now(),
 ): UiState {
-  if (!threadKey || anchor === null) return state;
-  const current = state.threadPlanReadingStateById[threadKey] ?? {
+  if (!threadKey) return state;
+  const existing = state.threadPlanReadingStateById[threadKey];
+  if (anchor === null) {
+    // Clearing: only touch state when there is a stored anchor to drop, so
+    // returning to the live edge resets the reopen position without creating an
+    // empty entry for a thread that never had one.
+    if (!existing || existing.anchor === null) return state;
+    return withBoundedPlanReadingState(state, threadKey, {
+      ...existing,
+      anchor: null,
+      lastAccessedAt: now,
+    });
+  }
+  const current = existing ?? {
     expandedPlanIds: [],
     anchor: null,
     lastAccessedAt: now,
