@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Start a project's dev server from the browser panel when a thread has none running yet (#129)
+- Open or start a thread's dev server from a button on its sidebar row (#129)
 - A thread finishing or asking for your answer no longer flickers back to its resting look (#128)
 - Create files and folders in the Files panel by right-click or the new toolbar buttons (#127)
 - Rename and delete files and folders straight from the file explorer right-click menu (#127)

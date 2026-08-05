@@ -1,12 +1,14 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { Globe, RadioTower } from "lucide-react";
+import { Globe, Play, RadioTower } from "lucide-react";
 import { useMemo } from "react";
 
+import { Button } from "~/components/ui/button";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
 
 import { groupLocalServers } from "./localServerAttribution";
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
+import { shouldOfferStartDevServer } from "./startDevServer.logic";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
 
 interface Props {
@@ -20,6 +22,12 @@ interface Props {
   threadId?: ThreadId | null;
   projectRoot?: string | null;
   worktreePath?: string | null;
+  /**
+   * Avi Code addition: the project's primary action, so this panel can start the
+   * dev server itself when the thread does not have one running yet.
+   */
+  startDevServerLabel?: string | null;
+  onStartDevServer?: (() => void) | undefined;
   onOpenUrl: (url: string) => void;
 }
 
@@ -30,6 +38,8 @@ export function PreviewEmptyState({
   threadId = null,
   projectRoot = null,
   worktreePath = null,
+  startDevServerLabel = null,
+  onStartDevServer,
   onOpenUrl,
 }: Props) {
   const servers = useDiscoveredLocalServers({
@@ -43,6 +53,19 @@ export function PreviewEmptyState({
     [projectRoot, servers, threadId, worktreePath],
   );
 
+  const offerStart = shouldOfferStartDevServer({
+    sections,
+    worktreePath,
+    canStart: onStartDevServer != null,
+  });
+
+  const startButton = offerStart ? (
+    <Button size="sm" onClick={() => onStartDevServer?.()}>
+      <Play className="size-4" />
+      {startDevServerLabel ? `Start ${startDevServerLabel}` : "Start dev server"}
+    </Button>
+  ) : null;
+
   if (servers.length === 0) {
     return (
       <Empty>
@@ -55,6 +78,7 @@ export function PreviewEmptyState({
               old promise of every listening localhost port would be a lie. */}
           Type a URL above, or run a dev script. Servers you start here show up automatically.
         </EmptyDescription>
+        {startButton}
       </Empty>
     );
   }
@@ -66,6 +90,7 @@ export function PreviewEmptyState({
           <RadioTower className="size-4 shrink-0" />
           <h2 className="font-medium">Local servers</h2>
         </div>
+        {startButton ? <div className="flex">{startButton}</div> : null}
         {sections.map((section) => (
           <div key={section.group} className="flex flex-col gap-1.5">
             {/* Only worth a heading once there is more than one group to tell apart. */}

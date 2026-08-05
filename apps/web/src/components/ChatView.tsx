@@ -195,8 +195,10 @@ import {
   buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
+  primaryProjectScript,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
+import { useDevServerStartIntent } from "~/devServerStartIntent";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
@@ -3195,6 +3197,27 @@ function ChatViewContent(props: ChatViewProps) {
       writeTerminal,
     ],
   );
+
+  // Avi Code addition: the preview panel starts the dev server itself when a
+  // thread has none running, by running the project's primary action.
+  const activePrimaryScript = useMemo(
+    () => primaryProjectScript(activeProject?.scripts ?? []),
+    [activeProject?.scripts],
+  );
+  const handleStartDevServer = useCallback(() => {
+    if (activePrimaryScript) void runProjectScript(activePrimaryScript);
+  }, [activePrimaryScript, runProjectScript]);
+
+  // Avi Code addition: the sidebar cannot run an action itself, so its "start dev
+  // server" button navigates here and leaves a request the active thread picks up.
+  const startDevServerNonce = useDevServerStartIntent(
+    (state) => state.pendingByThreadKey[routeThreadKey] ?? null,
+  );
+  useEffect(() => {
+    if (startDevServerNonce == null || !activePrimaryScript || !activeThreadId) return;
+    useDevServerStartIntent.getState().consume(routeThreadKey);
+    void runProjectScript(activePrimaryScript);
+  }, [startDevServerNonce, routeThreadKey, activePrimaryScript, activeThreadId, runProjectScript]);
 
   const persistProjectScripts = useCallback(
     async (input: {
@@ -7162,6 +7185,8 @@ function ChatViewContent(props: ChatViewProps) {
           configuredUrls={configuredPreviewUrls}
           projectRoot={activeProjectCwd}
           worktreePath={activeThreadWorktreePath}
+          startDevServerLabel={activePrimaryScript?.name ?? null}
+          onStartDevServer={activePrimaryScript ? handleStartDevServer : undefined}
           visible
         />
       </Suspense>
