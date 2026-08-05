@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Files in unregistered sibling repositories now open from the repository that owns them (#121)
 - A message queued behind a running turn now sends what you wrote, not what you kept typing (#120)
 - A queued message now leaves the composer and waits in the chat, and cancelling gives it back
   (#120)

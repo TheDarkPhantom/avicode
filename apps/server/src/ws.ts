@@ -1676,6 +1676,12 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.projectsResolveFileFallback]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsResolveFileFallback,
+            workspaceFileSystem.resolveFileFallback(input),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.projectsWriteFile]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsWriteFile,

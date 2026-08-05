@@ -1,9 +1,12 @@
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { useEffect } from "react";
+import { useMemo } from "react";
 
 import { useRightPanelStore } from "~/rightPanelStore";
-import { resolveCrossRepoFileFallback } from "./crossRepoFileFallback";
+import { useEnvironmentQuery } from "~/state/query";
+import { projectEnvironment } from "~/state/projects";
+import { buildAncestorFileCandidates } from "./crossRepoFileFallback";
 import { isProjectFileTargetUnreachable } from "./projectFileErrorMessage";
 import { useProjectFileQueryFailure } from "./projectFilesQueryState";
 
@@ -43,14 +46,35 @@ export function useCrossRepoFileFallback({
   const watchedPath =
     relativePath !== null && !isWorkspaceImagePreviewPath(relativePath) ? relativePath : null;
   const failure = useProjectFileQueryFailure(environmentId, workspaceRoot, watchedPath);
+  const fallbackQuery = useEnvironmentQuery(
+    useMemo(() => {
+      if (
+        environmentId === null ||
+        workspaceRoot === null ||
+        watchedPath === null ||
+        !isProjectFileTargetUnreachable(failure)
+      ) {
+        return null;
+      }
+      return projectEnvironment.resolveFileFallback({
+        environmentId,
+        input: {
+          cwd: workspaceRoot,
+          relativePath: watchedPath,
+          ancestorCandidates: buildAncestorFileCandidates(workspaceRoot, watchedPath),
+          registeredProjectRoots: [...projectRoots],
+        },
+      });
+    }, [environmentId, failure, projectRoots, watchedPath, workspaceRoot]),
+  );
 
   useEffect(() => {
     if (!threadRef || !surfaceId || !workspaceRoot || !watchedPath) return;
     if (!isProjectFileTargetUnreachable(failure)) return;
-    const fallback = resolveCrossRepoFileFallback(workspaceRoot, watchedPath, projectRoots);
+    const fallback = fallbackQuery.data;
     if (!fallback) return;
     useRightPanelStore
       .getState()
       .rerootFile(threadRef, surfaceId, fallback.root, fallback.relativePath);
-  }, [failure, projectRoots, surfaceId, threadRef, watchedPath, workspaceRoot]);
+  }, [failure, fallbackQuery.data, surfaceId, threadRef, watchedPath, workspaceRoot]);
 }

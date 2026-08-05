@@ -12,6 +12,8 @@ import * as NodeFSP from "node:fs/promises";
 import type {
   ProjectReadFileInput,
   ProjectReadFileResult,
+  ProjectResolveFileFallbackInput,
+  ProjectResolveFileFallbackResult,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "@t3tools/contracts";
@@ -111,6 +113,9 @@ export class WorkspaceFileSystem extends Context.Service<
       ProjectReadFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
+    readonly resolveFileFallback: (
+      input: ProjectResolveFileFallbackInput,
+    ) => Effect.Effect<ProjectResolveFileFallbackResult>;
     /**
      * Write a file relative to the workspace root.
      *
@@ -259,6 +264,89 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const resolveFileFallback: WorkspaceFileSystem["Service"]["resolveFileFallback"] = Effect.fn(
+    "WorkspaceFileSystem.resolveFileFallback",
+  )(function* (input) {
+    const normalizedCwd = path.resolve(input.cwd);
+    const allowedCandidates = new Map<string, string>();
+    let ancestor = path.dirname(normalizedCwd);
+    while (ancestor !== path.dirname(ancestor)) {
+      allowedCandidates.set(path.resolve(ancestor, input.relativePath), ancestor);
+      ancestor = path.dirname(ancestor);
+    }
+
+    const validTargets: Array<{ absolutePath: string; parent: string }> = [];
+    for (const candidate of input.ancestorCandidates) {
+      const absoluteCandidate = path.resolve(candidate);
+      const candidateAncestor = allowedCandidates.get(absoluteCandidate);
+      if (!candidateAncestor) continue;
+      const real = yield* Effect.tryPromise({
+        try: async () => {
+          const [realAncestor, realTarget] = await Promise.all([
+            NodeFSP.realpath(candidateAncestor),
+            NodeFSP.realpath(absoluteCandidate),
+          ]);
+          const relative = path.relative(realAncestor, realTarget);
+          if (
+            relative === ".." ||
+            relative.startsWith(`..${path.sep}`) ||
+            path.isAbsolute(relative)
+          ) {
+            return null;
+          }
+          const stat = await NodeFSP.stat(realTarget);
+          return stat.isFile()
+            ? { absolutePath: realTarget, parent: path.dirname(realTarget) }
+            : null;
+        },
+        catch: () => null,
+      }).pipe(Effect.catch(() => Effect.succeed(null)));
+      if (real) validTargets.push(real);
+    }
+    if (validTargets.length === 0) return null;
+
+    let registeredMatch: { root: string; relativePath: string } | null = null;
+    for (const target of validTargets) {
+      for (const registeredRoot of input.registeredProjectRoots) {
+        const absoluteRoot = path.resolve(registeredRoot);
+        const relative = path.relative(absoluteRoot, target.absolutePath);
+        if (
+          relative === ".." ||
+          relative.startsWith(`..${path.sep}`) ||
+          path.isAbsolute(relative)
+        ) {
+          continue;
+        }
+        if (!registeredMatch || absoluteRoot.length > registeredMatch.root.length) {
+          registeredMatch = { root: registeredRoot, relativePath: relative };
+        }
+      }
+    }
+    if (registeredMatch) return registeredMatch;
+
+    for (const target of validTargets) {
+      let directory = target.parent;
+      while (true) {
+        const hasGitMarker = yield* Effect.tryPromise({
+          try: async () => {
+            await NodeFSP.stat(path.join(directory, ".git"));
+            return true;
+          },
+          catch: () => false,
+        }).pipe(Effect.catch(() => Effect.succeed(false)));
+        if (hasGitMarker) {
+          return { root: directory, relativePath: path.relative(directory, target.absolutePath) };
+        }
+        const parent = path.dirname(directory);
+        if (parent === directory) break;
+        directory = parent;
+      }
+    }
+
+    const target = validTargets[0]!;
+    return { root: target.parent, relativePath: path.basename(target.absolutePath) };
+  });
+
   const writeFile: WorkspaceFileSystem["Service"]["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",
   )(function* (input) {
@@ -297,7 +385,7 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath };
   });
 
-  return WorkspaceFileSystem.of({ readFile, writeFile });
+  return WorkspaceFileSystem.of({ readFile, resolveFileFallback, writeFile });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);
