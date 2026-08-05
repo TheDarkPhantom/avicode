@@ -4815,6 +4815,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cwd: workspaceDir,
               relativePath: "linked-outside.txt",
             }).pipe(Effect.result),
+            readMissing: client[WS_METHODS.projectsReadFile]({
+              cwd: workspaceDir,
+              relativePath: "never-created.txt",
+            }).pipe(Effect.result),
             browse: client[WS_METHODS.filesystemBrowse]({
               cwd: workspaceDir,
               partialPath: "./missing-browse/child",
@@ -4870,6 +4874,21 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(readError.failure, "resolved_path_outside_root");
       assert.equal(readError.resolvedPath, resolvedOutsideFile);
       assert.isDefined(readError.cause);
+      // A containment rejection reached the target, so it is not "not found".
+      assert.isUndefined(readError.notFound);
+
+      // Avi Code addition: a genuinely missing file is stamped notFound so the
+      // client can say "File not found" once the platform code is lost on the wire.
+      if (
+        results.readMissing._tag !== "Failure" ||
+        results.readMissing.failure._tag !== "ProjectReadFileError"
+      ) {
+        assert.fail("Expected a ProjectReadFileError for the missing file");
+      }
+      const readMissingError = results.readMissing.failure;
+      assert.equal(readMissingError.failure, "operation_failed");
+      assert.equal(readMissingError.operation, "realpath-target");
+      assert.equal(readMissingError.notFound, true);
 
       if (
         results.browse._tag !== "Failure" ||

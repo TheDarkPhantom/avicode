@@ -15,6 +15,9 @@ interface ProjectFileErrorLike {
   readonly operation?: ProjectFileOperation | undefined;
   readonly relativePath?: string | undefined;
   readonly cwd?: string | undefined;
+  // Avi Code addition: the server stamps this when the target does not exist, so
+  // the reader no longer has to sniff a `cause` whose platform code the wire drops.
+  readonly notFound?: boolean | undefined;
   readonly message?: unknown;
   readonly cause?: unknown;
 }
@@ -47,6 +50,9 @@ function causeCode(cause: unknown): string | null {
 }
 
 function looksMissing(error: ProjectFileErrorLike): boolean {
+  // Avi Code addition: newer servers stamp this reliably; the heuristics below
+  // stay only so a read against a legacy server still resolves to "not found".
+  if (error.notFound === true) return true;
   if (error.operation && !TARGET_OPERATIONS.has(error.operation)) return false;
   const code = causeCode(error.cause);
   if (code === "ENOENT" || code === "ENOTDIR") return true;
@@ -74,6 +80,19 @@ export function isProjectFileTargetUnreachable(value: unknown): boolean {
   if (!isProjectFileError(value)) return false;
   if (value.failure !== "operation_failed") return false;
   return value.operation !== undefined && TARGET_OPERATIONS.has(value.operation);
+}
+
+/**
+ * Avi Code addition: whether the read failed specifically because the target
+ * does not exist. Narrower than {@link isProjectFileTargetUnreachable}, which
+ * also fires on permissions and other reachable-but-failed reads: this is the
+ * signal that a file an agent is about to write will appear on a later read, and
+ * the one that should gate the cross-repo reroot so a transient miss is not
+ * mistaken for a wrong-repo path.
+ */
+export function isProjectFileMissing(value: unknown): boolean {
+  if (!isProjectFileError(value)) return false;
+  return looksMissing(value);
 }
 
 /**

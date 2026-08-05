@@ -2772,7 +2772,15 @@ function ChatViewContent(props: ChatViewProps) {
     workspaceRoot: isThreadRelativeFileSurface ? (activeWorkspaceRoot ?? null) : null,
     relativePath: isThreadRelativeFileSurface ? activeFileSurface.relativePath : null,
     projectRoots: projectWorkspaceRoots,
+    isThreadWorking: isWorking,
   });
+  // Avi Code addition: changes whenever the thread checkpoints, i.e. when the
+  // agent may have created the file the preview is waiting on. Drives the file
+  // viewer's self-heal in useMissingFileAutoReload.
+  const fileReloadSignal = useMemo(() => {
+    const last = turnDiffSummaries.at(-1);
+    return `${turnDiffSummaries.length}:${last?.checkpointRef ?? ""}:${last?.completedAt ?? ""}`;
+  }, [turnDiffSummaries]);
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
@@ -7216,6 +7224,8 @@ function ChatViewContent(props: ChatViewProps) {
           }
           revealLine={activeFileSurface?.revealLine ?? null}
           revealRequestId={activeFileSurface?.revealRequestId ?? 0}
+          isThreadWorking={isWorking}
+          reloadSignal={fileReloadSignal}
           onOpenFile={openFileSurface}
           onPendingChange={handleFilePendingChange}
         />
