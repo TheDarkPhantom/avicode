@@ -776,6 +776,29 @@ describe("resolveSidebarV2Status", () => {
     ).toBe("ready");
   });
 
+  // Avi Code addition: guards the working -> completed/awaiting flash. When the
+  // session status leaves "running" one shell event before the turn settles,
+  // the row must stay "working", not fall through to the bare "ready" row.
+  it("stays working while the turn runs after the session leaves running", () => {
+    expect(
+      resolveSidebarV2Status({
+        ...idle,
+        session: { ...session, status: "ready" as const, activeTurnId: null },
+        latestTurn: { ...makeLatestTurn({ completedAt: null }), state: "running" as const },
+      }),
+    ).toBe("working");
+  });
+
+  it("reports failed over a still-running turn when the session errored", () => {
+    expect(
+      resolveSidebarV2Status({
+        ...idle,
+        session: { ...session, status: "error" as const, lastError: "boom" },
+        latestTurn: { ...makeLatestTurn({ completedAt: null }), state: "running" as const },
+      }),
+    ).toBe("failed");
+  });
+
   it("defaults to ready with no session", () => {
     expect(resolveSidebarV2Status({ ...idle, session: null })).toBe("ready");
   });
@@ -989,6 +1012,19 @@ describe("resolveThreadStatusPill", () => {
     expect(
       resolveThreadStatusPill({
         thread: baseThread,
+      }),
+    ).toMatchObject({ label: "Working", pulse: true });
+  });
+
+  // Avi Code addition: same working -> completed flash guard for the v1 pill.
+  it("stays Working while the turn runs after the session leaves running", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          latestTurn: { ...makeLatestTurn({ completedAt: null }), state: "running" as const },
+          session: { ...baseThread.session, status: "ready", activeTurnId: null },
+        },
       }),
     ).toMatchObject({ label: "Working", pulse: true });
   });

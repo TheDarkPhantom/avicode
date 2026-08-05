@@ -642,11 +642,22 @@ export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2S
   ) {
     return "needs_resume";
   }
-  if (thread.session?.status === "running" || thread.session?.status === "starting") {
-    return "working";
-  }
   if (thread.session?.status === "error" || thread.latestTurn?.state === "error") {
     return "failed";
+  }
+  // Avi Code addition: hold "working" while the turn is still running, even if
+  // the session status has already left "running". The sidebar reads the shell,
+  // where `session.status` (session-set) and `latestTurn.state` (turn-completed)
+  // arrive as separate events; the detail model couples them atomically via
+  // settledTurnStateForSessionStatus but the shell does not, so keying working
+  // off session status alone flashes "ready" (bare idle row) for one frame
+  // during working -> completed/awaiting transitions. A live turn IS working.
+  if (
+    thread.session?.status === "running" ||
+    thread.session?.status === "starting" ||
+    thread.latestTurn?.state === "running"
+  ) {
+    return "working";
   }
   return "ready";
 }
@@ -809,6 +820,20 @@ export function resolveThreadStatusPill(input: {
   if (thread.session?.status === "starting") {
     return {
       label: "Connecting",
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
+      tint: null,
+    };
+  }
+
+  // Avi Code addition: a live turn still counts as "Working" even after the
+  // session status leaves "running". session-set and turn-completed reach the
+  // sidebar shell as separate events, so keying "Working" off session status
+  // alone drops the row to a bare timestamp for one frame mid-transition.
+  if (thread.latestTurn?.state === "running") {
+    return {
+      label: "Working",
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
