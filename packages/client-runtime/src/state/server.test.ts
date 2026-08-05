@@ -52,6 +52,13 @@ const snapshotEvent = (config: ServerConfig): ServerConfigStreamEvent => ({
   config,
 });
 
+const CONFIGURED_PROVIDER = {
+  instanceId: "codex",
+  driver: "codex",
+  enabled: true,
+  available: true,
+} as unknown as ServerConfig["providers"][number];
+
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
@@ -189,6 +196,25 @@ describe("server state projection", () => {
     const result = Option.getOrThrow(projected);
     expect(result.config.settings).toBe(settings);
     expect(result.latestEvent.type).toBe("settingsUpdated");
+  });
+
+  it("keeps cached providers through an empty startup snapshot until discovery reports", () => {
+    const cachedConfig = { ...CONFIG, providers: [CONFIGURED_PROVIDER] };
+    const cached = Option.some({
+      config: cachedConfig,
+      latestEvent: snapshotEvent(cachedConfig),
+      source: "cache" as const,
+    });
+
+    const warming = applyServerConfigProjection(cached, snapshotEvent(CONFIG));
+    expect(Option.getOrThrow(warming).config.providers).toEqual([CONFIGURED_PROVIDER]);
+
+    const discovered = applyServerConfigProjection(warming, {
+      version: 1,
+      type: "providerStatuses",
+      payload: { providers: [] },
+    });
+    expect(Option.getOrThrow(discovered).config.providers).toEqual([]);
   });
 
   it("retains welcome when a ready event follows in the same stream chunk", () => {

@@ -220,10 +220,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
         {/* Touch has no Escape key, so the exit needs a control of its own. */}
         <button
           type="button"
-          disabled={isResponding}
           onClick={onDismiss}
           title="Stop the turn and go back to the normal composer"
-          className="ml-auto flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors duration-150 hover:bg-muted/55 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+          className="ml-auto flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors duration-150 hover:bg-muted/55 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary/25"
         >
           <kbd className="hidden h-4 items-center rounded border border-border/50 bg-background/35 px-1 text-[10px] font-medium sm:flex">
             Esc

@@ -83,8 +83,8 @@ describe("shouldDismissPendingUserInputForKey", () => {
     ).toBe(false);
   });
 
-  it("does nothing while the answer is already being submitted", () => {
-    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, isResponding: true })).toBe(false);
+  it("still dismisses when answer submission is stalled", () => {
+    expect(shouldDismissPendingUserInputForKey({ ...escapeEvent, isResponding: true })).toBe(true);
   });
 });
 
