@@ -365,6 +365,28 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("arms auto-merge with --auto when requested", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+      const gh = yield* GitHubCli.GitHubCli;
+
+      yield* gh.mergePullRequest({
+        cwd: "/repo",
+        reference: "42",
+        autoMerge: true,
+        deleteBranch: true,
+      });
+
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: ["pr", "merge", "42", "--merge", "--auto", "--delete-branch"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("surfaces a friendly error when the pull request is not found", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({

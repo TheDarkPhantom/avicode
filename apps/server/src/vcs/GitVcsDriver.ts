@@ -161,6 +161,24 @@ export interface GitFetchRemoteTrackingBranchInput {
   remoteBranch: string;
 }
 
+export interface GitRebaseOntoRemoteBaseInput {
+  cwd: string;
+  remoteName: string;
+  baseBranch: string;
+}
+
+/**
+ * Result of rebasing the current branch onto a freshly fetched remote base.
+ * `conflict` is a value, not an error, so the caller can abort cleanly and
+ * surface an actionable message rather than a raw git failure. The rebase is
+ * always aborted before `conflict` is returned, so the working tree is left as
+ * it was found.
+ */
+export type GitRebaseOntoRemoteBaseResult =
+  | { readonly status: "up_to_date" }
+  | { readonly status: "rebased" }
+  | { readonly status: "conflict"; readonly conflictedPaths: ReadonlyArray<string> };
+
 export interface GitFetchRemoteInput {
   cwd: string;
   remoteName: string;
@@ -212,7 +230,7 @@ export class GitVcsDriver extends Context.Service<
     readonly pushCurrentBranch: (
       cwd: string,
       fallbackBranch: string | null,
-      options?: { readonly remoteName?: string | null },
+      options?: { readonly remoteName?: string | null; readonly force?: boolean },
     ) => Effect.Effect<GitPushResult, GitCommandError>;
     readonly readRangeContext: (
       cwd: string,
@@ -247,6 +265,9 @@ export class GitVcsDriver extends Context.Service<
     readonly fetchRemoteTrackingBranch: (
       input: GitFetchRemoteTrackingBranchInput,
     ) => Effect.Effect<void, GitCommandError>;
+    readonly rebaseCurrentBranchOntoRemoteBase: (
+      input: GitRebaseOntoRemoteBaseInput,
+    ) => Effect.Effect<GitRebaseOntoRemoteBaseResult, GitCommandError>;
     readonly setBranchUpstream: (
       input: GitSetBranchUpstreamInput,
     ) => Effect.Effect<void, GitCommandError>;

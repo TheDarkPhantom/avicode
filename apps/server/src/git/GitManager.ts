@@ -1749,11 +1749,16 @@ export const make = Effect.gen(function* () {
       yield* input.emit({
         kind: "phase_started",
         phase: "merge",
-        label: `Merging into ${targetRef}...`,
+        label: isFinal ? `Arming auto merge into ${targetRef}...` : `Merging into ${targetRef}...`,
       });
+      // Arm auto-merge only on the final hop (usually main), where required
+      // checks live and an immediate merge is what fails. Intermediate hops must
+      // merge now so the next hop's promotion PR can be created against a landed
+      // branch — auto-merging an intermediate hop would deadlock the chain.
       yield* provider.mergeChangeRequest({
         cwd: input.cwd,
         reference: String(changeRequestNumber),
+        ...(isFinal ? { autoMerge: true, deleteSourceRef: true } : {}),
       });
       sourceRef = targetRef;
       changeRequestNumber = undefined;
@@ -2179,6 +2184,56 @@ export const make = Effect.gen(function* () {
             )
           : { status: "skipped_not_requested" as const };
 
+        // Avi Code addition: before arming auto-merge, rebase the branch onto the
+        // tip of its promotion base. GitHub auto-merge only fires on a mergeable
+        // PR, so arming it on a branch that has gone stale behind the base is a
+        // silent no-op. The repository lock already serializes concurrent
+        // automerges; this closes the staleness gap that lock deliberately leaves
+        // open (see RepositoryActionLock). A conflict is reported and aborted,
+        // never auto-resolved, because this path is non-interactive.
+        let rebasedForAutoMerge = false;
+        if (input.action === "auto_merge" && currentBranch) {
+          const baseRef = input.autoMerge!.promotionRefs[0]!;
+          const remoteName = yield* gitCore
+            .resolvePrimaryRemoteName(input.cwd)
+            .pipe(Effect.orElseSucceed(() => "origin"));
+          yield* progress.emit({
+            kind: "phase_started",
+            phase: "push",
+            label: `Rebasing onto ${remoteName}/${baseRef}...`,
+          });
+          yield* Ref.set(currentPhase, Option.some("push"));
+          const rebaseResult = yield* gitCore
+            .rebaseCurrentBranchOntoRemoteBase({
+              cwd: input.cwd,
+              remoteName,
+              baseBranch: baseRef,
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new GitManagerError({
+                    operation: "runStackedAction",
+                    cwd: input.cwd,
+                    detail: `Failed to rebase ${currentBranch} onto ${remoteName}/${baseRef} before arming auto merge.`,
+                    cause,
+                  }),
+              ),
+            );
+          if (rebaseResult.status === "conflict") {
+            const conflictList =
+              rebaseResult.conflictedPaths.length > 0
+                ? ` Conflicting files: ${rebaseResult.conflictedPaths.join(", ")}.`
+                : "";
+            return yield* new GitManagerError({
+              operation: "runStackedAction",
+              cwd: input.cwd,
+              detail: `Cannot arm auto merge: ${currentBranch} conflicts with ${baseRef}. Rebase it manually or ask the agent to automerge.${conflictList}`,
+            });
+          }
+          rebasedForAutoMerge = rebaseResult.status === "rebased";
+        }
+
         const push = wantsPush
           ? yield* progress
               .emit({
@@ -2188,7 +2243,13 @@ export const make = Effect.gen(function* () {
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("push"))),
-                Effect.flatMap(() => gitCore.pushCurrentBranch(input.cwd, currentBranch)),
+                Effect.flatMap(() =>
+                  gitCore.pushCurrentBranch(
+                    input.cwd,
+                    currentBranch,
+                    rebasedForAutoMerge ? { force: true } : undefined,
+                  ),
+                ),
               )
           : { status: "skipped_not_requested" as const };
 
@@ -2244,8 +2305,11 @@ export const make = Effect.gen(function* () {
                   cta: baseToast.cta,
                 }
               : {
-                  title: `Auto merged into ${promotion.targetRef}`,
-                  description: "All configured promotion pull requests were merged.",
+                  // The final hop arms GitHub auto-merge rather than merging now,
+                  // so it lands once required checks pass. Any intermediate
+                  // promotion hops were merged immediately to chain the stack.
+                  title: `Auto merge armed for ${promotion.targetRef}`,
+                  description: "The pull request will merge once required checks pass.",
                   cta: { kind: "none" as const },
                 };
 
