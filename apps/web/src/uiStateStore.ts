@@ -46,7 +46,17 @@ export interface UiThreadState {
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
   // Avi Code addition: scoped thread keys, pinned-first in this order.
   pinnedThreadKeys: string[];
+  // Avi Code addition: session-only reading state. Deliberately omitted from persistence.
+  threadPlanReadingStateById: Record<string, ThreadPlanReadingState>;
 }
+
+export interface ThreadPlanReadingState {
+  expandedPlanIds: string[];
+  anchor: { rowId: string; offsetWithinRow: number } | null;
+  lastAccessedAt: number;
+}
+
+const MAX_THREAD_PLAN_READING_STATES = 50;
 
 export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
@@ -61,6 +71,7 @@ const initialState: UiState = {
   pinnedThreadKeys: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
+  threadPlanReadingStateById: {},
   defaultAdvertisedEndpointKey: null,
 };
 
@@ -143,6 +154,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
+    threadPlanReadingStateById: {},
     defaultAdvertisedEndpointKey:
       typeof parsed.defaultAdvertisedEndpointKey === "string" &&
       parsed.defaultAdvertisedEndpointKey.length > 0
@@ -308,6 +320,66 @@ export function setThreadChangedFilesExpanded(
   };
 }
 
+function withBoundedPlanReadingState(
+  state: UiState,
+  threadKey: string,
+  entry: ThreadPlanReadingState,
+): UiState {
+  const entries = { ...state.threadPlanReadingStateById, [threadKey]: entry };
+  const overflow = Object.keys(entries).length - MAX_THREAD_PLAN_READING_STATES;
+  if (overflow > 0) {
+    for (const [key] of Object.entries(entries)
+      .filter(([key]) => key !== threadKey)
+      .sort(([, a], [, b]) => a.lastAccessedAt - b.lastAccessedAt)
+      .slice(0, overflow)) {
+      delete entries[key];
+    }
+  }
+  return { ...state, threadPlanReadingStateById: entries };
+}
+
+export function setThreadPlanExpanded(
+  state: UiState,
+  threadKey: string,
+  planId: string,
+  expanded: boolean,
+  now = Date.now(),
+): UiState {
+  if (!threadKey || !planId) return state;
+  const current = state.threadPlanReadingStateById[threadKey] ?? {
+    expandedPlanIds: [],
+    anchor: null,
+    lastAccessedAt: now,
+  };
+  const expandedPlanIds = expanded
+    ? [...new Set([...current.expandedPlanIds, planId])]
+    : current.expandedPlanIds.filter((id) => id !== planId);
+  return withBoundedPlanReadingState(state, threadKey, {
+    ...current,
+    expandedPlanIds,
+    lastAccessedAt: now,
+  });
+}
+
+export function setThreadPlanReadingAnchor(
+  state: UiState,
+  threadKey: string,
+  anchor: ThreadPlanReadingState["anchor"],
+  now = Date.now(),
+): UiState {
+  if (!threadKey || anchor === null) return state;
+  const current = state.threadPlanReadingStateById[threadKey] ?? {
+    expandedPlanIds: [],
+    anchor: null,
+    lastAccessedAt: now,
+  };
+  return withBoundedPlanReadingState(state, threadKey, {
+    ...current,
+    anchor,
+    lastAccessedAt: now,
+  });
+}
+
 export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): UiState {
   const nextKey = key && key.length > 0 ? key : null;
   if (state.defaultAdvertisedEndpointKey === nextKey) {
@@ -444,6 +516,8 @@ interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  setThreadPlanExpanded: (threadKey: string, planId: string, expanded: boolean) => void;
+  setThreadPlanReadingAnchor: (threadKey: string, anchor: ThreadPlanReadingState["anchor"]) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   // Avi Code addition.
@@ -464,6 +538,10 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  setThreadPlanExpanded: (threadKey, planId, expanded) =>
+    set((state) => setThreadPlanExpanded(state, threadKey, planId, expanded)),
+  setThreadPlanReadingAnchor: (threadKey, anchor) =>
+    set((state) => setThreadPlanReadingAnchor(state, threadKey, anchor)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setProjectExpanded: (projectIds, expanded) =>

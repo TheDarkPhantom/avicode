@@ -104,6 +104,7 @@ import {
 } from "./find/threadFindMatches";
 import { clearFindHighlights, paintFindHighlights } from "./find/threadFindHighlight";
 import { useChatInitialScrollTarget } from "./openChatAtLastResponse";
+import { capturePlanReadingAnchor, resolvePlanReadingScrollOffset } from "./planReadingState";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -173,6 +174,8 @@ interface TimelineRowSharedState {
   onToggleWorkEntry: (entryId: string) => void;
   /** Avi Code addition: brings an expanded plan's top into view. */
   onProposedPlanExpanded: (planElement: HTMLElement) => void;
+  expandedPlanIds: ReadonlySet<string>;
+  onProposedPlanExpandedChange: (planId: string, expanded: boolean) => void;
 }
 
 interface TimelineRowActivityState {
@@ -294,6 +297,19 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [expandedWorkEntryIds, setExpandedWorkEntryIds] = useState<ReadonlySet<string>>(new Set());
+  const persistedPlanReadingState = useUiStateStore(
+    (store) => store.threadPlanReadingStateById[routeThreadKey],
+  );
+  const setThreadPlanExpanded = useUiStateStore((store) => store.setThreadPlanExpanded);
+  const setThreadPlanReadingAnchor = useUiStateStore((store) => store.setThreadPlanReadingAnchor);
+  const expandedPlanIds = useMemo(
+    () => new Set(persistedPlanReadingState?.expandedPlanIds ?? []),
+    [persistedPlanReadingState?.expandedPlanIds],
+  );
+  const onProposedPlanExpandedChange = useCallback(
+    (planId: string, expanded: boolean) => setThreadPlanExpanded(routeThreadKey, planId, expanded),
+    [routeThreadKey, setThreadPlanExpanded],
+  );
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   // Avi Code addition: the column's cap is user-configurable, and the minimap's
   // gutter maths has to agree with it or the rail drifts off the content edge.
@@ -445,15 +461,70 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  const [savedReadingAnchor] = useState(() =>
+    anchorMessageId === null ? (persistedPlanReadingState?.anchor ?? null) : null,
+  );
+  const savedReadingIndex = savedReadingAnchor
+    ? rows.findIndex((row) => row.id === savedReadingAnchor.rowId)
+    : -1;
   // Avi Code addition. A chat that is not working opens at the top of its last
   // response when the setting is on, so a finished answer reads from its first
   // line. Reported to the owner in a layout effect — before the first paint,
   // so live follow is already off and nothing pulls the list back to the end.
-  const initialScrollTarget = useChatInitialScrollTarget({
+  const defaultInitialScrollTarget = useChatInitialScrollTarget({
     rows,
     chatIsIdle: !isWorking && !activeTurnInProgress,
     topFadeEnabled,
   });
+  const initialScrollTarget =
+    savedReadingIndex >= 0 ? savedReadingIndex : defaultInitialScrollTarget;
+  useLayoutEffect(() => {
+    if (savedReadingIndex < 0 || !savedReadingAnchor) return;
+    onOpenedAtLastResponse();
+    let cancelled = false;
+    let attempts = 12;
+    const restore = () => {
+      if (cancelled) return;
+      const list = listRef.current;
+      const scrollNode = list?.getScrollableNode();
+      const rowElement = scrollNode?.querySelector<HTMLElement>(
+        `[data-timeline-row-id="${CSS.escape(savedReadingAnchor.rowId)}"]`,
+      );
+      const resolved =
+        scrollNode && rowElement
+          ? resolvePlanReadingScrollOffset({
+              anchor: savedReadingAnchor,
+              currentScroll: scrollNode.scrollTop,
+              rowViewportTop: rowElement.getBoundingClientRect().top,
+              viewportTop: scrollNode.getBoundingClientRect().top,
+            })
+          : null;
+      if (scrollNode && resolved !== null) {
+        scrollNode.scrollTo({ top: resolved, behavior: "instant" });
+      }
+      // Markdown and LegendList can finish measuring on different frames. Keep
+      // applying the stable row-relative anchor for a short bounded window so
+      // late height corrections do not move the reader after restoration.
+      if (attempts-- > 0) requestAnimationFrame(restore);
+    };
+    requestAnimationFrame(restore);
+    return () => {
+      cancelled = true;
+    };
+  }, [listRef, onOpenedAtLastResponse, rows, savedReadingAnchor, savedReadingIndex]);
+
+  const latestRowsRef = useRef(rows);
+  latestRowsRef.current = rows;
+  const currentReadingAnchorRef = useRef<ReturnType<typeof capturePlanReadingAnchor>>(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    return () => {
+      const anchor =
+        currentReadingAnchorRef.current ??
+        (list ? captureCurrentPlanReadingAnchor(list, latestRowsRef.current) : null);
+      if (anchor) setThreadPlanReadingAnchor(routeThreadKey, anchor);
+    };
+  }, [listRef, routeThreadKey, setThreadPlanReadingAnchor]);
   useLayoutEffect(() => {
     if (initialScrollTarget !== null) {
       onOpenedAtLastResponse();
@@ -498,6 +569,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   const handleScroll = useCallback(() => {
     const state = listRef.current?.getState?.();
+    const list = listRef.current;
+    if (list) {
+      currentReadingAnchorRef.current = captureCurrentPlanReadingAnchor(
+        list,
+        latestRowsRef.current,
+      );
+    }
     // `isNearEnd` only tells us LegendList has measured the list; the live-follow
     // state machine keys off the absolute edge, so a short scroll away from it
     // still counts as leaving.
@@ -611,6 +689,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedWorkEntryIds,
       onToggleWorkEntry,
       onProposedPlanExpanded,
+      expandedPlanIds,
+      onProposedPlanExpandedChange,
     }),
     [
       timestampFormat,
@@ -632,6 +712,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedWorkEntryIds,
       onToggleWorkEntry,
       onProposedPlanExpanded,
+      expandedPlanIds,
+      onProposedPlanExpandedChange,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -757,6 +839,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       <div
         className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width) overflow-x-clip"
         data-timeline-root="true"
+        data-timeline-row-id={item.id}
       >
         <TimelineRowContent row={item} />
       </div>
@@ -890,6 +973,24 @@ function isTimelineTypingTarget(target: EventTarget | null) {
 
 function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
+}
+
+function captureCurrentPlanReadingAnchor(
+  list: LegendListRef,
+  rows: readonly MessagesTimelineRow[],
+) {
+  const scrollNode = list.getScrollableNode();
+  const scroll = scrollNode.scrollTop;
+  const viewportTop = scrollNode.getBoundingClientRect().top;
+  const measurements = rows.flatMap((row) => {
+    const element = scrollNode.querySelector<HTMLElement>(
+      `[data-timeline-row-id="${CSS.escape(row.id)}"]`,
+    );
+    if (!element) return [];
+    const rect = element.getBoundingClientRect();
+    return [{ rowId: row.id, top: rect.top - viewportTop + scroll, height: rect.height }];
+  });
+  return capturePlanReadingAnchor(scroll, measurements);
 }
 
 function getItemType(item: MessagesTimelineRow) {
@@ -1584,6 +1685,10 @@ function ProposedPlanTimelineRow({
         cwd={ctx.markdownCwd}
         workspaceRoot={ctx.workspaceRoot}
         onExpanded={ctx.onProposedPlanExpanded}
+        expanded={ctx.expandedPlanIds.has(row.proposedPlan.id)}
+        onExpandedChange={(expanded) =>
+          ctx.onProposedPlanExpandedChange(row.proposedPlan.id, expanded)
+        }
       />
     </div>
   );
