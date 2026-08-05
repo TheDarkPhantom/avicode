@@ -1,6 +1,6 @@
 {
   "name": "@t3tools/desktop",
-  "version": "0.0.31-avicode.6",
+  "version": "0.0.31-avicode.7",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
