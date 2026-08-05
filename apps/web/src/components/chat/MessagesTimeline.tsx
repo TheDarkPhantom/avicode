@@ -522,7 +522,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       const anchor =
         currentReadingAnchorRef.current ??
         (list ? captureCurrentPlanReadingAnchor(list, latestRowsRef.current) : null);
-      if (anchor) setThreadPlanReadingAnchor(routeThreadKey, anchor);
+      // Pass null through so leaving at the live edge clears a stale anchor.
+      setThreadPlanReadingAnchor(routeThreadKey, anchor);
     };
   }, [listRef, routeThreadKey, setThreadPlanReadingAnchor]);
   useLayoutEffect(() => {
@@ -979,6 +980,11 @@ function captureCurrentPlanReadingAnchor(
   list: LegendListRef,
   rows: readonly MessagesTimelineRow[],
 ) {
+  // Avi Code addition. A reader pinned to the live edge is following the
+  // conversation, not parked on a plan, so save no anchor. Returning null here
+  // clears any stale anchor on leave and lets the thread reopen at the bottom
+  // instead of restoring a partway-up row.
+  if (list.getState?.()?.isAtEnd) return null;
   const scrollNode = list.getScrollableNode();
   const scroll = scrollNode.scrollTop;
   const viewportTop = scrollNode.getBoundingClientRect().top;
