@@ -167,6 +167,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 // Avi Code addition: pinned rows head the active block and the project picker.
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 import { ProjectMergeRunButton } from "./sidebar/ProjectMergeRunButton";
+import { ThreadDevServerButton } from "./sidebar/ThreadDevServerButton";
 import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -869,6 +870,16 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
       <TerminalIcon className={cn("size-3.5", terminalStatus.pulse && "animate-status-pulse")} />
     </span>
   ) : null;
+  // Avi Code addition: open or start this thread's dev server from the sidebar.
+  const devServerButton = (
+    <ThreadDevServerButton
+      threadRef={threadRef}
+      projectId={thread.projectId}
+      projectRoot={props.projectCwd}
+      worktreePath={thread.worktreePath}
+      navigateToThread={onThreadActivate}
+    />
+  );
 
   if (variant === "slim") {
     return (
@@ -911,6 +922,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
             {modelBadge}
             {pinnedMarker}
             {title}
+            {devServerButton}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
@@ -1130,6 +1142,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
               ) : (
                 <span className="flex-1" />
               )}
+              {devServerButton}
               {terminalStatusIcon}
               {prBadge}
               {diff ? (

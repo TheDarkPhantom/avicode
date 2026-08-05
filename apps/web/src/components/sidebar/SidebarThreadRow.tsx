@@ -1,4 +1,4 @@
-import { ArchiveIcon, CloudIcon, Globe2Icon, PinIcon, TerminalIcon } from "lucide-react";
+import { ArchiveIcon, CloudIcon, PinIcon, TerminalIcon } from "lucide-react";
 import React, { useCallback, memo, useMemo } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
@@ -6,20 +6,13 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import {
-  isAtomCommandInterrupted,
-  settlePromise,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import { useProject } from "../../state/entities";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
-import { useThreadDiscoveredPorts } from "../../portDiscoveryState";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { previewEnvironment } from "../../state/preview";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environments";
@@ -27,7 +20,7 @@ import { useUiStateStore } from "../../uiStateStore";
 import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
-import { openDiscoveredPort } from "../preview/openDiscoveredPort";
+import { ThreadDevServerButton } from "./ThreadDevServerButton";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   ChangeRequestStatusIcon,
@@ -134,13 +127,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   // Avi Code addition: the PR indicator can be hidden globally from the Avi
   // Code settings page; upstream always renders it for threads with a PR.
   const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
-  const discoveredPorts = useThreadDiscoveredPorts({
-    environmentId: thread.environmentId,
-    threadId: thread.id,
-  });
-  const openPreview = useAtomCommand(previewEnvironment.open, {
-    reportFailure: false,
-  });
   const environment = useEnvironment(thread.environmentId);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const isRemoteThread =
@@ -176,31 +162,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
       : null,
   );
   const isHighlighted = isActive || isSelected;
-  const handleOpenDiscoveredPort = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      const port = discoveredPorts[0];
-      if (!port) return;
-      event.preventDefault();
-      event.stopPropagation();
-      navigateToThread(threadRef);
-      void (async () => {
-        const result = await openDiscoveredPort({ threadRef, port, openPreview });
-        if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-          return;
-        }
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open preview",
-            description:
-              error instanceof Error ? error.message : "The preview could not be opened.",
-          }),
-        );
-      })();
-    },
-    [discoveredPorts, navigateToThread, openPreview, threadRef],
-  );
   const isThreadRunning =
     thread.session?.status === "running" && thread.session.activeTurnId != null;
   const threadStatus = resolveThreadStatusPill({
@@ -523,26 +484,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
           ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {discoveredPorts.length > 0 && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={`Open localhost:${discoveredPorts[0]?.port ?? ""}`}
-                    className="inline-flex cursor-pointer items-center justify-center text-emerald-600 outline-hidden focus-visible:ring-1 focus-visible:ring-ring dark:text-emerald-400"
-                    onClick={handleOpenDiscoveredPort}
-                  />
-                }
-              >
-                <Globe2Icon className="size-3" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">
-                Open localhost:{discoveredPorts[0]?.port}
-                {discoveredPorts.length > 1 ? ` (+${discoveredPorts.length - 1})` : ""}
-              </TooltipPopup>
-            </Tooltip>
-          )}
+          <ThreadDevServerButton
+            threadRef={threadRef}
+            projectId={thread.projectId}
+            projectRoot={threadProjectCwd ?? props.projectCwd}
+            worktreePath={thread.worktreePath}
+            navigateToThread={navigateToThread}
+          />
           <ThreadWorktreeIndicator thread={thread} />
           {terminalStatus && (
             <Tooltip>
