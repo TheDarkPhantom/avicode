@@ -2,7 +2,7 @@
 
 Prioritized work. Structure: **shipped foundation → alpha verification → next work**.
 
-**Last updated:** 2026-08-04
+**Last updated:** 2026-08-05
 
 ## Shipped foundation
 
@@ -35,6 +35,7 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Avi Code settings toggles for starting new chats in plan mode and hiding the sidebar
       worktree icon.
 - [x] Opt-in opening of finished chats at the top of their last response instead of the live edge.
+- [x] Stuck provider questions remain dismissible and provider choices survive desktop restart.
 
 ## Personal alpha verification
 

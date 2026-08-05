@@ -1375,6 +1375,9 @@ function ChatViewContent(props: ChatViewProps) {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
+  // Requests placed here were abandoned by an explicit Stop. Their command
+  // may still settle later, but that completion no longer owns visible state.
+  const dismissedUserInputRequestIdsRef = useRef(new Set<ApprovalRequestId>());
   const [pendingUserInputAnswersByRequestId, setPendingUserInputAnswersByRequestId] = useState<
     Record<string, Record<string, PendingUserInputDraftAnswer>>
   >({});
@@ -2191,6 +2194,8 @@ function ChatViewContent(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
+  const providerDiscoveryState =
+    serverConfig === null && activeEnvironmentUnavailableState === null ? "loading" : "ready";
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
@@ -5984,6 +5989,14 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onInterrupt = async () => {
     if (!activeThread) return;
+    if (activePendingUserInput) {
+      if (respondingUserInputRequestIds.includes(activePendingUserInput.requestId)) {
+        dismissedUserInputRequestIdsRef.current.add(activePendingUserInput.requestId);
+      }
+      setRespondingUserInputRequestIds((existing) =>
+        existing.filter((id) => id !== activePendingUserInput.requestId),
+      );
+    }
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),
@@ -6040,7 +6053,8 @@ function ChatViewContent(props: ChatViewProps) {
           answers,
         },
       });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const wasDismissed = dismissedUserInputRequestIdsRef.current.delete(requestId);
+      if (!wasDismissed && result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
           activeThreadId,
@@ -7398,6 +7412,7 @@ function ChatViewContent(props: ChatViewProps) {
                             interactionMode={interactionMode}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
+                            providerDiscoveryState={providerDiscoveryState}
                             activeProjectDefaultModelSelection={
                               activeProject?.defaultModelSelection
                             }
