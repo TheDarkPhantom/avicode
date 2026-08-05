@@ -19,6 +19,7 @@ import {
   canSubmitComposerSendContext,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  shouldFollowUpWithAttachments,
   dismissBranchMismatchForSession,
   getStartedThreadModelChangeBlockReason,
   hasServerAcknowledgedLocalDispatch,
@@ -274,6 +275,52 @@ describe("deriveComposerSendState", () => {
         terminalContexts: [],
         elementContextCount: 0,
       }).hasSendableContent,
+    ).toBe(false);
+  });
+});
+
+describe("shouldFollowUpWithAttachments", () => {
+  it("follows the final answer with the attachments the answer cannot carry", () => {
+    expect(
+      shouldFollowUpWithAttachments({
+        isLastQuestion: true,
+        hasResolvedAnswers: true,
+        attachmentCount: 1,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps waiting while there are more questions to answer", () => {
+    // Nothing is submitted until the last question, so sending the screenshot
+    // now would put it ahead of the answer it belongs with.
+    expect(
+      shouldFollowUpWithAttachments({
+        isLastQuestion: false,
+        hasResolvedAnswers: true,
+        attachmentCount: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("does nothing when the answers have not resolved", () => {
+    // The answer submit is a no-op in this state, so a follow-up would arrive
+    // with the question still open.
+    expect(
+      shouldFollowUpWithAttachments({
+        isLastQuestion: true,
+        hasResolvedAnswers: false,
+        attachmentCount: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("does nothing when nothing is attached", () => {
+    expect(
+      shouldFollowUpWithAttachments({
+        isLastQuestion: true,
+        hasResolvedAnswers: true,
+        attachmentCount: 0,
+      }),
     ).toBe(false);
   });
 });
