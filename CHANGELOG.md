@@ -42,6 +42,9 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Create files and folders in the Files panel by right-click or the new toolbar buttons (#127)
+- Rename and delete files and folders straight from the file explorer right-click menu (#127)
+- Collapse or expand every folder in the file tree with one button (#127)
 - A file the agent is about to create now opens on its own once it lands instead of failing to read (#126)
 - The file viewer says a file has not been created yet instead of showing a raw read error (#126)
 - The repository icon on each sidebar thread is larger and easier to read (#125)

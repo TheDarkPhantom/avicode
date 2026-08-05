@@ -1,12 +1,13 @@
 import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
+  FileTreeRenameEvent,
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { ChevronsDownUp, ChevronsUpDown, FilePlus, FolderPlus, RotateCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -18,9 +19,26 @@ import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { projectEnvironment } from "~/state/projects";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
+
+// Avi Code addition: helpers for the VSCode-like create/rename/delete flows.
+// Tree directory paths carry a trailing slash; the wire path never does.
+function stripTrailingSlash(path: string): string {
+  return path.replace(/\/$/, "");
+}
+function ensureTrailingSlash(path: string): string {
+  return path.endsWith("/") ? path : `${path}/`;
+}
+/** Directory prefix (with trailing slash, or "" for root) a new child lands in. */
+function parentDirectoryPrefix(path: string): string {
+  const stripped = stripTrailingSlash(path);
+  const lastSlash = stripped.lastIndexOf("/");
+  return lastSlash === -1 ? "" : stripped.slice(0, lastSlash + 1);
+}
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -110,6 +128,7 @@ export default function FileBrowserPanel({
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
+  const treePathsRef = useRef<readonly string[]>(treePaths);
   const previousTreePathsRef = useRef<readonly string[]>([]);
 
   // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
@@ -124,6 +143,124 @@ export default function FileBrowserPanel({
     return () => document.removeEventListener("contextmenu", capturePointer, true);
   }, []);
 
+  // Avi Code addition: file/folder create, rename, and delete for the explorer.
+  // Placeholder rows are added optimistically and reconciled on the next refresh;
+  // a failed mutation removes/reverts the optimistic node it left behind.
+  const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
+  const pendingCreatesRef = useRef<Map<string, ProjectEntry["kind"]>>(new Map());
+  const [allCollapsed, setAllCollapsed] = useState(false);
+  const createEntryCommand = useAtomCommand(projectEnvironment.createEntry);
+  const renameEntryCommand = useAtomCommand(projectEnvironment.renameEntry);
+  const deleteEntryCommand = useAtomCommand(projectEnvironment.deleteEntry);
+
+  const startCreateEntry = (kind: ProjectEntry["kind"], directoryPrefix: string) => {
+    const model = treeModelRef.current;
+    if (!model) return;
+    const base = kind === "directory" ? "new-folder" : "new-file";
+    const makePath = (name: string) =>
+      kind === "directory" ? `${directoryPrefix}${name}/` : `${directoryPrefix}${name}`;
+    const existing = new Set(treePathsRef.current);
+    let name = base;
+    for (let index = 2; existing.has(makePath(name)); index += 1) {
+      name = `${base}-${index}`;
+    }
+    const placeholder = makePath(name);
+    pendingCreatesRef.current.set(placeholder, kind);
+    model.add(placeholder);
+    if (directoryPrefix.length > 0) {
+      const parent = model.getItem(directoryPrefix);
+      if (parent && "expand" in parent) parent.expand();
+    }
+    const started = model.startRenaming(placeholder, { removeIfCanceled: true });
+    if (!started) {
+      pendingCreatesRef.current.delete(placeholder);
+      model.remove(placeholder, { recursive: true });
+    }
+  };
+
+  const commitCreateEntry = async (kind: ProjectEntry["kind"], destinationPath: string) => {
+    const relativePath = stripTrailingSlash(destinationPath);
+    const result = await createEntryCommand({
+      environmentId,
+      input: { cwd, relativePath, kind },
+    });
+    if (result._tag === "Success") {
+      entriesQuery.refresh();
+      if (kind === "file") onOpenFile(relativePath);
+      return;
+    }
+    // The tree already applied the placeholder→name rename; drop it on failure.
+    treeModelRef.current?.remove(destinationPath, { recursive: true });
+  };
+
+  const commitRenameEntry = async (sourcePath: string, destinationPath: string) => {
+    const fromRelativePath = stripTrailingSlash(sourcePath);
+    const toRelativePath = stripTrailingSlash(destinationPath);
+    if (fromRelativePath === toRelativePath) return;
+    const result = await renameEntryCommand({
+      environmentId,
+      input: { cwd, fromRelativePath, toRelativePath },
+    });
+    if (result._tag === "Success") {
+      entriesQuery.refresh();
+      return;
+    }
+    // Undo the optimistic move the tree already applied.
+    treeModelRef.current?.move(destinationPath, sourcePath);
+  };
+
+  const handleTreeRename = async (event: FileTreeRenameEvent) => {
+    const pendingKind = pendingCreatesRef.current.get(event.sourcePath);
+    if (pendingKind !== undefined) {
+      pendingCreatesRef.current.delete(event.sourcePath);
+      await commitCreateEntry(pendingKind, event.destinationPath);
+      return;
+    }
+    await commitRenameEntry(event.sourcePath, event.destinationPath);
+  };
+  const handleTreeRenameRef = useRef(handleTreeRename);
+  useEffect(() => {
+    handleTreeRenameRef.current = handleTreeRename;
+  });
+
+  const deleteEntry = async (item: TreeContextMenuItem, position: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (!api) return;
+    const relativePath = stripTrailingSlash(item.path);
+    const displayName = relativePath.split("/").at(-1) ?? relativePath;
+    const confirmed = await api.contextMenu.show(
+      [
+        { id: "delete-heading", label: `Delete "${displayName}"?`, header: true },
+        { id: "delete-confirm", label: "Delete", destructive: true },
+        { id: "delete-cancel", label: "Cancel" },
+      ],
+      position,
+    );
+    if (confirmed !== "delete-confirm") return;
+    const result = await deleteEntryCommand({
+      environmentId,
+      input: { cwd, relativePath },
+    });
+    if (result._tag === "Success") {
+      treeModelRef.current?.remove(item.path, { recursive: true });
+      entriesQuery.refresh();
+    }
+  };
+
+  const toggleCollapseAll = () => {
+    const model = treeModelRef.current;
+    if (!model) return;
+    const expand = allCollapsed;
+    for (const path of treePathsRef.current) {
+      if (!path.endsWith("/")) continue;
+      const item = model.getItem(path);
+      if (!item || !("expand" in item)) continue;
+      if (expand) item.expand();
+      else item.collapse();
+    }
+    setAllCollapsed(!allCollapsed);
+  };
+
   const showEntryContextMenu = async (
     item: TreeContextMenuItem,
     context: TreeContextMenuOpenContext,
@@ -135,6 +272,8 @@ export default function FileBrowserPanel({
     }
     const relativePath = item.path.replace(/\/$/, "");
     const mention = serializeComposerFileLink(relativePath);
+    const directoryPrefix =
+      item.kind === "directory" ? ensureTrailingSlash(item.path) : parentDirectoryPrefix(item.path);
     const pointer = contextMenuPointerRef.current;
     const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1000;
     const anchorRect = context.anchorElement.getBoundingClientRect();
@@ -144,11 +283,27 @@ export default function FileBrowserPanel({
     try {
       const clicked = await api.contextMenu.show(
         [
+          { id: "new-file", label: "New File" },
+          { id: "new-folder", label: "New Folder" },
+          { id: "rename", label: "Rename" },
+          { id: "delete", label: "Delete", destructive: true },
           { id: "copy-mention", label: "Copy mention" },
           { id: "add-to-chat", label: "Add to chat" },
         ],
         position,
       );
+      if (clicked === "new-file" || clicked === "new-folder") {
+        startCreateEntry(clicked === "new-folder" ? "directory" : "file", directoryPrefix);
+        return;
+      }
+      if (clicked === "rename") {
+        treeModelRef.current?.startRenaming(item.path);
+        return;
+      }
+      if (clicked === "delete") {
+        await deleteEntry(item, position);
+        return;
+      }
       if (clicked === "copy-mention") {
         try {
           await writeTextToClipboard(mention);
@@ -190,7 +345,6 @@ export default function FileBrowserPanel({
     showEntryContextMenuRef.current = showEntryContextMenu;
   });
 
-  const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
   const dragMention = useMemo(
     () =>
       createFileTreeDragMentionController({
@@ -205,6 +359,16 @@ export default function FileBrowserPanel({
         onOpen: (item, context) => {
           void showEntryContextMenuRef.current(item, context);
         },
+      },
+    },
+    // Avi Code addition: inline editing powers New File/New Folder naming and
+    // renaming. A canceled create removes its placeholder (removeIfCanceled).
+    renaming: {
+      onRename: (event) => {
+        void handleTreeRenameRef.current(event);
+      },
+      onError: (message) => {
+        toastManager.add({ type: "error", title: "Rename failed", description: message });
       },
     },
     // Rows only need to be draggable so entries can be dropped into the chat
@@ -243,6 +407,7 @@ export default function FileBrowserPanel({
   useEffect(() => {
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
+    treePathsRef.current = treePaths;
     previousTreePathsRef.current = treePaths;
     model.resetPaths(treePaths);
   }, [entryKinds, model, treePaths]);
@@ -279,6 +444,54 @@ export default function FileBrowserPanel({
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >
       <div className="surface-subheader gap-1 px-2" data-surface-subheader>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="New file"
+                onClick={() => startCreateEntry("file", "")}
+              />
+            }
+          >
+            <FilePlus />
+          </TooltipTrigger>
+          <TooltipPopup>New File</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="New folder"
+                onClick={() => startCreateEntry("directory", "")}
+              />
+            }
+          >
+            <FolderPlus />
+          </TooltipTrigger>
+          <TooltipPopup>New Folder</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={allCollapsed ? "Expand all folders" : "Collapse all folders"}
+                onClick={toggleCollapseAll}
+              />
+            }
+          >
+            {allCollapsed ? <ChevronsUpDown /> : <ChevronsDownUp />}
+          </TooltipTrigger>
+          <TooltipPopup>{allCollapsed ? "Expand all" : "Collapse all"}</TooltipPopup>
+        </Tooltip>
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={entriesQuery.refresh} />
         <FileSearchField
           name="project-files-search"
