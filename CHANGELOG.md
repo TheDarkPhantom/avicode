@@ -43,6 +43,8 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Switching threads lands at the newest message again instead of partway up the conversation (#131)
+- Right-click empty space in the Files panel to create a new file or folder (#132)
+- The Files panel now tells you why creating, renaming, or deleting a file failed (#132)
 
 ## 0.0.31-avicode.7 (2026-08-05)
 
