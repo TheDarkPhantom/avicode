@@ -41,6 +41,23 @@ describe("project RPC errors", () => {
     expect(readError.cause).toBe(cause);
   });
 
+  it("carries the notFound flag so a reader can name a missing file after the wire drops the cause", () => {
+    const encodeReadError = Schema.encodeSync(ProjectReadFileError);
+    const decodeReadError = Schema.decodeUnknownSync(ProjectReadFileError);
+    const readError = new ProjectReadFileError({
+      cwd: "/workspace",
+      relativePath: "src/new.ts",
+      failure: "operation_failed",
+      operation: "realpath-target",
+      notFound: true,
+    });
+
+    expect(readError.notFound).toBe(true);
+    expect(readError.message).toBe("Failed to read workspace file 'src/new.ts' in '/workspace'.");
+    const roundTripped = decodeReadError(encodeReadError(readError));
+    expect(roundTripped.notFound).toBe(true);
+  });
+
   it("decodes legacy message-only errors during rolling upgrades", () => {
     const decodeSearchError = Schema.decodeUnknownSync(ProjectSearchEntriesError);
     const decodeWriteError = Schema.decodeUnknownSync(ProjectWriteFileError);
@@ -63,5 +80,6 @@ describe("project RPC errors", () => {
     expect(writeError.message).toBe("Legacy project write failure.");
     expect(writeError.relativePath).toBeUndefined();
     expect(writeError.failure).toBeUndefined();
+    expect(writeError.notFound).toBeUndefined();
   });
 });

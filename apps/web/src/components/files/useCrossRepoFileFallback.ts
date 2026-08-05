@@ -7,7 +7,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { useEnvironmentQuery } from "~/state/query";
 import { projectEnvironment } from "~/state/projects";
 import { buildAncestorFileCandidates } from "./crossRepoFileFallback";
-import { isProjectFileTargetUnreachable } from "./projectFileErrorMessage";
+import { isProjectFileMissing } from "./projectFileErrorMessage";
 import { useProjectFileQueryFailure } from "./projectFilesQueryState";
 
 interface CrossRepoFileFallbackInput {
@@ -18,6 +18,14 @@ interface CrossRepoFileFallbackInput {
   readonly workspaceRoot: string | null;
   readonly relativePath: string | null;
   readonly projectRoots: readonly string[];
+  /**
+   * True while the owning thread is running a turn. A file missing then is
+   * probably about to be written into this worktree, so re-rooting the tab onto
+   * a same-named sibling repo would be wrong; useMissingFileAutoReload handles it
+   * instead. Re-rooting only runs once the thread is idle and the file genuinely
+   * lives in another registered repo.
+   */
+  readonly isThreadWorking: boolean;
 }
 
 /**
@@ -40,6 +48,7 @@ export function useCrossRepoFileFallback({
   workspaceRoot,
   relativePath,
   projectRoots,
+  isThreadWorking,
 }: CrossRepoFileFallbackInput): void {
   // Images are fetched as assets rather than read as text, so there is no read
   // here to react to and subscribing would start one the panel never wanted.
@@ -52,7 +61,8 @@ export function useCrossRepoFileFallback({
         environmentId === null ||
         workspaceRoot === null ||
         watchedPath === null ||
-        !isProjectFileTargetUnreachable(failure)
+        isThreadWorking ||
+        !isProjectFileMissing(failure)
       ) {
         return null;
       }
@@ -65,16 +75,24 @@ export function useCrossRepoFileFallback({
           registeredProjectRoots: [...projectRoots],
         },
       });
-    }, [environmentId, failure, projectRoots, watchedPath, workspaceRoot]),
+    }, [environmentId, failure, isThreadWorking, projectRoots, watchedPath, workspaceRoot]),
   );
 
   useEffect(() => {
     if (!threadRef || !surfaceId || !workspaceRoot || !watchedPath) return;
-    if (!isProjectFileTargetUnreachable(failure)) return;
+    if (isThreadWorking || !isProjectFileMissing(failure)) return;
     const fallback = fallbackQuery.data;
     if (!fallback) return;
     useRightPanelStore
       .getState()
       .rerootFile(threadRef, surfaceId, fallback.root, fallback.relativePath);
-  }, [failure, fallbackQuery.data, surfaceId, threadRef, watchedPath, workspaceRoot]);
+  }, [
+    failure,
+    fallbackQuery.data,
+    isThreadWorking,
+    surfaceId,
+    threadRef,
+    watchedPath,
+    workspaceRoot,
+  ]);
 }

@@ -178,6 +178,10 @@ type ProjectFileFailureContext = {
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
   readonly operationPath?: string;
+  // Avi Code addition: set when the operation failed because the target does not
+  // exist (ENOENT/ENOTDIR). The underlying platform error code lives in `cause`,
+  // which does not survive the wire, so the reader cannot recover this itself.
+  readonly notFound?: boolean;
   readonly cause?: unknown;
 };
 
@@ -191,6 +195,9 @@ export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFil
     resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
     operation: Schema.optional(ProjectFileOperation),
     operationPath: Schema.optional(TrimmedNonEmptyString),
+    // Avi Code addition: optional on the wire so older peers still decode. See
+    // ProjectFileFailureContext.notFound.
+    notFound: Schema.optional(Schema.Boolean),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
   },
@@ -228,6 +235,9 @@ export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteF
     resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
     operation: Schema.optional(ProjectFileOperation),
     operationPath: Schema.optional(TrimmedNonEmptyString),
+    // Avi Code addition: optional on the wire so older peers still decode. See
+    // ProjectFileFailureContext.notFound.
+    notFound: Schema.optional(Schema.Boolean),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
   },

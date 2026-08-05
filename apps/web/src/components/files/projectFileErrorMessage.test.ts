@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   describeProjectFileError,
+  isProjectFileMissing,
   isProjectFileTargetUnreachable,
 } from "./projectFileErrorMessage";
 
@@ -27,6 +28,21 @@ describe("describeProjectFileError", () => {
           cause: Object.assign(new Error("ENOENT: no such file or directory"), {
             code: "ENOENT",
           }),
+        }),
+      ),
+    ).toBe("File not found: docs/RECORDINGS_COLLECTOR_SETUP.md");
+  });
+
+  it("trusts the server's notFound flag when the platform code did not survive the wire", () => {
+    // The realistic wire case: cause is a plain string, so the ENOENT heuristic
+    // has nothing to match, but the server already told us the target is missing.
+    expect(
+      describeProjectFileError(
+        readFileError({
+          failure: "operation_failed",
+          operation: "realpath-target",
+          notFound: true,
+          cause: "[redacted defect]",
         }),
       ),
     ).toBe("File not found: docs/RECORDINGS_COLLECTOR_SETUP.md");
@@ -131,5 +147,50 @@ describe("isProjectFileTargetUnreachable", () => {
   it("is false for anything that is not a project file error", () => {
     expect(isProjectFileTargetUnreachable(new Error("socket closed"))).toBe(false);
     expect(isProjectFileTargetUnreachable(null)).toBe(false);
+  });
+});
+
+describe("isProjectFileMissing", () => {
+  it("is true when the server stamped notFound, even with no usable cause", () => {
+    expect(
+      isProjectFileMissing(
+        readFileError({
+          failure: "operation_failed",
+          operation: "open",
+          notFound: true,
+          cause: "[redacted defect]",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("falls back to the ENOENT heuristic for a legacy server without the flag", () => {
+    expect(
+      isProjectFileMissing(
+        readFileError({
+          failure: "operation_failed",
+          operation: "stat",
+          cause: { code: "ENOENT" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false when the file was reached and rejected for another reason", () => {
+    expect(
+      isProjectFileMissing(
+        readFileError({
+          failure: "operation_failed",
+          operation: "read",
+          cause: Object.assign(new Error("permission denied"), { code: "EACCES" }),
+        }),
+      ),
+    ).toBe(false);
+    expect(isProjectFileMissing(readFileError({ failure: "path_not_file" }))).toBe(false);
+  });
+
+  it("is false for anything that is not a project file error", () => {
+    expect(isProjectFileMissing(new Error("socket closed"))).toBe(false);
+    expect(isProjectFileMissing(null)).toBe(false);
   });
 });

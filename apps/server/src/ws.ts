@@ -214,6 +214,27 @@ function filesystemBrowseFailureContext(error: WorkspaceEntries.WorkspaceEntries
   }
 }
 
+// Avi Code addition: the operations that touch the target path, so an ENOENT on
+// one of them means the file the reader asked for is missing (not a workspace
+// root or permissions problem).
+const PROJECT_FILE_NOT_FOUND_OPERATIONS: ReadonlySet<ProjectFileOperation> = new Set([
+  "realpath-target",
+  "open",
+  "stat",
+  "read",
+]);
+
+// Avi Code addition: walk a wrapped platform error for its `code`, mirroring the
+// client's causeCode in projectFileErrorMessage.ts. Used to stamp `notFound`
+// before the code is lost crossing the wire.
+function nodeErrorCode(cause: unknown): string | null {
+  if (typeof cause !== "object" || cause === null) return null;
+  const direct = (cause as { code?: unknown }).code;
+  if (typeof direct === "string") return direct;
+  const nested = (cause as { cause?: unknown }).cause;
+  return nested === undefined ? null : nodeErrorCode(nested);
+}
+
 function projectFileFailureContext(
   error:
     | WorkspaceFileSystem.WorkspaceFileSystemError
@@ -224,17 +245,24 @@ function projectFileFailureContext(
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
   readonly operationPath?: string;
+  readonly notFound?: boolean;
 } {
   switch (error._tag) {
     case "WorkspacePathOutsideRootError":
       return { failure: "workspace_path_outside_root" };
-    case "WorkspaceFileSystemOperationError":
+    case "WorkspaceFileSystemOperationError": {
+      const code = nodeErrorCode(error.cause);
+      const notFound =
+        PROJECT_FILE_NOT_FOUND_OPERATIONS.has(error.operation) &&
+        (code === "ENOENT" || code === "ENOTDIR");
       return {
         failure: "operation_failed",
         resolvedPath: error.resolvedPath,
         operation: error.operation,
         operationPath: error.operationPath,
+        ...(notFound ? { notFound: true } : {}),
       };
+    }
     case "WorkspaceFilePathEscapeError":
       return {
         failure: "resolved_path_outside_root",

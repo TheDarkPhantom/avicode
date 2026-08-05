@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- A file the agent is about to create now opens on its own once it lands instead of failing to read (#126)
+- The file viewer says a file has not been created yet instead of showing a raw read error (#126)
 - The repository icon on each sidebar thread is larger and easier to read (#125)
 - A screenshot attached while an agent is waiting on your answer now arrives instead of vanishing (#107)
 - Attachments stay visible in the composer while an agent is waiting on your answer (#107)

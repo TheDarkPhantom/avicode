@@ -1,9 +1,11 @@
 import type {
+  AssetResource,
   EditorId,
   EnvironmentId,
   ResolvedKeybindingsConfig,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { useAtomRefresh } from "@effect/atom-react";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/editor";
@@ -56,12 +58,15 @@ import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRev
 import { fileBreadcrumbs } from "./filePath";
 import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
+import { isProjectFileMissing } from "./projectFileErrorMessage";
 import {
   confirmProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
   useProjectFileQuery,
+  useProjectFileQueryFailure,
 } from "./projectFilesQueryState";
+import { useMissingFileAutoReload } from "./useMissingFileAutoReload";
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
@@ -81,6 +86,13 @@ interface FilePreviewPanelProps {
   editorDiscoveryPending: boolean;
   revealLine: number | null;
   revealRequestId: number;
+  /**
+   * Avi Code addition: true while the owning thread is running a turn, and a
+   * signal that changes when it checkpoints. Together they let a preview of a
+   * not-yet-created file reload itself once the agent writes it.
+   */
+  isThreadWorking?: boolean;
+  reloadSignal?: string;
   onOpenFile: (relativePath: string) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
 }
@@ -135,19 +147,50 @@ function WorkspaceImagePreview(props: {
    * cross-repo image failed to load while its text neighbours opened fine.
    */
   readonly workspaceRoot: string | null;
+  /**
+   * Avi Code addition: reload triggers so an image an agent is about to write
+   * loads itself once it lands, matching the text preview's behaviour.
+   */
+  readonly isThreadWorking: boolean;
+  readonly reloadSignal: string;
 }) {
-  const assetUrl = useAssetUrlState(props.environmentId, {
-    _tag: "workspace-file",
-    threadId: props.threadRef.threadId,
-    path: props.absolutePath,
-    ...(props.workspaceRoot === null ? {} : { workspaceRoot: props.workspaceRoot }),
-  });
+  const resource = useMemo<AssetResource>(
+    () => ({
+      _tag: "workspace-file",
+      threadId: props.threadRef.threadId,
+      path: props.absolutePath,
+      ...(props.workspaceRoot === null ? {} : { workspaceRoot: props.workspaceRoot }),
+    }),
+    [props.threadRef.threadId, props.absolutePath, props.workspaceRoot],
+  );
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+  const refreshAsset = useAtomRefresh(
+    assetEnvironment.createUrl({ environmentId: props.environmentId, input: { resource } }),
+  );
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  // Avi Code addition: bumped on each reload so the <img> remounts and re-requests
+  // even when the regenerated asset URL is identical to the failed one.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
-  if (assetUrl._tag === "Failure" || (assetUrl._tag === "Success" && failedUrl === assetUrl.url)) {
+  const isFailed =
+    assetUrl._tag === "Failure" || (assetUrl._tag === "Success" && failedUrl === assetUrl.url);
+  useMissingFileAutoReload({
+    shouldReload: isFailed,
+    isThreadWorking: props.isThreadWorking,
+    reloadSignal: props.reloadSignal,
+    onReload: () => {
+      setFailedUrl(null);
+      setReloadNonce((nonce) => nonce + 1);
+      refreshAsset();
+    },
+  });
+
+  if (isFailed) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
-        Unable to load workspace image.
+        {props.isThreadWorking
+          ? "This file hasn't been created yet."
+          : "Unable to load workspace image."}
       </div>
     );
   }
@@ -155,6 +198,7 @@ function WorkspaceImagePreview(props: {
   return assetUrl._tag === "Success" ? (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
       <img
+        key={`${assetUrl.url}:${reloadNonce}`}
         className="max-h-full max-w-full object-contain"
         src={assetUrl.url}
         alt={props.alt}
@@ -682,6 +726,8 @@ export default function FilePreviewPanel({
   editorDiscoveryPending,
   revealLine,
   revealRequestId,
+  isThreadWorking = false,
+  reloadSignal = "",
   onOpenFile,
   onPendingChange,
 }: FilePreviewPanelProps) {
@@ -697,6 +743,17 @@ export default function FilePreviewPanel({
   });
   const isImage = relativePath !== null && isWorkspaceImagePreviewPath(relativePath);
   const file = useProjectFileQuery(environmentId, cwd, relativePath, !isImage);
+  // Avi Code addition: reads the same atom as `file` (no extra request), so a
+  // preview of a file the agent is about to write reloads once it lands rather
+  // than stranding on a read error.
+  const readFailure = useProjectFileQueryFailure(environmentId, cwd, isImage ? null : relativePath);
+  const fileMissing = !isImage && isProjectFileMissing(readFailure);
+  useMissingFileAutoReload({
+    shouldReload: fileMissing,
+    isThreadWorking,
+    reloadSignal,
+    onReload: file.refresh,
+  });
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
   // Reading markdown rendered is a preference, not a property of one file. Keeping
   // it on the panel meant a thread switch dropped it and forced source back.
@@ -927,10 +984,15 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               alt={relativePath}
               workspaceRoot={isExternalRoot ? cwd : null}
+              isThreadWorking={isThreadWorking}
+              reloadSignal={reloadSignal}
             />
           ) : relativePath && file.error && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
-              {file.error}
+              {/* Avi Code addition: while the thread is working, a missing file is
+                  probably about to be written, so say so instead of showing a
+                  read error that {@link useMissingFileAutoReload} will clear. */}
+              {fileMissing && isThreadWorking ? "This file hasn't been created yet." : file.error}
             </div>
           ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
