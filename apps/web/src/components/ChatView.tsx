@@ -3873,6 +3873,12 @@ function ChatViewContent(props: ChatViewProps) {
     readonly userScrollGeneration: number;
   } | null>(null);
   const anchorScrollRestoreFrameRef = useRef<number | null>(null);
+  // Avi Code addition: ref-gated scroll frame so the live-follow scroll driver
+  // is not starved by rapid streaming tokens. Each token changes timelineEntries,
+  // which re-runs the scroll effect; a cleanup-cancelled rAF never fires when
+  // tokens arrive faster than two frames. The ref lets one pending double-rAF
+  // survive across effect re-runs and read the latest state when it fires.
+  const liveFollowScrollPendingRef = useRef(false);
   // Avi Code addition: which way the user's last scroll gesture was heading, so
   // arriving at the live edge can be told apart from being dragged back to it.
   const timelineUserScrollDirectionRef = useRef<TimelineUserScrollDirection | null>(null);
@@ -3890,6 +3896,7 @@ function ChatViewContent(props: ChatViewProps) {
       cancelAnimationFrame(anchorScrollRestoreFrameRef.current);
       anchorScrollRestoreFrameRef.current = null;
     }
+    liveFollowScrollPendingRef.current = false;
   }, []);
   // Avi Code addition. A scroll the user drove themselves, as opposed to a
   // programmatic jump. LegendList re-reads `maintainScrollAtEnd` live from its
@@ -3985,6 +3992,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeTimelineAnchorIndexRef.current = null;
     showScrollDebouncer.current.cancel();
     setShowScrollToBottom(false);
+    liveFollowScrollPendingRef.current = false;
     void legendListRef.current?.scrollToEnd?.({ animated });
   }, []);
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
@@ -4120,6 +4128,12 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, []);
 
+  // Avi Code addition: ref-gated double-rAF instead of cleanup-cancelled rAFs.
+  // During streaming, timelineEntries changes on every token (~5-10ms). The
+  // original cleanup cancelled pending rAFs on each change, but a double-rAF
+  // needs ~33ms to complete, so the scroll callback was perpetually starved.
+  // The ref gate ensures exactly one pending double-rAF at a time without
+  // cancelling it; when it fires it reads the latest state from refs.
   useEffect(() => {
     if (!activeThread?.id) {
       return;
@@ -4127,10 +4141,15 @@ function ChatViewContent(props: ChatViewProps) {
     if (liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current) {
       return;
     }
+    if (liveFollowScrollPendingRef.current) {
+      return;
+    }
+    liveFollowScrollPendingRef.current = true;
 
-    let secondFrame: number | null = null;
-    const frame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        liveFollowScrollPendingRef.current = false;
+
         if (liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current) {
           return;
         }
@@ -4172,13 +4191,9 @@ function ChatViewContent(props: ChatViewProps) {
         void list.scrollToEnd?.({ animated: false });
       });
     });
-
-    return () => {
-      cancelAnimationFrame(frame);
-      if (secondFrame !== null) {
-        cancelAnimationFrame(secondFrame);
-      }
-    };
+    // No cleanup: the pending rAF reads current state from refs and bails via
+    // the generation guard when live follow has been disabled. Cancelling on
+    // every token arrival was what starved the scroll driver during streaming.
   }, [
     activeThread?.id,
     timelineEntries,
@@ -4200,6 +4215,7 @@ function ChatViewContent(props: ChatViewProps) {
       positionedTimelineAnchorRef.current = null;
       settledTimelineAnchorRef.current = null;
       activeTimelineAnchorIndexRef.current = null;
+      liveFollowScrollPendingRef.current = false;
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
     }
