@@ -111,6 +111,10 @@ export class SourceControlProvider extends Context.Service<
       readonly context?: SourceControlProviderContext;
       readonly reference: string;
       readonly deleteSourceRef?: boolean;
+      // When true, arm the provider's native auto-merge (merge once required
+      // checks pass) rather than merging immediately. Providers that cannot
+      // defer a merge treat this as an immediate merge.
+      readonly autoMerge?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;

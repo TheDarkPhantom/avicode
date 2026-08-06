@@ -238,6 +238,7 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly reference: string;
       readonly deleteBranch?: boolean;
+      readonly autoMerge?: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
 
     readonly getDefaultBranch: (input: {
@@ -448,6 +449,10 @@ export const make = Effect.gen(function* () {
           "merge",
           input.reference,
           "--merge",
+          // `--auto` arms GitHub auto-merge so the merge fires once required
+          // checks pass. Without it, `gh pr merge` fails while a required check
+          // is still pending, which is what a blocked PR always looks like.
+          ...(input.autoMerge ? ["--auto"] : []),
           ...(input.deleteBranch ? ["--delete-branch"] : []),
         ],
       }).pipe(Effect.asVoid),

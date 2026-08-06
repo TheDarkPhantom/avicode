@@ -1828,11 +1828,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       });
     }
 
+    // `--force-with-lease` (never `--force`) so a rebased branch can replace its
+    // stale remote head, while still refusing if someone else moved it since our
+    // last fetch. Used when the caller rebased the branch before pushing.
+    const forceArgs = options?.force ? (["--force-with-lease"] as const) : ([] as const);
+
     const requestedRemoteName = options?.remoteName?.trim() || null;
     if (requestedRemoteName) {
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote", cwd, [
         "push",
+        ...forceArgs,
         "-u",
         requestedRemoteName,
         `HEAD:refs/heads/${publishBranch}`,
@@ -1896,6 +1902,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushWithUpstream", cwd, [
         "push",
+        ...forceArgs,
         "-u",
         publishRemoteName,
         `HEAD:refs/heads/${publishBranch}`,
@@ -1914,6 +1921,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (currentUpstream) {
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushUpstream", cwd, [
         "push",
+        ...forceArgs,
         currentUpstream.remoteName,
         `HEAD:refs/heads/${currentUpstream.branchName}`,
       ]);
@@ -1925,7 +1933,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       };
     }
 
-    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, ["push"]);
+    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, ["push", ...forceArgs]);
     return {
       status: "pushed" as const,
       branch,
@@ -2647,6 +2655,66 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.branch,
     ]);
 
+  const rebaseCurrentBranchOntoRemoteBase: GitVcsDriver.GitVcsDriver["Service"]["rebaseCurrentBranchOntoRemoteBase"] =
+    Effect.fn("rebaseCurrentBranchOntoRemoteBase")(function* (input) {
+      // Fetch the base into its remote-tracking ref so the rebase replays onto
+      // the tip of the remote base, not a stale local copy.
+      yield* fetchRemoteTrackingBranch({
+        cwd: input.cwd,
+        remoteName: input.remoteName,
+        remoteBranch: input.baseBranch,
+      });
+      const targetRef = `${input.remoteName}/${input.baseBranch}`;
+
+      // When the base is already an ancestor of HEAD the branch is not behind,
+      // so there is nothing to replay. Skip the rebase rather than rewrite the
+      // same commits and force a needless push.
+      const baseIsAncestor = yield* executeGit(
+        "GitVcsDriver.rebaseCurrentBranchOntoRemoteBase.isAncestor",
+        input.cwd,
+        ["merge-base", "--is-ancestor", targetRef, "HEAD"],
+        { allowNonZeroExit: true },
+      ).pipe(Effect.map((result) => result.exitCode === 0));
+      if (baseIsAncestor) {
+        return { status: "up_to_date" as const };
+      }
+
+      const rebase = yield* executeGit(
+        "GitVcsDriver.rebaseCurrentBranchOntoRemoteBase.rebase",
+        input.cwd,
+        ["rebase", targetRef],
+        { allowNonZeroExit: true },
+      );
+      if (rebase.exitCode === 0) {
+        return { status: "rebased" as const };
+      }
+
+      // Capture the conflicted paths before aborting so the caller can name them,
+      // then abort to leave the working tree exactly as it was found. A button is
+      // non-interactive, so a conflict is reported, never auto-resolved.
+      const conflictedPaths = yield* runGitStdout(
+        "GitVcsDriver.rebaseCurrentBranchOntoRemoteBase.conflicts",
+        input.cwd,
+        ["diff", "--name-only", "--diff-filter=U"],
+        true,
+      ).pipe(
+        Effect.map((stdout) =>
+          stdout
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0),
+        ),
+        Effect.orElseSucceed(() => [] as string[]),
+      );
+      yield* runGit(
+        "GitVcsDriver.rebaseCurrentBranchOntoRemoteBase.abort",
+        input.cwd,
+        ["rebase", "--abort"],
+        true,
+      );
+      return { status: "conflict" as const, conflictedPaths };
+    });
+
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
@@ -2850,6 +2918,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     fetchRemoteBranch: (input) => withListRefsInvalidation(input.cwd, fetchRemoteBranch(input)),
     fetchRemoteTrackingBranch: (input) =>
       withListRefsInvalidation(input.cwd, fetchRemoteTrackingBranch(input)),
+    rebaseCurrentBranchOntoRemoteBase: (input) =>
+      withListRefsInvalidation(input.cwd, rebaseCurrentBranchOntoRemoteBase(input)),
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),

@@ -236,6 +236,7 @@ export const make = Effect.gen(function* () {
           cwd: input.cwd,
           reference: input.reference,
           ...(input.deleteSourceRef !== undefined ? { deleteBranch: input.deleteSourceRef } : {}),
+          ...(input.autoMerge !== undefined ? { autoMerge: input.autoMerge } : {}),
         })
         .pipe(
           Effect.mapError(

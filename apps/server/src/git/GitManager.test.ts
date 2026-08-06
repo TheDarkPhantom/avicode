@@ -542,6 +542,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "merge",
             input.reference,
             "--merge",
+            ...(input.autoMerge ? ["--auto"] : []),
             ...(input.deleteBranch ? ["--delete-branch"] : []),
           ],
         }).pipe(Effect.asVoid),
@@ -4035,6 +4036,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       yield* configureRemote(repoDir, "origin", originDir, "origin");
+      yield* runGit(repoDir, ["push", "origin", "main"]);
       yield* runGit(repoDir, ["checkout", "-b", "feature/auto-merge"]);
       NodeFS.writeFileSync(NodePath.join(repoDir, "auto-merge.txt"), "ready\n");
       yield* runGit(repoDir, ["add", "auto-merge.txt"]);
@@ -4068,8 +4070,70 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         },
       });
 
-      expect(result.toast.title).toBe("Auto merged into main");
-      expect(ghCalls).toContain("pr merge 246 --merge");
+      expect(result.toast.title).toBe("Auto merge armed for main");
+      expect(ghCalls).toContain("pr merge 246 --merge --auto --delete-branch");
+    }),
+  );
+
+  it.effect("rebases a stale branch onto its base before arming auto merge", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-auto-merge-behind-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      yield* configureRemote(repoDir, "origin", originDir, "origin");
+      yield* runGit(repoDir, ["push", "origin", "main"]);
+
+      // Branch off, push it, then advance origin/main underneath it so the
+      // branch is behind its base at arm time, the exact state that silently
+      // no-ops GitHub auto-merge.
+      yield* runGit(repoDir, ["checkout", "-b", "feature/behind"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "feature.txt"), "feature work\n");
+      yield* runGit(repoDir, ["add", "feature.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Feature work"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/behind"]);
+
+      yield* runGit(repoDir, ["checkout", "main"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "other.txt"), "landed on main\n");
+      yield* runGit(repoDir, ["add", "other.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Land other work on main"]);
+      yield* runGit(repoDir, ["push", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "feature/behind"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            "feature/behind": JSON.stringify([
+              {
+                number: 247,
+                title: "Feature work",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/247",
+                baseRefName: "main",
+                headRefName: "feature/behind",
+                state: "OPEN",
+              },
+            ]),
+          },
+        },
+      });
+
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "auto_merge",
+        autoMerge: {
+          promotionRefs: ["main"],
+          requireFinalApproval: false,
+        },
+      });
+
+      expect(result.toast.title).toBe("Auto merge armed for main");
+      expect(ghCalls).toContain("pr merge 247 --merge --auto --delete-branch");
+
+      // The branch must contain the commit that landed on main while it was open,
+      // proving it was rebased onto the fresh base before auto-merge was armed.
+      const log = yield* runGit(repoDir, ["log", "--oneline"]);
+      expect(log.stdout).toContain("Land other work on main");
+      expect(log.stdout).toContain("Feature work");
     }),
   );
 });
