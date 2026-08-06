@@ -7585,7 +7585,6 @@ function ChatViewContent(props: ChatViewProps) {
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption
                             }
-                            onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
                             onPreviousActivePendingUserInputQuestion={
                               onPreviousActivePendingUserInputQuestion
                             }
