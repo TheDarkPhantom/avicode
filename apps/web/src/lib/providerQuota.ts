@@ -370,6 +370,28 @@ export function formatQuotaSummaryLine(
 }
 
 /**
+ * Windows suitable for the Usage page — omitting "overage" windows, which
+ * represent billed overuse beyond plan limits and belong in billing rather
+ * than day-to-day usage tracking.
+ */
+export function filterNonOverageWindows(
+  windows: ReadonlyArray<ProviderQuotaWindow>,
+): ReadonlyArray<ProviderQuotaWindow> {
+  return windows.filter((w) => !w.id.includes("overage"));
+}
+
+/**
+ * Format a token count for display.
+ * 1,234,567 → "1.23M", 12,345 → "12.3k", 567 → "567"
+ */
+export function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(2)}M`;
+  if (count >= 10_000) return `${(count / 1_000).toFixed(1)}k`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(2)}k`;
+  return String(count);
+}
+
+/**
  * Format spend for display. Null means the provider does not report cost at
  * all, which renders as an em dash rather than a misleading `$0.00`.
  */

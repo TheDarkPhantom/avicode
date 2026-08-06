@@ -650,6 +650,14 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetResourceTelemetryHistory,
       staleTimeMs: 5_000,
     }),
+    // Avi Code addition: usage page needs aggregated token/cost data across all
+    // provider instances. The server handler already exists; this wires the
+    // client side.
+    getProviderUsage: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:provider-usage",
+      tag: WS_METHODS.serverGetProviderUsage,
+      staleTimeMs: 30_000,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",

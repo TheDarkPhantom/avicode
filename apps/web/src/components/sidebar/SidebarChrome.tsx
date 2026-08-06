@@ -23,6 +23,8 @@ import {
 } from "../ui/sidebar";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
+// Avi Code addition: sidebar Usage entry with hover popover for quota gauges.
+import { UsageHoverPopover } from "../usage/UsageHoverPopover";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -134,6 +136,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
+        {/* Avi Code addition: Usage entry above Settings for at-a-glance quota
+            gauges on hover and a full usage page on click. */}
+        <SidebarMenuItem>
+          <UsageHoverPopover />
+        </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton onClick={handleSettingsClick}>
             <SettingsIcon />
