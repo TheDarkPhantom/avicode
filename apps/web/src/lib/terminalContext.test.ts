@@ -148,6 +148,14 @@ describe("terminalContext", () => {
     expect(state.contextCount).toBe(1);
   });
 
+  it("hides the image-only bootstrap prompt from visible text", () => {
+    const bootstrap =
+      "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
+    const state = deriveDisplayedUserMessageState(bootstrap);
+    expect(state.visibleText).toBe("");
+    expect(state.copyText).toBe(bootstrap);
+  });
+
   it("preserves prompt text when no trailing terminal context block exists", () => {
     expect(extractTrailingTerminalContexts("No attached context")).toEqual({
       promptText: "No attached context",

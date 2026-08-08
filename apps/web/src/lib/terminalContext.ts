@@ -246,6 +246,12 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
   };
 }
 
+// Avi Code addition: when images are sent without text, ChatView substitutes
+// this bootstrap prompt so the provider has something to work with. It is an
+// internal instruction and should never be shown to the user.
+const IMAGE_ONLY_BOOTSTRAP_PROMPT =
+  "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
+
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
   // Order matters, and each extractor only matches at the end of the string.
   // Send-time appends `<terminal_context>` first and `<element_context>` next;
@@ -259,8 +265,16 @@ export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMe
   const extractedDocuments = extractTrailingDocumentContexts(prompt);
   const extractedElement = extractTrailingElementContexts(extractedDocuments.promptText);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
+
+  // Avi Code addition: strip the image-only bootstrap prompt from visible text
+  // so users see only their attachment chips, not the internal instruction.
+  const visibleText =
+    extractedTerminal.promptText.trim() === IMAGE_ONLY_BOOTSTRAP_PROMPT
+      ? ""
+      : extractedTerminal.promptText;
+
   return {
-    visibleText: extractedTerminal.promptText,
+    visibleText,
     copyText: prompt,
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
