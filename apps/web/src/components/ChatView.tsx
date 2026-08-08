@@ -3996,6 +3996,15 @@ function ChatViewContent(props: ChatViewProps) {
     void legendListRef.current?.scrollToEnd?.({ animated });
   }, []);
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
+    // Avi Code addition: after the user scrolls away during streaming,
+    // cancelTimelineLiveFollowForUserNavigation resets the positioning refs.
+    // LegendList's anchoredEndSpace is still configured (timelineAnchorMessageId
+    // is React state, not cleared on scroll-away), so it keeps calling onReady
+    // as the anchor space settles. Without this guard, the ref reset lets
+    // onReady re-trigger positioning and snap the viewport back to the anchor.
+    if (liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current) {
+      return;
+    }
     if (pendingTimelineAnchorRef.current === messageId) {
       pendingTimelineAnchorRef.current = null;
     }
