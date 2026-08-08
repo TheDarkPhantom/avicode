@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Scrolling up during a streaming response no longer snaps back to the bottom (#139)
 - The Auto merge button now lands a PR waiting on checks instead of failing (#133)
 - Auto merge rebases a branch that fell behind its base so a stale branch still lands (#133)
 - Right-click empty space in the Files panel to create a new file or folder (#132)
