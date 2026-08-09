@@ -1,4 +1,4 @@
-import type { ServerProvider, ServerProviderUsage } from "@t3tools/contracts";
+import type { ProviderDriverKind, ServerProvider, ServerProviderUsage } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { RefreshCwIcon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -9,6 +9,7 @@ import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { filterNonOverageWindows, formatQuotaCost, formatTokenCount } from "~/lib/providerQuota";
 import { cn } from "~/lib/utils";
+import { PROVIDER_ICON_BY_PROVIDER } from "../chat/providerIconUtils";
 import { UsageQuotaSummary } from "./UsageQuotaSummary";
 
 function hasVisibleQuota(provider: ServerProvider): boolean {
@@ -17,15 +18,24 @@ function hasVisibleQuota(provider: ServerProvider): boolean {
   return filterNonOverageWindows(quota.windows).length > 0;
 }
 
-function InstanceUsageCard(props: { usage: ServerProviderUsage; instanceLabel: string }) {
-  const { usage, instanceLabel } = props;
+function InstanceUsageCard(props: {
+  usage: ServerProviderUsage;
+  instanceLabel: string;
+  driverKind?: ProviderDriverKind;
+}) {
+  const { usage, instanceLabel, driverKind } = props;
   const [expanded, setExpanded] = useState(false);
   const totalTokens = usage.inputTokens + usage.outputTokens;
+  // Avi Code addition: show provider icon next to the instance name.
+  const DriverIcon = driverKind ? (PROVIDER_ICON_BY_PROVIDER[driverKind] ?? null) : null;
 
   return (
     <div className="rounded-lg border border-border/50 bg-card p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium text-foreground">{instanceLabel}</div>
+        <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          {DriverIcon ? <DriverIcon className="size-4 shrink-0" aria-hidden /> : null}
+          {instanceLabel}
+        </div>
         <div className="text-xs text-muted-foreground/70">{usage.turns} turns</div>
       </div>
 
@@ -210,6 +220,7 @@ export function UsagePageContent() {
                     key={`weekly-${instance.instanceId}`}
                     usage={instance}
                     instanceLabel={instanceLabels.get(instance.instanceId) ?? instance.instanceId}
+                    driverKind={instance.driver}
                   />
                 ))}
               </div>
@@ -226,6 +237,7 @@ export function UsagePageContent() {
                     key={`alltime-${instance.instanceId}`}
                     usage={instance}
                     instanceLabel={instanceLabels.get(instance.instanceId) ?? instance.instanceId}
+                    driverKind={instance.driver}
                   />
                 ))}
               </div>

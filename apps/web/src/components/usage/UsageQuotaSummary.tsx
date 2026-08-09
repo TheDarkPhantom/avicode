@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { formatPercentage } from "~/lib/contextWindow";
+import { PROVIDER_ICON_BY_PROVIDER } from "../chat/providerIconUtils";
 import {
   filterNonOverageWindows,
   formatResetsIn,
@@ -65,11 +66,20 @@ export function UsageQuotaSummary(props: {
   const alarming = worst ? isQuotaAlarming(quota, worst, now) : false;
 
   const label = provider.displayName ?? provider.instanceId;
+  // Avi Code addition: show the provider type icon (Claude/OpenAI/etc.) next
+  // to the instance name so the underlying provider is obvious at a glance.
+  const DriverIcon = PROVIDER_ICON_BY_PROVIDER[provider.driver] ?? null;
 
   return (
     <div className={cn("flex flex-col", compact ? "gap-1.5" : "gap-2")}>
       <div className="flex items-center justify-between gap-3">
-        <div className={cn("font-medium text-foreground", compact ? "text-[11px]" : "text-xs")}>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 font-medium text-foreground",
+            compact ? "text-[11px]" : "text-xs",
+          )}
+        >
+          {DriverIcon ? <DriverIcon className="size-3.5 shrink-0" aria-hidden /> : null}
           {label}
         </div>
         {quota.planType ? (
