@@ -6,8 +6,8 @@ import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { useClientSettings } from "../../hooks/useSettings";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "../chat/providerIconUtils";
+import { SidebarProviderBadge } from "./SidebarProviderBadge";
 
 export const ThreadModelBadge = memo(function ThreadModelBadge({
   thread,
@@ -47,15 +47,11 @@ export const ThreadModelBadge = memo(function ThreadModelBadge({
           />
         }
       >
-        <ProviderInstanceIcon
+        <SidebarProviderBadge
           driverKind={provider.driverKind}
-          displayName={configuredBadge || provider.displayName}
-          accentColor={provider.accentColor}
-          showBadge
-          className="size-4.5"
-          iconClassName="size-4.5"
-          badgeClassName="-right-1 -bottom-1 h-3 min-w-3 px-0.5 text-[7px]"
-          indicatorBackground="var(--sidebar)"
+          displayName={provider.displayName}
+          {...(configuredBadge ? { badgeLabel: configuredBadge } : null)}
+          {...(provider.accentColor ? { accentColor: provider.accentColor } : null)}
         />
       </TooltipTrigger>
       <TooltipPopup side="top">{tooltip}</TooltipPopup>
