@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Scrolling or leaving a chat no longer crashes to the error page with a getScrollableNode error (#141)
 - Scrolling up during a streaming response no longer snaps back to the bottom (#139)
 - The Auto merge button now lands a PR waiting on checks instead of failing (#133)
 - Auto merge rebases a branch that fell behind its base so a stale branch still lands (#133)

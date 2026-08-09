@@ -444,7 +444,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     [filteredModels],
   );
   const updateModelListScrollFades = useCallback(() => {
-    const scrollElement = modelListRef.current?.getScrollableNode();
+    const scrollElement = modelListRef.current?.getScrollableNode?.();
     if (!(scrollElement instanceof HTMLElement)) {
       return;
     }
