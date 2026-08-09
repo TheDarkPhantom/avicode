@@ -486,7 +486,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const restore = () => {
       if (cancelled) return;
       const list = listRef.current;
-      const scrollNode = list?.getScrollableNode();
+      const scrollNode = list?.getScrollableNode?.();
       const rowElement = scrollNode?.querySelector<HTMLElement>(
         `[data-timeline-row-id="${CSS.escape(savedReadingAnchor.rowId)}"]`,
       );
@@ -868,7 +868,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           ref={setTimelineViewportElement}
           className="relative h-full min-h-0"
           onPointerDownCapture={(event) => {
-            if (event.target === listRef.current?.getScrollableNode()) {
+            if (event.target === listRef.current?.getScrollableNode?.()) {
               onManualScroll("unknown");
             }
           }}
@@ -985,7 +985,8 @@ function captureCurrentPlanReadingAnchor(
   // clears any stale anchor on leave and lets the thread reopen at the bottom
   // instead of restoring a partway-up row.
   if (list.getState?.()?.isAtEnd) return null;
-  const scrollNode = list.getScrollableNode();
+  const scrollNode = list.getScrollableNode?.();
+  if (!(scrollNode instanceof HTMLElement)) return null;
   const scroll = scrollNode.scrollTop;
   const viewportTop = scrollNode.getBoundingClientRect().top;
   const measurements = rows.flatMap((row) => {
