@@ -141,7 +141,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       activationRule: {
         supportsText: true,
         supportsWebUrlWithMaxCount: 1,
-        supportsImageWithMaxCount: 8,
+        supportsImageWithMaxCount: 12,
       },
     },
     android: {
