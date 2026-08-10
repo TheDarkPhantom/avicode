@@ -790,6 +790,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onInterrupt,
     onImplementPlanInNewThread,
     onReviewPlanWithCodex,
+    onOpenLinkedPlanReview,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onPreviousActivePendingUserInputQuestion,
@@ -3330,11 +3331,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       hasQueuedTurn={hasQueuedTurn}
                       isPreparingWorktree={false}
                       hasSendableContent={false}
+                      hasLinkedPlanReview={false}
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                       onInterrupt={handleInterruptPrimaryAction}
                       onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                       onReviewPlanWithCodex={onReviewPlanWithCodex}
+                      onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                     />
                   ) : null}
                 </div>
@@ -3702,11 +3705,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     hasQueuedTurn={hasQueuedTurn}
                     isPreparingWorktree={false}
                     hasSendableContent={false}
+                    hasLinkedPlanReview={false}
                     preserveComposerFocusOnPointerDown
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                     onReviewPlanWithCodex={onReviewPlanWithCodex}
+                    onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                   />
                 </div>
               ) : null}
