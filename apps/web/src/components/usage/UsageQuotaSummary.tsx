@@ -8,7 +8,7 @@ import {
   filterNonOverageWindows,
   formatResetsIn,
   isQuotaAlarming,
-  leastHeadroomQuotaWindow,
+  lowestRemainingQuotaWindow,
   orderQuotaWindows,
   quotaRemainingColor,
   quotaRemainingGradient,
@@ -61,9 +61,9 @@ export function UsageQuotaSummary(props: {
   }
 
   const windows = orderQuotaWindows(filtered, now);
-  const worst = leastHeadroomQuotaWindow(filtered, now);
+  const worst = lowestRemainingQuotaWindow(filtered, now);
   const isExhausted = quota.status === "exhausted" || worst?.exhausted === true;
-  const alarming = worst ? isQuotaAlarming(quota, worst, now) : false;
+  const alarming = worst ? isQuotaAlarming(quota, worst) : false;
 
   const label = provider.displayName ?? provider.instanceId;
   // Avi Code addition: show the provider type icon (Claude/OpenAI/etc.) next

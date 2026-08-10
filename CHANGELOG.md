@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The usage bar now tracks your lowest limit instead of reading full when one is nearly spent (#145)
+- Extra usage and unknown limit buckets no longer count as the limit that constrains you (#145)
 - Thread rows show the provider logo with its small corner initials badge again (#146)
 - The usage page shows each provider's logo next to the instance name (#140)
 - A finished Codex plan review offers one click to send its findings back to the plan thread (#143)
