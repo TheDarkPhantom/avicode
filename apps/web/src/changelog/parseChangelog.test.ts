@@ -157,7 +157,7 @@ describe("CHANGELOG.md", () => {
       expect(release.upstreamVersion, `${release.version} upstream baseline`).toBeTruthy();
       if (release.isUnreleased) continue;
       expect(release.date, `${release.version} date`).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
-      expect(release.version, `${release.version} suffix`).toMatch(/-avicode\.\d+$/u);
+      expect(release.version, `${release.version} suffix`).toMatch(/-avicode\.\d+(?:\.\d+)?$/u);
     }
   });
 
