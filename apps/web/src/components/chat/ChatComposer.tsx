@@ -683,6 +683,10 @@ export interface ChatComposerProps {
 
   // Callbacks
   onSend: (e?: { preventDefault: () => void }) => void;
+  /** Avi Code addition: set before form submission to signal that the user
+   *  explicitly clicked the Implement button, so `onSend` can distinguish
+   *  intentional plan implementation from stray form submissions. */
+  planImplementIntentRef: React.RefObject<boolean>;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onReviewPlanWithCodex: () => void;
@@ -775,6 +779,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     onSend,
+    planImplementIntentRef,
     onInterrupt,
     onImplementPlanInNewThread,
     onReviewPlanWithCodex,
@@ -2281,6 +2286,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         return;
       }
+      // Avi Code addition: signal that a real user action (Enter key or button
+      // click) is driving this send. `onSend` consults this to distinguish an
+      // intentional plan implementation from a stray programmatic call.
+      planImplementIntentRef.current = true;
       onSend(event);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
@@ -2293,6 +2302,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isSendDisabled,
       noProviderAvailable,
       onSend,
+      planImplementIntentRef,
       shouldBlurMobileComposerOnSubmit,
     ],
   );
