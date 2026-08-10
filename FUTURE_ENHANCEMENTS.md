@@ -17,6 +17,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- The plan-review return leg (#143) keys both banners off a thread's _latest_ turn: a follow-up
+  turn in the review thread drops the "Send findings" banner, and a plan refined after the review
+  ran no longer matches the review's `sourceProposedPlan`, hiding the "review ready" banner even
+  though the audit may still apply. Reviewing is also hard-coded to the first ready Codex instance
+  and its first model; a provider/model picker on the "Review with…" action is the natural
+  extension. Review threads are inferred (plan-mode turn + source-plan reference to another
+  thread) rather than typed, which holds only while the Codex review flow is the sole creator of
+  that shape.
 - Expired questionnaire answers are restored as plain composer text so the user can confirm and
   resend them. Reconstructing the original multi-step questionnaire would require a durable client
   draft schema and is unnecessary while the plain-text recovery preserves every submitted value.
