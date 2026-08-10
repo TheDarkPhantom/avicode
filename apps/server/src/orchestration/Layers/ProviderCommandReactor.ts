@@ -1188,6 +1188,12 @@ const make = Effect.gen(function* () {
                 ]
               : [],
           ),
+          proposedPlans: sourceThread.proposedPlans.map((plan) => ({
+            id: plan.id,
+            planMarkdown: plan.planMarkdown,
+            createdAt: plan.createdAt,
+            implementedAt: plan.implementedAt,
+          })),
         });
       }
       const serialized = serializeReferencedThreadContext(transcripts);

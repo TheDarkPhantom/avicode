@@ -9,6 +9,7 @@ import {
 
 import {
   findCompletedPlanReviewShell,
+  findLatestPlanReviewShell,
   getCompletedPlanReviewSource,
   mergeThreadContextIds,
   type PlanReviewShellCandidate,
@@ -156,6 +157,51 @@ describe("findCompletedPlanReviewShell", () => {
       latestTurn: makeLatestTurn({ completedAt: "2026-01-01T00:09:00.000Z" }),
     });
     expect(findCompletedPlanReviewShell([older, newer], lookup)).toBe(newer);
+  });
+});
+
+describe("findLatestPlanReviewShell", () => {
+  const lookup = { environmentId, planThreadId, planId };
+
+  it("finds reviews that are running or awaiting user input", () => {
+    const running = makeShell({
+      latestTurn: makeLatestTurn({ state: "running", completedAt: null }),
+      session: { status: "running", activeTurnId: TurnId.make("turn-review") },
+    });
+    expect(findLatestPlanReviewShell([running], lookup)).toBe(running);
+  });
+
+  it("finds completed reviews", () => {
+    const completed = makeShell();
+    expect(findLatestPlanReviewShell([completed], lookup)).toBe(completed);
+  });
+
+  it("ignores unrelated environments, plans, and implementation threads", () => {
+    const otherEnvironment = makeShell({ environmentId: EnvironmentId.make("env-2") });
+    const otherPlan = makeShell({
+      latestTurn: makeLatestTurn({
+        sourceProposedPlan: {
+          threadId: planThreadId,
+          planId: OrchestrationProposedPlanId.make("plan:thread-plan:turn:other"),
+        },
+      }),
+    });
+    const implementation = makeShell({ interactionMode: "default" });
+    expect(
+      findLatestPlanReviewShell([otherEnvironment, otherPlan, implementation], lookup),
+    ).toBeNull();
+  });
+
+  it("selects the newest matching review deterministically", () => {
+    const older = makeShell({
+      id: ThreadId.make("thread-review-old"),
+      latestTurn: makeLatestTurn({ startedAt: "2026-01-01T00:01:00.000Z" }),
+    });
+    const newer = makeShell({
+      id: ThreadId.make("thread-review-new"),
+      latestTurn: makeLatestTurn({ startedAt: "2026-01-01T00:09:00.000Z" }),
+    });
+    expect(findLatestPlanReviewShell([newer, older], lookup)).toBe(newer);
   });
 });
 

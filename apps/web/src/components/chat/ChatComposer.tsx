@@ -473,11 +473,13 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isEnvironmentUnavailable: boolean;
   hasQueuedTurn: boolean;
   hasSendableContent: boolean;
+  hasLinkedPlanReview: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onReviewPlanWithCodex: () => void;
+  onOpenLinkedPlanReview: () => void;
 }) {
   return (
     <>
@@ -512,11 +514,13 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         hasQueuedTurn={props.hasQueuedTurn}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
+        hasLinkedPlanReview={props.hasLinkedPlanReview}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
         onReviewPlanWithCodex={props.onReviewPlanWithCodex}
+        onOpenLinkedPlanReview={props.onOpenLinkedPlanReview}
       />
     </>
   );
@@ -647,6 +651,7 @@ export interface ChatComposerProps {
   // Plan
   showPlanFollowUpPrompt: boolean;
   activeProposedPlan: Thread["proposedPlans"][number] | null;
+  linkedPlanReviewThreadId: ThreadId | null;
   activePlan: { turnId?: TurnId } | null;
   sidebarProposedPlan: { turnId?: TurnId } | null;
   planSidebarLabel: string;
@@ -690,6 +695,7 @@ export interface ChatComposerProps {
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onReviewPlanWithCodex: () => void;
+  onOpenLinkedPlanReview: () => void;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -755,6 +761,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     respondingRequestIds,
     showPlanFollowUpPrompt,
     activeProposedPlan,
+    linkedPlanReviewThreadId,
     activePlan,
     sidebarProposedPlan,
     planSidebarLabel,
@@ -3866,11 +3873,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   hasQueuedTurn={hasQueuedTurn}
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
+                  hasLinkedPlanReview={linkedPlanReviewThreadId !== null}
                   preserveComposerFocusOnPointerDown={isMobileViewport}
                   onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                   onInterrupt={handleInterruptPrimaryAction}
                   onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                   onReviewPlanWithCodex={onReviewPlanWithCodex}
+                  onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                 />
               </div>
             </div>

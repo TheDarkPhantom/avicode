@@ -12,6 +12,12 @@ export interface ReferencedThreadTranscript {
     readonly createdAt: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
   }>;
+  readonly proposedPlans?: ReadonlyArray<{
+    readonly id: string;
+    readonly planMarkdown: string;
+    readonly createdAt: string;
+    readonly implementedAt: string | null;
+  }>;
 }
 
 function escapeAttribute(value: string): string {
@@ -39,9 +45,19 @@ export function serializeReferencedThreadContext(
           .join("\n");
       })
       .join("\n\n");
+    const proposedPlans = (thread.proposedPlans ?? [])
+      .map((plan) =>
+        [
+          `<proposed_plan id="${escapeAttribute(plan.id)}" createdAt="${escapeAttribute(plan.createdAt)}" implemented="${plan.implementedAt !== null}">`,
+          plan.planMarkdown,
+          "</proposed_plan>",
+        ].join("\n"),
+      )
+      .join("\n\n");
+    const content = [transcript, proposedPlans].filter(Boolean).join("\n\n");
     return [
       `<thread id="${escapeAttribute(thread.id)}" title="${escapeAttribute(thread.title)}" project="${escapeAttribute(thread.projectTitle)}">`,
-      transcript || "[No conversation messages]",
+      content || "[No conversation messages or proposed plans]",
       "</thread>",
     ].join("\n");
   });
