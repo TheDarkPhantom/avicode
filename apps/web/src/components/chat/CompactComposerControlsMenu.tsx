@@ -15,6 +15,7 @@ import {
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   activePlan: boolean;
   interactionMode: ProviderInteractionMode;
+  interactionModeLockedByPlan: boolean;
   /**
    * Avi Code addition: false when the provider polices its own plan mode and
    * may start building anyway, which the Plan entry says rather than implying
@@ -61,7 +62,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                 props.onToggleInteractionMode();
               }}
             >
-              <MenuRadioItem value="default">Chat</MenuRadioItem>
+              <MenuRadioItem value="default" disabled={props.interactionModeLockedByPlan}>
+                {props.interactionModeLockedByPlan ? "Build after implementing" : "Chat"}
+              </MenuRadioItem>
               <MenuRadioItem value="plan">
                 {props.planTurnEnforced ? "Plan" : "Plan (not enforced)"}
               </MenuRadioItem>

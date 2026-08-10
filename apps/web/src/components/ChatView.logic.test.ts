@@ -19,6 +19,7 @@ import {
   canSubmitComposerSendContext,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  derivePendingPlanDecision,
   shouldFollowUpWithAttachments,
   dismissBranchMismatchForSession,
   getStartedThreadModelChangeBlockReason,
@@ -26,6 +27,7 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveInteractionModeChange,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
@@ -33,6 +35,60 @@ import {
   shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+
+describe("derivePendingPlanDecision", () => {
+  it("locks a settled actionable plan independently of stored interaction mode", () => {
+    expect(
+      derivePendingPlanDecision({
+        latestTurnSettled: true,
+        hasActionablePlan: true,
+        hasPendingUserInput: false,
+      }),
+    ).toEqual({ interactionModeLocked: true, showPlanFollowUpPrompt: true });
+  });
+
+  it("keeps the lock while pending input temporarily replaces the plan actions", () => {
+    expect(
+      derivePendingPlanDecision({
+        latestTurnSettled: true,
+        hasActionablePlan: true,
+        hasPendingUserInput: true,
+      }),
+    ).toEqual({ interactionModeLocked: true, showPlanFollowUpPrompt: false });
+  });
+
+  it("restores normal mode switching when no actionable plan remains", () => {
+    expect(
+      derivePendingPlanDecision({
+        latestTurnSettled: true,
+        hasActionablePlan: false,
+        hasPendingUserInput: false,
+      }),
+    ).toEqual({ interactionModeLocked: false, showPlanFollowUpPrompt: false });
+  });
+});
+
+describe("resolveInteractionModeChange", () => {
+  it("blocks Build while an actionable plan awaits a decision", () => {
+    expect(
+      resolveInteractionModeChange({
+        currentMode: "plan",
+        requestedMode: "default",
+        interactionModeLockedByPlan: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows Build after the plan lock is released", () => {
+    expect(
+      resolveInteractionModeChange({
+        currentMode: "plan",
+        requestedMode: "default",
+        interactionModeLockedByPlan: false,
+      }),
+    ).toBe("default");
+  });
+});
 
 const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
