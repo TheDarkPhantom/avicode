@@ -1425,8 +1425,13 @@ const make = Effect.gen(function* () {
             return true;
         }
       })();
+      // Avi Code addition: a plan-mode turn is read-only (e.g. a plan review
+      // handed to another provider), so it must not consume the source plan
+      // by marking it implemented. Only default-mode turns implement plans.
       const acceptedTurnStartedSourcePlan =
-        event.type === "turn.started" && shouldApplyThreadLifecycle
+        event.type === "turn.started" &&
+        shouldApplyThreadLifecycle &&
+        thread.interactionMode !== "plan"
           ? yield* getSourceProposedPlanReferenceForAcceptedTurnStart(thread.id, eventTurnId)
           : null;
 
