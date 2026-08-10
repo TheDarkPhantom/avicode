@@ -143,7 +143,6 @@ import {
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
-import { SidebarProviderBadge } from "./sidebar/SidebarProviderBadge";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
 import { primaryServerProvidersAtom } from "../state/server";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
@@ -622,15 +621,29 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
     ? getTriggerDisplayModelLabel(selectedModel)
     : thread.modelSelection.model;
   const modelBadge = driverKind ? (
-    // Avi Code addition: side-by-side provider icon + instance badge replaces
-    // the overlapping ProviderInstanceIcon so the provider type (Claude vs
-    // OpenAI) is immediately scannable.
-    <SidebarProviderBadge
-      driverKind={driverKind}
-      displayName={providerEntry?.displayName || thread.session?.providerName || modelInstanceId}
-      {...(providerBadgeLabel ? { badgeLabel: providerBadgeLabel } : null)}
-      {...(providerEntry?.accentColor ? { accentColor: providerEntry.accentColor } : null)}
-    />
+    <span
+      className="inline-flex shrink-0 items-center"
+      aria-label={`${providerEntry?.displayName ?? modelInstanceId} · ${modelLabel}`}
+    >
+      {/* Avi Code addition: a full-opacity glyph with a smaller corner badge.
+          The badge used to be as large as the icon at 70% opacity, which left
+          the provider glyph unreadable in the chat list. */}
+      <ProviderInstanceIcon
+        driverKind={driverKind}
+        displayName={
+          providerBadgeLabel ||
+          providerEntry?.displayName ||
+          thread.session?.providerName ||
+          modelInstanceId
+        }
+        accentColor={providerEntry?.accentColor}
+        showBadge
+        className="size-4.5"
+        iconClassName="size-4.5"
+        badgeClassName="-right-1 -bottom-1 h-3 min-w-3 px-0.5 text-[7px]"
+        indicatorBackground="var(--sidebar)"
+      />
+    </span>
   ) : null;
 
   const isRemote =

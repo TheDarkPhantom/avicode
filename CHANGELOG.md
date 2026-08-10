@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Thread rows show the provider logo with its small corner initials badge again (#146)
+- The usage page shows each provider's logo next to the instance name (#140)
 - A finished Codex plan review offers one click to send its findings back to the plan thread (#143)
 - The plan thread shows when a Codex review is ready and attaches it to your next message (#143)
 - Scrolling or leaving a chat no longer crashes to the error page with a getScrollableNode error (#141)
