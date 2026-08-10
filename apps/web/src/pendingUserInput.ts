@@ -19,6 +19,191 @@ export interface PendingUserInputProgress {
   canAdvance: boolean;
 }
 
+export interface PendingUserInputSubmissionIntent {
+  requestId: string;
+  submissionId: number;
+  answers: Record<string, string | string[]>;
+}
+
+export interface PendingUserInputState {
+  answersByRequestId: Record<string, Record<string, PendingUserInputDraftAnswer>>;
+  questionIndexByRequestId: Record<string, number>;
+  submissionIntent: PendingUserInputSubmissionIntent | null;
+  nextSubmissionId: number;
+}
+
+export const initialPendingUserInputState: PendingUserInputState = {
+  answersByRequestId: {},
+  questionIndexByRequestId: {},
+  submissionIntent: null,
+  nextSubmissionId: 1,
+};
+
+export type PendingUserInputAction =
+  | {
+      type: "option-selected";
+      requestId: string;
+      questions: ReadonlyArray<UserInputQuestion>;
+      questionId: string;
+      optionLabel: string;
+    }
+  | {
+      type: "custom-answer-changed";
+      requestId: string;
+      questionId: string;
+      value: string;
+    }
+  | {
+      type: "advance";
+      requestId: string;
+      questions: ReadonlyArray<UserInputQuestion>;
+    }
+  | { type: "previous"; requestId: string }
+  | { type: "submission-consumed"; submissionId: number }
+  | { type: "requests-cleared"; requestIds: ReadonlySet<string> };
+
+/** Atomic interaction state for the composer questionnaire. */
+export function pendingUserInputReducer(
+  state: PendingUserInputState,
+  action: PendingUserInputAction,
+): PendingUserInputState {
+  if (action.type === "submission-consumed") {
+    return state.submissionIntent?.submissionId === action.submissionId
+      ? { ...state, submissionIntent: null }
+      : state;
+  }
+
+  if (action.type === "requests-cleared") {
+    const answersByRequestId = omitPendingUserInputRequestIds(
+      state.answersByRequestId,
+      action.requestIds,
+    );
+    const questionIndexByRequestId = omitPendingUserInputRequestIds(
+      state.questionIndexByRequestId,
+      action.requestIds,
+    );
+    const submissionIntent =
+      state.submissionIntent && action.requestIds.has(state.submissionIntent.requestId)
+        ? null
+        : state.submissionIntent;
+    if (
+      answersByRequestId === state.answersByRequestId &&
+      questionIndexByRequestId === state.questionIndexByRequestId &&
+      submissionIntent === state.submissionIntent
+    ) {
+      return state;
+    }
+    return { ...state, answersByRequestId, questionIndexByRequestId, submissionIntent };
+  }
+
+  const requestAnswers = state.answersByRequestId[action.requestId] ?? {};
+  const questionIndex = state.questionIndexByRequestId[action.requestId] ?? 0;
+
+  if (action.type === "custom-answer-changed") {
+    return {
+      ...state,
+      answersByRequestId: {
+        ...state.answersByRequestId,
+        [action.requestId]: {
+          ...requestAnswers,
+          [action.questionId]: setPendingUserInputCustomAnswer(
+            requestAnswers[action.questionId],
+            action.value,
+          ),
+        },
+      },
+    };
+  }
+
+  if (action.type === "previous") {
+    return {
+      ...state,
+      questionIndexByRequestId: {
+        ...state.questionIndexByRequestId,
+        [action.requestId]: Math.max(questionIndex - 1, 0),
+      },
+    };
+  }
+
+  if (action.type === "option-selected") {
+    const selectedQuestionIndex = action.questions.findIndex(
+      (question) => question.id === action.questionId,
+    );
+    const question = action.questions[selectedQuestionIndex];
+    if (!question) return state;
+
+    const nextRequestAnswers = {
+      ...requestAnswers,
+      [action.questionId]: togglePendingUserInputOptionSelection(
+        question,
+        requestAnswers[action.questionId],
+        action.optionLabel,
+      ),
+    };
+    const isLastQuestion = selectedQuestionIndex >= action.questions.length - 1;
+    const resolvedAnswers =
+      !question.multiSelect && isLastQuestion
+        ? buildPendingUserInputAnswers(action.questions, nextRequestAnswers)
+        : null;
+
+    return {
+      ...state,
+      answersByRequestId: {
+        ...state.answersByRequestId,
+        [action.requestId]: nextRequestAnswers,
+      },
+      questionIndexByRequestId: question.multiSelect
+        ? state.questionIndexByRequestId
+        : {
+            ...state.questionIndexByRequestId,
+            [action.requestId]: isLastQuestion ? selectedQuestionIndex : selectedQuestionIndex + 1,
+          },
+      submissionIntent: resolvedAnswers
+        ? {
+            requestId: action.requestId,
+            submissionId: state.nextSubmissionId,
+            answers: resolvedAnswers,
+          }
+        : state.submissionIntent,
+      nextSubmissionId: resolvedAnswers ? state.nextSubmissionId + 1 : state.nextSubmissionId,
+    };
+  }
+
+  const normalizedIndex =
+    action.questions.length === 0
+      ? 0
+      : Math.max(0, Math.min(questionIndex, action.questions.length - 1));
+  const isLastQuestion = normalizedIndex >= action.questions.length - 1;
+  if (!isLastQuestion) {
+    const activeQuestion = action.questions[normalizedIndex];
+    if (
+      !activeQuestion ||
+      !resolvePendingUserInputAnswer(activeQuestion, requestAnswers[activeQuestion.id])
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      questionIndexByRequestId: {
+        ...state.questionIndexByRequestId,
+        [action.requestId]: normalizedIndex + 1,
+      },
+    };
+  }
+
+  const resolvedAnswers = buildPendingUserInputAnswers(action.questions, requestAnswers);
+  if (!resolvedAnswers) return state;
+  return {
+    ...state,
+    submissionIntent: {
+      requestId: action.requestId,
+      submissionId: state.nextSubmissionId,
+      answers: resolvedAnswers,
+    },
+    nextSubmissionId: state.nextSubmissionId + 1,
+  };
+}
+
 function normalizeDraftAnswer(value: string | undefined): string | null {
   if (typeof value !== "string") {
     return null;

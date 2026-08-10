@@ -36,6 +36,14 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Multi-select answers stay selected and every question moves in the expected direction (#151)
+
 ## 0.0.31-avicode.9 (2026-08-10)
 
 Upstream: t3code 0.0.31
