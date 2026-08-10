@@ -5,6 +5,7 @@ import {
   type ProjectScript,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+export { primaryProjectScript } from "@t3tools/shared/projectScripts";
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
 export interface ProjectScriptInput {
@@ -79,9 +80,4 @@ export function nextProjectScriptId(name: string, existingIds: Iterable<string>)
 
   // This last-resort fallback only triggers after exhausting thousands of suffixes.
   return `${baseId}-${Date.now()}`.slice(0, MAX_SCRIPT_ID_LENGTH);
-}
-
-export function primaryProjectScript(scripts: ReadonlyArray<ProjectScript>): ProjectScript | null {
-  const regular = scripts.find((script) => !script.runOnWorktreeCreate);
-  return regular ?? scripts[0] ?? null;
 }

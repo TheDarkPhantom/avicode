@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
 const isProjectSetupScriptOperationError = Schema.is(
@@ -63,10 +64,12 @@ const makeTerminalManagerLayer = (
 const testLayer = (
   project: OrchestrationProject,
   terminal: Pick<TerminalManager.TerminalManager["Service"], "open" | "write">,
+  settings: Parameters<typeof ServerSettingsService.layerTest>[0] = {},
 ) =>
   ProjectSetupScriptRunner.layer.pipe(
     Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
     Layer.provideMerge(makeTerminalManagerLayer(terminal)),
+    Layer.provideMerge(ServerSettingsService.layerTest(settings)),
   );
 
 describe("ProjectSetupScriptRunner", () => {
@@ -81,12 +84,147 @@ describe("ProjectSetupScriptRunner", () => {
         threadId: "thread-1",
         projectId: "project-1",
         worktreePath: "/repo/worktrees/a",
+        allowPrimaryActionFallback: true,
       });
 
       expect(result).toEqual({ status: "no-script" });
       expect(open).not.toHaveBeenCalled();
       expect(write).not.toHaveBeenCalled();
     }).pipe(Effect.provide(testLayer(project, { open, write })));
+  });
+
+  it.effect("starts the primary action when the global worktree setting is enabled", () => {
+    const open = vi.fn(() =>
+      Effect.succeed({
+        threadId: "thread-1",
+        terminalId: "setup-dev",
+        cwd: "/repo/worktrees/a",
+        worktreePath: "/repo/worktrees/a",
+        status: "running" as const,
+        pid: 123,
+        history: "",
+        exitCode: null,
+        exitSignal: null,
+        label: "setup-dev",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const write = vi.fn(() => Effect.void);
+    const project = makeProject([
+      {
+        id: "dev",
+        name: "Dev server",
+        command: "bun run dev",
+        icon: "play",
+        runOnWorktreeCreate: false,
+      },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/worktrees/a",
+        allowPrimaryActionFallback: true,
+      });
+
+      expect(result).toMatchObject({ status: "started", scriptId: "dev" });
+      expect(write).toHaveBeenCalledOnce();
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ data: "bun run dev\r" }));
+    }).pipe(
+      Effect.provide(
+        testLayer(project, { open, write }, { autoStartDevServerForNewWorktrees: true }),
+      ),
+    );
+  });
+
+  it.effect("does not start the primary action when the global setting is disabled", () => {
+    const open = vi.fn(() => Effect.die("unexpected open"));
+    const write = vi.fn(() => Effect.die("unexpected write"));
+    const project = makeProject([
+      { id: "dev", name: "Dev", command: "bun dev", icon: "play", runOnWorktreeCreate: false },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/worktrees/a",
+        allowPrimaryActionFallback: true,
+      });
+      expect(result).toEqual({ status: "no-script" });
+      expect(open).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(testLayer(project, { open, write })));
+  });
+
+  it.effect("does not use the global fallback outside new chat worktree creation", () => {
+    const open = vi.fn(() => Effect.die("unexpected open"));
+    const write = vi.fn(() => Effect.die("unexpected write"));
+    const project = makeProject([
+      { id: "dev", name: "Dev", command: "bun dev", icon: "play", runOnWorktreeCreate: false },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const result = yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/worktrees/a",
+      });
+      expect(result).toEqual({ status: "no-script" });
+      expect(open).not.toHaveBeenCalled();
+    }).pipe(
+      Effect.provide(
+        testLayer(project, { open, write }, { autoStartDevServerForNewWorktrees: true }),
+      ),
+    );
+  });
+
+  it.effect("keeps an explicit setup action authoritative over the global fallback", () => {
+    const open = vi.fn(() =>
+      Effect.succeed({
+        threadId: "thread-1",
+        terminalId: "setup-setup",
+        cwd: "/repo/worktrees/a",
+        worktreePath: "/repo/worktrees/a",
+        status: "running" as const,
+        pid: 123,
+        history: "",
+        exitCode: null,
+        exitSignal: null,
+        label: "setup-setup",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const write = vi.fn(() => Effect.void);
+    const project = makeProject([
+      { id: "dev", name: "Dev", command: "bun dev", icon: "play", runOnWorktreeCreate: false },
+      {
+        id: "setup",
+        name: "Setup",
+        command: "bun install",
+        icon: "configure",
+        runOnWorktreeCreate: true,
+      },
+    ]);
+
+    return Effect.gen(function* () {
+      const runner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      yield* runner.runForThread({
+        threadId: "thread-1",
+        projectId: "project-1",
+        worktreePath: "/repo/worktrees/a",
+      });
+      expect(write).toHaveBeenCalledOnce();
+      expect(write).toHaveBeenCalledWith(expect.objectContaining({ data: "bun install\r" }));
+    }).pipe(
+      Effect.provide(
+        testLayer(project, { open, write }, { autoStartDevServerForNewWorktrees: true }),
+      ),
+    );
   });
 
   it.effect(

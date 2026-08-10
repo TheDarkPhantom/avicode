@@ -396,18 +396,41 @@ export function PreviewView({
         return;
       }
       void bridge.captureScreenshot(runtimeTabId).then(
-        (artifact) => {
+        async (artifact) => {
           const revealAction = {
             children: revealInFileExplorerLabel(navigator.platform),
             onClick: () => void bridge.revealArtifact(artifact.path),
           };
           let pathCopied = false;
           let imageCopied = false;
+          let attached = false;
+          let attachmentError: unknown = null;
           let toastId: ReturnType<typeof toastManager.add>;
+
+          try {
+            if (!artifact.dataUrl) throw new Error("Screenshot image data was unavailable.");
+            const response = await fetch(artifact.dataUrl);
+            const blob = await response.blob();
+            const file = new File([blob], `${artifact.id}.png`, {
+              type: blob.type || artifact.mimeType,
+            });
+            addImage(threadRef, {
+              type: "image",
+              id: artifact.id,
+              name: file.name,
+              mimeType: file.type,
+              sizeBytes: file.size,
+              previewUrl: artifact.dataUrl,
+              file,
+            });
+            attached = true;
+          } catch (error) {
+            attachmentError = error;
+          }
 
           const updateScreenshotToast = (
             type: "success" | "error" = "success",
-            title = "Screenshot saved",
+            title = attached ? "Screenshot saved and attached" : "Screenshot saved",
             description?: string,
           ) => {
             toastManager.update(
@@ -492,8 +515,13 @@ export function PreviewView({
 
           toastId = toastManager.add(
             stackedThreadToast({
-              type: "success",
-              title: "Screenshot saved",
+              type: attached ? "success" : "error",
+              title: attached ? "Screenshot saved and attached" : "Screenshot saved",
+              description: attached
+                ? undefined
+                : attachmentError instanceof Error
+                  ? `Unable to attach it: ${attachmentError.message}`
+                  : "Unable to attach it to the message.",
               actionProps: {
                 children: "Copy image",
                 onClick: copyImage,
@@ -525,7 +553,7 @@ export function PreviewView({
         },
       );
     },
-    [recordingRuntimeTabId, runtimeTabId, tabId, threadRef],
+    [addImage, recordingRuntimeTabId, runtimeTabId, tabId, threadRef],
   );
 
   const handlePickElement = useCallback(() => {

@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Start dev servers for new worktrees and attach browser screenshots in one click (#154)
 - Multi-select answers stay selected and every question moves in the expected direction (#151)
 
 ## 0.0.31-avicode.9 (2026-08-10)

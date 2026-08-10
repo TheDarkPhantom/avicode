@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   emptyStateUrl: null as ((url: string) => void) | null,
   togglePictureInPicture: null as (() => void) | null,
   toggleNativePictureInPicture: null as (() => void) | null,
+  capture: null as (() => void) | null,
   pictureInPicturePressed: false,
   miniPlayerTabId: null as string | null,
   openMiniPlayer: vi.fn(),
@@ -19,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   closePictureInPicture: vi.fn(async (_tabId: string): Promise<void> => undefined),
   pictureInPicture: false,
   showEmptyState: false,
+  addImage: vi.fn(),
+  captureScreenshot: vi.fn(),
+  toastAdd: vi.fn(() => "toast-1"),
 }));
 
 vi.mock("~/state/session", () => ({
@@ -28,7 +32,7 @@ vi.mock("~/state/session", () => ({
 vi.mock("~/composerDraftStore", () => ({
   useComposerDraftStore: (
     select: (store: { addPreviewAnnotation: () => void; addImage: () => void }) => unknown,
-  ) => select({ addPreviewAnnotation: vi.fn(), addImage: vi.fn() }),
+  ) => select({ addPreviewAnnotation: vi.fn(), addImage: mocks.addImage }),
 }));
 
 vi.mock("~/lib/previewAnnotation", () => ({
@@ -138,12 +142,13 @@ vi.mock("~/rightPanelStore", () => ({
 
 vi.mock("~/components/ui/toast", () => ({
   stackedThreadToast: vi.fn(),
-  toastManager: { add: vi.fn() },
+  toastManager: { add: mocks.toastAdd, update: vi.fn() },
 }));
 
 vi.mock("./previewBridge", () => ({
   previewBridge: {
     navigate: mocks.navigate,
+    captureScreenshot: mocks.captureScreenshot,
     pictureInPicture: {
       open: mocks.openPictureInPicture,
       close: mocks.closePictureInPicture,
@@ -155,6 +160,7 @@ vi.mock("./PreviewChromeRow", () => ({
   PreviewChromeRow: (props: {
     onSubmit: (url: string) => void;
     onPictureInPicture?: () => void;
+    onCapture?: () => void;
     pictureInPicture?: boolean;
     trailingActions?: {
       props: { onNativePictureInPicture?: () => void };
@@ -162,6 +168,7 @@ vi.mock("./PreviewChromeRow", () => ({
   }) => {
     mocks.submittedUrl = props.onSubmit;
     mocks.togglePictureInPicture = props.onPictureInPicture ?? null;
+    mocks.capture = props.onCapture ?? null;
     mocks.toggleNativePictureInPicture =
       props.trailingActions?.props.onNativePictureInPicture ?? null;
     mocks.pictureInPicturePressed = props.pictureInPicture ?? false;
@@ -206,6 +213,7 @@ describe("PreviewView navigation", () => {
     mocks.emptyStateUrl = null;
     mocks.togglePictureInPicture = null;
     mocks.toggleNativePictureInPicture = null;
+    mocks.capture = null;
     mocks.pictureInPicturePressed = false;
     mocks.miniPlayerTabId = null;
     mocks.openMiniPlayer.mockClear();
@@ -215,6 +223,9 @@ describe("PreviewView navigation", () => {
     mocks.closePictureInPicture.mockClear();
     mocks.pictureInPicture = false;
     mocks.showEmptyState = false;
+    mocks.addImage.mockClear();
+    mocks.captureScreenshot.mockReset();
+    mocks.toastAdd.mockClear();
   });
 
   it.each([
@@ -326,5 +337,48 @@ describe("PreviewView navigation", () => {
     await vi.waitFor(() =>
       expect(mocks.closePictureInPicture).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID),
     );
+  });
+
+  it("saves and attaches a captured screenshot to the initiating thread draft", async () => {
+    mocks.captureScreenshot.mockResolvedValue({
+      id: "browser-screenshot-example",
+      tabId: TEST_RUNTIME_TAB_ID,
+      path: "C:/artifacts/browser-screenshot-example.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      dataUrl: "data:image/png;base64,AQID",
+    });
+
+    renderToStaticMarkup(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />);
+    mocks.capture?.();
+
+    await vi.waitFor(() => expect(mocks.addImage).toHaveBeenCalledOnce());
+    expect(mocks.addImage).toHaveBeenCalledWith(
+      TEST_THREAD_REF,
+      expect.objectContaining({
+        id: "browser-screenshot-example",
+        name: "browser-screenshot-example.png",
+        mimeType: "image/png",
+        previewUrl: "data:image/png;base64,AQID",
+      }),
+    );
+  });
+
+  it("keeps a saved screenshot recoverable when attachment data is unavailable", async () => {
+    mocks.captureScreenshot.mockResolvedValue({
+      id: "browser-screenshot-example",
+      tabId: TEST_RUNTIME_TAB_ID,
+      path: "C:/artifacts/browser-screenshot-example.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      createdAt: "2026-08-10T00:00:00.000Z",
+    });
+
+    renderToStaticMarkup(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />);
+    mocks.capture?.();
+
+    await vi.waitFor(() => expect(mocks.toastAdd).toHaveBeenCalledOnce());
+    expect(mocks.addImage).not.toHaveBeenCalled();
   });
 });

@@ -18,6 +18,7 @@ import {
   MicIcon,
   PaletteIcon,
   PanelLeftIcon,
+  PlayIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
@@ -542,6 +543,38 @@ function NewChatSettings() {
   );
 }
 
+/** Avi Code addition. Global fallback for projects whose worktrees have no setup action. */
+function WorktreeAutomationSettings() {
+  const autoStartDevServer = usePrimarySettings(
+    (settings) => settings.autoStartDevServerForNewWorktrees,
+  );
+  const defaultEnvMode = usePrimarySettings((settings) => settings.defaultThreadEnvMode);
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsSection title="Worktree automation" icon={<PlayIcon className="size-5" />}>
+      <SettingsRow
+        title="Start a dev server for new worktrees"
+        description="When a new chat creates a worktree, run the project's primary action if no action is explicitly marked to run on worktree creation. Explicit project setup always wins, and local chats are unaffected."
+        status={
+          defaultEnvMode === "worktree"
+            ? "Applies automatically to new chats using the default worktree environment."
+            : "The default chat environment is Local, so this applies only when you choose a worktree."
+        }
+        control={
+          <Switch
+            checked={autoStartDevServer}
+            onCheckedChange={(checked) =>
+              updateSettings({ autoStartDevServerForNewWorktrees: Boolean(checked) })
+            }
+            aria-label="Start a dev server for new worktrees"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
 function ChatListSettings() {
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
@@ -845,6 +878,7 @@ export function AviCodeSettings() {
           <SettingsLandingPageSettings />
           <ColorThemeSettings />
           <NewChatSettings />
+          <WorktreeAutomationSettings />
           <CommunicationStyleSettings />
           <ChatLayoutSettings />
           <SidebarLayoutSettings />

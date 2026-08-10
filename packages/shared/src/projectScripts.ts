@@ -35,3 +35,17 @@ export function projectScriptRuntimeEnv(
 export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
   return scripts.find((script) => script.runOnWorktreeCreate) ?? null;
 }
+
+/** The regular project action used by dev-server affordances. */
+export function primaryProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
+  const regular = scripts.find((script) => !script.runOnWorktreeCreate);
+  return regular ?? scripts[0] ?? null;
+}
+
+/** Explicit worktree setup wins; the primary action is an opt-in fallback. */
+export function worktreeCreateProjectScript(
+  scripts: readonly ProjectScript[],
+  autoStartPrimary: boolean,
+): ProjectScript | null {
+  return setupProjectScript(scripts) ?? (autoStartPrimary ? primaryProjectScript(scripts) : null);
+}

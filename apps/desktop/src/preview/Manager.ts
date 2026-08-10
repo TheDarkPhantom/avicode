@@ -2046,6 +2046,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       mimeType: "image/png" as const,
       sizeBytes: data.byteLength,
       createdAt,
+      dataUrl: `data:image/png;base64,${data.toString("base64")}`,
     };
   });
 

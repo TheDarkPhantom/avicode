@@ -688,6 +688,8 @@ export interface DesktopPreviewScreenshotArtifact {
   mimeType: "image/png";
   sizeBytes: number;
   createdAt: string;
+  /** PNG data for attaching the capture without a second filesystem round trip. */
+  dataUrl?: string;
 }
 
 export const DesktopPreviewScreenshotArtifactSchema: Schema.Codec<DesktopPreviewScreenshotArtifact> =
@@ -698,6 +700,7 @@ export const DesktopPreviewScreenshotArtifactSchema: Schema.Codec<DesktopPreview
     mimeType: Schema.Literal("image/png"),
     sizeBytes: Schema.Int,
     createdAt: Schema.String,
+    dataUrl: Schema.optionalKey(Schema.String),
   });
 
 /**
