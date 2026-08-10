@@ -6258,35 +6258,75 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onSelectActivePendingUserInputOption = useCallback(
     (questionId: string, optionLabel: string) => {
-      if (!activePendingUserInput) {
+      if (!activePendingUserInput || !activePendingProgress) {
         return;
       }
-      setPendingUserInputAnswersByRequestId((existing) => {
-        const question =
-          (activePendingProgress?.activeQuestion?.id === questionId
-            ? activePendingProgress.activeQuestion
-            : undefined) ??
-          activePendingUserInput.questions.find((entry) => entry.id === questionId);
-        if (!question) {
-          return existing;
-        }
-
-        return {
-          ...existing,
-          [activePendingUserInput.requestId]: {
-            ...existing[activePendingUserInput.requestId],
-            [questionId]: togglePendingUserInputOptionSelection(
-              question,
-              existing[activePendingUserInput.requestId]?.[questionId],
-              optionLabel,
-            ),
-          },
-        };
-      });
+      const question =
+        (activePendingProgress.activeQuestion?.id === questionId
+          ? activePendingProgress.activeQuestion
+          : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
+      if (!question) {
+        return;
+      }
+      const nextDraft = togglePendingUserInputOptionSelection(
+        question,
+        activePendingDraftAnswers[questionId],
+        optionLabel,
+      );
+      setPendingUserInputAnswersByRequestId((existing) => ({
+        ...existing,
+        [activePendingUserInput.requestId]: {
+          ...existing[activePendingUserInput.requestId],
+          [questionId]: nextDraft,
+        },
+      }));
       promptRef.current = "";
       composerRef.current?.resetCursorState({ cursor: 0 });
+
+      // Avi Code addition: a single-select answer commits on the click that
+      // made it — advance to the next question, or submit if this was the last.
+      // Multi-select still waits for explicit submission because a pick there is
+      // one of several and the user is not done choosing. The button and Enter
+      // still work for both; this only removes the extra confirmation step a
+      // single-select answer never needed.
+      if (question.multiSelect) {
+        return;
+      }
+      if (!activePendingProgress.isLastQuestion) {
+        setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
+        return;
+      }
+      const resolvedAnswers = buildPendingUserInputAnswers(activePendingUserInput.questions, {
+        ...activePendingDraftAnswers,
+        [questionId]: nextDraft,
+      });
+      if (!resolvedAnswers) {
+        return;
+      }
+      // Mirror the send path's attachment handling: an answer carries strings
+      // only, so anything attached to the composer follows as its own message
+      // once the question clears.
+      if (
+        activeThreadId &&
+        shouldFollowUpWithAttachments({
+          isLastQuestion: true,
+          hasResolvedAnswers: true,
+          attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
+        })
+      ) {
+        pendingAnswerAttachmentFollowUpRef.current = activeThreadId;
+      }
+      void onRespondToUserInput(activePendingUserInput.requestId, resolvedAnswers);
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput, composerRef],
+    [
+      activePendingDraftAnswers,
+      activePendingProgress,
+      activePendingUserInput,
+      activeThreadId,
+      composerRef,
+      onRespondToUserInput,
+      setActivePendingUserInputQuestionIndex,
+    ],
   );
 
   // Avi Code addition: see `pendingAnswerFocusSync` for why this is deferred.

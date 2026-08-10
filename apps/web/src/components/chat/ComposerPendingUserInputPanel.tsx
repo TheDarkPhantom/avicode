@@ -74,10 +74,12 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
   const activeQuestion = progress.activeQuestion;
 
-  // Avi Code addition: no auto-advance timer. Both single-select and
-  // multi-select questions wait for explicit submission (Enter or the
-  // "Submit answer" button) so the user can reconsider, switch options,
-  // or type a custom answer before committing.
+  // Avi Code addition: selecting an option on a single-select question commits
+  // it immediately (advance to the next question, or submit if it was the last)
+  // — the extra confirmation step a single choice never needed. Multi-select
+  // still waits for explicit submission (Enter or the "Submit answers" button)
+  // because a pick there is one of several. The commit lives in the parent's
+  // toggle handler; this just forwards the selection.
   const handleOptionSelection = useEffectEvent((questionId: string, optionLabel: string) => {
     onToggleOption(questionId, optionLabel);
   });
