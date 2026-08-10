@@ -6264,8 +6264,7 @@ function ChatViewContent(props: ChatViewProps) {
       const question =
         (activePendingProgress.activeQuestion?.id === questionId
           ? activePendingProgress.activeQuestion
-          : undefined) ??
-        activePendingUserInput.questions.find((entry) => entry.id === questionId);
+          : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
       if (!question) {
         return;
       }
