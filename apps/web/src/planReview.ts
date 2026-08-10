@@ -85,9 +85,11 @@ export function findLatestPlanReviewShell<Shell extends PlanReviewShellCandidate
     if (!source || source.threadId !== input.planThreadId || source.planId !== input.planId) {
       continue;
     }
-    const candidateKey = [shell.latestTurn?.startedAt ?? "", shell.latestTurn?.turnId ?? "", shell.id].join(
-      ":",
-    );
+    const candidateKey = [
+      shell.latestTurn?.startedAt ?? "",
+      shell.latestTurn?.turnId ?? "",
+      shell.id,
+    ].join(":");
     const latestKey = [
       latest?.latestTurn?.startedAt ?? "",
       latest?.latestTurn?.turnId ?? "",
