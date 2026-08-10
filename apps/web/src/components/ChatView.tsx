@@ -55,6 +55,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -117,9 +118,8 @@ import {
   hasHandledExpiredUserInputRecovery,
   markExpiredUserInputRecoveryHandled,
   mergeExpiredUserInputWithComposerDraft,
-  omitPendingUserInputRequestIds,
-  setPendingUserInputCustomAnswer,
-  togglePendingUserInputOptionSelection,
+  initialPendingUserInputState,
+  pendingUserInputReducer,
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
@@ -1388,11 +1388,10 @@ function ChatViewContent(props: ChatViewProps) {
   // Requests placed here were abandoned by an explicit Stop. Their command
   // may still settle later, but that completion no longer owns visible state.
   const dismissedUserInputRequestIdsRef = useRef(new Set<ApprovalRequestId>());
-  const [pendingUserInputAnswersByRequestId, setPendingUserInputAnswersByRequestId] = useState<
-    Record<string, Record<string, PendingUserInputDraftAnswer>>
-  >({});
-  const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
-    useState<Record<string, number>>({});
+  const [pendingUserInputState, dispatchPendingUserInput] = useReducer(
+    pendingUserInputReducer,
+    initialPendingUserInputState,
+  );
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
@@ -2234,13 +2233,13 @@ function ChatViewContent(props: ChatViewProps) {
   const activePendingDraftAnswers = useMemo(
     () =>
       activePendingUserInput
-        ? (pendingUserInputAnswersByRequestId[activePendingUserInput.requestId] ??
+        ? (pendingUserInputState.answersByRequestId[activePendingUserInput.requestId] ??
           EMPTY_PENDING_USER_INPUT_ANSWERS)
         : EMPTY_PENDING_USER_INPUT_ANSWERS,
-    [activePendingUserInput, pendingUserInputAnswersByRequestId],
+    [activePendingUserInput, pendingUserInputState.answersByRequestId],
   );
   const activePendingQuestionIndex = activePendingUserInput
-    ? (pendingUserInputQuestionIndexByRequestId[activePendingUserInput.requestId] ?? 0)
+    ? (pendingUserInputState.questionIndexByRequestId[activePendingUserInput.requestId] ?? 0)
     : 0;
   const activePendingProgress = useMemo(
     () =>
@@ -2311,7 +2310,7 @@ function ChatViewContent(props: ChatViewProps) {
         ? formatExpiredUserInputAnswers(entry.questions, entry.submittedAnswers)
         : null;
       if (recoveredPrompt === null) {
-        const draft = pendingUserInputAnswersByRequestId[entry.requestId];
+        const draft = pendingUserInputState.answersByRequestId[entry.requestId];
         if (draft) {
           recoveredPrompt = formatExpiredUserInputDraft(entry.questions, draft);
         }
@@ -2326,12 +2325,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     const expiredRequestIds = new Set(unseen.map((entry) => entry.requestId));
-    setPendingUserInputAnswersByRequestId((existing) =>
-      omitPendingUserInputRequestIds(existing, expiredRequestIds),
-    );
-    setPendingUserInputQuestionIndexByRequestId((existing) =>
-      omitPendingUserInputRequestIds(existing, expiredRequestIds),
-    );
+    dispatchPendingUserInput({ type: "requests-cleared", requestIds: expiredRequestIds });
 
     // Restore immediately when safe. Otherwise the banner below offers an
     // explicit restore that appends without overwriting the current draft.
@@ -2339,7 +2333,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (recoveredRequestId !== null) {
       restoreExpiredUserInput({ requestId: recoveredRequestId, prompt: recoveredPrompt });
     }
-  }, [expiredUserInputs, pendingUserInputAnswersByRequestId, restoreExpiredUserInput]);
+  }, [expiredUserInputs, pendingUserInputState.answersByRequestId, restoreExpiredUserInput]);
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {
       return null;
@@ -6243,90 +6237,22 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadId, environmentId, respondToThreadUserInput, setThreadError],
   );
 
-  const setActivePendingUserInputQuestionIndex = useCallback(
-    (nextQuestionIndex: number) => {
+  const onSelectActivePendingUserInputOption = useCallback(
+    (questionId: string, optionLabel: string) => {
       if (!activePendingUserInput) {
         return;
       }
-      setPendingUserInputQuestionIndexByRequestId((existing) => ({
-        ...existing,
-        [activePendingUserInput.requestId]: nextQuestionIndex,
-      }));
-    },
-    [activePendingUserInput],
-  );
-
-  const onSelectActivePendingUserInputOption = useCallback(
-    (questionId: string, optionLabel: string) => {
-      if (!activePendingUserInput || !activePendingProgress) {
-        return;
-      }
-      const question =
-        (activePendingProgress.activeQuestion?.id === questionId
-          ? activePendingProgress.activeQuestion
-          : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
-      if (!question) {
-        return;
-      }
-      const nextDraft = togglePendingUserInputOptionSelection(
-        question,
-        activePendingDraftAnswers[questionId],
+      dispatchPendingUserInput({
+        type: "option-selected",
+        requestId: activePendingUserInput.requestId,
+        questions: activePendingUserInput.questions,
+        questionId,
         optionLabel,
-      );
-      setPendingUserInputAnswersByRequestId((existing) => ({
-        ...existing,
-        [activePendingUserInput.requestId]: {
-          ...existing[activePendingUserInput.requestId],
-          [questionId]: nextDraft,
-        },
-      }));
+      });
       promptRef.current = "";
       composerRef.current?.resetCursorState({ cursor: 0 });
-
-      // Avi Code addition: a single-select answer commits on the click that
-      // made it — advance to the next question, or submit if this was the last.
-      // Multi-select still waits for explicit submission because a pick there is
-      // one of several and the user is not done choosing. The button and Enter
-      // still work for both; this only removes the extra confirmation step a
-      // single-select answer never needed.
-      if (question.multiSelect) {
-        return;
-      }
-      if (!activePendingProgress.isLastQuestion) {
-        setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
-        return;
-      }
-      const resolvedAnswers = buildPendingUserInputAnswers(activePendingUserInput.questions, {
-        ...activePendingDraftAnswers,
-        [questionId]: nextDraft,
-      });
-      if (!resolvedAnswers) {
-        return;
-      }
-      // Mirror the send path's attachment handling: an answer carries strings
-      // only, so anything attached to the composer follows as its own message
-      // once the question clears.
-      if (
-        activeThreadId &&
-        shouldFollowUpWithAttachments({
-          isLastQuestion: true,
-          hasResolvedAnswers: true,
-          attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
-        })
-      ) {
-        pendingAnswerAttachmentFollowUpRef.current = activeThreadId;
-      }
-      void onRespondToUserInput(activePendingUserInput.requestId, resolvedAnswers);
     },
-    [
-      activePendingDraftAnswers,
-      activePendingProgress,
-      activePendingUserInput,
-      activeThreadId,
-      composerRef,
-      onRespondToUserInput,
-      setActivePendingUserInputQuestionIndex,
-    ],
+    [activePendingUserInput, composerRef],
   );
 
   // Avi Code addition: see `pendingAnswerFocusSync` for why this is deferred.
@@ -6359,39 +6285,49 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
       promptRef.current = value;
-      setPendingUserInputAnswersByRequestId((existing) => ({
-        ...existing,
-        [activePendingUserInput.requestId]: {
-          ...existing[activePendingUserInput.requestId],
-          [questionId]: setPendingUserInputCustomAnswer(
-            existing[activePendingUserInput.requestId]?.[questionId],
-            value,
-          ),
-        },
-      }));
+      dispatchPendingUserInput({
+        type: "custom-answer-changed",
+        requestId: activePendingUserInput.requestId,
+        questionId,
+        value,
+      });
       pendingAnswerFocusSyncRef.current?.sync({ value, cursor: nextCursor, expandedCursor });
     },
     [activePendingUserInput],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {
-    if (!activePendingUserInput || !activePendingProgress) {
+    if (!activePendingUserInput) {
       return;
     }
-    if (activePendingProgress.isLastQuestion) {
-      if (activePendingResolvedAnswers) {
-        void onRespondToUserInput(activePendingUserInput.requestId, activePendingResolvedAnswers);
-      }
-      return;
+    dispatchPendingUserInput({
+      type: "advance",
+      requestId: activePendingUserInput.requestId,
+      questions: activePendingUserInput.questions,
+    });
+  }, [activePendingUserInput]);
+
+  // Reducer submission intents carry the exact answer snapshot that completed
+  // the questionnaire. Consuming each id once keeps React Strict Mode from
+  // sending the provider response twice while still allowing a failed retry.
+  const consumedPendingSubmissionIdsRef = useRef(new Set<number>());
+  useEffect(() => {
+    const intent = pendingUserInputState.submissionIntent;
+    if (!intent || consumedPendingSubmissionIdsRef.current.has(intent.submissionId)) return;
+    consumedPendingSubmissionIdsRef.current.add(intent.submissionId);
+    dispatchPendingUserInput({ type: "submission-consumed", submissionId: intent.submissionId });
+    if (
+      activeThreadId &&
+      shouldFollowUpWithAttachments({
+        isLastQuestion: true,
+        hasResolvedAnswers: true,
+        attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
+      })
+    ) {
+      pendingAnswerAttachmentFollowUpRef.current = activeThreadId;
     }
-    setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
-  }, [
-    activePendingProgress,
-    activePendingResolvedAnswers,
-    activePendingUserInput,
-    onRespondToUserInput,
-    setActivePendingUserInputQuestionIndex,
-  ]);
+    void onRespondToUserInput(intent.requestId as ApprovalRequestId, intent.answers);
+  }, [activeThreadId, composerRef, onRespondToUserInput, pendingUserInputState.submissionIntent]);
 
   // Avi Code addition: deliver the attachments the answer could not carry.
   //
@@ -6418,11 +6354,11 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activePendingUserInput, activeThreadId]);
 
   const onPreviousActivePendingUserInputQuestion = useCallback(() => {
-    if (!activePendingProgress) {
+    if (!activePendingUserInput) {
       return;
     }
-    setActivePendingUserInputQuestionIndex(Math.max(activePendingProgress.questionIndex - 1, 0));
-  }, [activePendingProgress, setActivePendingUserInputQuestionIndex]);
+    dispatchPendingUserInput({ type: "previous", requestId: activePendingUserInput.requestId });
+  }, [activePendingUserInput]);
 
   const onSubmitPlanFollowUp = useCallback(
     async ({

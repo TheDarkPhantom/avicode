@@ -11,6 +11,8 @@ import {
   markExpiredUserInputRecoveryHandled,
   mergeExpiredUserInputWithComposerDraft,
   omitPendingUserInputRequestIds,
+  initialPendingUserInputState,
+  pendingUserInputReducer,
   resolvePendingUserInputAnswer,
   setPendingUserInputCustomAnswer,
   shouldDismissPendingUserInputForKey,
@@ -153,6 +155,139 @@ describe("togglePendingUserInputOptionSelection", () => {
       customAnswer: "",
       selectedOptionLabels: ["Web"],
     });
+  });
+});
+
+describe("pendingUserInputReducer", () => {
+  const questions = [
+    singleSelectQuestion,
+    multiSelectQuestion,
+    { ...singleSelectQuestion, id: "third", header: "Third" },
+    { ...singleSelectQuestion, id: "fourth", header: "Fourth" },
+  ] as const;
+  const select = (
+    state: typeof initialPendingUserInputState,
+    questionId: string,
+    optionLabel: string,
+  ) =>
+    pendingUserInputReducer(state, {
+      type: "option-selected",
+      requestId: "req-1",
+      questions,
+      questionId,
+      optionLabel,
+    });
+
+  it("accumulates rapid multi-select choices without advancing", () => {
+    let state = select(initialPendingUserInputState, "areas", "Server");
+    state = select(state, "areas", "Web");
+    expect(state.answersByRequestId["req-1"]?.areas?.selectedOptionLabels).toEqual([
+      "Server",
+      "Web",
+    ]);
+    expect(state.questionIndexByRequestId["req-1"]).toBeUndefined();
+
+    state = select(state, "areas", "Server");
+    expect(state.answersByRequestId["req-1"]?.areas?.selectedOptionLabels).toEqual(["Web"]);
+  });
+
+  it("moves forward exactly once for each single-select answer", () => {
+    let state = select(initialPendingUserInputState, "scope", "Orchestration-first");
+    expect(state.questionIndexByRequestId["req-1"]).toBe(1);
+
+    state = select(state, "areas", "Server");
+    state = pendingUserInputReducer(state, {
+      type: "advance",
+      requestId: "req-1",
+      questions,
+    });
+    expect(state.questionIndexByRequestId["req-1"]).toBe(2);
+
+    state = select(state, "third", "Orchestration-first");
+    expect(state.questionIndexByRequestId["req-1"]).toBe(3);
+  });
+
+  it("only moves backward for an explicit previous action", () => {
+    let state = select(initialPendingUserInputState, "scope", "Orchestration-first");
+    state = select(state, "areas", "Server");
+    state = pendingUserInputReducer(state, {
+      type: "advance",
+      requestId: "req-1",
+      questions,
+    });
+    state = pendingUserInputReducer(state, { type: "previous", requestId: "req-1" });
+    expect(state.questionIndexByRequestId["req-1"]).toBe(1);
+  });
+
+  it("submits the latest complete snapshot once and allows a retry", () => {
+    let state = select(initialPendingUserInputState, "scope", "Orchestration-first");
+    state = select(state, "areas", "Server");
+    state = select(state, "areas", "Web");
+    state = pendingUserInputReducer(state, {
+      type: "advance",
+      requestId: "req-1",
+      questions,
+    });
+    state = select(state, "third", "Orchestration-first");
+    state = select(state, "fourth", "Orchestration-first");
+    expect(state.submissionIntent?.answers).toEqual({
+      scope: "Orchestration-first",
+      areas: ["Server", "Web"],
+      third: "Orchestration-first",
+      fourth: "Orchestration-first",
+    });
+    const firstSubmissionId = state.submissionIntent?.submissionId;
+    state = pendingUserInputReducer(state, {
+      type: "submission-consumed",
+      submissionId: firstSubmissionId!,
+    });
+    expect(state.submissionIntent).toBeNull();
+    state = pendingUserInputReducer(state, {
+      type: "advance",
+      requestId: "req-1",
+      questions,
+    });
+    expect(state.submissionIntent?.submissionId).not.toBe(firstSubmissionId);
+  });
+
+  it("waits for explicit submission on a final multi-select question", () => {
+    const finalQuestions = [singleSelectQuestion, multiSelectQuestion] as const;
+    let state = pendingUserInputReducer(initialPendingUserInputState, {
+      type: "option-selected",
+      requestId: "req-1",
+      questions: finalQuestions,
+      questionId: "scope",
+      optionLabel: "Orchestration-first",
+    });
+    state = pendingUserInputReducer(state, {
+      type: "option-selected",
+      requestId: "req-1",
+      questions: finalQuestions,
+      questionId: "areas",
+      optionLabel: "Server",
+    });
+    expect(state.submissionIntent).toBeNull();
+    state = pendingUserInputReducer(state, {
+      type: "advance",
+      requestId: "req-1",
+      questions: finalQuestions,
+    });
+    expect(state.submissionIntent?.answers.areas).toEqual(["Server"]);
+  });
+
+  it("stores custom answers and clears expired requests", () => {
+    let state = pendingUserInputReducer(initialPendingUserInputState, {
+      type: "custom-answer-changed",
+      requestId: "req-1",
+      questionId: "scope",
+      value: "Custom",
+    });
+    expect(state.answersByRequestId["req-1"]?.scope?.customAnswer).toBe("Custom");
+    state = pendingUserInputReducer(state, {
+      type: "requests-cleared",
+      requestIds: new Set(["req-1"]),
+    });
+    expect(state.answersByRequestId["req-1"]).toBeUndefined();
   });
 });
 
