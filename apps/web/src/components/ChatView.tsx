@@ -1426,6 +1426,14 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  // Avi Code addition: gate against accidental plan implementation.
+  //
+  // `onSend` treats an empty composer as "implement the plan" when a plan
+  // follow-up prompt is showing. Without an explicit intent signal, any
+  // programmatic `onSend()` call would start implementation. This ref is
+  // set by `submitComposer` (Enter key or button click) and consumed
+  // (reset) inside `onSend` on every invocation.
+  const planImplementIntentRef = useRef(false);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -5266,6 +5274,10 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
+    // Avi Code addition: consume the intent signal early so it never leaks
+    // across sends. The plan follow-up branch reads the snapshot below.
+    const hasExplicitImplementIntent = planImplementIntentRef.current;
+    planImplementIntentRef.current = false;
     if (
       !activeThread ||
       isSendBusy ||
@@ -5493,6 +5505,15 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     if (showPlanFollowUpPrompt && activeProposedPlan) {
+      // Avi Code addition: an empty composer means "implement the plan", but
+      // only when the user explicitly triggered the send (Enter key or
+      // Implement button). Without this gate a stray programmatic `onSend()`
+      // call (e.g. the attachment follow-up effect) would silently start an
+      // implementation the user never asked for. Typed text ("Refine") is
+      // always intentional, so it skips the gate.
+      if (!trimmed && !hasExplicitImplementIntent) {
+        return;
+      }
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
@@ -7625,6 +7646,7 @@ function ChatViewContent(props: ChatViewProps) {
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
                             onSend={onSend}
+                            planImplementIntentRef={planImplementIntentRef}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onReviewPlanWithCodex={onReviewPlanWithCodex}
