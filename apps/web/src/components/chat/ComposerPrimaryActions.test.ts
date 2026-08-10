@@ -4,7 +4,28 @@ import {
   canSubmitComposerProviderState,
   formatPendingPrimaryActionLabel,
   normalComposerPrimaryActionState,
+  planFollowUpPrimaryAction,
 } from "./ComposerPrimaryActions";
+
+describe("planFollowUpPrimaryAction", () => {
+  it("reopens an existing review from an empty plan composer", () => {
+    expect(planFollowUpPrimaryAction({ promptHasText: false, hasLinkedPlanReview: true })).toBe(
+      "review",
+    );
+  });
+
+  it("implements a plan that has no review", () => {
+    expect(planFollowUpPrimaryAction({ promptHasText: false, hasLinkedPlanReview: false })).toBe(
+      "implement",
+    );
+  });
+
+  it("refines typed feedback even when a review exists", () => {
+    expect(planFollowUpPrimaryAction({ promptHasText: true, hasLinkedPlanReview: true })).toBe(
+      "refine",
+    );
+  });
+});
 
 describe("formatPendingPrimaryActionLabel", () => {
   it("returns 'Submitting...' while responding", () => {

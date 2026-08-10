@@ -35,6 +35,21 @@ export interface PlanReviewShellCandidate {
   readonly session: PlanReviewSession;
 }
 
+/** Returns the source plan referenced by a review thread in any turn state. */
+export function getPlanReviewSource(
+  thread: { id: ThreadId; interactionMode: ProviderInteractionMode } | null,
+  latestTurn: PlanReviewLatestTurn | null,
+): PlanReviewSourceRef | null {
+  if (!thread || thread.interactionMode !== "plan") {
+    return null;
+  }
+  const source = latestTurn?.sourceProposedPlan;
+  if (!source || source.threadId === thread.id) {
+    return null;
+  }
+  return source;
+}
+
 /**
  * Returns the plan a finished review thread audited, or null when the thread
  * is not a settled, completed review thread.
@@ -44,17 +59,45 @@ export function getCompletedPlanReviewSource(
   latestTurn: PlanReviewLatestTurn | null,
   session: PlanReviewSession,
 ): PlanReviewSourceRef | null {
-  if (!thread || thread.interactionMode !== "plan") {
-    return null;
-  }
-  const source = latestTurn?.sourceProposedPlan;
-  if (!source || source.threadId === thread.id) {
+  const source = getPlanReviewSource(thread, latestTurn);
+  if (!source || !latestTurn) {
     return null;
   }
   if (latestTurn.state !== "completed" || !isLatestTurnSettled(latestTurn, session)) {
     return null;
   }
   return source;
+}
+
+/** Finds the newest review thread for a plan, including an active or awaiting-input review. */
+export function findLatestPlanReviewShell<Shell extends PlanReviewShellCandidate>(
+  shells: ReadonlyArray<Shell>,
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly planThreadId: ThreadId;
+    readonly planId: OrchestrationProposedPlanId;
+  },
+): Shell | null {
+  let latest: Shell | null = null;
+  for (const shell of shells) {
+    if (shell.environmentId !== input.environmentId) continue;
+    const source = getPlanReviewSource(shell, shell.latestTurn);
+    if (!source || source.threadId !== input.planThreadId || source.planId !== input.planId) {
+      continue;
+    }
+    const candidateKey = [
+      shell.latestTurn?.startedAt ?? "",
+      shell.latestTurn?.turnId ?? "",
+      shell.id,
+    ].join(":");
+    const latestKey = [
+      latest?.latestTurn?.startedAt ?? "",
+      latest?.latestTurn?.turnId ?? "",
+      latest?.id ?? "",
+    ].join(":");
+    if (latest === null || candidateKey > latestKey) latest = shell;
+  }
+  return latest;
 }
 
 /**

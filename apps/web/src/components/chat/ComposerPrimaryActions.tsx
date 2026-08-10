@@ -28,11 +28,13 @@ interface ComposerPrimaryActionsProps {
   hasQueuedTurn: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
+  hasLinkedPlanReview: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onReviewPlanWithCodex: () => void;
+  onOpenLinkedPlanReview: () => void;
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -101,6 +103,14 @@ export function canSubmitComposerProviderState(input: {
   return input.providerAvailable || input.environmentUnavailable;
 }
 
+export function planFollowUpPrimaryAction(input: {
+  readonly promptHasText: boolean;
+  readonly hasLinkedPlanReview: boolean;
+}): "refine" | "review" | "implement" {
+  if (input.promptHasText) return "refine";
+  return input.hasLinkedPlanReview ? "review" : "implement";
+}
+
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
 };
@@ -118,11 +128,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   hasQueuedTurn,
   isPreparingWorktree,
   hasSendableContent,
+  hasLinkedPlanReview,
   preserveComposerFocusOnPointerDown = false,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
   onReviewPlanWithCodex,
+  onOpenLinkedPlanReview,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -201,7 +213,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   }
 
   if (showPlanFollowUpPrompt) {
-    if (promptHasText) {
+    const planAction = planFollowUpPrimaryAction({ promptHasText, hasLinkedPlanReview });
+    if (planAction === "refine") {
       return (
         <Button
           type="submit"
@@ -223,8 +236,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           className="h-9 rounded-l-full rounded-r-none px-4 sm:h-8"
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
+          onClick={planAction === "review" ? onOpenLinkedPlanReview : undefined}
         >
-          {isConnecting || isSendBusy ? "Sending..." : "Implement"}
+          {isConnecting || isSendBusy
+            ? "Sending..."
+            : planAction === "review"
+              ? "Review"
+              : "Implement"}
         </Button>
         <Menu>
           <MenuTrigger

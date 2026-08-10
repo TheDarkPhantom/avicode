@@ -54,4 +54,34 @@ describe("serializeReferencedThreadContext", () => {
     if (result.ok) return;
     expect(result.detail).toContain("Remove one or more referenced threads");
   });
+
+  it("includes proposed-plan output when the provider stored no assistant message", () => {
+    const result = serializeReferencedThreadContext([
+      {
+        id: ThreadId.make("review-thread"),
+        title: "Audit proposed plan",
+        projectTitle: "Project",
+        messages: [
+          {
+            role: "user",
+            text: "Review the plan.",
+            createdAt: "2026-08-10T10:00:00.000Z",
+          },
+        ],
+        proposedPlans: [
+          {
+            id: "review-plan",
+            planMarkdown: "# Audit\n\nBlocking finding: preserve the context payload.",
+            createdAt: "2026-08-10T10:01:00.000Z",
+            implementedAt: null,
+          },
+        ],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.text).toContain('<proposed_plan id="review-plan"');
+    expect(result.text).toContain("Blocking finding: preserve the context payload.");
+  });
 });

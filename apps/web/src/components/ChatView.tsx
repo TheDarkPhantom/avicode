@@ -130,6 +130,7 @@ import {
   buildPlanReviewThreadTitle,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
+import { findLatestPlanReviewShell } from "../planReview";
 import { resolveInitialInteractionMode } from "../aviCodeInteractionMode";
 import {
   DEFAULT_RUNTIME_MODE,
@@ -2363,6 +2364,27 @@ function ChatViewContent(props: ChatViewProps) {
     interactionMode === "plan" &&
     latestTurnSettled &&
     hasActionableProposedPlan(activeProposedPlan);
+  const linkedPlanReview = useMemo(
+    () =>
+      activeThread && activeProposedPlan
+        ? findLatestPlanReviewShell(allThreadShells, {
+            environmentId: activeThread.environmentId,
+            planThreadId: activeThread.id,
+            planId: activeProposedPlan.id,
+          })
+        : null,
+    [activeProposedPlan, activeThread, allThreadShells],
+  );
+  const onOpenLinkedPlanReview = useCallback(() => {
+    if (!activeThread || !linkedPlanReview) return;
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: {
+        environmentId: activeThread.environmentId,
+        threadId: linkedPlanReview.id,
+      },
+    });
+  }, [activeThread, linkedPlanReview, navigate]);
   const activePendingApproval = pendingApprovals[0] ?? null;
   const {
     beginLocalDispatch,
@@ -7591,6 +7613,7 @@ function ChatViewContent(props: ChatViewProps) {
                             respondingRequestIds={respondingRequestIds}
                             showPlanFollowUpPrompt={showPlanFollowUpPrompt}
                             activeProposedPlan={activeProposedPlan}
+                            linkedPlanReviewThreadId={linkedPlanReview?.id ?? null}
                             activePlan={activePlan as { turnId?: TurnId } | null}
                             sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
                             planSidebarLabel={planSidebarLabel}
@@ -7626,6 +7649,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onReviewPlanWithCodex={onReviewPlanWithCodex}
+                            onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption
