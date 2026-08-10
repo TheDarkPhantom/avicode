@@ -25,6 +25,7 @@ const clientSettings: ClientSettings = {
   aviCodeProviderBadgeLabels: {},
   aviCodeScrollToPlanTopOnExpand: true,
   aviCodeSendWhileRunning: "steer",
+  aviCodeSidebarAlwaysShowDevServerStart: false,
   aviCodeSidebarShowPrIndicator: true,
   aviCodeSidebarShowStatusLabels: true,
   aviCodeSidebarShowWorktreeIcon: true,
