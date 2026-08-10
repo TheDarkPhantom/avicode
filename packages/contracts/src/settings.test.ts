@@ -135,6 +135,7 @@ describe("ClientSettings Avi Code chat badges", () => {
   it("shows the worktree and pull request markers by default and lets each be turned off", () => {
     const settings = decodeClientSettings({});
     expect(settings.aviCodeSidebarShowWorktreeIcon).toBe(true);
+    expect(settings.aviCodeSidebarAlwaysShowDevServerStart).toBe(false);
     expect(settings.aviCodeSidebarShowPrIndicator).toBe(true);
 
     const patch = decodeClientSettingsPatch({ aviCodeSidebarShowPrIndicator: false });

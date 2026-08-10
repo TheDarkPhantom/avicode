@@ -212,6 +212,11 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeSidebarShowWorktreeIcon: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
+  // Avi Code addition. Inactive dev-server start buttons otherwise appear
+  // only while their thread row is hovered or keyboard-focused.
+  aviCodeSidebarAlwaysShowDevServerStart: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Avi Code addition. Hides the per-thread pull request indicator in the
   // sidebar — the icon in v1, the `#123` badge in v2. Both are shortcuts to
   // open the PR; the branch toolbar still shows and opens it.
@@ -923,6 +928,7 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarAlwaysShowDevServerStart: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowPrIndicator: Schema.optionalKey(Schema.Boolean),
   aviCodeCommunicationStyleId: Schema.optionalKey(Schema.String),
   aviCodeCommunicationStyles: Schema.optionalKey(

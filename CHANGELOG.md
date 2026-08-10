@@ -50,6 +50,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Hide inactive sidebar dev-server buttons until you hover or focus a chat (#157)
 - Start dev servers for new worktrees and attach browser screenshots in one click (#154)
 - Return to an existing plan review directly from the source thread (#153)
 - Plan review findings reach agents when sent back to the source thread (#153)

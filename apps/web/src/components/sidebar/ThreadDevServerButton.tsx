@@ -13,6 +13,7 @@ import { useDevServerStartIntent } from "~/devServerStartIntent";
 import { useProject } from "~/state/entities";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useClientSettings } from "~/hooks/useSettings";
 
 import { openDiscoveredPort } from "../preview/openDiscoveredPort";
 import { findScopedDevServer } from "../preview/startDevServer.logic";
@@ -55,6 +56,9 @@ export function ThreadDevServerButton(props: {
   const hasPrimaryScript = primaryProjectScript(project?.scripts ?? []) != null;
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const requestStart = useDevServerStartIntent((state) => state.request);
+  const alwaysShowStart = useClientSettings(
+    (settings) => settings.aviCodeSidebarAlwaysShowDevServerStart,
+  );
 
   if (existing) {
     return (
@@ -106,7 +110,11 @@ export function ThreadDevServerButton(props: {
           <button
             type="button"
             aria-label="Start dev server"
-            className="inline-flex cursor-pointer items-center justify-center text-muted-foreground/60 outline-hidden hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            className={`inline-flex cursor-pointer items-center justify-center text-muted-foreground/60 outline-hidden transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring max-sm:pointer-events-auto max-sm:opacity-100 ${
+              alwaysShowStart
+                ? ""
+                : "pointer-events-none opacity-0 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100 group-hover/v2-row:pointer-events-auto group-hover/v2-row:opacity-100 group-focus-within/v2-row:pointer-events-auto group-focus-within/v2-row:opacity-100"
+            }`}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
