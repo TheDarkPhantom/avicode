@@ -155,130 +155,48 @@ Full glossary with file links: `docs/reference/encyclopedia.md`
 
 # Avi Code overrides
 
-Everything above is upstream's guidance and is kept verbatim so future merges stay clean. The rest
-of this file is fork-owned. Where the two disagree, this section wins.
+Everything above is upstream text, kept verbatim for merge cleanliness. This section wins where the
+two disagree.
 
-Deliberate divergences from upstream, all because this fork is one developer's daily driver rather
-than a 100k-user product:
-
-- **Shipping is the default, not opt-in.** Upstream's "Pull requests" says never open a PR unless
-  asked. Here, finished and verified work carries to `main` without asking — see Git Workflow below.
-- **Integrated verification is required, not on request.** Upstream's "Verifying" makes the real
-  client pass optional and asks permission before driving a browser. Here it is a completion
-  requirement for user-visible frontend changes.
-- **Confirm a `--share` URL loads before handing it over.** Upstream's "Dev servers" says not to
-  open it yourself. This fork has been bitten by browsers refusing otherwise-reachable ports, and a
-  successful `curl` does not catch that — so open the origin once in a controlled browser, then send
-  the pairing URL.
-- **The desktop app is the only surface this fork targets.** See Surface Scope below.
-
-## Surface Scope
-
-Upstream's "Multi-surface" section treats web, desktop, and mobile as three surfaces that all new
-features must support. That does not apply here. **Avi Code is a desktop-only fork.** The desktop
-app is the single surface Avi uses, and it is the only one fork work has to satisfy.
-
-What that means in practice:
-
-- **Never build, test, or verify `apps/mobile`.** A fork feature that has no mobile equivalent is
-  finished, not half-finished. Do not raise mobile as a gap, do not add it to a follow-up list, and
-  do not ask whether mobile should be included — the answer is always no.
-- **`apps/web` still matters, but as the desktop app's renderer.** `apps/desktop` wraps the web
-  bundle, so web UI work _is_ desktop work. Standalone browser use (`app.t3.codes`, `npx t3` in a
-  browser) is incidental: don't break it, don't spend effort on it, and don't let a browser-only
-  concern block a desktop improvement.
-- **Shared packages keep their shape.** `packages/contracts`, `packages/shared`, and
-  `packages/client-runtime` are still shared code and still compile for every consumer. Desktop-only
-  scope is about where features are _delivered and verified_, not a licence to break mobile's build.
-  If a contract change would fail mobile's typecheck, keep it compiling; you just don't have to
-  build the mobile feature on top of it.
-- **Upstream merges are unaffected.** Mobile code arriving from upstream is merged as-is, same as
-  any other upstream directory. This scope governs fork-authored work only.
+- **Shipping is the default.** Finished work carries to `main` without asking.
+- **Integrated client pass required** for user-visible frontend changes.
+- **Open `--share` URL once** to confirm it loads before handing it over.
+- **Desktop-only fork.** Never build/test/verify `apps/mobile`. `apps/web` matters only as the
+  desktop renderer. Shared packages still compile for all consumers; don't break mobile's build,
+  just don't build mobile features. Upstream mobile code merges as-is.
 
 ## Git Workflow
 
-Feature work does not land directly on `main`. Follow this for every non-trivial change unless Avi
-says otherwise:
+1. Branch off `main`: `git checkout -b <type>/<slug>` (feat/, fix/, chore/, docs/).
+2. Stage only changed files (never `git add -A`).
+3. `git push -u origin HEAD`, then `gh pr create` against `main`.
+4. Merge commits: `gh pr merge --merge --delete-branch`.
+5. Sync: `git checkout main && git pull --ff-only`.
 
-1. Branch off `main`: `git checkout -b <type>/<slug>` — `feat/`, `fix/`, `chore/`, `docs/`.
-2. Commit on the branch. Stage the files you actually changed — never `git add -A`. This working
-   tree routinely holds unrelated work in flight.
-3. `git push -u origin HEAD`, then `gh pr create` against `main`. `gh` is authenticated for
-   `TheDarkPhantom/avicode`.
-4. **Merge commits, not squash** — `gh pr merge --merge --delete-branch`. Every PR so far landed as
-   a merge commit; don't switch styles mid-history.
-5. Sync local: `git checkout main && git pull --ff-only`, then confirm `git rev-parse main origin/main`
-   agree. That checkout aborts on a dirty tree _after_ the remote merge already landed, so local
-   `main` goes stale silently while the PR reads as merged.
-
-Keep PRs small and focused. `.github/workflows/pr-size.yml` labels every PR `size:XS`…`size:XXL`
-from its non-test diff, so scope creep shows up on the PR itself.
-
-`origin` is the fork (`TheDarkPhantom/avicode`); `upstream` is `pingdotgg/t3code`. Never push to
-`upstream`.
-
-### Shipping is the default
-
-When a chunk of work is finished and verified, carry it to `main` without being asked. Stopping at
-"want me to commit?" is noise. Ask only when the change is genuinely ambiguous or Avi said to hold.
+`origin` = `TheDarkPhantom/avicode`. Never push to `upstream` (`pingdotgg/t3code`). Ship when done;
+ask only when genuinely ambiguous.
 
 ## Planning Documents
 
-- `TODO.md` — the prioritized roadmap. Read it before starting work; tick items and refresh the
-  **Last updated** line when they land.
-- `FUTURE_ENHANCEMENTS.md` — after finishing a feature, review it for natural extensions and record
-  any limitation hit while building.
-- `CHANGELOG.md` — what shipped, per version. Every user-visible change adds a line under
-  `## Unreleased` in the same PR that makes it, in the **Avi Code** section. An upstream sync adds
-  its commits under **Upstream t3code** with the author who wrote them there, so a merge never
-  hides who changed what. The file is parsed and rendered in-app at `/changelog`, so its format is
-  load-bearing — the format comment at the top of the file is the spec, and
-  `apps/web/src/changelog/parseChangelog.test.ts` fails the build if the real file drifts from it.
+- `TODO.md` — prioritized roadmap. Tick items when they land.
+- `FUTURE_ENHANCEMENTS.md` — record limitations and extensions after finishing a feature.
+- `CHANGELOG.md` — user-visible changes go under `## Unreleased` in the **Avi Code** section.
+  Upstream syncs go under **Upstream t3code** with the original author. Format is load-bearing
+  (parsed and rendered at `/changelog`; `parseChangelog.test.ts` enforces it).
 
-  **Write entries as outcomes, not commit subjects.** The reader is someone who uses Avi Code, not
-  someone who works on it. They want to know what they can now do or what stopped going wrong, and
-  should not have to know what a projector, an adapter, or a reactor is. "Pin the threads you keep
-  returning to so they stay at the top" beats "feat(web): add sidebar pinning". Internal work still
-  earns a line when a user would feel it; say what they feel, not what moved. Name the surface only
-  when it narrows who is affected ("On mobile, ..."). Commit-style detail belongs in the PR, which
-  every entry already links to.
+  Write entries as outcomes, not commit subjects. One short sentence, present tense, no em/en
+  dashes, 100 characters max. The test rejects violations.
 
-  **One short sentence, present tense, no em dashes.** The test enforces all three: it rejects a
-  conventional-commit prefix, any em or en dash, and anything over 100 characters. If an entry does
-  not fit, it is usually two entries.
+## Fork Conventions
 
-All three are hand-maintained and are this repo's only running record of intent.
-
-## Avi Code Fork Conventions
-
-This repo is a fork. Upstream keeps changing, and every Avi Code addition that lands in a shared
-file is a future merge conflict. Keep the fork's surface area small and easy to find.
-
-- Any new user-facing setting added by this fork must be surfaced on the **Avi Code settings page**
-  (`apps/web/src/components/settings/AviCodeSettings.tsx`, route `settings.avicode.tsx`) — never on
-  the upstream General/Appearance/Beta panels. Upstream can rewrite those panels freely without
-  touching ours.
-  - **Exception: per-instance provider settings.** A setting that belongs to one provider instance
-    lives on that instance's card in `ProviderInstanceCard.tsx`, beside display name and accent
-    colour, rather than on the Avi Code page. The chat-list badge label is the worked example: it
-    was on the Avi Code page, which meant editing one instance's identity in two places and left
-    the Settings icon and the sidebar icon disagreeing. The merge cost is accepted deliberately —
-    keep such additions to a self-contained block so a conflict is resolvable without re-deriving
-    the intent.
-- Prefer new files under a fork-owned directory (e.g. `components/sidebar/`) over inline additions
-  to large upstream files. When an upstream file must change, keep the edit to a thin branch or a
-  single call site rather than interleaved logic.
-- Comment fork-specific behaviour with a short "Avi Code addition" note explaining the upstream
-  behaviour it replaces, so a merge conflict is resolvable without re-deriving the intent.
-- Settings still live in the shared `ClientSettingsSchema` (`packages/contracts/src/settings.ts`);
-  only the _UI_ is isolated. Give fork-added keys distinct names so they don't collide with a future
-  upstream key.
+- Fork settings UI goes on **AviCodeSettings.tsx**, never upstream panels. Exception: per-instance
+  provider settings live on `ProviderInstanceCard.tsx`.
+- Prefer new files over inline edits to upstream files. Comment fork changes with "Avi Code
+  addition". Keep edits to thin branches or single call sites.
+- Settings live in `ClientSettingsSchema` (`packages/contracts/src/settings.ts`); use distinct key
+  names to avoid upstream collisions.
 
 ## Parallel Agent Isolation
 
-- Every agent that edits files must work in its own linked git worktree. Agents must not share a checkout; concurrent edits to the same working tree clash and silently overwrite each other.
-- Create the worktree from the target base branch before making any change, and do all reads, edits, installs, and verification inside it.
-- Read-only agents (search, exploration, review) may share the primary checkout. If an agent starts read-only and then needs to write, move it into a worktree first.
-- Do not hand two agents the same worktree, even for tasks that look disjoint. One worktree, one agent, one task.
-- Each worktree gets its own gitignored `.t3` dev state and its own preferred port offsets, so isolated agents also avoid dev-server and database collisions (see Dev Servers).
-- Remove the worktree once its work is merged or abandoned. Leftover worktrees keep stale `.t3` state and port reservations alive.
+Every editing agent works in its own git worktree. Read-only agents may share the primary checkout.
+One worktree, one agent. Remove worktrees when done.
