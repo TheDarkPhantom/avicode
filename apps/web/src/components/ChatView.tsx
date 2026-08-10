@@ -311,6 +311,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  derivePendingPlanDecision,
   dismissBranchMismatchForSession,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
@@ -325,6 +326,7 @@ import {
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveInteractionModeChange,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -2358,12 +2360,16 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
-  const showPlanFollowUpPrompt =
-    pendingUserInputs.length === 0 &&
-    interactionMode === "plan" &&
-    latestTurnSettled &&
-    hasActionableProposedPlan(activeProposedPlan);
+  const pendingPlanDecision = derivePendingPlanDecision({
+    latestTurnSettled,
+    hasActionablePlan: hasActionableProposedPlan(activeProposedPlan),
+    hasPendingUserInput: pendingUserInputs.length > 0,
+  });
+  const interactionModeLockedByPlan = pendingPlanDecision.interactionModeLocked;
+  const effectiveInteractionMode = interactionModeLockedByPlan ? "plan" : interactionMode;
+  const planSidebarLabel =
+    sidebarProposedPlan || effectiveInteractionMode === "plan" ? "Plan" : "Tasks";
+  const showPlanFollowUpPrompt = pendingPlanDecision.showPlanFollowUpPrompt;
   const linkedPlanReview = useMemo(
     () =>
       activeThread && activeProposedPlan
@@ -3406,8 +3412,13 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   const handleInteractionModeChange = useCallback(
-    (mode: ProviderInteractionMode) => {
-      if (mode === interactionMode) return;
+    (requestedMode: ProviderInteractionMode) => {
+      const mode = resolveInteractionModeChange({
+        currentMode: effectiveInteractionMode,
+        requestedMode,
+        interactionModeLockedByPlan,
+      });
+      if (mode === null) return;
       setComposerDraftInteractionMode(composerDraftTarget, mode);
       if (isLocalDraftThread) {
         setDraftThreadContext(composerDraftTarget, { interactionMode: mode });
@@ -3415,7 +3426,8 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus();
     },
     [
-      interactionMode,
+      effectiveInteractionMode,
+      interactionModeLockedByPlan,
       isLocalDraftThread,
       scheduleComposerFocus,
       composerDraftTarget,
@@ -3424,8 +3436,8 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
   const toggleInteractionMode = useCallback(() => {
-    handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
-  }, [handleInteractionModeChange, interactionMode]);
+    handleInteractionModeChange(effectiveInteractionMode === "plan" ? "default" : "plan");
+  }, [effectiveInteractionMode, handleInteractionModeChange]);
   const dismissPlanSidebarForCurrentTurn = useCallback(() => {
     planSidebarDismissedForTurnRef.current =
       activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? "__dismissed__";
@@ -7619,7 +7631,8 @@ function ChatViewContent(props: ChatViewProps) {
                             planSidebarLabel={planSidebarLabel}
                             planSidebarOpen={planSidebarOpen}
                             runtimeMode={runtimeMode}
-                            interactionMode={interactionMode}
+                            interactionMode={effectiveInteractionMode}
+                            interactionModeLockedByPlan={interactionModeLockedByPlan}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             providerDiscoveryState={providerDiscoveryState}

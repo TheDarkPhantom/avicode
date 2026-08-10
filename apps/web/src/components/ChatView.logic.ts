@@ -3,6 +3,7 @@ import {
   isProviderDriverKind,
   ProjectId,
   type ModelSelection,
+  type ProviderInteractionMode,
   type ProviderDriverKind,
   type ServerProvider,
   type ScopedProjectRef,
@@ -34,6 +35,33 @@ export function canSubmitComposerSendContext(input: {
   readonly environmentUnavailable: boolean;
 }): boolean {
   return input.providerAvailable || input.environmentUnavailable;
+}
+
+/** Avi Code addition: a settled actionable plan owns the interaction mode
+ * until the user explicitly starts implementation. */
+export function derivePendingPlanDecision(input: {
+  readonly latestTurnSettled: boolean;
+  readonly hasActionablePlan: boolean;
+  readonly hasPendingUserInput: boolean;
+}): {
+  readonly interactionModeLocked: boolean;
+  readonly showPlanFollowUpPrompt: boolean;
+} {
+  const interactionModeLocked = input.latestTurnSettled && input.hasActionablePlan;
+  return {
+    interactionModeLocked,
+    showPlanFollowUpPrompt: interactionModeLocked && !input.hasPendingUserInput,
+  };
+}
+
+export function resolveInteractionModeChange(input: {
+  readonly currentMode: ProviderInteractionMode;
+  readonly requestedMode: ProviderInteractionMode;
+  readonly interactionModeLockedByPlan: boolean;
+}): ProviderInteractionMode | null {
+  if (input.requestedMode === input.currentMode) return null;
+  if (input.interactionModeLockedByPlan && input.requestedMode === "default") return null;
+  return input.requestedMode;
 }
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";

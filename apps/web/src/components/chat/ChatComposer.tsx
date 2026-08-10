@@ -313,6 +313,7 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
+  interactionModeLockedByPlan: boolean;
   /**
    * Avi Code addition: whether this provider is actually held to planning while
    * a plan turn runs. False means the backend polices its own plan mode and may
@@ -330,13 +331,14 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
-  const interactionModeTooltip =
-    (props.interactionMode === "plan"
-      ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode") +
-    (props.planTurnEnforced
-      ? ""
-      : ". This provider is not held to planning and may start building.");
+  const interactionModeTooltip = props.interactionModeLockedByPlan
+    ? "Plan mode is locked while this plan awaits action. Implement the plan to enter Build mode."
+    : (props.interactionMode === "plan"
+        ? "Plan mode — click to return to normal build mode"
+        : "Default mode — click to enter plan mode") +
+      (props.planTurnEnforced
+        ? ""
+        : ". This provider is not held to planning and may start building.");
   const planSidebarTooltip = props.planSidebarOpen
     ? `Hide ${props.planSidebarLabel.toLowerCase()} sidebar`
     : `Show ${props.planSidebarLabel.toLowerCase()} sidebar`;
@@ -355,6 +357,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
                   : "text-muted-foreground/70 hover:text-foreground/80",
               )}
               type="button"
+              disabled={props.interactionModeLockedByPlan}
               onClick={props.onToggleInteractionMode}
               aria-label={interactionModeTooltip}
             />
@@ -660,6 +663,7 @@ export interface ChatComposerProps {
   // Mode
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
+  interactionModeLockedByPlan: boolean;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -768,6 +772,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planSidebarOpen,
     runtimeMode,
     interactionMode,
+    interactionModeLockedByPlan,
     lockedProvider,
     providerStatuses,
     providerDiscoveryState,
@@ -3796,6 +3801,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <CompactComposerControlsMenu
                     activePlan={showPlanSidebarToggle}
                     interactionMode={interactionMode}
+                    interactionModeLockedByPlan={interactionModeLockedByPlan}
                     planTurnEnforced={planTurnEnforced}
                     planSidebarLabel={planSidebarLabel}
                     planSidebarOpen={planSidebarOpen}
@@ -3817,6 +3823,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <ComposerFooterModeControls
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       interactionMode={interactionMode}
+                      interactionModeLockedByPlan={interactionModeLockedByPlan}
                       planTurnEnforced={planTurnEnforced}
                       runtimeMode={runtimeMode}
                       showPlanToggle={showPlanSidebarToggle}
