@@ -189,7 +189,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 - No OCR in v1.
 - 20MB, 250 pages, and 500,000 extracted characters per document.
-- Eight combined attachments per message.
+- Twelve combined attachments per message.
 - Five explicit thread references and 600,000 serialized context characters per turn.
 - No conversation or attachment contents in ALFRED exports or window titles.
 - No automated upstream merge or binary publication.

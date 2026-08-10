@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Attach up to twelve images or documents per message instead of eight (#148)
 - Picking an answer to a single-choice question now moves straight to the next one or submits (#142)
 - The usage bar now tracks your lowest limit instead of reading full when one is nearly spent (#145)
 - Extra usage and unknown limit buckets no longer count as the limit that constrains you (#145)
