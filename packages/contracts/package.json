@@ -1,6 +1,6 @@
 {
   "name": "@t3tools/contracts",
-  "version": "0.0.31-avicode.9",
+  "version": "0.0.31-avicode.9.1",
   "private": true,
   "files": [
     "dist"
