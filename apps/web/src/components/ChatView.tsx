@@ -287,6 +287,8 @@ import {
 } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+// Avi Code addition: the plan-review return leg.
+import { usePlanReviewBannerItems } from "./chat/usePlanReviewBannerItems";
 import { shouldFlushHeldSend, shouldHoldSendWhileRunning } from "./chat/sendWhileRunning.logic";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
@@ -4723,6 +4725,16 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftPrompt,
     ],
   );
+  // Avi Code addition: banners that carry Codex review findings back to the
+  // plan thread (see usePlanReviewBannerItems).
+  const planReviewBannerItems = usePlanReviewBannerItems({
+    activeThread: activeThread ?? null,
+    activeLatestTurn,
+    activeProposedPlanId: activeProposedPlan?.id ?? null,
+    showPlanFollowUpPrompt,
+    threadShells: allThreadShells,
+    scheduleComposerFocus,
+  });
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     const expiredAnswerItems: ComposerBannerStackItem[] = deferredExpiredUserInputRecovery
@@ -4838,6 +4850,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...heldSendItems,
         ...forkEditItems,
         ...expiredAnswerItems,
+        ...planReviewBannerItems,
         ...systemComposerBannerItems,
         ...parkedThreadItems,
       ];
@@ -4846,6 +4859,7 @@ function ChatViewContent(props: ChatViewProps) {
       ...heldSendItems,
       ...forkEditItems,
       ...expiredAnswerItems,
+      ...planReviewBannerItems,
       ...systemComposerBannerItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
@@ -4903,6 +4917,7 @@ function ChatViewContent(props: ChatViewProps) {
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
+    planReviewBannerItems,
     restoreExpiredUserInput,
     showBranchMismatchBanner,
     systemComposerBannerItems,
@@ -6919,6 +6934,13 @@ function ChatViewContent(props: ChatViewProps) {
           titleSeed: nextThreadTitle,
           runtimeMode: "approval-required",
           interactionMode: "plan",
+          // Avi Code addition: back-link the review thread to the plan it
+          // audits. Ingestion skips implemented-marking for plan-mode turns,
+          // so this reference cannot consume the plan.
+          sourceProposedPlan: {
+            threadId: activeThread.id,
+            planId: activeProposedPlan.id,
+          },
           createdAt,
         },
       });

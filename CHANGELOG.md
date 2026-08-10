@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- A finished Codex plan review offers one click to send its findings back to the plan thread (#143)
+- The plan thread shows when a Codex review is ready and attaches it to your next message (#143)
 - Scrolling or leaving a chat no longer crashes to the error page with a getScrollableNode error (#141)
 - Scrolling up during a streaming response no longer snaps back to the bottom (#139)
 - The Auto merge button now lands a PR waiting on checks instead of failing (#133)

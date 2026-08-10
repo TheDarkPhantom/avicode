@@ -1516,6 +1516,174 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  // Avi Code addition: a plan-mode turn referencing a source plan is a
+  // read-only review, not an implementation, and must leave the plan
+  // actionable.
+  effectIt.effect(
+    "does not mark the source proposed plan implemented when the target turn is plan-mode",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        const sourceThreadId = asThreadId("thread-plan");
+        const targetThreadId = asThreadId("thread-review");
+        const sourceTurnId = asTurnId("turn-plan-source");
+        const targetTurnId = asTurnId("turn-plan-review");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+
+        yield* harness.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-thread-create-plan-source-review"),
+          threadId: sourceThreadId,
+          projectId: asProjectId("project-1"),
+          title: "Plan Source",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: "plan",
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-plan-source-review"),
+          threadId: sourceThreadId,
+          session: {
+            threadId: sourceThreadId,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            updatedAt: createdAt,
+            lastError: null,
+          },
+          createdAt,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-thread-create-plan-review-target"),
+          threadId: targetThreadId,
+          projectId: asProjectId("project-1"),
+          title: "Review Target",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: "plan",
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-plan-review-target"),
+          threadId: targetThreadId,
+          session: {
+            threadId: targetThreadId,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            updatedAt: createdAt,
+            lastError: null,
+          },
+          createdAt,
+        });
+        harness.setProviderSession({
+          provider: ProviderDriverKind.make("codex"),
+          status: "ready",
+          runtimeMode: "approval-required",
+          threadId: targetThreadId,
+          createdAt,
+          updatedAt: createdAt,
+          activeTurnId: targetTurnId,
+        });
+
+        harness.emit({
+          type: "turn.proposed.completed",
+          eventId: asEventId("evt-plan-source-completed-review"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt,
+          threadId: sourceThreadId,
+          turnId: sourceTurnId,
+          payload: {
+            planMarkdown: "# Source plan",
+          },
+        });
+
+        const sourceThreadWithPlan = yield* Effect.promise(() =>
+          waitForThread(
+            harness.readModel,
+            (thread) =>
+              thread.proposedPlans.some(
+                (proposedPlan: ProviderRuntimeTestProposedPlan) =>
+                  proposedPlan.id === "plan:thread-plan:turn:turn-plan-source" &&
+                  proposedPlan.implementedAt === null,
+              ),
+            2_000,
+            sourceThreadId,
+          ),
+        );
+        const sourcePlan = sourceThreadWithPlan.proposedPlans.find(
+          (entry: ProviderRuntimeTestProposedPlan) =>
+            entry.id === "plan:thread-plan:turn:turn-plan-source",
+        );
+        expect(sourcePlan).toBeDefined();
+        if (!sourcePlan) {
+          throw new Error("Expected source plan to exist.");
+        }
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-turn-start-plan-review-target"),
+          threadId: targetThreadId,
+          message: {
+            messageId: asMessageId("msg-plan-review-target"),
+            role: "user",
+            text: "Review the proposed plan below.\n# Source plan",
+            attachments: [],
+          },
+          sourceProposedPlan: {
+            threadId: sourceThreadId,
+            planId: sourcePlan.id,
+          },
+          interactionMode: "plan",
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+
+        harness.emit({
+          type: "turn.started",
+          eventId: asEventId("evt-plan-review-target-started"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId: targetThreadId,
+          turnId: targetTurnId,
+        });
+
+        yield* Effect.promise(() => harness.drain());
+
+        const readModel = yield* Effect.promise(() => harness.readModel());
+        const sourceThreadAfterReviewStart = readModel.threads.find(
+          (entry) => entry.id === sourceThreadId,
+        );
+        expect(
+          sourceThreadAfterReviewStart?.proposedPlans.find((entry) => entry.id === sourcePlan.id),
+        ).toMatchObject({
+          implementedAt: null,
+          implementationThreadId: null,
+        });
+
+        const targetThreadAfterStart = readModel.threads.find(
+          (entry) => entry.id === targetThreadId,
+        );
+        expect(targetThreadAfterStart?.session?.activeTurnId).toBe(targetTurnId);
+      }),
+  );
+
   it("does not mark the source proposed plan implemented for a rejected turn.started event", async () => {
     const harness = await createHarness();
     const sourceThreadId = asThreadId("thread-plan");
