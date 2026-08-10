@@ -16,13 +16,13 @@ const snapshot = (overrides: Partial<ProviderQuotaSnapshot> = {}): ProviderQuota
 });
 
 describe("ProviderQuotaMeter", () => {
-  it("labels the trigger with what is left of the most-constrained window", () => {
+  it("labels the trigger with what is left of the lowest-reading window", () => {
     const markup = renderToStaticMarkup(
       <ProviderQuotaMeter quota={snapshot()} instanceLabel="Work Codex" now={NOW} />,
     );
 
-    // The weekly window is the one that will actually stop you, and 62% used
-    // is 38% left; the bar must reflect that rather than the roomier 5-hour.
+    // The weekly window shows the smallest number, and 62% used is 38% left;
+    // the bar must reflect that rather than the roomier 5-hour.
     expect(markup).toContain("Work Codex usage: 38% of Weekly limit remaining");
   });
 
@@ -111,10 +111,10 @@ describe("ProviderQuotaMeter", () => {
     expect(empty).toContain("height:0%");
   });
 
-  it("reads full when the low-looking window is about to roll over", () => {
-    // The reported bug: a weekly cap at 38% left resetting in 1d 2h rendered a
-    // cautionary bar, while the 5-hour window that actually governs the next
-    // few hours sat at 89% and never reached the trigger.
+  it("tracks the lowest raw window even when it is about to roll over", () => {
+    // The bar previously projected headroom here and read full while Weekly
+    // sat at 38% — a bar contradicting every number in its own popover. It now
+    // shows the raw number; the popover's footer hint carries the reset story.
     const markup = renderToStaticMarkup(
       <ProviderQuotaMeter
         quota={snapshot({
@@ -140,11 +140,8 @@ describe("ProviderQuotaMeter", () => {
       />,
     );
 
-    expect(markup).toContain("height:100%");
-    expect(markup).toContain("hsl(140.0");
-    // The announcement names the live window and keeps the provider's own
-    // number, never the projection the bar is drawn from.
-    expect(markup).toContain("Claude – Lawrence usage: 89% of 5-hour limit remaining");
+    expect(markup).toContain("height:38%");
+    expect(markup).toContain("Claude – Lawrence usage: 38% of Weekly limit remaining");
   });
 
   it("still drains when the window has most of its span left to cover", () => {
@@ -165,8 +162,51 @@ describe("ProviderQuotaMeter", () => {
       />,
     );
 
-    // 10% left with four of five hours still to go is genuinely tight.
-    expect(markup).toContain("height:12.5%");
+    expect(markup).toContain("height:10%");
     expect(markup).toContain("10% of 5-hour limit remaining");
+  });
+
+  it("never lets an untouched unknown window drive the bar", () => {
+    // The reported bug: Claude's /usage grew `extra_usage` and `nimbus_quill`,
+    // both untouched at 100% left, and the meter read full while Weekly sat
+    // at 8%.
+    const markup = renderToStaticMarkup(
+      <ProviderQuotaMeter
+        quota={snapshot({
+          windows: [
+            { id: "extra_usage", label: "Extra usage", usedPercent: 0 },
+            { id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 },
+            {
+              id: "seven_day",
+              label: "Weekly",
+              usedPercent: 92,
+              windowMinutes: 10_080,
+              resetsAt: "2026-07-29T21:17:00.000Z",
+            },
+          ],
+        })}
+        instanceLabel="Claude – Lawrence"
+        now={NOW}
+      />,
+    );
+
+    expect(markup).toContain("height:8%");
+    expect(markup).toContain("Claude – Lawrence usage: 8% of Weekly limit remaining");
+  });
+
+  it("renders nothing when only overage-class windows exist", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderQuotaMeter
+        quota={snapshot({
+          windows: [
+            { id: "overage", label: "Overage", usedPercent: 10 },
+            { id: "extra_usage", label: "Extra usage", usedPercent: 0 },
+          ],
+        })}
+        now={NOW}
+      />,
+    );
+
+    expect(markup).toBe("");
   });
 });

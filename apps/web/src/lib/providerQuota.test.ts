@@ -2,12 +2,14 @@ import type { ProviderQuotaSnapshot, ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  filterNonOverageWindows,
   formatQuotaConstraintHint,
   formatQuotaCost,
   formatQuotaSummaryLine,
   formatResetsIn,
   isQuotaAlarming,
   leastHeadroomQuotaWindow,
+  lowestRemainingQuotaWindow,
   orderQuotaWindows,
   quotaHeadroomPercent,
   quotaRemainingColor,
@@ -185,12 +187,31 @@ describe("orderQuotaWindows", () => {
     expect(ordered.map((entry) => entry.label)).toEqual(["Weekly", "Overage", "5-hour"]);
   });
 
-  it("demotes a window that is about to roll over below one that is not", () => {
+  it("orders by the raw number even when a window is about to roll over", () => {
     const ordered = orderQuotaWindows(REPORTED_WINDOWS, NOW);
 
-    // Raw percentage would lead with Weekly at 38% left. It resets tomorrow, so
-    // the 5-hour window is what the list should lead with.
-    expect(ordered.map((entry) => entry.label)).toEqual(["5-hour", "Weekly"]);
+    // The list must agree with the bar, which shows the lowest raw remaining.
+    // Weekly at 38% left leads even though it resets tomorrow; the footer hint
+    // carries the reconciliation.
+    expect(ordered.map((entry) => entry.label)).toEqual(["Weekly", "5-hour"]);
+  });
+
+  it("sinks untouched unknown windows to the bottom", () => {
+    const ordered = orderQuotaWindows(
+      [
+        { id: "extra_usage", label: "Extra usage", usedPercent: 0 },
+        { id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 },
+        ...REPORTED_WINDOWS,
+      ],
+      NOW,
+    );
+
+    expect(ordered.map((entry) => entry.label)).toEqual([
+      "Weekly",
+      "5-hour",
+      "Extra usage",
+      "Nimbus quill",
+    ]);
   });
 });
 
@@ -284,8 +305,42 @@ describe("leastHeadroomQuotaWindow", () => {
     ).toBe("Weekly");
   });
 
+  it("never ranks a full window with no time information as limiting", () => {
+    // The bug report: Claude's /usage grew unknown ids (`nimbus_quill`) with no
+    // known duration. Untouched, they must not beat a window that is actually
+    // being consumed.
+    expect(
+      leastHeadroomQuotaWindow(
+        [{ id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 }, ...REPORTED_WINDOWS],
+        NOW,
+      )?.label,
+    ).toBe("5-hour");
+  });
+
   it("returns null for an empty window set", () => {
     expect(leastHeadroomQuotaWindow([], NOW)).toBeNull();
+  });
+});
+
+describe("lowestRemainingQuotaWindow", () => {
+  it("picks the window showing the smallest raw number", () => {
+    expect(lowestRemainingQuotaWindow(REPORTED_WINDOWS, NOW)?.label).toBe("Weekly");
+  });
+
+  it("treats a provider rejection as 0% left regardless of the reported usage", () => {
+    expect(
+      lowestRemainingQuotaWindow(
+        [
+          { id: "a", label: "5-hour", usedPercent: 40, exhausted: true },
+          { id: "b", label: "Weekly", usedPercent: 88 },
+        ],
+        NOW,
+      )?.label,
+    ).toBe("5-hour");
+  });
+
+  it("returns null for an empty window set", () => {
+    expect(lowestRemainingQuotaWindow([], NOW)).toBeNull();
   });
 });
 
@@ -312,6 +367,27 @@ describe("formatQuotaConstraintHint", () => {
     expect(formatQuotaConstraintHint([REPORTED_WINDOWS[0]], NOW)).toBeNull();
     expect(formatQuotaConstraintHint([], NOW)).toBeNull();
   });
+
+  it("never names an untouched unknown window as the constraint", () => {
+    // The bug report verbatim: an unknown full window used to win the "limits
+    // you right now" slot against every real window.
+    expect(
+      formatQuotaConstraintHint(
+        [
+          { id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 },
+          {
+            id: "seven_day",
+            label: "Weekly",
+            usedPercent: 92,
+            windowMinutes: WEEKLY_MINUTES,
+            resetsAt: at(hours(9) + 17 * 60_000),
+          },
+          REPORTED_WINDOWS[0],
+        ],
+        NOW,
+      ),
+    ).toBe("Weekly resets in 9h 17m, so your 5-hour window is what limits you right now.");
+  });
 });
 
 describe("formatQuotaSummaryLine", () => {
@@ -327,12 +403,33 @@ describe("formatQuotaSummaryLine", () => {
     ).toBe("Weekly 38% left · resets in 3d 4h");
   });
 
-  it("names the same window the composer meter tracks", () => {
-    // Not "Weekly 38% left": the settings row and the meter must agree on which
-    // limit is the live one, and the percentage stays the provider's own.
+  it("names the same window the composer bar tracks", () => {
+    // The settings row and the bar must agree, and the bar shows the lowest
+    // raw remaining even when that window resets soon.
     expect(formatQuotaSummaryLine(quota([...REPORTED_WINDOWS]), NOW)).toBe(
-      "5-hour 89% left · resets in 4h 3m",
+      "Weekly 38% left · resets in 1d 2h",
     );
+  });
+
+  it("ignores overage-class windows", () => {
+    expect(
+      formatQuotaSummaryLine(
+        quota([{ id: "extra_usage", label: "Extra usage", usedPercent: 0 }, REPORTED_WINDOWS[1]]),
+        NOW,
+      ),
+    ).toBe("Weekly 38% left · resets in 1d 2h");
+  });
+
+  it("returns null when only overage-class windows exist", () => {
+    expect(
+      formatQuotaSummaryLine(
+        quota([
+          { id: "overage", label: "Overage", usedPercent: 10 },
+          { id: "extra_usage", label: "Extra usage", usedPercent: 0 },
+        ]),
+        NOW,
+      ),
+    ).toBeNull();
   });
 
   it("omits the reset clause when the provider did not report one", () => {
@@ -398,67 +495,49 @@ describe("quota colour ramp", () => {
 describe("isQuotaAlarming", () => {
   it("trusts the provider when it says a window is exhausted, whatever the percentage", () => {
     expect(
-      isQuotaAlarming(
-        quota([]),
-        { id: "a", label: "Weekly", usedPercent: 40, exhausted: true },
-        NOW,
-      ),
+      isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 40, exhausted: true }),
     ).toBe(true);
   });
 
   it("trusts a snapshot-level exhausted status", () => {
     const exhausted: ProviderQuotaSnapshot = { ...quota([]), status: "exhausted" };
-    expect(isQuotaAlarming(exhausted, { id: "a", label: "Weekly", usedPercent: 3 }, NOW)).toBe(
-      true,
-    );
+    expect(isQuotaAlarming(exhausted, { id: "a", label: "Weekly", usedPercent: 3 })).toBe(true);
   });
 
   it("warns on its own once past the threshold", () => {
-    expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 91 }, NOW)).toBe(
-      true,
-    );
-    expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 90 }, NOW)).toBe(
-      false,
-    );
+    expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 91 })).toBe(true);
+    expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 90 })).toBe(false);
   });
 
-  it("stops crying wolf over a nearly spent window that is about to roll over", () => {
-    const nearlySpent = {
-      id: "seven_day",
-      label: "Weekly",
-      usedPercent: 95,
-      windowMinutes: WEEKLY_MINUTES,
-      resetsAt: at(hours(1)),
-    };
-
-    // 5% left is alarming across a whole week and unremarkable across an hour.
-    expect(isQuotaAlarming(quota([]), nearlySpent, NOW)).toBe(false);
-    expect(isQuotaAlarming(quota([]), { ...nearlySpent, resetsAt: at(hours(24 * 6)) }, NOW)).toBe(
-      true,
-    );
-  });
-
-  it("still trusts a rejection over any amount of time left", () => {
+  it("warns on a nearly spent window even when it is about to roll over", () => {
+    // The warning must agree with the bar, which shows the raw number: 5% left
+    // reads as 5% left however soon the reset is.
     expect(
-      isQuotaAlarming(
-        quota([]),
-        {
-          id: "seven_day",
-          label: "Weekly",
-          usedPercent: 95,
-          exhausted: true,
-          windowMinutes: WEEKLY_MINUTES,
-          resetsAt: at(hours(1)),
-        },
-        NOW,
-      ),
+      isQuotaAlarming(quota([]), {
+        id: "seven_day",
+        label: "Weekly",
+        usedPercent: 95,
+        windowMinutes: WEEKLY_MINUTES,
+        resetsAt: at(hours(1)),
+      }),
     ).toBe(true);
   });
 
   it("stays calm at comfortable usage", () => {
-    expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 12 }, NOW)).toBe(
-      false,
-    );
+    expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 12 })).toBe(false);
+  });
+});
+
+describe("filterNonOverageWindows", () => {
+  it("drops overage-class windows and keeps everything else", () => {
+    const filtered = filterNonOverageWindows([
+      { id: "overage", label: "Overage", usedPercent: 10 },
+      { id: "extra_usage", label: "Extra usage", usedPercent: 0 },
+      { id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 },
+      ...REPORTED_WINDOWS,
+    ]);
+
+    expect(filtered.map((entry) => entry.id)).toEqual(["nimbus_quill", "five_hour", "seven_day"]);
   });
 });
 

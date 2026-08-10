@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
 import { formatPercentage } from "~/lib/contextWindow";
 import {
+  filterNonOverageWindows,
   formatQuotaConstraintHint,
   formatResetsIn,
   isQuotaAlarming,
-  leastHeadroomQuotaWindow,
+  lowestRemainingQuotaWindow,
   orderQuotaWindows,
-  quotaHeadroomPercent,
   quotaRemainingColor,
   quotaRemainingGradient,
   quotaRemainingPercent,
@@ -56,16 +56,16 @@ function useQuotaClock(fixedNow: number | undefined): number {
  * full and green and empties downward toward red — the shape carries the
  * meaning before any number is read.
  *
- * It tracks the window with the least *headroom*. Codex and Claude both enforce
- * several at once (rolling hours plus a weekly cap), and the one that will
- * actually stop you is whichever has least allowance for the time it still has
- * to cover — not whichever shows the smallest number. Averaging them would hide
- * exactly the number that matters, and ranking them on raw percentage alone
- * hands the meter to a weekly cap that is about to roll over.
+ * The bar tracks the lowest raw remaining percentage across real (non-overage)
+ * windows. It previously projected headroom over the time each window had left,
+ * which read "full" while a weekly cap sat at 8% — a bar that contradicts every
+ * number beneath it. The reversal is deliberate: the bar shows the provider's
+ * number, and the headroom maths survives only in the footer hint, which
+ * explains when a different window is the one that actually limits you.
  *
- * So the bar's height is headroom, while every number in the popover stays the
- * provider's raw reading. When those two tell different stories, the footer
- * says why in a sentence.
+ * Overage-class and unknown windows (Claude's `extra_usage`, whatever it adds
+ * next) stay listed in the popover but never drive the bar, the alarm, or the
+ * hint — an allowance you have not touched cannot be the thing limiting you.
  */
 export function ProviderQuotaMeter(props: {
   quota: ProviderQuotaSnapshot;
@@ -75,19 +75,20 @@ export function ProviderQuotaMeter(props: {
 }) {
   const { quota, instanceLabel } = props;
   const now = useQuotaClock(props.now);
-  const worst = leastHeadroomQuotaWindow(quota.windows, now);
+  const realWindows = filterNonOverageWindows(quota.windows);
+  const worst = lowestRemainingQuotaWindow(realWindows, now);
   if (!worst) {
     return null;
   }
 
+  // The popover lists every window the provider reports, overage included, so
+  // an unfamiliar bucket is at least visible — it just sinks to the bottom.
   const windows = orderQuotaWindows(quota.windows, now);
-  // Headroom drives the bar; the raw remainder is what gets announced, because
-  // a screen reader must hear the provider's number rather than our projection.
-  const headroom = quotaHeadroomPercent(worst, now);
-  const remainingLabel = formatPercentage(quotaRemainingPercent(worst)) ?? "0%";
+  const remaining = quotaRemainingPercent(worst);
+  const remainingLabel = formatPercentage(remaining) ?? "0%";
   const isExhausted = quota.status === "exhausted" || worst.exhausted === true;
-  const isAlarming = isQuotaAlarming(quota, worst, now);
-  const constraintHint = formatQuotaConstraintHint(quota.windows, now);
+  const isAlarming = isQuotaAlarming(quota, worst);
+  const constraintHint = formatQuotaConstraintHint(realWindows, now);
   const heading = instanceLabel ? `${instanceLabel} usage` : "Plan usage";
 
   return (
@@ -111,7 +112,7 @@ export function ProviderQuotaMeter(props: {
               role="meter"
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-valuenow={Math.round(headroom)}
+              aria-valuenow={Math.round(remaining)}
             >
               <span
                 className={cn(
@@ -122,8 +123,8 @@ export function ProviderQuotaMeter(props: {
                   isExhausted && "animate-pulse motion-reduce:animate-none",
                 )}
                 style={{
-                  height: `${headroom}%`,
-                  backgroundImage: quotaRemainingGradient(headroom),
+                  height: `${remaining}%`,
+                  backgroundImage: quotaRemainingGradient(remaining),
                 }}
               />
             </span>
@@ -194,9 +195,9 @@ export function ProviderQuotaMeter(props: {
               Running low — this limit is nearly spent.
             </div>
           ) : constraintHint ? (
-            // Shown only when the bar is tracking a different window from the
-            // lowest number above it, which is the one reading that otherwise
-            // looks like a contradiction.
+            // Shown only when the window the bar shows is not the one that
+            // actually limits you — usually because the low-reading window is
+            // about to roll over.
             <div className="mt-1 text-pretty text-[11px] text-muted-foreground/70">
               {constraintHint}
             </div>

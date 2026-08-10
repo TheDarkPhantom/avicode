@@ -58,6 +58,8 @@ describe("provider quota probes", () => {
             five_hour: { utilization: 78, resets_at: "2026-07-29T15:00:00.000Z" },
             seven_day: { utilization: 34, resets_at: "2026-08-03T00:00:00.000Z" },
             overage: { utilization: 5 },
+            extra_usage: { utilization: 12 },
+            nimbus_quill: { utilization: 0 },
           },
         },
         CAPTURED_AT,
@@ -79,9 +81,12 @@ describe("provider quota probes", () => {
           windowMinutes: 10_080,
         },
         // Claude never states window lengths, so they are inferred from the id.
-        // Overage is not a fixed-length window and so gets none — clients need
-        // the absence to fall back rather than trust an invented duration.
+        // Overage-class windows are not fixed-length and so get none — clients
+        // need the absence to fall back rather than trust an invented duration.
         { id: "overage", label: "Overage", usedPercent: 5 },
+        { id: "extra_usage", label: "Extra usage", usedPercent: 12 },
+        // Unrecognized ids keep flowing through, with a humanized label.
+        { id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 },
       ],
       planType: "max",
       capturedAt: CAPTURED_AT,

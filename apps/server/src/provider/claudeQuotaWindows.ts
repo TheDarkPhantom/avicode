@@ -18,6 +18,7 @@ const CLAUDE_QUOTA_WINDOW_LABELS: Record<string, string> = {
   seven_day_sonnet: "Weekly (Sonnet)",
   seven_day_oauth_apps: "Weekly (apps)",
   overage: "Overage",
+  extra_usage: "Extra usage",
 };
 
 /**
@@ -27,9 +28,10 @@ const CLAUDE_QUOTA_WINDOW_LABELS: Record<string, string> = {
  * week to go" — without one, a window that is about to roll over looks as scarce as one
  * that has to last all week.
  *
- * `overage` is deliberately absent: it is not a fixed-length rolling window, and
- * inventing a length for it would produce a confidently wrong reading. An unknown
- * duration must stay unknown so clients fall back to the raw remaining percentage.
+ * `overage` and `extra_usage` are deliberately absent: paid-overage allowances are
+ * not fixed-length rolling windows, and inventing a length for them would produce a
+ * confidently wrong reading. An unknown duration must stay unknown so clients fall
+ * back to the raw remaining percentage.
  */
 const CLAUDE_QUOTA_WINDOW_MINUTES: Record<string, number> = {
   five_hour: 5 * 60,
@@ -39,8 +41,19 @@ const CLAUDE_QUOTA_WINDOW_MINUTES: Record<string, number> = {
   seven_day_oauth_apps: 7 * 24 * 60,
 };
 
+/**
+ * Display label for a window id. Unrecognized ids are humanized from their
+ * snake_case (`nimbus_quill` → "Nimbus quill") rather than shown raw — clients
+ * filter on the id, never the label, so this is purely cosmetic and safe for
+ * window types Anthropic adds without notice.
+ */
 export function claudeQuotaWindowLabel(id: string): string {
-  return CLAUDE_QUOTA_WINDOW_LABELS[id] ?? id;
+  const known = CLAUDE_QUOTA_WINDOW_LABELS[id];
+  if (known !== undefined) {
+    return known;
+  }
+  const words = id.replaceAll("_", " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : id;
 }
 
 export function claudeQuotaWindowMinutes(id: string): number | undefined {
