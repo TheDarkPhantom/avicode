@@ -280,12 +280,17 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 describe("ServerSettings worktree defaults", () => {
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);
+    expect(decodeServerSettings({}).autoStartDevServerForNewWorktrees).toBe(false);
   });
 
   it("accepts start-from-origin updates", () => {
     expect(
       decodeServerSettingsPatch({ newWorktreesStartFromOrigin: false }).newWorktreesStartFromOrigin,
     ).toBe(false);
+    expect(
+      decodeServerSettingsPatch({ autoStartDevServerForNewWorktrees: true })
+        .autoStartDevServerForNewWorktrees,
+    ).toBe(true);
   });
 });
 

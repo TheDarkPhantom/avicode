@@ -891,6 +891,7 @@ const makeWsRpcLayer = (
                   ...(targetProjectId ? { projectId: targetProjectId } : {}),
                   ...(targetProjectCwd ? { projectCwd: targetProjectCwd } : {}),
                   worktreePath,
+                  allowPrimaryActionFallback: true,
                 })
                 .pipe(
                   Effect.matchEffect({

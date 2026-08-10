@@ -7118,6 +7118,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           projectId: defaultProjectId,
           projectCwd: "/tmp/project",
           worktreePath: "/tmp/bootstrap-worktree",
+          allowPrimaryActionFallback: true,
         });
         assert.deepEqual(refreshStatus.mock.calls[0]?.[0], "/tmp/bootstrap-worktree");
 
