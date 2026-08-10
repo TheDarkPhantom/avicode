@@ -20,6 +20,7 @@ describe("AviCodeSettings", () => {
     expect(markup).toContain("Avi Code data is backed up first");
     expect(markup).toContain("Import latest");
     expect(markup).toContain("Start a dev server for new worktrees");
+    expect(markup).toContain("Always show dev server start buttons");
     expect(markup).toContain("Available in the Avi Code desktop app.");
   });
 });

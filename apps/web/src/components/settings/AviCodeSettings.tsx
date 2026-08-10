@@ -578,6 +578,9 @@ function WorktreeAutomationSettings() {
 function ChatListSettings() {
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
+  const alwaysShowDevServerStart = useClientSettings(
+    (settings) => settings.aviCodeSidebarAlwaysShowDevServerStart,
+  );
   const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
   const updateSettings = useUpdateClientSettings();
 
@@ -606,6 +609,20 @@ function ChatListSettings() {
               updateSettings({ aviCodeSidebarShowWorktreeIcon: Boolean(checked) })
             }
             aria-label="Show worktree icon in the chat list"
+          />
+        }
+      />
+      <SettingsRow
+        title="Always show dev server start buttons"
+        description="Keep the inactive play button visible on every chat with a project action. When off, it appears only while you hover or keyboard-focus the chat. Running servers stay visible either way."
+        status="Off by default to keep the chat list quiet."
+        control={
+          <Switch
+            checked={alwaysShowDevServerStart}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeSidebarAlwaysShowDevServerStart: Boolean(checked) })
+            }
+            aria-label="Always show dev server start buttons"
           />
         }
       />
