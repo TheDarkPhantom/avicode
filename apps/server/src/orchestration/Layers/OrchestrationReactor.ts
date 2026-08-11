@@ -8,6 +8,7 @@ import {
 import { CheckpointReactor } from "../Services/CheckpointReactor.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
+import { ProposedPlanImplementationReactor } from "../Services/ProposedPlanImplementationReactor.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 
@@ -16,6 +17,9 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerCommandReactor = yield* ProviderCommandReactor;
   const checkpointReactor = yield* CheckpointReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
+  // Avi Code addition: releases the Plan/Build lock once a turn actually
+  // produces file changes, not only via the Implement button.
+  const proposedPlanImplementationReactor = yield* ProposedPlanImplementationReactor;
   const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
@@ -23,6 +27,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* providerCommandReactor.start();
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();
+    yield* proposedPlanImplementationReactor.start();
     yield* agentAwarenessRelay.start();
   });
 
