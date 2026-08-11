@@ -39,6 +39,30 @@ export function PreviewPanelShell(props: {
     edge: "left",
   });
 
+  // Avi Code addition: on desktop, ask the main process to widen the OS window by
+  // the inline panel's width so opening it grows the window instead of squishing
+  // the chat column. Debounced so a live drag settles the window once at rest
+  // (a per-frame setBounds would fight the drag handle). Report 0 when maximized
+  // (the chat column is already collapsed) or in non-inline modes (overlays that
+  // do not consume chat width).
+  useEffect(() => {
+    if (!isElectron || !isInline) return;
+    const reserved = props.maximized ? 0 : Math.round(width);
+    const handle = window.setTimeout(() => {
+      void window.desktopBridge?.setPanelReservedWidth?.(reserved);
+    }, 120);
+    return () => window.clearTimeout(handle);
+  }, [isInline, props.maximized, width]);
+
+  // Release the reserved width when the inline panel unmounts (closed) or stops
+  // being inline. Scoped to inline so other panel modes never reset it.
+  useEffect(() => {
+    if (!isElectron || !isInline) return;
+    return () => {
+      void window.desktopBridge?.setPanelReservedWidth?.(0);
+    };
+  }, [isInline]);
+
   return (
     <div
       className={cn(

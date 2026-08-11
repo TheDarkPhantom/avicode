@@ -45,6 +45,7 @@ Upstream: t3code 0.0.31
 - Numbered lists that continue after a heading now render as a list and keep their numbers on copy (#164)
 - Refining or implementing a plan now sends the images and documents you attached (#161)
 - Refreshing usage now updates the plan limit bars, not just the token totals (#162)
+- Opening the right panel widens the window instead of squishing the chat column (#163)
 - See how many tokens and how much a thread has cost from a badge in the composer (#160)
 - A plan stops asking to be implemented once the agent has actually built it (#159)
 

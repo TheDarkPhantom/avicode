@@ -1034,6 +1034,10 @@ export interface DesktopBridge {
   onMenuAction: (listener: (action: string) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
+  // Avi Code addition: report the width the renderer's inline right panel wants
+  // reserved. The main process widens the OS window by this amount (0 = closed)
+  // so opening the panel grows the window instead of squishing the chat column.
+  setPanelReservedWidth: (width: number) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
