@@ -1,8 +1,9 @@
 import type { ProviderDriverKind, ServerProvider, ServerProviderUsage } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { RefreshCwIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { useAtomCommand } from "~/state/use-atom-command";
 import { primaryServerProvidersAtom } from "~/state/server";
 import { serverEnvironment } from "~/state/server";
 import { usePrimaryEnvironmentId } from "~/state/environments";
@@ -140,6 +141,33 @@ export function UsagePageContent() {
       : serverEnvironment.getProviderUsage({ environmentId, input: {} }),
   );
 
+  // Avi Code addition: the Refresh button re-probes providers (updating the
+  // PLAN LIMITS quota bars, which arrive via the server-config push stream) in
+  // addition to refetching the token-usage query. Without this, stale quota
+  // bars (e.g. a window stuck at "0% left") never update from this page.
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
+
+  const handleRefresh = useCallback(() => {
+    refresh();
+    if (environmentId === null) return;
+    setIsRefreshingProviders(true);
+    void (async () => {
+      try {
+        await refreshProviders({ environmentId, input: {} });
+      } catch {
+        // Non-fatal: the quota bars keep their last values. reportFailure:false
+        // already suppresses the toast.
+      } finally {
+        setIsRefreshingProviders(false);
+      }
+    })();
+  }, [environmentId, refresh, refreshProviders]);
+
+  const isRefreshing = isPending || isRefreshingProviders;
+
   const weekAgo = useMemo(
     () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000).toISOString(),
     // Recalculate only when the component mounts, not every render.
@@ -196,14 +224,11 @@ export function UsagePageContent() {
             </h2>
             <button
               type="button"
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground/60 transition-colors hover:text-muted-foreground",
-                isPending && "animate-spin",
-              )}
-              onClick={refresh}
-              aria-label="Refresh usage data"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              onClick={handleRefresh}
+              aria-label="Refresh usage"
             >
-              <RefreshCwIcon className={cn("size-3", isPending && "animate-spin")} />
+              <RefreshCwIcon className={cn("size-3", isRefreshing && "animate-spin")} />
               Refresh
             </button>
           </div>
