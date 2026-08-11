@@ -74,6 +74,7 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
+  deriveSettleFreezeTarget,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
@@ -245,6 +246,10 @@ interface MessagesTimelineProps {
   // Avi Code addition. Fires when this chat opened at the top of its last
   // response instead of the live edge, so the owner can leave live follow off.
   onOpenedAtLastResponse: () => void;
+  // Avi Code addition. Fires when the active turn settles and this timeline
+  // froze the viewport in place, so the owner can quiesce its live-follow
+  // driver and not re-pull the list after the fold reflow.
+  onActiveTurnSettled: () => void;
   hideEmptyPlaceholder?: boolean;
   topFadeEnabled?: boolean;
 }
@@ -291,6 +296,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onManualNavigation,
   onManualScroll,
   onOpenedAtLastResponse,
+  onActiveTurnSettled,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
 }: MessagesTimelineProps) {
@@ -461,6 +467,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  // Avi Code addition. The turn currently held unsettled and its terminal
+  // assistant message, so the settle-freeze can hold that row's viewport
+  // position steady through the fold reflow that fires when the turn completes.
+  const settleFreezeTarget = useMemo(
+    () => deriveSettleFreezeTarget(timelineEntries, latestTurn, runningTurnId),
+    [timelineEntries, latestTurn, runningTurnId],
+  );
+  const settleFreezeUnsettledTurnId = settleFreezeTarget.unsettledTurnId;
+  const terminalFreezeMessageId = settleFreezeTarget.terminalMessageId;
   const [savedReadingAnchor] = useState(() =>
     anchorMessageId === null ? (persistedPlanReadingState?.anchor ?? null) : null,
   );
@@ -531,6 +546,91 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenedAtLastResponse();
     }
   }, [initialScrollTarget, onOpenedAtLastResponse]);
+  // Avi Code addition. Where the settling turn's terminal assistant message sat
+  // in the viewport on the last non-settle frame, plus the unsettled-turn id
+  // from the previous render. The settle-freeze effect reads these to hold that
+  // row's top fixed through the fold reflow completion triggers.
+  const settleFreezeAnchorRef = useRef<{ messageId: MessageId; viewportTop: number } | null>(null);
+  const previousUnsettledTurnIdRef = useRef<TurnId | null>(settleFreezeUnsettledTurnId);
+  const refreshSettleFreezeAnchor = useCallback(() => {
+    const list = listRef.current;
+    if (!list || terminalFreezeMessageId === null) {
+      return;
+    }
+    const viewportTop = measureTerminalAssistantRowTop(list, terminalFreezeMessageId);
+    // A null measurement means the row is not mounted yet; keep the last good
+    // value rather than dropping the anchor mid-turn.
+    if (viewportTop === null) {
+      return;
+    }
+    settleFreezeAnchorRef.current = { messageId: terminalFreezeMessageId, viewportTop };
+  }, [listRef, terminalFreezeMessageId]);
+  // Reset the freeze bookkeeping when the thread changes so a stale "before"
+  // from the previous thread can never drive a correction, and a settled thread
+  // opened after a running one is not misread as an in-place settle.
+  useLayoutEffect(() => {
+    settleFreezeAnchorRef.current = null;
+    previousUnsettledTurnIdRef.current = settleFreezeUnsettledTurnId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resync only on thread change
+  }, [routeThreadKey]);
+  // Avi Code addition. When the active turn settles, its commentary and tool
+  // rows collapse into a "Worked for ..." fold above the terminal assistant
+  // message. With the send-time anchor still live, stick-to-bottom is off and
+  // nothing holds the reader's place, so the viewport slides part way up. Hold
+  // the terminal message's viewport top fixed across that reflow, correcting
+  // only the residual displacement maintainVisibleContentPosition left behind.
+  useLayoutEffect(() => {
+    const previousUnsettledTurnId = previousUnsettledTurnIdRef.current;
+    previousUnsettledTurnIdRef.current = settleFreezeUnsettledTurnId;
+    const settledTurnId =
+      previousUnsettledTurnId !== null && settleFreezeUnsettledTurnId === null
+        ? previousUnsettledTurnId
+        : null;
+
+    const list = listRef.current;
+    const before = settleFreezeAnchorRef.current;
+    const foldPresent =
+      settledTurnId !== null &&
+      rows.some((row) => row.kind === "turn-fold" && row.turnId === settledTurnId);
+    const atEnd = list?.getState?.().isAtEnd ?? false;
+
+    if (settledTurnId !== null && foldPresent && before !== null && list && !atEnd) {
+      // The reader is parked mid-answer: freeze the view and stop the owner's
+      // live-follow driver from re-pulling once the collapse changes heights.
+      onActiveTurnSettled();
+      const beforeTop = before.viewportTop;
+      const messageId = before.messageId;
+      let attempts = 12;
+      const pin = () => {
+        const currentTop = measureTerminalAssistantRowTop(list, messageId);
+        const scroll = list.getState?.().scroll;
+        if (currentTop !== null && typeof scroll === "number") {
+          const delta = currentTop - beforeTop;
+          if (Math.abs(delta) >= 0.5) {
+            list.scrollToOffset({ offset: scroll + delta, animated: false });
+          }
+        }
+        // Folded and freshly virtualized rows fall back to estimatedItemSize
+        // until measured, so keep re-pinning for a short bounded window.
+        if (attempts-- > 0) {
+          requestAnimationFrame(pin);
+        }
+      };
+      requestAnimationFrame(pin);
+    }
+
+    // Refresh the "before" for the next settle. Runs on every streaming commit
+    // (rows changes each token) so the stored top always reflects the frame
+    // right before completion.
+    refreshSettleFreezeAnchor();
+  }, [
+    rows,
+    settleFreezeUnsettledTurnId,
+    terminalFreezeMessageId,
+    listRef,
+    onActiveTurnSettled,
+    refreshSettleFreezeAnchor,
+  ]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -576,6 +676,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         list,
         latestRowsRef.current,
       );
+      // Keep the settle-freeze "before" fresh through a user scroll while a turn
+      // streams, so completion holds the row where the reader left it.
+      refreshSettleFreezeAnchor();
     }
     // `isNearEnd` only tells us LegendList has measured the list; the live-follow
     // state machine keys off the absolute edge, so a short scroll away from it
@@ -631,7 +734,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       });
       pinnedElement.style.transform = pushOffset === 0 ? "" : `translateY(-${pushOffset}px)`;
     }
-  }, [listRef, minimapItems, minimapStripMap, onIsAtEndChange, pinnedRevealOffset]);
+  }, [
+    listRef,
+    minimapItems,
+    minimapStripMap,
+    onIsAtEndChange,
+    pinnedRevealOffset,
+    refreshSettleFreezeAnchor,
+  ]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(handleScroll);
@@ -974,6 +1084,19 @@ function isTimelineTypingTarget(target: EventTarget | null) {
 
 function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
+}
+
+// Avi Code addition. The viewport-relative top of a turn's terminal assistant
+// message row. Returns null when the row is not mounted (off-screen or not yet
+// virtualized), so callers can hold their last good value.
+function measureTerminalAssistantRowTop(list: LegendListRef, messageId: MessageId): number | null {
+  const scrollNode = list.getScrollableNode?.();
+  if (!(scrollNode instanceof HTMLElement)) return null;
+  const element = scrollNode.querySelector<HTMLElement>(
+    `[data-message-id="${CSS.escape(messageId)}"][data-message-role="assistant"]`,
+  );
+  if (!element) return null;
+  return element.getBoundingClientRect().top;
 }
 
 function captureCurrentPlanReadingAnchor(

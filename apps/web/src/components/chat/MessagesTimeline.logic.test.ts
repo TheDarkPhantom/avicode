@@ -3,6 +3,7 @@ import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
+  deriveSettleFreezeTarget,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
 } from "./MessagesTimeline.logic";
@@ -1216,5 +1217,190 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(reordered).not.toBe(initial);
     expect(reordered.result).toEqual([initial.result[1], initial.result[0]]);
+  });
+});
+
+describe("deriveSettleFreezeTarget", () => {
+  const runningTurnEntries = [
+    {
+      id: "assistant-commentary-entry",
+      kind: "message" as const,
+      createdAt: "2026-01-01T00:00:10Z",
+      message: {
+        id: "assistant-commentary" as never,
+        role: "assistant" as const,
+        text: "Working on it.",
+        turnId: "turn-1" as never,
+        createdAt: "2026-01-01T00:00:10Z",
+        updatedAt: "2026-01-01T00:00:11Z",
+        streaming: false,
+      },
+    },
+    {
+      id: "assistant-final-entry",
+      kind: "message" as const,
+      createdAt: "2026-01-01T00:00:20Z",
+      message: {
+        id: "assistant-final" as never,
+        role: "assistant" as const,
+        text: "Here is the answer.",
+        turnId: "turn-1" as never,
+        createdAt: "2026-01-01T00:00:20Z",
+        updatedAt: "2026-01-01T00:00:30Z",
+        streaming: false,
+      },
+    },
+  ];
+
+  it("returns the running turn and its terminal assistant message while unsettled", () => {
+    const result = deriveSettleFreezeTarget(
+      runningTurnEntries,
+      {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:09Z",
+        completedAt: null,
+      },
+      null,
+    );
+
+    expect(result.unsettledTurnId).toBe("turn-1");
+    expect(result.terminalMessageId).toBe("assistant-final");
+  });
+
+  it("returns null once the turn has settled", () => {
+    const result = deriveSettleFreezeTarget(
+      runningTurnEntries,
+      {
+        turnId: "turn-1" as never,
+        state: "completed",
+        startedAt: "2026-01-01T00:00:09Z",
+        completedAt: "2026-01-01T00:00:31Z",
+      },
+      null,
+    );
+
+    expect(result.unsettledTurnId).toBeNull();
+    expect(result.terminalMessageId).toBeNull();
+  });
+
+  it("returns a null terminal when the unsettled turn has no assistant message yet", () => {
+    const result = deriveSettleFreezeTarget(
+      [
+        {
+          id: "user-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-1" as never,
+            role: "user" as const,
+            text: "Do the thing.",
+            turnId: "turn-1" as never,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+      ],
+      {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      null,
+    );
+
+    expect(result.unsettledTurnId).toBe("turn-1");
+    expect(result.terminalMessageId).toBeNull();
+  });
+});
+
+describe("deriveMessagesTimelineRows settle transition", () => {
+  const foldableTurnEntries = [
+    {
+      id: "assistant-commentary-entry",
+      kind: "message" as const,
+      createdAt: "2026-01-01T00:00:10Z",
+      message: {
+        id: "assistant-commentary" as never,
+        role: "assistant" as const,
+        text: "Looking into it.",
+        turnId: "turn-1" as never,
+        createdAt: "2026-01-01T00:00:10Z",
+        updatedAt: "2026-01-01T00:00:11Z",
+        streaming: false,
+      },
+    },
+    {
+      id: "assistant-final-entry",
+      kind: "message" as const,
+      createdAt: "2026-01-01T00:00:20Z",
+      message: {
+        id: "assistant-final" as never,
+        role: "assistant" as const,
+        text: "Here is the answer.",
+        turnId: "turn-1" as never,
+        createdAt: "2026-01-01T00:00:20Z",
+        updatedAt: "2026-01-01T00:00:30Z",
+        streaming: false,
+      },
+    },
+  ];
+
+  it("keeps the turn unfolded and withholds terminal meta while it runs", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: foldableTurnEntries,
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:09Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:09Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
+    expect(rows.some((row) => row.kind === "working")).toBe(true);
+    const terminalRow = rows.find(
+      (row): row is Extract<(typeof rows)[number], { kind: "message" }> =>
+        row.kind === "message" && row.message.id === ("assistant-final" as never),
+    );
+    expect(terminalRow?.showAssistantMeta).toBe(false);
+  });
+
+  it("folds the turn, retains the terminal message, and shows meta once settled", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: foldableTurnEntries,
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "completed",
+        startedAt: "2026-01-01T00:00:09Z",
+        completedAt: "2026-01-01T00:00:31Z",
+      },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    const foldRow = rows.find((row) => row.kind === "turn-fold");
+    expect(foldRow?.id).toBe("turn-fold:turn-1");
+    expect(rows.some((row) => row.kind === "working")).toBe(false);
+    const terminalRow = rows.find(
+      (row): row is Extract<(typeof rows)[number], { kind: "message" }> =>
+        row.kind === "message" && row.message.id === ("assistant-final" as never),
+    );
+    expect(terminalRow).toBeDefined();
+    expect(terminalRow?.showAssistantMeta).toBe(true);
+    // The non-terminal commentary message is collapsed behind the fold.
+    expect(
+      rows.some(
+        (row) => row.kind === "message" && row.message.id === ("assistant-commentary" as never),
+      ),
+    ).toBe(false);
   });
 });
