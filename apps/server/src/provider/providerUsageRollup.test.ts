@@ -1,8 +1,11 @@
-import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { rollUpProviderUsage } from "./providerUsageRollup.ts";
-import type { ProviderInstanceUsageTotals } from "../persistence/Services/ProviderInstanceUsage.ts";
+import { rollUpProviderUsage, rollUpThreadUsage } from "./providerUsageRollup.ts";
+import type {
+  ProviderInstanceUsageTotals,
+  ThreadUsageModelTotals,
+} from "../persistence/Services/ProviderInstanceUsage.ts";
 
 const codexDriver = ProviderDriverKind.make("codex");
 const claudeDriver = ProviderDriverKind.make("claudeAgent");
@@ -87,5 +90,62 @@ describe("rollUpProviderUsage", () => {
 
   it("returns nothing when there is no usage", () => {
     expect(rollUpProviderUsage([])).toEqual([]);
+  });
+});
+
+const modelTotals = (input: {
+  readonly model: string | null;
+  readonly turns?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly costUsd?: number | null;
+}): ThreadUsageModelTotals => ({
+  model: input.model,
+  turns: input.turns ?? 1,
+  inputTokens: input.inputTokens ?? 100,
+  cachedInputTokens: 10,
+  cacheCreationInputTokens: 5,
+  outputTokens: input.outputTokens ?? 50,
+  reasoningOutputTokens: 3,
+  costUsd: input.costUsd ?? null,
+});
+
+describe("rollUpThreadUsage", () => {
+  const threadId = ThreadId.make("thread-1");
+
+  it("sums a thread's models into one total while keeping the breakdown", () => {
+    const usage = rollUpThreadUsage(threadId, [
+      modelTotals({ model: "gpt-5", turns: 2, inputTokens: 100, outputTokens: 20 }),
+      modelTotals({ model: "gpt-5-mini", turns: 3, inputTokens: 400, outputTokens: 30 }),
+    ]);
+
+    expect(usage?.threadId).toBe(threadId);
+    expect(usage?.turns).toBe(5);
+    expect(usage?.inputTokens).toBe(500);
+    expect(usage?.outputTokens).toBe(50);
+    expect(usage?.byModel.map((entry) => entry.model)).toEqual(["gpt-5", "gpt-5-mini"]);
+  });
+
+  it("keeps cost null when no model reported one", () => {
+    const usage = rollUpThreadUsage(threadId, [
+      modelTotals({ model: "gpt-5", costUsd: null }),
+      modelTotals({ model: "gpt-5-mini", costUsd: null }),
+    ]);
+
+    expect(usage?.costUsd).toBeNull();
+  });
+
+  it("sums cost across models that reported one, ignoring those that did not", () => {
+    const usage = rollUpThreadUsage(threadId, [
+      modelTotals({ model: "opus", costUsd: 0.2 }),
+      modelTotals({ model: "haiku", costUsd: null }),
+      modelTotals({ model: "sonnet", costUsd: 0.05 }),
+    ]);
+
+    expect(usage?.costUsd).toBeCloseTo(0.25, 9);
+  });
+
+  it("returns null when the thread has no recorded usage", () => {
+    expect(rollUpThreadUsage(threadId, [])).toBeNull();
   });
 });

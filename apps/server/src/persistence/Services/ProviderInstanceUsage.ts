@@ -71,6 +71,32 @@ export const DeleteProviderInstanceUsageInput = Schema.Struct({
 });
 export type DeleteProviderInstanceUsageInput = typeof DeleteProviderInstanceUsageInput.Type;
 
+// Avi Code addition: per-thread usage.
+export const SummarizeThreadUsageInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type SummarizeThreadUsageInput = typeof SummarizeThreadUsageInput.Type;
+
+/**
+ * Avi Code addition: totals for one model within a single thread.
+ *
+ * The thread is fixed by the query, so — unlike `ProviderInstanceUsageTotals`
+ * — there is no instance/driver dimension here; the model breakdown is all the
+ * thread view needs.
+ */
+export const ThreadUsageModelTotals = Schema.Struct({
+  model: Schema.NullOr(TrimmedNonEmptyString),
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationInputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningOutputTokens: NonNegativeInt,
+  /** Null when no row in the group reported a cost. */
+  costUsd: Schema.NullOr(Schema.Number),
+});
+export type ThreadUsageModelTotals = typeof ThreadUsageModelTotals.Type;
+
 /**
  * ProviderInstanceUsageRepositoryShape - Service API for usage accounting.
  */
@@ -92,6 +118,13 @@ export interface ProviderInstanceUsageRepositoryShape {
   readonly summarize: (
     input: SummarizeProviderInstanceUsageInput,
   ) => Effect.Effect<ReadonlyArray<ProviderInstanceUsageTotals>, ProjectionRepositoryError>;
+
+  /**
+   * Avi Code addition: aggregate one thread's totals grouped by model.
+   */
+  readonly summarizeByThread: (
+    input: SummarizeThreadUsageInput,
+  ) => Effect.Effect<ReadonlyArray<ThreadUsageModelTotals>, ProjectionRepositoryError>;
 
   /**
    * Drop a thread's usage rows, for when the thread itself is deleted.

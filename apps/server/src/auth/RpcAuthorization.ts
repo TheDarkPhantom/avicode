@@ -43,6 +43,8 @@ export const RPC_REQUIRED_SCOPES = {
   // entry in the fork's old runtime map either — upstream's compile-time
   // exhaustiveness check here is what surfaced that.
   [WS_METHODS.serverGetProviderUsage]: AuthOrchestrationReadScope,
+  // Avi Code addition: reading a thread's usage totals is a read.
+  [WS_METHODS.serverGetThreadUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceGetCredential]: AuthOrchestrationOperateScope,
   // `/btw` reads the thread and runs the model with tools denied. It mutates
   // nothing — not even the thread's own transcript — so it is a read.

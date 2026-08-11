@@ -147,6 +147,8 @@ import {
   ServerProviderUpdateInput,
   ServerProviderUsageInput,
   ServerProviderUsageResult,
+  ServerThreadUsageInput,
+  ServerThreadUsageResult,
   ServerLifecycleStreamEvent,
   ServerRemoveKeybindingInput,
   ServerRemoveKeybindingResult,
@@ -253,6 +255,8 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetProviderUsage: "server.getProviderUsage",
+  // Avi Code addition: per-thread token/cost totals.
+  serverGetThreadUsage: "server.getThreadUsage",
   providerAskSideQuestion: "provider.askSideQuestion",
   // Avi Code addition: in-app `claude auth login` for a provider instance.
   claudeLoginStart: "claudeLogin.start",
@@ -401,6 +405,13 @@ export const WsClaudeLoginSubmitCodeRpc = Rpc.make(WS_METHODS.claudeLoginSubmitC
 export const WsServerGetProviderUsageRpc = Rpc.make(WS_METHODS.serverGetProviderUsage, {
   payload: ServerProviderUsageInput,
   success: ServerProviderUsageResult,
+  error: EnvironmentAuthorizationError,
+});
+
+// Avi Code addition: per-thread token/cost totals.
+export const WsServerGetThreadUsageRpc = Rpc.make(WS_METHODS.serverGetThreadUsage, {
+  payload: ServerThreadUsageInput,
+  success: ServerThreadUsageResult,
   error: EnvironmentAuthorizationError,
 });
 
@@ -892,6 +903,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerGetProviderUsageRpc,
+  WsServerGetThreadUsageRpc,
   WsProviderAskSideQuestionRpc,
   WsClaudeLoginStartRpc,
   WsClaudeLoginSubmitCodeRpc,

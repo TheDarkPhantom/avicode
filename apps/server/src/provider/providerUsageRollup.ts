@@ -7,9 +7,12 @@
  *
  * @module providerUsageRollup
  */
-import type { ServerProviderUsage } from "@t3tools/contracts";
+import type { ServerProviderUsage, ServerThreadUsage, ThreadId } from "@t3tools/contracts";
 
-import type { ProviderInstanceUsageTotals } from "../persistence/Services/ProviderInstanceUsage.ts";
+import type {
+  ProviderInstanceUsageTotals,
+  ThreadUsageModelTotals,
+} from "../persistence/Services/ProviderInstanceUsage.ts";
 
 /**
  * Sum two optional costs, preserving "unreported".
@@ -84,4 +87,50 @@ export const rollUpProviderUsage = (
       right.inputTokens + right.outputTokens - (left.inputTokens + left.outputTokens) ||
       left.instanceId.localeCompare(right.instanceId),
   );
+};
+
+/**
+ * Avi Code addition: sum a thread's per-model totals into one thread total.
+ *
+ * Returns null when the thread has no recorded usage, so callers can render
+ * "nothing yet" rather than a row of zeros. Cost stays null unless some turn
+ * reported one (via `addCost`), preserving the unreported-vs-zero distinction.
+ */
+export const rollUpThreadUsage = (
+  threadId: ThreadId,
+  totals: ReadonlyArray<ThreadUsageModelTotals>,
+): ServerThreadUsage | null => {
+  if (totals.length === 0) {
+    return null;
+  }
+
+  let turns = 0;
+  let inputTokens = 0;
+  let cachedInputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let outputTokens = 0;
+  let reasoningOutputTokens = 0;
+  let costUsd: number | null = null;
+
+  for (const total of totals) {
+    turns += total.turns;
+    inputTokens += total.inputTokens;
+    cachedInputTokens += total.cachedInputTokens;
+    cacheCreationInputTokens += total.cacheCreationInputTokens;
+    outputTokens += total.outputTokens;
+    reasoningOutputTokens += total.reasoningOutputTokens;
+    costUsd = addCost(costUsd, total.costUsd);
+  }
+
+  return {
+    threadId,
+    turns,
+    inputTokens,
+    cachedInputTokens,
+    cacheCreationInputTokens,
+    outputTokens,
+    reasoningOutputTokens,
+    costUsd,
+    byModel: totals,
+  };
 };

@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- See how many tokens and how much a thread has cost from a badge in the composer (#160)
 - A plan stops asking to be implemented once the agent has actually built it (#159)
 
 ## 0.0.31-avicode.9.2 (2026-08-10)

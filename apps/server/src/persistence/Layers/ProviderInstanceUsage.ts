@@ -13,6 +13,8 @@ import {
   ProviderInstanceUsageRow,
   ProviderInstanceUsageTotals,
   SummarizeProviderInstanceUsageInput,
+  SummarizeThreadUsageInput,
+  ThreadUsageModelTotals,
 } from "../Services/ProviderInstanceUsage.ts";
 
 function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: string) {
@@ -102,6 +104,30 @@ const makeProviderInstanceUsageRepository = Effect.gen(function* () {
       `,
   });
 
+  // Avi Code addition: one thread's totals, grouped by model. Same null-cost
+  // semantics as `summarize`, but scoped to a single thread and with no
+  // instance/driver dimension.
+  const summarizeThreadUsageRows = SqlSchema.findAll({
+    Request: SummarizeThreadUsageInput,
+    Result: ThreadUsageModelTotals,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          model,
+          COUNT(*) AS "turns",
+          SUM(input_tokens) AS "inputTokens",
+          SUM(cached_input_tokens) AS "cachedInputTokens",
+          SUM(cache_creation_input_tokens) AS "cacheCreationInputTokens",
+          SUM(output_tokens) AS "outputTokens",
+          SUM(reasoning_output_tokens) AS "reasoningOutputTokens",
+          SUM(cost_usd) AS "costUsd"
+        FROM provider_instance_usage
+        WHERE thread_id = ${threadId}
+        GROUP BY model
+        ORDER BY model ASC
+      `,
+  });
+
   const deleteProviderInstanceUsageRows = SqlSchema.void({
     Request: DeleteProviderInstanceUsageInput,
     execute: ({ threadId }) =>
@@ -131,6 +157,16 @@ const makeProviderInstanceUsageRepository = Effect.gen(function* () {
       ),
     );
 
+  const summarizeByThread: ProviderInstanceUsageRepositoryShape["summarizeByThread"] = (input) =>
+    summarizeThreadUsageRows(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProviderInstanceUsageRepository.summarizeByThread:query",
+          "ProviderInstanceUsageRepository.summarizeByThread:decodeRows",
+        ),
+      ),
+    );
+
   const deleteByThreadId: ProviderInstanceUsageRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProviderInstanceUsageRows(input).pipe(
       Effect.mapError(
@@ -141,6 +177,7 @@ const makeProviderInstanceUsageRepository = Effect.gen(function* () {
   return {
     record,
     summarize,
+    summarizeByThread,
     deleteByThreadId,
   } satisfies ProviderInstanceUsageRepositoryShape;
 });

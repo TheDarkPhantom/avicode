@@ -133,6 +133,8 @@ import {
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { ProviderQuotaMeter } from "./ProviderQuotaMeter";
+// Avi Code addition: per-thread token/cost total in the composer footer.
+import { ThreadUsageBadge } from "./ThreadUsageBadge";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -456,6 +458,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   compact: boolean;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   activeThreadProviderDisplayName: string | null;
+  // Avi Code addition: identify the thread whose usage the footer badge shows.
+  threadUsageEnvironmentId: EnvironmentId;
+  threadUsageThreadId: ThreadId | null;
   activeProviderQuota: ProviderQuotaSnapshot | null;
   activeProviderInstanceLabel: string | null;
   isProviderQuotaLoading: boolean;
@@ -490,6 +495,12 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         <ContextWindowMeter
           usage={props.activeContextWindow}
           providerDisplayName={props.activeThreadProviderDisplayName}
+        />
+      ) : null}
+      {props.threadUsageThreadId ? (
+        <ThreadUsageBadge
+          environmentId={props.threadUsageEnvironmentId}
+          threadId={props.threadUsageThreadId}
         />
       ) : null}
       {props.activeProviderQuota ? (
@@ -3867,6 +3878,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}
                   activeThreadProviderDisplayName={activeThreadProviderDisplayName}
+                  threadUsageEnvironmentId={environmentId}
+                  threadUsageThreadId={activeThreadId}
                   activeProviderQuota={activeProviderQuota}
                   activeProviderInstanceLabel={activeProviderInstanceLabel}
                   isProviderQuotaLoading={quotaRefreshPendingInstanceId === selectedInstanceId}

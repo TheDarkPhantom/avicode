@@ -253,6 +253,37 @@ export const ServerProviderUsageResult = Schema.Struct({
 export type ServerProviderUsageResult = typeof ServerProviderUsageResult.Type;
 
 /**
+ * Avi Code addition: rolled-up token/cost usage for a single thread.
+ *
+ * Answers "how much has this thread cost." `costUsd` follows the same rule as
+ * the per-instance shape: null when no turn reported spend (every driver but
+ * Claude today), distinct from a reported zero.
+ */
+export const ServerThreadUsage = Schema.Struct({
+  threadId: ThreadId,
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationInputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningOutputTokens: NonNegativeInt,
+  costUsd: Schema.NullOr(Schema.Number),
+  byModel: Schema.Array(ServerProviderUsageModelTotals),
+});
+export type ServerThreadUsage = typeof ServerThreadUsage.Type;
+
+export const ServerThreadUsageInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ServerThreadUsageInput = typeof ServerThreadUsageInput.Type;
+
+export const ServerThreadUsageResult = Schema.Struct({
+  /** Null when the thread has recorded no usage yet. */
+  usage: Schema.NullOr(ServerThreadUsage),
+});
+export type ServerThreadUsageResult = typeof ServerThreadUsageResult.Type;
+
+/**
  * Treat the optional `availability` as "available" when absent. This is
  * the rule legacy producers (which omit the field) and new producers
  * (which set it explicitly) agree on so consumers never have to thread
