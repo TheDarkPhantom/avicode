@@ -70,7 +70,11 @@ export function normalizeOrderedListContinuations(text: string): NormalizedMarkd
     if (!inFence && index > 0) {
       const orderedMatch = ORDERED_ITEM_LINE.exec(line);
       // A start number of 1 already interrupts a paragraph, so only 2+ break.
-      if (orderedMatch && Number(orderedMatch[1]) !== 1 && isParagraphLine(lines[index - 1] ?? "")) {
+      if (
+        orderedMatch &&
+        Number(orderedMatch[1]) !== 1 &&
+        isParagraphLine(lines[index - 1] ?? "")
+      ) {
         emit("", true);
       }
     }
