@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The chat no longer jumps upward when a response finishes streaming (#165)
 - Numbered lists that continue after a heading now render as a list and keep their numbers on copy (#164)
 - Refining or implementing a plan now sends the images and documents you attached (#161)
 - Refreshing usage now updates the plan limit bars, not just the token totals (#162)
