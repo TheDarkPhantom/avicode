@@ -202,6 +202,7 @@ function buildProps() {
     onManualNavigation: () => {},
     onManualScroll: () => {},
     onOpenedAtLastResponse: () => {},
+    onActiveTurnSettled: () => {},
   };
 }
 

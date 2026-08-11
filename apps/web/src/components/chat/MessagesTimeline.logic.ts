@@ -439,7 +439,7 @@ interface TurnFold {
  * user sends a message, the previous turn is still the "active" one until the
  * server creates the new turn, and folding must not flicker through that window.
  */
-function deriveUnsettledTurnId(
+export function deriveUnsettledTurnId(
   latestTurn: TimelineLatestTurn | null,
   runningTurnId: TurnId | null,
 ): TurnId | null {
@@ -451,6 +451,35 @@ function deriveUnsettledTurnId(
   }
   const isSettled = latestTurn.completedAt !== null && latestTurn.state !== "running";
   return isSettled ? null : latestTurn.turnId;
+}
+
+/**
+ * Avi Code addition. The turn currently held unsettled and its terminal
+ * assistant message. The settle-freeze in MessagesTimeline watches this: when
+ * the unsettled turn flips to null a turn folds, collapsing its commentary and
+ * tool rows, and the terminal message (the one row that survives the fold) is
+ * the stable anchor whose viewport position must stay put through that reflow.
+ */
+export function deriveSettleFreezeTarget(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  latestTurn: TimelineLatestTurn | null,
+  runningTurnId: TurnId | null,
+): { unsettledTurnId: TurnId | null; terminalMessageId: MessageId | null } {
+  const unsettledTurnId = deriveUnsettledTurnId(latestTurn, runningTurnId);
+  if (unsettledTurnId === null) {
+    return { unsettledTurnId: null, terminalMessageId: null };
+  }
+  let terminalMessageId: MessageId | null = null;
+  for (const entry of timelineEntries) {
+    if (
+      entry.kind === "message" &&
+      entry.message.role === "assistant" &&
+      entry.message.turnId === unsettledTurnId
+    ) {
+      terminalMessageId = entry.message.id;
+    }
+  }
+  return { unsettledTurnId, terminalMessageId };
 }
 
 /**

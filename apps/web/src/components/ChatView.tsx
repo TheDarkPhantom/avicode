@@ -4175,6 +4175,30 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, []);
 
+  // Avi Code addition. The timeline froze the viewport in place because the
+  // active turn settled while the reader was parked mid-answer. Quiesce the
+  // live-follow driver so the fold reflow that just collapsed the turn cannot
+  // re-pull the list toward the end. Mirror the manual opt-out reset, but leave
+  // anchorUserScrollGenerationRef untouched so onIsAtEndChange can still re-arm
+  // follow if the user later scrolls back to the bottom.
+  const onActiveTurnSettled = useCallback(() => {
+    if (isAtEndRef.current) {
+      return;
+    }
+    timelineScrollModeRef.current = "free-scrolling";
+    liveFollowUserScrollGenerationRef.current = null;
+    setTimelineLiveFollowEnabled(false);
+    pendingTimelineAnchorRef.current = null;
+    positionedTimelineAnchorRef.current = null;
+    settledTimelineAnchorRef.current = null;
+    pendingAnchorScrollRestoreRef.current = null;
+    if (anchorScrollRestoreFrameRef.current !== null) {
+      cancelAnimationFrame(anchorScrollRestoreFrameRef.current);
+      anchorScrollRestoreFrameRef.current = null;
+    }
+    liveFollowScrollPendingRef.current = false;
+  }, []);
+
   // Avi Code addition: ref-gated double-rAF instead of cleanup-cancelled rAFs.
   // During streaming, timelineEntries changes on every token (~5-10ms). The
   // original cleanup cancelled pending rAFs on each change, but a double-rAF
@@ -7559,6 +7583,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                 onManualScroll={cancelTimelineLiveFollowForUserScroll}
+                onActiveTurnSettled={onActiveTurnSettled}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
               />
