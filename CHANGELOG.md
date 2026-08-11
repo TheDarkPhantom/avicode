@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Numbered lists that continue after a heading now render as a list and keep their numbers on copy (#164)
 - Refining or implementing a plan now sends the images and documents you attached (#161)
 - Refreshing usage now updates the plan limit bars, not just the token totals (#162)
 - See how many tokens and how much a thread has cost from a badge in the composer (#160)
