@@ -42,7 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- Refining or implementing a plan now sends the images and documents you attached
+- Refining or implementing a plan now sends the images and documents you attached (#161)
 - See how many tokens and how much a thread has cost from a badge in the composer (#160)
 - A plan stops asking to be implemented once the agent has actually built it (#159)
 
