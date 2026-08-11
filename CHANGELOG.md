@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Refining or implementing a plan now sends the images and documents you attached (#161)
+- Refreshing usage now updates the plan limit bars, not just the token totals
 - See how many tokens and how much a thread has cost from a badge in the composer (#160)
 - A plan stops asking to be implemented once the agent has actually built it (#159)
 
