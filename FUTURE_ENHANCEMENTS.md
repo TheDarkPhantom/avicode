@@ -17,6 +17,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Numbered-list recovery (`markdown-source-normalize.ts`) only rejoins continuation items that sit
+  on their own lines. When a model emits them run together on one physical line (`6. a 7. b 8. c`),
+  splitting on mid-sentence `N.` tokens would false-positive on prose ("Windows 11. Then..."), so
+  those stay inline. A bold lead-in glued to the previous list item is also left attached; only the
+  ordered items are pulled into their own list.
+- The copy fix (`injectOrderedListOrdinals` in `markdown-clipboard.ts`) writes decimal ordinals into
+  the copied HTML for every level, so nested ordered lists lose their `lower-alpha`/`lower-roman`
+  styling (`index.css:1256`) on paste and read as `1.`/`2.` instead of `a.`/`i.`.
 - The plan-review return leg (#143) keys both banners off a thread's _latest_ turn: a follow-up
   turn in the review thread drops the "Send findings" banner, and a plan refined after the review
   ran no longer matches the review's `sourceProposedPlan`, hiding the "review ready" banner even

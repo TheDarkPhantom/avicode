@@ -65,6 +65,7 @@ import {
   serializeTableElementToMarkdown,
 } from "../markdown-clipboard";
 import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation";
+import { normalizeOrderedListContinuations } from "../markdown-source-normalize";
 import { type FileSurfaceRoot } from "./files/externalFileRoot";
 import { useProjectWorkspaceRoots } from "../state/projectWorkspaceRoots";
 import {
@@ -1339,6 +1340,12 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  // Avi Code addition: recover numbered lists that continue after a heading so
+  // they render as a list instead of collapsing into a paragraph. Inserted
+  // blank lines shift offsets, so mapOffset rewrites task-checkbox offsets back
+  // to the stored source. Link/inline-code prescans stay on the original `text`
+  // since their matches are content-based and unaffected by blank-line inserts.
+  const normalizedMarkdown = useMemo(() => normalizeOrderedListContinuations(text), [text]);
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
@@ -1475,8 +1482,12 @@ function ChatMarkdown({
       },
       li({ node, children, ...props }) {
         const listItemStart = node?.position?.start.offset;
+        // Avi Code addition: node offsets index the normalized source fed to
+        // ReactMarkdown, so resolve the task marker against the same string.
         const markerOffset =
-          typeof listItemStart === "number" ? findTaskListMarkerOffset(text, listItemStart) : null;
+          typeof listItemStart === "number"
+            ? findTaskListMarkerOffset(normalizedMarkdown.text, listItemStart)
+            : null;
         return (
           <li {...props} data-task-marker-offset={markerOffset ?? undefined}>
             {renderSkillInlineMarkdownChildren(children, skills)}
@@ -1507,7 +1518,12 @@ function ChatMarkdown({
                 event.currentTarget.closest("li")?.dataset.taskMarkerOffset,
               );
               if (!Number.isSafeInteger(markerOffset)) return;
-              onTaskListChange({ markerOffset, checked: event.currentTarget.checked });
+              // Avi Code addition: dataset offset indexes the normalized source;
+              // translate it back so the toggle edits the correct stored byte.
+              onTaskListChange({
+                markerOffset: normalizedMarkdown.mapOffset(markerOffset),
+                checked: event.currentTarget.checked,
+              });
             }}
           />
         );
@@ -1654,7 +1670,7 @@ function ChatMarkdown({
     openMarkdownFileInPreview,
     resolvedTheme,
     skills,
-    text,
+    normalizedMarkdown,
     threadRef,
   ]);
 
@@ -1674,7 +1690,7 @@ function ChatMarkdown({
         components={markdownComponents}
         urlTransform={markdownUrlTransform}
       >
-        {text}
+        {normalizedMarkdown.text}
       </ReactMarkdown>
     </div>
   );

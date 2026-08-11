@@ -275,6 +275,38 @@ export function serializeTableElementToCsv(table: Element): string {
   return lines.join("\n");
 }
 
+/**
+ * Ordered-list markers are CSS-generated (`list-style-type: decimal`), so they
+ * are absent from the copied HTML markup. Targets that ingest the `text/html`
+ * flavor and flatten it (Telegram, Slack) drop the numbers entirely. Bake an
+ * explicit `N. ` ordinal into each item and disable the browser counter so
+ * rich targets that do render `<ol>` (Word, Docs) don't double up.
+ */
+function injectOrderedListOrdinals(container: Element): void {
+  for (const list of container.querySelectorAll("ol")) {
+    const start = Number.parseInt(list.getAttribute("start") ?? "1", 10) || 1;
+    const listElement = list as HTMLElement;
+    listElement.style.listStyleType = "none";
+    listElement.style.paddingLeft = "0";
+    let ordinal = start;
+    // Ordinals are inserted into each <li>'s subtree, never into the <ol>, so
+    // the live children collection is safe to iterate directly.
+    for (const item of list.children) {
+      if (item.tagName !== "LI") continue;
+      const marker = item.ownerDocument.createTextNode(`${ordinal}. `);
+      ordinal += 1;
+      // Prepend inside a leading block child so a loose-list item keeps the
+      // number on the same line as its text instead of on its own.
+      const firstChild = item.firstElementChild;
+      if (firstChild && (firstChild.tagName === "P" || firstChild.tagName === "DIV")) {
+        firstChild.insertBefore(marker, firstChild.firstChild);
+      } else {
+        item.insertBefore(marker, item.firstChild);
+      }
+    }
+  }
+}
+
 function sanitizedHtmlFrom(container: Element): string {
   for (const node of container.querySelectorAll(SANITIZED_HTML_SELECTOR)) {
     if (
@@ -288,6 +320,7 @@ function sanitizedHtmlFrom(container: Element): string {
     }
     node.remove();
   }
+  injectOrderedListOrdinals(container);
   return `<meta charset="utf-8">${container.innerHTML}`;
 }
 
