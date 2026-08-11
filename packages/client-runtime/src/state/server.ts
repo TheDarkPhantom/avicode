@@ -658,6 +658,12 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetProviderUsage,
       staleTimeMs: 30_000,
     }),
+    // Avi Code addition: per-thread token/cost totals for the chat header badge.
+    getThreadUsage: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:thread-usage",
+      tag: WS_METHODS.serverGetThreadUsage,
+      staleTimeMs: 30_000,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",

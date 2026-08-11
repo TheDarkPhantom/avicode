@@ -194,6 +194,106 @@ layer("ProviderInstanceUsageRepository", (it) => {
     }),
   );
 
+  it.effect("summarizes one thread's totals scoped to that thread", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderInstanceUsageRepository;
+      const instanceId = ProviderInstanceId.make("thread_scope");
+
+      // Two turns on the target thread, one on another thread that must not leak
+      // into the total.
+      yield* repository.record(
+        row({ instanceId, turnId: "ts-1", threadId: "thread-target", inputTokens: 100 }),
+      );
+      yield* repository.record(
+        row({ instanceId, turnId: "ts-2", threadId: "thread-target", inputTokens: 400 }),
+      );
+      yield* repository.record(
+        row({ instanceId, turnId: "ts-other", threadId: "thread-other", inputTokens: 999 }),
+      );
+
+      const totals = yield* repository.summarizeByThread({
+        threadId: ThreadId.make("thread-target"),
+      });
+
+      assert.lengthOf(totals, 1);
+      assert.deepStrictEqual(totals[0], {
+        model: "gpt-5",
+        turns: 2,
+        inputTokens: 500,
+        cachedInputTokens: 40,
+        cacheCreationInputTokens: 10,
+        outputTokens: 100,
+        reasoningOutputTokens: 20,
+        costUsd: null,
+      });
+    }),
+  );
+
+  it.effect("keeps a thread's models in separate groups", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderInstanceUsageRepository;
+      const instanceId = ProviderInstanceId.make("thread_models");
+
+      yield* repository.record(
+        row({ instanceId, turnId: "tm-1", threadId: "thread-multimodel", model: "gpt-5" }),
+      );
+      yield* repository.record(
+        row({ instanceId, turnId: "tm-2", threadId: "thread-multimodel", model: "gpt-5-mini" }),
+      );
+
+      const totals = yield* repository.summarizeByThread({
+        threadId: ThreadId.make("thread-multimodel"),
+      });
+
+      assert.deepStrictEqual(
+        totals.map((total) => total.model),
+        ["gpt-5", "gpt-5-mini"],
+      );
+    }),
+  );
+
+  it.effect("reports a thread's cost only when a turn reported one", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderInstanceUsageRepository;
+      const freeInstance = ProviderInstanceId.make("thread_free");
+      const paidInstance = ProviderInstanceId.make("thread_paid");
+
+      yield* repository.record(
+        row({ instanceId: freeInstance, turnId: "tf-1", threadId: "thread-free" }),
+      );
+      yield* repository.record(
+        row({
+          instanceId: paidInstance,
+          turnId: "tp-1",
+          threadId: "thread-paid",
+          driverKind: claudeDriver,
+          model: "claude-opus-5",
+          costUsd: 0.2,
+        }),
+      );
+
+      const free = yield* repository.summarizeByThread({ threadId: ThreadId.make("thread-free") });
+      const paid = yield* repository.summarizeByThread({ threadId: ThreadId.make("thread-paid") });
+
+      // Null, not zero: a Codex-only thread must stay distinguishable from one
+      // that genuinely spent nothing, so the UI can show "—".
+      assert.strictEqual(free[0]?.costUsd, null);
+      assert.closeTo(paid[0]?.costUsd ?? 0, 0.2, 1e-9);
+    }),
+  );
+
+  it.effect("returns no rows for a thread with no usage", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderInstanceUsageRepository;
+
+      const totals = yield* repository.summarizeByThread({
+        threadId: ThreadId.make("thread-never-used"),
+      });
+
+      assert.lengthOf(totals, 0);
+    }),
+  );
+
   it.effect("stores a null model for providers that do not name one", () =>
     Effect.gen(function* () {
       const repository = yield* ProviderInstanceUsageRepository;

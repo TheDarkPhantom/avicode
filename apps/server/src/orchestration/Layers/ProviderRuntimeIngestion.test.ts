@@ -258,6 +258,7 @@ describe("ProviderRuntimeIngestion", () => {
           recordedUsage.push(row);
         }),
       summarize: () => Effect.succeed([]),
+      summarizeByThread: () => Effect.succeed([]),
       deleteByThreadId: () => Effect.void,
     });
 

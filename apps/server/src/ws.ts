@@ -83,7 +83,7 @@ import * as ProviderService from "./provider/Services/ProviderService.ts";
 // Avi Code addition: in-app `claude auth login` for a provider instance.
 import { ClaudeLoginService } from "./provider/ClaudeLogin/ClaudeLoginService.ts";
 import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
-import { rollUpProviderUsage } from "./provider/providerUsageRollup.ts";
+import { rollUpProviderUsage, rollUpThreadUsage } from "./provider/providerUsageRollup.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -1463,6 +1463,23 @@ const makeWsRpcLayer = (
                 Effect.logWarning("failed to summarize provider usage", {
                   cause: Cause.pretty(cause),
                 }).pipe(Effect.as({ instances: [] })),
+              ),
+            ),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        // Avi Code addition: per-thread token/cost totals.
+        [WS_METHODS.serverGetThreadUsage]: ({ threadId }) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetThreadUsage,
+            providerInstanceUsage.summarizeByThread({ threadId }).pipe(
+              Effect.map((totals) => ({ usage: rollUpThreadUsage(threadId, totals) })),
+              // An unreadable table reports no usage rather than failing the read.
+              Effect.catchCause((cause) =>
+                Effect.logWarning("failed to summarize thread usage", {
+                  cause: Cause.pretty(cause),
+                }).pipe(Effect.as({ usage: null })),
               ),
             ),
             {
