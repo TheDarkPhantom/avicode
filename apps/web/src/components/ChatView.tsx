@@ -5546,12 +5546,17 @@ function ChatViewContent(props: ChatViewProps) {
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
+      // Avi Code addition: snapshot the composer's images/documents so the plan
+      // follow-up (Refine/Implement) carries them, matching the normal send
+      // path. The draft is cleared inside onSubmitPlanFollowUp after the
+      // optimistic message is set, so blob preview URLs survive until render.
+      const followUpImages = [...composerImages];
       promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
+        attachmentImages: followUpImages,
       });
       return;
     }
@@ -6398,9 +6403,13 @@ function ChatViewContent(props: ChatViewProps) {
     async ({
       text,
       interactionMode: nextInteractionMode,
+      // Avi Code addition: images/documents captured from the composer at the
+      // call site, sent alongside the plan follow-up text.
+      attachmentImages,
     }: {
       text: string;
       interactionMode: "default" | "plan";
+      attachmentImages: ComposerAttachment[];
     }) => {
       if (
         !activeThread ||
@@ -6444,6 +6453,37 @@ function ChatViewContent(props: ChatViewProps) {
       beginLocalDispatch({ preparingWorktree: false });
       setThreadError(threadIdForSend, null);
 
+      // Avi Code addition: build the turn/optimistic attachments from the
+      // composer snapshot, mirroring the normal send path so Refine/Implement
+      // carry pasted images and documents.
+      const turnAttachments = await Promise.all(
+        attachmentImages.map(async (attachment) =>
+          attachment.type === "document"
+            ? {
+                type: "document" as const,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+                extractedText: attachment.extractedText,
+              }
+            : {
+                type: "image" as const,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+                dataUrl: await readFileAsDataUrl(attachment.file),
+              },
+        ),
+      );
+      const optimisticAttachments = attachmentImages.map((image) => ({
+        type: "image" as const,
+        id: image.id,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        previewUrl: image.previewUrl,
+      }));
+
       // Position this sent row once LegendList has measured the anchored tail.
       isAtEndRef.current = true;
       timelineScrollModeRef.current = "anchoring-new-turn";
@@ -6464,12 +6504,17 @@ function ChatViewContent(props: ChatViewProps) {
           id: messageIdForSend,
           role: "user",
           text: outgoingMessageText,
+          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
           turnId: null,
           createdAt: messageCreatedAt,
           updatedAt: messageCreatedAt,
           streaming: false,
         },
       ]);
+
+      // Avi Code addition: clear the composer now that the optimistic message
+      // (with its blob preview URLs) is captured, matching the normal send path.
+      clearComposerDraftContent(composerDraftTarget);
 
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId: threadIdForSend,
@@ -6500,7 +6545,7 @@ function ChatViewContent(props: ChatViewProps) {
               messageId: messageIdForSend,
               role: "user",
               text: outgoingMessageText,
-              attachments: [],
+              attachments: turnAttachments,
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
@@ -6564,6 +6609,8 @@ function ChatViewContent(props: ChatViewProps) {
       autoOpenPlanSidebar,
       environmentId,
       composerRef,
+      clearComposerDraftContent,
+      composerDraftTarget,
     ],
   );
 
