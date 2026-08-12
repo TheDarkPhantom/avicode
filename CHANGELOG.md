@@ -36,6 +36,14 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Right-panel resizing keeps the app window, chat controls, and thread switches stable (#168)
+
 ## 0.0.31-avicode.9.3 (2026-08-11)
 
 Upstream: t3code 0.0.31
@@ -47,7 +55,6 @@ Upstream: t3code 0.0.31
 - Numbered lists that continue after a heading now render as a list and keep their numbers on copy (#164)
 - Refining or implementing a plan now sends the images and documents you attached (#161)
 - Refreshing usage now updates the plan limit bars, not just the token totals (#162)
-- Opening the right panel widens the window instead of squishing the chat column (#163)
 - See how many tokens and how much a thread has cost from a badge in the composer (#160)
 - A plan stops asking to be implemented once the agent has actually built it (#159)
 

@@ -212,6 +212,27 @@ function visibilityPreferenceFrom(state: ThreadRightPanelState): RightPanelVisib
 }
 
 /**
+ * Resolves the panel state a thread should render before the carried visibility
+ * preference is persisted for that thread. Keeping this pure lets navigation
+ * render one coherent state instead of painting the saved state first and
+ * adopting the preference in an effect afterward.
+ */
+export function resolveFollowedRightPanelState(
+  current: ThreadRightPanelState,
+  preference: RightPanelVisibilityPreference,
+  followsThreads: boolean,
+): ThreadRightPanelState {
+  if (!followsThreads || current.isOpen === preference.isOpen) return current;
+  if (!preference.isOpen) return { ...current, isOpen: false };
+  if (current.surfaces.length > 0) return { ...current, isOpen: true };
+  if (preference.preferredKind === null) return current;
+  if (preference.preferredKind === "preview") {
+    return upsertSurface(current, browserSurface(null));
+  }
+  return upsertSurface(current, singletonSurface(preference.preferredKind));
+}
+
+/**
  * Runs a thread mutation and records the resulting visibility as the preference
  * to carry. Used by the mutators that represent a deliberate open/close, so
  * incidental changes (a terminal split, a file reveal) do not rewrite it.
@@ -640,28 +661,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           const preference = state.visibilityPreference;
           const threadKey = scopedThreadKey(ref);
           const current = state.byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
-          if (current.isOpen === preference.isOpen) return state;
-
-          if (!preference.isOpen) {
-            return {
-              byThreadKey: updateThread(state.byThreadKey, threadKey, (thread) => ({
-                ...thread,
-                isOpen: false,
-              })),
-            };
-          }
-
-          // Opening: reuse whatever this thread already had, and only fall back
-          // to the carried kind when it has no surfaces of its own to show.
+          const resolved = resolveFollowedRightPanelState(current, preference, true);
+          if (resolved === current) return state;
           return {
-            byThreadKey: updateThread(state.byThreadKey, threadKey, (thread) => {
-              if (thread.surfaces.length > 0) return { ...thread, isOpen: true };
-              if (preference.preferredKind === null) return thread;
-              if (preference.preferredKind === "preview") {
-                return upsertSurface(thread, browserSurface(null));
-              }
-              return upsertSurface(thread, singletonSurface(preference.preferredKind));
-            }),
+            byThreadKey: updateThread(state.byThreadKey, threadKey, () => resolved),
           };
         }),
       removeThread: (ref) =>

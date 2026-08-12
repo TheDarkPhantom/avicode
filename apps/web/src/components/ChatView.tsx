@@ -149,12 +149,13 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
-  selectActiveRightPanel,
+  resolveFollowedRightPanelState,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
   type RightPanelSurface,
   useRightPanelStore,
 } from "../rightPanelStore";
+import { useRightPanelSplitLayout } from "../hooks/useRightPanelSplitLayout";
 import {
   isPreviewSupportedInRuntime,
   setActivePreviewTab,
@@ -1395,7 +1396,8 @@ function ChatViewContent(props: ChatViewProps) {
     pendingUserInputReducer,
     initialPendingUserInputState,
   );
-  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const useCompactRightPanel = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const rightPanelSplitLayout = useRightPanelSplitLayout();
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
@@ -1629,23 +1631,37 @@ function ChatViewContent(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
-  const activeRightPanelKind = useRightPanelStore((state) =>
-    selectActiveRightPanel(state.byThreadKey, activeThreadRef),
-  );
-  const diffOpen = activeRightPanelKind === "diff";
-  const rightPanelState = useRightPanelStore((state) =>
+  const storedRightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
-  const activeRightPanelSurface = useRightPanelStore((state) =>
-    selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
-  );
-  const activeFileSurface =
-    activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   // When enabled, the right panel follows the user between threads instead of
   // each thread remembering its own visibility.
   const rightPanelFollowsThreads = useClientSettings(
     (settings) => settings.rightPanelFollowsThreads,
   );
+  const rightPanelVisibilityPreference = useRightPanelStore((state) => state.visibilityPreference);
+  const rightPanelState = useMemo(
+    () =>
+      resolveFollowedRightPanelState(
+        storedRightPanelState,
+        rightPanelVisibilityPreference,
+        rightPanelFollowsThreads,
+      ),
+    [rightPanelFollowsThreads, rightPanelVisibilityPreference, storedRightPanelState],
+  );
+  const activeRightPanelSurface = useMemo(
+    () =>
+      rightPanelState.isOpen
+        ? (rightPanelState.surfaces.find(
+            (surface) => surface.id === rightPanelState.activeSurfaceId,
+          ) ?? null)
+        : null,
+    [rightPanelState],
+  );
+  const activeRightPanelKind = activeRightPanelSurface?.kind ?? null;
+  const activeFileSurface =
+    activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
+  const diffOpen = activeRightPanelKind === "diff";
   // Avi Code addition. Upstream pinned the chat column to a fixed 48rem in six
   // separate class strings. They all read `--chat-content-max-width` now, which
   // this sets once on the chat root from the user's setting.
@@ -1665,7 +1681,6 @@ function ChatViewContent(props: ChatViewProps) {
     // activeThreadRef is intentionally omitted; it is a fresh object each
     // render, and activeThreadKey already identifies the thread. Including it
     // would re-adopt the preference on every render and fight manual toggles.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadKey, rightPanelFollowsThreads]);
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewMiniPlayer = usePreviewMiniPlayerStore((state) =>
@@ -1682,6 +1697,8 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
+  const shouldUsePlanSidebarSheet =
+    useCompactRightPanel || rightPanelSplitLayout.layout?.fitsInline === false;
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
@@ -7315,13 +7332,18 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const panelLayoutControls = (
     <div className="workspace-titlebar-controls z-50 gap-1 [-webkit-app-region:no-drag]">
+      {panelToggleControls}
+    </div>
+  );
+  const rightPanelLayoutControls = (
+    <div className="workspace-titlebar-controls z-50 gap-1 [-webkit-app-region:no-drag]">
       {rightPanelOpen && !shouldUsePlanSidebarSheet ? (
         <RightPanelMaximizeControl
           maximized={rightPanelMaximized}
           onToggle={toggleRightPanelMaximized}
         />
       ) : null}
-      {panelToggleControls}
+      {rightPanelMaximized ? panelToggleControls : null}
     </div>
   );
   const rightPanelContent = activeThreadRef ? (
@@ -7406,18 +7428,40 @@ function ChatViewContent(props: ChatViewProps) {
       </Suspense>
     ) : null
   ) : null;
+  const inlineSplitPane =
+    rightPanelSplitLayout.layout && rightPanelSplitLayout.preferredChatWidth !== null
+      ? {
+          handlers: rightPanelSplitLayout.handlers,
+          value: rightPanelSplitLayout.preferredChatWidth,
+          minimum: rightPanelSplitLayout.separatorMinimum,
+          maximum: rightPanelSplitLayout.separatorMaximum,
+          active: rightPanelSplitLayout.active,
+        }
+      : undefined;
 
   return (
     <div
+      ref={rightPanelSplitLayout.containerRef}
       className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
       style={chatContentWidthStyle}
     >
-      {rightPanelOpen && !shouldUsePlanSidebarSheet ? panelLayoutControls : null}
+      {rightPanelOpen && !shouldUsePlanSidebarSheet ? rightPanelLayoutControls : null}
       <div
         className={cn(
           "chat-content-container flex min-h-0 min-w-0 flex-col overflow-x-hidden",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
+        style={
+          rightPanelOpen &&
+          !shouldUsePlanSidebarSheet &&
+          !rightPanelMaximized &&
+          rightPanelSplitLayout.layout
+            ? {
+                width: `${rightPanelSplitLayout.layout.chatWidth}px`,
+                flex: "0 0 auto",
+              }
+            : undefined
+        }
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
@@ -7436,7 +7480,7 @@ function ChatViewContent(props: ChatViewProps) {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
-          {!rightPanelOpen ? panelLayoutControls : null}
+          {!rightPanelMaximized ? panelLayoutControls : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
@@ -7889,6 +7933,7 @@ function ChatViewContent(props: ChatViewProps) {
         <RightPanelTabs
           mode="inline"
           maximized={rightPanelMaximized}
+          {...(inlineSplitPane ? { splitPane: inlineSplitPane } : {})}
           surfaces={rightPanelState.surfaces}
           activeSurfaceId={activeRightPanelSurface?.id ?? null}
           pendingSurfaceIds={pendingFileSurfaceIds}
@@ -7915,7 +7960,6 @@ function ChatViewContent(props: ChatViewProps) {
         <RightPanelSheet open onClose={planSidebarOpen ? closePlanSidebar : closePreviewPanel}>
           <RightPanelTabs
             mode="sheet"
-            layoutControls={panelToggleControls}
             surfaces={rightPanelState.surfaces}
             activeSurfaceId={activeRightPanelSurface?.id ?? null}
             pendingSurfaceIds={pendingFileSurfaceIds}

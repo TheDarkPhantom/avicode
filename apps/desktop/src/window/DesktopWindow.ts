@@ -24,8 +24,6 @@ const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linu
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
-// Avi Code addition: minimum content width the main window is created with; the
-// panel-reservation resize never shrinks the window below it.
 const MAIN_WINDOW_MIN_WIDTH = 840;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
@@ -98,11 +96,6 @@ export class DesktopWindow extends Context.Service<
     // produce a stranded window pointing at nothing.
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
-    // Avi Code addition: reserve OS-window width for the inline right panel so
-    // opening it widens the window rather than squishing the chat column. The
-    // renderer passes the panel width (0 when closed); the main process applies
-    // the delta to the live window, clamped to the display work area.
-    readonly setPanelReservedWidth: (width: number) => Effect.Effect<void>;
     readonly dispatchMenuAction: (action: string) => Effect.Effect<void, DesktopWindowError>;
     readonly syncAppearance: Effect.Effect<void>;
   }
@@ -283,8 +276,6 @@ export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
-  // Avi Code addition: assigned once the main window exists (see createWindow).
-  let setPanelReservedWidthImpl: (width: number) => void = () => {};
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -371,13 +362,6 @@ export const make = Effect.gen(function* () {
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let boundsPersistenceEnabled = persistedBounds === null || restoredPersistedBounds;
-    // Avi Code addition: width currently added to the live window to make room
-    // for the inline right panel. Subtracted from persisted bounds so that
-    // reopening the panel after a restart does not compound the growth.
-    // `desiredReservedWidth` is the renderer's last request, applied lazily once
-    // the window is in a resizable (non-maximized) state.
-    let reservedWidth = 0;
-    let desiredReservedWidth = 0;
     const readPersistableBounds = (): DesktopAppSettings.DesktopWindowBounds | null => {
       if (window.isDestroyed()) {
         return null;
@@ -389,7 +373,7 @@ export const make = Effect.gen(function* () {
       return DesktopAppSettings.normalizeMainWindowBounds({
         x: Math.round(bounds.x),
         y: Math.round(bounds.y),
-        width: Math.round(bounds.width) - reservedWidth,
+        width: Math.round(bounds.width),
         height: Math.round(bounds.height),
       });
     };
@@ -461,54 +445,6 @@ export const make = Effect.gen(function* () {
       ),
     );
     flushMainWindowBounds = flushBoundsPersist;
-
-    // Avi Code addition: grow/shrink the OS window so the inline right panel does
-    // not squish the chat column. `desiredReservedWidth` is what the renderer last
-    // asked for (0 when closed); `reservedWidth` is what is actually applied to the
-    // live window (subtracted back out on persist). A maximized/fullscreen window
-    // cannot resize, so reconciliation is deferred to unmaximize/leave-full-screen.
-    const reconcilePanelReservedWidth = () => {
-      if (window.isDestroyed()) {
-        return;
-      }
-      if (window.isFullScreen() || window.isMaximized() || window.isMinimized()) {
-        return;
-      }
-      const delta = desiredReservedWidth - reservedWidth;
-      if (delta === 0) {
-        return;
-      }
-      const bounds = window.getBounds();
-      let workArea: DisplayBounds | null;
-      try {
-        workArea = Electron.screen.getDisplayMatching(bounds).workArea;
-      } catch {
-        workArea = null;
-      }
-      const maxWidth = workArea === null ? bounds.width + delta : workArea.width;
-      const newWidth = Math.max(MAIN_WINDOW_MIN_WIDTH, Math.min(maxWidth, bounds.width + delta));
-      let x = bounds.x;
-      if (workArea !== null) {
-        const rightLimit = workArea.x + workArea.width;
-        if (x + newWidth > rightLimit) {
-          x = rightLimit - newWidth;
-        }
-        if (x < workArea.x) {
-          x = workArea.x;
-        }
-      }
-      window.setBounds({ x, y: bounds.y, width: newWidth, height: bounds.height });
-      // Track what was actually applied (a screen-edge clamp may have prevented
-      // the full delta) so closing reverses precisely this much.
-      reservedWidth = Math.max(0, reservedWidth + (newWidth - bounds.width));
-    };
-    setPanelReservedWidthImpl = (requestedWidth: number) => {
-      desiredReservedWidth = Math.max(
-        0,
-        Math.round(Number.isFinite(requestedWidth) ? requestedWidth : 0),
-      );
-      reconcilePanelReservedWidth();
-    };
 
     yield* previewManager.setMainWindow(window);
     window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
@@ -602,20 +538,7 @@ export const make = Effect.gen(function* () {
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
-    window.on("unmaximize", () => {
-      // Avi Code addition: a window that was maximized while the panel opened or
-      // closed could not resize then; re-apply the reservation before persisting
-      // once it returns to a normal state.
-      reconcilePanelReservedWidth();
-      scheduleBoundsPersist();
-    });
-    window.on("leave-full-screen", () => {
-      // Avi Code addition: same deferral as unmaximize, for fullscreen exits.
-      reconcilePanelReservedWidth();
-      if (environment.platform === "darwin") {
-        window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
-      }
-    });
+    window.on("unmaximize", scheduleBoundsPersist);
     window.on("close", () => {
       runFork(flushBoundsPersist);
     });
@@ -623,6 +546,9 @@ export const make = Effect.gen(function* () {
     if (environment.platform === "darwin") {
       window.on("enter-full-screen", () => {
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
+      });
+      window.on("leave-full-screen", () => {
+        window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
       });
     }
 
@@ -857,10 +783,6 @@ export const make = Effect.gen(function* () {
     flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(
       Effect.withSpan("desktop.window.flushMainWindowBounds"),
     ),
-    setPanelReservedWidth: (width) =>
-      Effect.sync(() => setPanelReservedWidthImpl(width)).pipe(
-        Effect.withSpan("desktop.window.setPanelReservedWidth", { attributes: { width } }),
-      ),
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action) {
       yield* Effect.annotateCurrentSpan({ action });
       const existingWindow = yield* focusedMainWindow;

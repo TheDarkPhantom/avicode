@@ -139,8 +139,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.MENU_ACTION_CHANNEL, wrappedListener);
     };
   },
-  setPanelReservedWidth: (width) =>
-    ipcRenderer.invoke(IpcChannels.WINDOW_SET_PANEL_RESERVED_WIDTH_CHANNEL, width),
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
   onWindowFullscreenStateChange: (listener) => {
