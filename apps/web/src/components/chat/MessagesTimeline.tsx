@@ -75,6 +75,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   deriveSettleFreezeTarget,
+  isTimelineSettleFreezeCorrectionCurrent,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
@@ -552,6 +553,37 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // row's top fixed through the fold reflow completion triggers.
   const settleFreezeAnchorRef = useRef<{ messageId: MessageId; viewportTop: number } | null>(null);
   const previousUnsettledTurnIdRef = useRef<TurnId | null>(settleFreezeUnsettledTurnId);
+  // Avi Code addition. Manual navigation owns the viewport immediately, so it
+  // invalidates any multi-frame correction still measuring a settled turn.
+  const settleFreezeGenerationRef = useRef(0);
+  const settleFreezeFrameRef = useRef<number | null>(null);
+  const settleFreezeContextRef = useRef({
+    routeThreadKey,
+    terminalMessageId: terminalFreezeMessageId,
+  });
+  settleFreezeContextRef.current = {
+    routeThreadKey,
+    terminalMessageId: terminalFreezeMessageId ?? settleFreezeContextRef.current.terminalMessageId,
+  };
+  const cancelSettleFreezeCorrection = useCallback(() => {
+    settleFreezeGenerationRef.current += 1;
+    if (settleFreezeFrameRef.current !== null) {
+      cancelAnimationFrame(settleFreezeFrameRef.current);
+      settleFreezeFrameRef.current = null;
+    }
+  }, []);
+  const handleManualNavigation = useCallback(() => {
+    cancelSettleFreezeCorrection();
+    onManualNavigation();
+  }, [cancelSettleFreezeCorrection, onManualNavigation]);
+  const handleManualScroll = useCallback(
+    (direction: TimelineUserScrollDirection) => {
+      cancelSettleFreezeCorrection();
+      onManualScroll(direction);
+    },
+    [cancelSettleFreezeCorrection, onManualScroll],
+  );
+  useEffect(() => cancelSettleFreezeCorrection, [cancelSettleFreezeCorrection]);
   const refreshSettleFreezeAnchor = useCallback(() => {
     const list = listRef.current;
     if (!list || terminalFreezeMessageId === null) {
@@ -569,6 +601,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // from the previous thread can never drive a correction, and a settled thread
   // opened after a running one is not misread as an in-place settle.
   useLayoutEffect(() => {
+    cancelSettleFreezeCorrection();
     settleFreezeAnchorRef.current = null;
     previousUnsettledTurnIdRef.current = settleFreezeUnsettledTurnId;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resync only on thread change
@@ -600,8 +633,23 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onActiveTurnSettled();
       const beforeTop = before.viewportTop;
       const messageId = before.messageId;
+      cancelSettleFreezeCorrection();
+      const correctionIdentity = {
+        generation: settleFreezeGenerationRef.current,
+        routeThreadKey,
+        terminalMessageId: messageId,
+      };
       let attempts = 12;
       const pin = () => {
+        settleFreezeFrameRef.current = null;
+        if (
+          !isTimelineSettleFreezeCorrectionCurrent(correctionIdentity, {
+            generation: settleFreezeGenerationRef.current,
+            ...settleFreezeContextRef.current,
+          })
+        ) {
+          return;
+        }
         const currentTop = measureTerminalAssistantRowTop(list, messageId);
         const scroll = list.getState?.().scroll;
         if (currentTop !== null && typeof scroll === "number") {
@@ -613,10 +661,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         // Folded and freshly virtualized rows fall back to estimatedItemSize
         // until measured, so keep re-pinning for a short bounded window.
         if (attempts-- > 0) {
-          requestAnimationFrame(pin);
+          settleFreezeFrameRef.current = requestAnimationFrame(pin);
         }
       };
-      requestAnimationFrame(pin);
+      settleFreezeFrameRef.current = requestAnimationFrame(pin);
     }
 
     // Refresh the "before" for the next settle. Runs on every streaming commit
@@ -629,7 +677,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     terminalFreezeMessageId,
     listRef,
     onActiveTurnSettled,
+    cancelSettleFreezeCorrection,
     refreshSettleFreezeAnchor,
+    routeThreadKey,
   ]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
@@ -843,14 +893,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   const jumpToTimelineItem = useCallback(
     (item: TimelineMinimapItem) => {
-      onManualNavigation();
+      handleManualNavigation();
       void listRef.current?.scrollToIndex({
         index: item.rowIndex,
         animated: true,
         viewOffset: 24,
       });
     },
-    [listRef, onManualNavigation],
+    [handleManualNavigation, listRef],
   );
 
   // Avi Code addition: find searches the rows the client already holds rather
@@ -907,7 +957,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkEntry(activeFindMatch.entryId);
     }
     // Without this, live follow drags the view back to the bottom mid-read.
-    onManualNavigation();
+    handleManualNavigation();
     void listRef.current?.scrollToIndex({
       index: activeFindMatch.rowIndex,
       animated: true,
@@ -979,10 +1029,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           className="relative h-full min-h-0"
           onPointerDownCapture={(event) => {
             if (event.target === listRef.current?.getScrollableNode?.()) {
-              onManualScroll("unknown");
+              handleManualScroll("unknown");
             }
           }}
-          onTouchMoveCapture={() => onManualScroll("unknown")}
+          onTouchMoveCapture={() => handleManualScroll("unknown")}
           onWheelCapture={(event) => {
             if (
               shouldCancelTimelineLiveFollowForWheel({
@@ -990,7 +1040,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 isAtAbsoluteEnd: listRef.current?.getState?.().isAtEnd ?? false,
               })
             ) {
-              onManualScroll(resolveTimelineUserScrollDirectionForWheel(event.deltaY));
+              handleManualScroll(resolveTimelineUserScrollDirectionForWheel(event.deltaY));
             }
           }}
           // Avi Code addition: paging and arrowing through the timeline scrolls
@@ -1006,7 +1056,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               shiftKey: event.shiftKey,
             });
             if (direction !== null) {
-              onManualScroll(direction);
+              handleManualScroll(direction);
             }
           }}
         >

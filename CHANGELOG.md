@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Streaming activity no longer overrides your manual position in a thread (#173)
 - Composer quota numbers use separate colors and classify Codex limits correctly (#171)
 - Completed background threads keep their sidebar label until you open them (#170)
 - Codex plan reviews now open with Full access while staying in plan mode (#169)

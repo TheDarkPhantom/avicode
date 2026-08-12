@@ -1,12 +1,47 @@
+import { MessageId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
   deriveSettleFreezeTarget,
+  isTimelineSettleFreezeCorrectionCurrent,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
 } from "./MessagesTimeline.logic";
+
+describe("isTimelineSettleFreezeCorrectionCurrent", () => {
+  const expected = {
+    generation: 4,
+    routeThreadKey: "environment-local:thread-1",
+    terminalMessageId: MessageId.make("assistant-1"),
+  };
+
+  it("keeps an uninterrupted correction active", () => {
+    expect(isTimelineSettleFreezeCorrectionCurrent(expected, expected)).toBe(true);
+  });
+
+  it("stops after manual navigation invalidates the generation", () => {
+    expect(isTimelineSettleFreezeCorrectionCurrent(expected, { ...expected, generation: 5 })).toBe(
+      false,
+    );
+  });
+
+  it("stops after the thread or terminal message changes", () => {
+    expect(
+      isTimelineSettleFreezeCorrectionCurrent(expected, {
+        ...expected,
+        routeThreadKey: "environment-local:thread-2",
+      }),
+    ).toBe(false);
+    expect(
+      isTimelineSettleFreezeCorrectionCurrent(expected, {
+        ...expected,
+        terminalMessageId: MessageId.make("assistant-2"),
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("computeMessageDurationStart", () => {
   it("returns message createdAt when there is no preceding user message", () => {
