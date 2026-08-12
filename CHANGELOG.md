@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Composer quota numbers use separate colors and classify Codex limits correctly (#171)
 - Completed background threads keep their sidebar label until you open them (#170)
 - Codex plan reviews now open with Full access while staying in plan mode (#169)
 - Right-panel resizing keeps the app window, chat controls, and thread switches stable (#168)
