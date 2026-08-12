@@ -1,7 +1,42 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldShowOpenInPicker } from "./ChatHeader";
+import { ChatHeaderActions, shouldShowOpenInPicker } from "./ChatHeader";
+
+describe("ChatHeaderActions", () => {
+  it("keeps project actions before a grouped trailing layout-control slot", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        ChatHeaderActions,
+        {
+          layoutControls: createElement(
+            "div",
+            null,
+            createElement("button", null, "Terminal"),
+            createElement("button", null, "Right panel"),
+          ),
+        },
+        createElement("button", null, "Open"),
+        createElement("button", null, "Auto merge"),
+      ),
+    );
+
+    expect(html.indexOf("Open")).toBeLessThan(html.indexOf("Auto merge"));
+    expect(html.indexOf("Auto merge")).toBeLessThan(html.indexOf("Terminal"));
+    expect(html).toContain("data-chat-header-layout-controls");
+    expect(html).not.toContain("pr-16");
+  });
+
+  it("does not render an empty layout-control slot", () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatHeaderActions, null, createElement("button", null, "Open")),
+    );
+
+    expect(html).not.toContain("data-chat-header-layout-controls");
+  });
+});
 
 describe("shouldShowOpenInPicker", () => {
   const primaryEnvironmentId = EnvironmentId.make("environment-primary");

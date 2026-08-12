@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Sidebar changes keep chat header actions and panel toggles aligned (#175)
 - Opening the right panel grows the app window while keeping the chat width fixed (#174)
 - Streaming activity no longer overrides your manual position in a thread (#173)
 - Composer quota numbers use separate colors and classify Codex limits correctly (#171)

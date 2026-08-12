@@ -7352,11 +7352,6 @@ function ChatViewContent(props: ChatViewProps) {
       onToggleRightPanel={toggleRightPanel}
     />
   );
-  const panelLayoutControls = (
-    <div className="workspace-titlebar-controls z-50 gap-1 [-webkit-app-region:no-drag]">
-      {panelToggleControls}
-    </div>
-  );
   const rightPanelLayoutControls = (
     <div className="workspace-titlebar-controls z-50 gap-1 [-webkit-app-region:no-drag]">
       {rightPanelOpen && !shouldUsePlanSidebarSheet ? (
@@ -7501,7 +7496,6 @@ function ChatViewContent(props: ChatViewProps) {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
-          {!rightPanelMaximized ? panelLayoutControls : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
@@ -7517,7 +7511,7 @@ function ChatViewContent(props: ChatViewProps) {
             keybindings={keybindings}
             availableEditors={availableEditors}
             editorDiscoveryPending={editorDiscoveryPending}
-            rightPanelOpen={rightPanelOpen}
+            layoutControls={!rightPanelMaximized ? panelToggleControls : undefined}
             gitCwd={gitCwd}
             onOpenChanges={onToggleDiff}
             onNewThreadInProject={handleNewThreadInActiveProject}
