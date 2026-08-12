@@ -7028,7 +7028,7 @@ function ChatViewContent(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: reviewModelSelection,
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
         interactionMode: "plan",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
@@ -7051,7 +7051,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: reviewModelSelection,
           titleSeed: nextThreadTitle,
-          runtimeMode: "approval-required",
+          runtimeMode: "full-access",
           interactionMode: "plan",
           // Avi Code addition: back-link the review thread to the plan it
           // audits. Ingestion skips implemented-marking for plan-mode turns,

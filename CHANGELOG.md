@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Codex plan reviews now open with Full access while staying in plan mode (#169)
 - Right-panel resizing keeps the app window, chat controls, and thread switches stable (#168)
 
 ## 0.0.31-avicode.9.3 (2026-08-11)
