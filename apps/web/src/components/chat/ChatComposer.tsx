@@ -485,6 +485,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
+  onImplementPlan: () => void;
   onImplementPlanInNewThread: () => void;
   onReviewPlanWithCodex: () => void;
   onOpenLinkedPlanReview: () => void;
@@ -532,6 +533,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
+        onImplementPlan={props.onImplementPlan}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
         onReviewPlanWithCodex={props.onReviewPlanWithCodex}
         onOpenLinkedPlanReview={props.onOpenLinkedPlanReview}
@@ -3028,6 +3030,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const handleImplementPlanInNewThreadPrimaryAction = useCallback(() => {
     void onImplementPlanInNewThread();
   }, [onImplementPlanInNewThread]);
+  const handleImplementPlanPrimaryAction = useCallback(() => {
+    submitComposer();
+  }, [submitComposer]);
   const scheduleComposerCollapseCheck = useCallback(() => {
     if (!isMobileViewport) {
       return;
@@ -3351,6 +3356,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                       onInterrupt={handleInterruptPrimaryAction}
+                      onImplementPlan={handleImplementPlanPrimaryAction}
                       onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                       onReviewPlanWithCodex={onReviewPlanWithCodex}
                       onOpenLinkedPlanReview={onOpenLinkedPlanReview}
@@ -3725,6 +3731,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     preserveComposerFocusOnPointerDown
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
+                    onImplementPlan={handleImplementPlanPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                     onReviewPlanWithCodex={onReviewPlanWithCodex}
                     onOpenLinkedPlanReview={onOpenLinkedPlanReview}
@@ -3902,6 +3909,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   preserveComposerFocusOnPointerDown={isMobileViewport}
                   onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                   onInterrupt={handleInterruptPrimaryAction}
+                  onImplementPlan={handleImplementPlanPrimaryAction}
                   onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                   onReviewPlanWithCodex={onReviewPlanWithCodex}
                   onOpenLinkedPlanReview={onOpenLinkedPlanReview}

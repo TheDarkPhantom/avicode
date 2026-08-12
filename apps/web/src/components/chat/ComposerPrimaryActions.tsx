@@ -32,6 +32,7 @@ interface ComposerPrimaryActionsProps {
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
+  onImplementPlan: () => void;
   onImplementPlanInNewThread: () => void;
   onReviewPlanWithCodex: () => void;
   onOpenLinkedPlanReview: () => void;
@@ -132,6 +133,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   preserveComposerFocusOnPointerDown = false,
   onPreviousPendingQuestion,
   onInterrupt,
+  onImplementPlan,
   onImplementPlanInNewThread,
   onReviewPlanWithCodex,
   onOpenLinkedPlanReview,
@@ -231,12 +233,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return (
       <div data-chat-composer-implement-actions="true" className="flex items-center justify-end">
         <Button
-          type="submit"
+          type="button"
           size="sm"
           className="h-9 rounded-l-full rounded-r-none px-4 sm:h-8"
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-          onClick={planAction === "review" ? onOpenLinkedPlanReview : undefined}
+          onClick={planAction === "review" ? onOpenLinkedPlanReview : onImplementPlan}
         >
           {isConnecting || isSendBusy
             ? "Sending..."
