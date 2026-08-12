@@ -176,17 +176,24 @@ export function selectComposerQuotaWindows(
   const eligible = filterNonOverageWindows(windows);
   const fiveHour =
     eligible.find((window) => window.windowMinutes === FIVE_HOUR_WINDOW_MINUTES) ??
-    eligible.find((window) => window.id === "five_hour" || window.id === "primary") ??
+    eligible.find(
+      (window) =>
+        window.id === "five_hour" || (window.id === "primary" && /5[- ]?hour/i.test(window.label)),
+    ) ??
     null;
   const weekly =
     eligible.find((window) => window.id === "seven_day") ??
-    eligible.find((window) => window.id === "secondary") ??
+    eligible.find((window) => window.id === "secondary" && /week/i.test(window.label)) ??
     eligible.find(
       (window) =>
         window.windowMinutes === WEEKLY_WINDOW_MINUTES && !window.id.startsWith("seven_day_"),
     ) ??
     eligible.find((window) => window.windowMinutes === WEEKLY_WINDOW_MINUTES) ??
     eligible.find((window) => window.id.startsWith("seven_day_")) ??
+    eligible.find(
+      (window) =>
+        (window.id === "primary" || window.id === "secondary") && /week/i.test(window.label),
+    ) ??
     null;
 
   return { fiveHour, weekly };

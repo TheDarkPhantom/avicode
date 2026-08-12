@@ -504,6 +504,16 @@ describe("stepped composer quota", () => {
     expect(formatComposerQuotaPair(selected)).toBe("75/40");
   });
 
+  it("does not reuse Codex's single weekly primary window as 5-hour", () => {
+    const selected = selectComposerQuotaWindows([
+      { id: "primary", label: "Weekly", usedPercent: 20, windowMinutes: 10_080 },
+    ]);
+
+    expect(selected.fiveHour).toBeNull();
+    expect(selected.weekly?.id).toBe("primary");
+    expect(formatComposerQuotaPair(selected)).toBe("–/75");
+  });
+
   it("uses durations and prefers Claude's general weekly window", () => {
     const selected = selectComposerQuotaWindows([
       { id: "seven_day_opus", label: "Weekly (Opus)", usedPercent: 80, windowMinutes: 10_080 },
