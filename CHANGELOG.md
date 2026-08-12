@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Composer usage shows calmer 5-hour and weekly values with reset details on hover
 - The chat no longer jumps upward when a response finishes streaming (#165)
 - Numbered lists that continue after a heading now render as a list and keep their numbers on copy (#164)
 - Refining or implementing a plan now sends the images and documents you attached (#161)

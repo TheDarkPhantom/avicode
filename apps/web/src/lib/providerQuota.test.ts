@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   filterNonOverageWindows,
+  formatComposerQuotaPair,
   formatQuotaConstraintHint,
   formatQuotaCost,
   formatQuotaSummaryLine,
@@ -15,9 +16,11 @@ import {
   quotaRemainingColor,
   quotaRemainingGradient,
   quotaRemainingPercent,
+  selectComposerQuotaWindows,
   selectProviderInstanceLabel,
   selectProviderQuota,
   shouldRefreshProviderQuota,
+  steppedQuotaRemainingPercent,
 } from "./providerQuota";
 
 const NOW = Date.parse("2026-07-29T12:00:00.000Z");
@@ -465,6 +468,75 @@ describe("quotaRemainingPercent", () => {
   });
 });
 
+describe("stepped composer quota", () => {
+  it.each([
+    [0, 0],
+    [1, 1],
+    [8.9, 8],
+    [20, 20],
+    [20.9, 20],
+    [21, 20],
+    [29, 20],
+    [30, 30],
+    [39, 30],
+    [40, 40],
+    [49, 40],
+    [50, 50],
+    [74, 50],
+    [75, 75],
+    [99, 75],
+    [100, 100],
+    [-1, 0],
+    [101, 100],
+    [Number.NaN, 0],
+  ])("steps %s%% remaining down to %s", (remaining, expected) => {
+    expect(steppedQuotaRemainingPercent(remaining)).toBe(expected);
+  });
+
+  it("selects Codex primary then secondary", () => {
+    const selected = selectComposerQuotaWindows([
+      { id: "secondary", label: "Weekly", usedPercent: 60 },
+      { id: "primary", label: "5-hour", usedPercent: 10 },
+    ]);
+
+    expect(selected.fiveHour?.id).toBe("primary");
+    expect(selected.weekly?.id).toBe("secondary");
+    expect(formatComposerQuotaPair(selected)).toBe("75/40");
+  });
+
+  it("uses durations and prefers Claude's general weekly window", () => {
+    const selected = selectComposerQuotaWindows([
+      { id: "seven_day_opus", label: "Weekly (Opus)", usedPercent: 80, windowMinutes: 10_080 },
+      { id: "five_hour", label: "5-hour", usedPercent: 62, windowMinutes: 300 },
+      { id: "seven_day", label: "Weekly", usedPercent: 51, windowMinutes: 10_080 },
+    ]);
+
+    expect(selected.fiveHour?.id).toBe("five_hour");
+    expect(selected.weekly?.id).toBe("seven_day");
+    expect(formatComposerQuotaPair(selected)).toBe("30/40");
+  });
+
+  it("falls back to a model-specific weekly window and ignores overage", () => {
+    const selected = selectComposerQuotaWindows([
+      { id: "extra_usage", label: "Extra usage", usedPercent: 0, windowMinutes: 10_080 },
+      { id: "seven_day_sonnet", label: "Weekly (Sonnet)", usedPercent: 82 },
+    ]);
+
+    expect(selected.fiveHour).toBeNull();
+    expect(selected.weekly?.id).toBe("seven_day_sonnet");
+    expect(formatComposerQuotaPair(selected)).toBe("–/18");
+  });
+
+  it("forces exhausted windows to zero", () => {
+    expect(
+      formatComposerQuotaPair({
+        fiveHour: { id: "five_hour", label: "5-hour", usedPercent: 72, exhausted: true },
+        weekly: null,
+      }),
+    ).toBe("0/–");
+  });
+});
+
 describe("quota colour ramp", () => {
   it("is bright green when full and bright red when empty", () => {
     expect(quotaRemainingColor(100)).toBe("hsl(140.0 90% 50%)");
@@ -509,17 +581,35 @@ describe("isQuotaAlarming", () => {
     expect(isQuotaAlarming(quota([]), { id: "a", label: "Weekly", usedPercent: 90 })).toBe(false);
   });
 
-  it("warns on a nearly spent window even when it is about to roll over", () => {
-    // The warning must agree with the bar, which shows the raw number: 5% left
-    // reads as 5% left however soon the reset is.
+  it("stays calm when a nearly spent window is about to roll over", () => {
     expect(
-      isQuotaAlarming(quota([]), {
-        id: "seven_day",
-        label: "Weekly",
-        usedPercent: 95,
-        windowMinutes: WEEKLY_MINUTES,
-        resetsAt: at(hours(1)),
-      }),
+      isQuotaAlarming(
+        quota([]),
+        {
+          id: "seven_day",
+          label: "Weekly",
+          usedPercent: 95,
+          windowMinutes: WEEKLY_MINUTES,
+          resetsAt: at(hours(1)),
+        },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("warns when a nearly spent window still has substantial time left", () => {
+    expect(
+      isQuotaAlarming(
+        quota([]),
+        {
+          id: "seven_day",
+          label: "Weekly",
+          usedPercent: 95,
+          windowMinutes: WEEKLY_MINUTES,
+          resetsAt: at(hours(6 * 24)),
+        },
+        NOW,
+      ),
     ).toBe(true);
   });
 

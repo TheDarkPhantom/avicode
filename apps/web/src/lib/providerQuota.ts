@@ -12,6 +12,13 @@ import type {
  */
 export const QUOTA_WARNING_PERCENT = 90;
 export const PROVIDER_QUOTA_REFRESH_MAX_AGE_MS = 5 * 60 * 1_000;
+const FIVE_HOUR_WINDOW_MINUTES = 5 * 60;
+const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
+
+export type ComposerQuotaWindows = {
+  readonly fiveHour: ProviderQuotaWindow | null;
+  readonly weekly: ProviderQuotaWindow | null;
+};
 
 export function shouldRefreshProviderQuota(
   quota: ProviderQuotaSnapshot | null | undefined,
@@ -112,9 +119,8 @@ export function formatResetsIn(resetsAt: string | undefined, now: number): strin
  * allowance is our own early warning for a limit that is close but not yet
  * enforced.
  *
- * The early warning is measured against the raw remaining percentage so it
- * always agrees with the bar it decorates — a window at 8% left warns even if
- * it resets within the hour, because the number on screen is 8.
+ * The early warning uses time-adjusted headroom. A low raw reading that resets
+ * shortly stays calm, while the same reading with most of its window left warns.
  *
  * Pure and exported so it can be tested directly — the popover body that shows
  * the warning text renders lazily on open and so is invisible to static
@@ -123,11 +129,12 @@ export function formatResetsIn(resetsAt: string | undefined, now: number): strin
 export function isQuotaAlarming(
   quota: ProviderQuotaSnapshot,
   window: ProviderQuotaWindow,
+  now = Date.now(),
 ): boolean {
   return (
     quota.status === "exhausted" ||
     window.exhausted === true ||
-    quotaRemainingPercent(window) < 100 - QUOTA_WARNING_PERCENT
+    quotaHeadroomPercent(window, now) < 100 - QUOTA_WARNING_PERCENT
   );
 }
 
@@ -147,6 +154,48 @@ export function quotaRemainingPercent(window: ProviderQuotaWindow): number {
     return 0;
   }
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
+}
+
+/** Conservative, deliberately low-frequency value used by the composer summary. */
+export function steppedQuotaRemainingPercent(remainingPercent: number): number {
+  if (!Number.isFinite(remainingPercent)) return 0;
+  const remaining = Math.max(0, Math.min(100, remainingPercent));
+  if (remaining <= 20) return Math.floor(remaining);
+  if (remaining < 30) return 20;
+  if (remaining < 40) return 30;
+  if (remaining < 50) return 40;
+  if (remaining < 75) return 50;
+  if (remaining < 100) return 75;
+  return 100;
+}
+
+/** Pick the stable allowance windows represented by the composer's `5h/weekly` pair. */
+export function selectComposerQuotaWindows(
+  windows: ReadonlyArray<ProviderQuotaWindow>,
+): ComposerQuotaWindows {
+  const eligible = filterNonOverageWindows(windows);
+  const fiveHour =
+    eligible.find((window) => window.windowMinutes === FIVE_HOUR_WINDOW_MINUTES) ??
+    eligible.find((window) => window.id === "five_hour" || window.id === "primary") ??
+    null;
+  const weekly =
+    eligible.find((window) => window.id === "seven_day") ??
+    eligible.find((window) => window.id === "secondary") ??
+    eligible.find(
+      (window) =>
+        window.windowMinutes === WEEKLY_WINDOW_MINUTES && !window.id.startsWith("seven_day_"),
+    ) ??
+    eligible.find((window) => window.windowMinutes === WEEKLY_WINDOW_MINUTES) ??
+    eligible.find((window) => window.id.startsWith("seven_day_")) ??
+    null;
+
+  return { fiveHour, weekly };
+}
+
+export function formatComposerQuotaPair(windows: ComposerQuotaWindows): string {
+  const formatWindow = (window: ProviderQuotaWindow | null) =>
+    window === null ? "–" : String(steppedQuotaRemainingPercent(quotaRemainingPercent(window)));
+  return `${formatWindow(windows.fiveHour)}/${formatWindow(windows.weekly)}`;
 }
 
 /**
