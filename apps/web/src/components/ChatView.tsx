@@ -155,7 +155,10 @@ import {
   type RightPanelSurface,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { useRightPanelSplitLayout } from "../hooks/useRightPanelSplitLayout";
+import {
+  useDesktopRightPanelWindowReservation,
+  useRightPanelSplitLayout,
+} from "../hooks/useRightPanelSplitLayout";
 import {
   isPreviewSupportedInRuntime,
   setActivePreviewTab,
@@ -1397,7 +1400,6 @@ function ChatViewContent(props: ChatViewProps) {
     initialPendingUserInputState,
   );
   const useCompactRightPanel = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
-  const rightPanelSplitLayout = useRightPanelSplitLayout();
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
@@ -1697,8 +1699,13 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
+  const rightPanelSplitLayout = useRightPanelSplitLayout({ panelOpen: rightPanelOpen });
   const shouldUsePlanSidebarSheet =
-    useCompactRightPanel || rightPanelSplitLayout.layout?.fitsInline === false;
+    useCompactRightPanel || (!isElectron && rightPanelSplitLayout.layout?.fitsInline === false);
+  useDesktopRightPanelWindowReservation({
+    open: rightPanelOpen && !shouldUsePlanSidebarSheet,
+    panelWidth: rightPanelSplitLayout.layout?.panelWidth ?? null,
+  });
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
@@ -7467,8 +7474,7 @@ function ChatViewContent(props: ChatViewProps) {
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
         style={
-          rightPanelOpen &&
-          !shouldUsePlanSidebarSheet &&
+          ((rightPanelOpen && !shouldUsePlanSidebarSheet) || (!rightPanelOpen && isElectron)) &&
           !rightPanelMaximized &&
           rightPanelSplitLayout.layout
             ? {

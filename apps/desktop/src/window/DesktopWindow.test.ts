@@ -29,6 +29,9 @@ vi.mock("electron", async (importOriginal) => ({
         bounds: { x: 0, y: 0, width: 1920, height: 1080 },
       },
     ]),
+    getDisplayMatching: vi.fn(() => ({
+      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+    })),
   },
 }));
 
@@ -97,6 +100,7 @@ function makeFakeBrowserWindow() {
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
     setAutoHideCursor: vi.fn(),
+    setBounds: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
     show: vi.fn(),
@@ -113,6 +117,7 @@ function makeFakeBrowserWindow() {
     isMinimized: window.isMinimized,
     loadURL: window.loadURL,
     maximize: window.maximize,
+    setBounds: window.setBounds,
     openDevTools: webContents.openDevTools,
     reload: webContents.reload,
     send: webContents.send,
@@ -639,6 +644,74 @@ describe("DesktopWindow", () => {
         yield* Effect.promise(() => Promise.resolve());
 
         assert.deepEqual(mainWindowBoundsUpdates, []);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("resizes the native window only when the side panel opens or closes", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        yield* desktopWindow.setPanelWindowReservation({ action: "open", width: 540 });
+        assert.deepEqual(fakeWindow.setBounds.mock.calls.at(-1)?.[0], {
+          x: 0,
+          y: 0,
+          width: 1640,
+          height: 780,
+        });
+
+        // An outer-window resize grows only the panel. Tracking its new width
+        // must not issue another native resize.
+        fakeWindow.getBounds.mockReturnValue({ x: 0, y: 0, width: 1800, height: 780 });
+        yield* desktopWindow.setPanelWindowReservation({ action: "update", width: 700 });
+        assert.equal(fakeWindow.setBounds.mock.calls.length, 1);
+
+        // Closing removes the panel's current width and restores the chat width.
+        yield* desktopWindow.setPanelWindowReservation({ action: "close", width: 0 });
+        assert.deepEqual(fakeWindow.setBounds.mock.calls.at(-1)?.[0], {
+          x: 0,
+          y: 0,
+          width: 1100,
+          height: 780,
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("persists the chat width while the side panel is open", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const mainWindowBoundsUpdates: DesktopAppSettings.DesktopWindowBounds[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        mainWindowBoundsUpdates,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        yield* desktopWindow.setPanelWindowReservation({ action: "open", width: 540 });
+        fakeWindow.getBounds.mockReturnValue({ x: 0, y: 0, width: 1800, height: 780 });
+        yield* desktopWindow.setPanelWindowReservation({ action: "update", width: 700 });
+
+        const resize = fakeWindow.windowListeners.get("resize");
+        if (!resize) return yield* Effect.die("window resize listener was not registered");
+        resize();
+        yield* TestClock.adjust(500);
+        yield* Effect.promise(() => Promise.resolve());
+
+        assert.deepEqual(mainWindowBoundsUpdates, [{ x: 0, y: 0, width: 1100, height: 780 }]);
       }).pipe(Effect.provide(layer));
     }),
   );
