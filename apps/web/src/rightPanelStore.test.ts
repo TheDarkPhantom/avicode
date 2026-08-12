@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   migratePersistedRightPanelState,
+  resolveFollowedRightPanelState,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -21,6 +22,47 @@ beforeEach(() => {
 });
 
 describe("right panel visibility preference", () => {
+  it("resolves a new thread's followed panel before persistence", () => {
+    const current = selectThreadRightPanelState({}, refB);
+    const resolved = resolveFollowedRightPanelState(
+      current,
+      { isOpen: true, preferredKind: "diff" },
+      true,
+    );
+
+    expect(resolved).toEqual({
+      isOpen: true,
+      activeSurfaceId: "diff",
+      surfaces: [{ id: "diff", kind: "diff" }],
+    });
+  });
+
+  it("resolves followed visibility without copying thread-bound surfaces", () => {
+    const terminalState = {
+      isOpen: false,
+      activeSurfaceId: "terminal:one",
+      surfaces: [
+        {
+          id: "terminal:one" as const,
+          kind: "terminal" as const,
+          resourceId: "one",
+          terminalIds: ["one"],
+          activeTerminalId: "one",
+        },
+      ],
+    };
+    expect(
+      resolveFollowedRightPanelState(terminalState, { isOpen: true, preferredKind: "diff" }, true),
+    ).toEqual({ ...terminalState, isOpen: true });
+  });
+
+  it("leaves saved state untouched when following is disabled", () => {
+    const current = selectThreadRightPanelState({}, refB);
+    expect(
+      resolveFollowedRightPanelState(current, { isOpen: true, preferredKind: "files" }, false),
+    ).toBe(current);
+  });
+
   it("carries an open panel to a thread that has never opened one", () => {
     useRightPanelStore.getState().open(refA, "diff");
     useRightPanelStore.getState().adoptVisibilityPreference(refB);

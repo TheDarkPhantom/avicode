@@ -77,7 +77,6 @@ describe("DesktopLifecycle", () => {
         handleBackendReady: () => Effect.void,
         handleBackendNotReady: Effect.void,
         flushMainWindowBounds: Effect.void,
-        setPanelReservedWidth: () => Effect.void,
         dispatchMenuAction: () => Effect.void,
         syncAppearance: Effect.void,
       });

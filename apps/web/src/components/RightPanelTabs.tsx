@@ -22,12 +22,17 @@ import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
-import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
+import {
+  PreviewPanelShell,
+  type PreviewPanelMode,
+  type RightPanelSplitPaneProps,
+} from "./preview/PreviewPanelShell";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
+  splitPane?: RightPanelSplitPaneProps;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
   activeSurfaceId: string | null;
@@ -354,12 +359,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     <PreviewPanelShell
       mode={props.mode}
       {...(props.maximized !== undefined ? { maximized: props.maximized } : {})}
+      {...(props.splitPane ? { splitPane: props.splitPane } : {})}
     >
       <div
         className={cn(
           "workspace-topbar gap-1 pl-2",
           !ownsDesktopTitleBar && "[--workspace-topbar-height:--spacing(11)]",
-          props.mode === "inline" ? "pr-28" : "pr-3",
+          props.mode === "inline" ? (props.maximized ? "pr-28" : "pr-12") : "pr-3",
           ownsDesktopTitleBar && "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}

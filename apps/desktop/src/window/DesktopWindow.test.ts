@@ -29,9 +29,6 @@ vi.mock("electron", async (importOriginal) => ({
         bounds: { x: 0, y: 0, width: 1920, height: 1080 },
       },
     ]),
-    getDisplayMatching: vi.fn(() => ({
-      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
-    })),
   },
 }));
 
@@ -100,7 +97,6 @@ function makeFakeBrowserWindow() {
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
     setAutoHideCursor: vi.fn(),
-    setBounds: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
     show: vi.fn(),
@@ -117,7 +113,6 @@ function makeFakeBrowserWindow() {
     isMinimized: window.isMinimized,
     loadURL: window.loadURL,
     maximize: window.maximize,
-    setBounds: window.setBounds,
     openDevTools: webContents.openDevTools,
     reload: webContents.reload,
     send: webContents.send,
@@ -613,107 +608,6 @@ describe("DesktopWindow", () => {
 
         assert.deepEqual(mainWindowBoundsUpdates, [{ x: 220, y: 140, width: 1380, height: 920 }]);
         assert.deepEqual(mainWindowMaximizedUpdates, [true]);
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.effect("grows then shrinks the window to reserve inline right-panel width", () =>
-    Effect.gen(function* () {
-      const fakeWindow = makeFakeBrowserWindow();
-      const createCount = yield* Ref.make(0);
-      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
-
-      yield* Effect.gen(function* () {
-        const desktopWindow = yield* DesktopWindow.DesktopWindow;
-        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-
-        // Opening the panel widens the window by the reserved amount.
-        yield* desktopWindow.setPanelReservedWidth(540);
-        assert.deepEqual(fakeWindow.setBounds.mock.calls.at(-1)?.[0], {
-          x: 0,
-          y: 0,
-          width: 1640,
-          height: 780,
-        });
-
-        // Closing it shrinks the window back to the original width.
-        fakeWindow.getBounds.mockReturnValue({ x: 0, y: 0, width: 1640, height: 780 });
-        yield* desktopWindow.setPanelReservedWidth(0);
-        assert.deepEqual(fakeWindow.setBounds.mock.calls.at(-1)?.[0], {
-          x: 0,
-          y: 0,
-          width: 1100,
-          height: 780,
-        });
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.effect("excludes the reserved panel width from persisted bounds", () =>
-    Effect.gen(function* () {
-      const fakeWindow = makeFakeBrowserWindow();
-      const createCount = yield* Ref.make(0);
-      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const mainWindowBoundsUpdates: DesktopAppSettings.DesktopWindowBounds[] = [];
-      const layer = makeTestLayer({
-        window: fakeWindow.window,
-        createCount,
-        mainWindow,
-        mainWindowBoundsUpdates,
-      });
-
-      yield* Effect.gen(function* () {
-        const desktopWindow = yield* DesktopWindow.DesktopWindow;
-        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-
-        yield* desktopWindow.setPanelReservedWidth(540);
-        // The live window now sits 540px wider; persistence records the base width
-        // so reopening the panel after a restart does not compound the growth.
-        fakeWindow.getBounds.mockReturnValue({ x: 40, y: 20, width: 1640, height: 780 });
-        const resize = fakeWindow.windowListeners.get("resize");
-        if (!resize) {
-          return yield* Effect.die("window resize listener was not registered");
-        }
-        resize();
-        yield* TestClock.adjust(500);
-        yield* Effect.promise(() => Promise.resolve());
-
-        assert.deepEqual(mainWindowBoundsUpdates, [{ x: 40, y: 20, width: 1100, height: 780 }]);
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.effect("defers the reservation while maximized and applies it on unmaximize", () =>
-    Effect.gen(function* () {
-      const fakeWindow = makeFakeBrowserWindow();
-      fakeWindow.isMaximized.mockReturnValue(true);
-      const createCount = yield* Ref.make(0);
-      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
-
-      yield* Effect.gen(function* () {
-        const desktopWindow = yield* DesktopWindow.DesktopWindow;
-        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-
-        // A maximized window cannot grow, so no resize is attempted yet.
-        yield* desktopWindow.setPanelReservedWidth(540);
-        assert.equal(fakeWindow.setBounds.mock.calls.length, 0);
-
-        // Returning to a normal state applies the deferred reservation.
-        fakeWindow.isMaximized.mockReturnValue(false);
-        fakeWindow.getBounds.mockReturnValue({ x: 0, y: 0, width: 1100, height: 780 });
-        const unmaximize = fakeWindow.windowListeners.get("unmaximize");
-        if (!unmaximize) {
-          return yield* Effect.die("window unmaximize listener was not registered");
-        }
-        unmaximize();
-        assert.deepEqual(fakeWindow.setBounds.mock.calls.at(-1)?.[0], {
-          x: 0,
-          y: 0,
-          width: 1640,
-          height: 780,
-        });
       }).pipe(Effect.provide(layer));
     }),
   );
