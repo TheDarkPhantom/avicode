@@ -96,6 +96,10 @@ export class DesktopWindow extends Context.Service<
     // produce a stranded window pointing at nothing.
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
+    readonly setPanelWindowReservation: (input: {
+      action: "open" | "update" | "close";
+      width: number;
+    }) => Effect.Effect<void>;
     readonly dispatchMenuAction: (action: string) => Effect.Effect<void, DesktopWindowError>;
     readonly syncAppearance: Effect.Effect<void>;
   }
@@ -276,6 +280,10 @@ export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
+  let setPanelWindowReservationImpl: (input: {
+    action: "open" | "update" | "close";
+    width: number;
+  }) => void = () => {};
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -362,6 +370,10 @@ export const make = Effect.gen(function* () {
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let boundsPersistenceEnabled = persistedBounds === null || restoredPersistedBounds;
+    let panelReservationDesired = false;
+    let panelReservationApplied = false;
+    let reservedPanelWidth = 0;
+    let requestedPanelWidth = 0;
     const readPersistableBounds = (): DesktopAppSettings.DesktopWindowBounds | null => {
       if (window.isDestroyed()) {
         return null;
@@ -373,7 +385,7 @@ export const make = Effect.gen(function* () {
       return DesktopAppSettings.normalizeMainWindowBounds({
         x: Math.round(bounds.x),
         y: Math.round(bounds.y),
-        width: Math.round(bounds.width),
+        width: Math.round(bounds.width) - (panelReservationApplied ? reservedPanelWidth : 0),
         height: Math.round(bounds.height),
       });
     };
@@ -445,6 +457,70 @@ export const make = Effect.gen(function* () {
       ),
     );
     flushMainWindowBounds = flushBoundsPersist;
+
+    const clampTrackedPanelWidth = (width: number) => {
+      const bounds = window.getBounds();
+      return Math.max(
+        0,
+        Math.min(
+          Math.round(Number.isFinite(width) ? width : 0),
+          Math.max(0, bounds.width - MAIN_WINDOW_MIN_WIDTH),
+        ),
+      );
+    };
+    const reconcilePanelWindowReservation = () => {
+      if (
+        window.isDestroyed() ||
+        window.isFullScreen() ||
+        window.isMaximized() ||
+        window.isMinimized() ||
+        panelReservationDesired === panelReservationApplied
+      ) {
+        return;
+      }
+
+      const bounds = window.getBounds();
+      if (!panelReservationDesired) {
+        const width = Math.max(MAIN_WINDOW_MIN_WIDTH, bounds.width - reservedPanelWidth);
+        window.setBounds({ x: bounds.x, y: bounds.y, width, height: bounds.height });
+        panelReservationApplied = false;
+        reservedPanelWidth = 0;
+        return;
+      }
+
+      let workArea: DisplayBounds | null;
+      try {
+        workArea = Electron.screen.getDisplayMatching(bounds).workArea;
+      } catch {
+        workArea = null;
+      }
+      const desiredWidth = bounds.width + requestedPanelWidth;
+      const maximumWidth = workArea?.width ?? desiredWidth;
+      const width = Math.max(MAIN_WINDOW_MIN_WIDTH, Math.min(maximumWidth, desiredWidth));
+      let x = bounds.x;
+      if (workArea !== null && x + width > workArea.x + workArea.width) {
+        x = Math.max(workArea.x, workArea.x + workArea.width - width);
+      }
+      window.setBounds({ x, y: bounds.y, width, height: bounds.height });
+      panelReservationApplied = true;
+      reservedPanelWidth = Math.max(0, width - bounds.width);
+    };
+    setPanelWindowReservationImpl = (input) => {
+      if (input.action === "update") {
+        if (panelReservationApplied) {
+          reservedPanelWidth = clampTrackedPanelWidth(input.width);
+        }
+        return;
+      }
+      panelReservationDesired = input.action === "open";
+      if (panelReservationDesired) {
+        requestedPanelWidth = Math.max(
+          0,
+          Math.round(Number.isFinite(input.width) ? input.width : 0),
+        );
+      }
+      reconcilePanelWindowReservation();
+    };
 
     yield* previewManager.setMainWindow(window);
     window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
@@ -538,7 +614,10 @@ export const make = Effect.gen(function* () {
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
-    window.on("unmaximize", scheduleBoundsPersist);
+    window.on("unmaximize", () => {
+      reconcilePanelWindowReservation();
+      scheduleBoundsPersist();
+    });
     window.on("close", () => {
       runFork(flushBoundsPersist);
     });
@@ -548,6 +627,7 @@ export const make = Effect.gen(function* () {
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
       });
       window.on("leave-full-screen", () => {
+        reconcilePanelWindowReservation();
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
       });
     }
@@ -783,6 +863,12 @@ export const make = Effect.gen(function* () {
     flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(
       Effect.withSpan("desktop.window.flushMainWindowBounds"),
     ),
+    setPanelWindowReservation: (input) =>
+      Effect.sync(() => setPanelWindowReservationImpl(input)).pipe(
+        Effect.withSpan("desktop.window.setPanelWindowReservation", {
+          attributes: { action: input.action, width: input.width },
+        }),
+      ),
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action) {
       yield* Effect.annotateCurrentSpan({ action });
       const existingWindow = yield* focusedMainWindow;

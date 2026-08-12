@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 
+import { isElectron } from "../env";
 import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
 import {
   clampRightPanelChatWidth,
@@ -17,6 +18,7 @@ import {
   resolveInitialRightPanelChatWidth,
   resolveRightPanelLayout,
   RIGHT_PANEL_CHAT_WIDTH_STORAGE_KEY,
+  RIGHT_PANEL_DEFAULT_WIDTH,
   RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY,
   RIGHT_PANEL_MIN_CHAT_WIDTH,
   RIGHT_PANEL_MIN_WIDTH,
@@ -42,7 +44,7 @@ function readStoredWidth(key: string): number | null {
   }
 }
 
-export function useRightPanelSplitLayout() {
+export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [preferredChatWidth, setPreferredChatWidthState] = useState<number | null>(null);
@@ -73,11 +75,13 @@ export function useRightPanelSplitLayout() {
       const width = Math.floor(container.clientWidth);
       setContainerWidth(width);
       if (width <= 0 || preferredChatWidthRef.current !== null) return;
-      const initialWidth = resolveInitialRightPanelChatWidth({
-        containerWidth: width,
-        storedChatWidth: readStoredWidth(RIGHT_PANEL_CHAT_WIDTH_STORAGE_KEY),
-        legacyPanelWidth: readStoredWidth(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY),
-      });
+      const initialWidth = isElectron
+        ? width
+        : resolveInitialRightPanelChatWidth({
+            containerWidth: width,
+            storedChatWidth: readStoredWidth(RIGHT_PANEL_CHAT_WIDTH_STORAGE_KEY),
+            legacyPanelWidth: readStoredWidth(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY),
+          });
       setPreferredChatWidth(initialWidth);
     };
     measure();
@@ -85,6 +89,11 @@ export function useRightPanelSplitLayout() {
     observer?.observe(container);
     return () => observer?.disconnect();
   }, [container, setPreferredChatWidth]);
+
+  useLayoutEffect(() => {
+    if (options.panelOpen || containerWidth <= 0) return;
+    setPreferredChatWidth(containerWidth);
+  }, [containerWidth, options.panelOpen, setPreferredChatWidth]);
 
   const persist = useCallback((width: number) => {
     try {
@@ -254,4 +263,50 @@ export function useRightPanelSplitLayout() {
       onBlur,
     } satisfies RightPanelSeparatorHandlers,
   };
+}
+
+export function useDesktopRightPanelWindowReservation(options: {
+  open: boolean;
+  panelWidth: number | null;
+}) {
+  const reservationOpenRef = useRef(false);
+  const hasMeasuredOpenPanelRef = useRef(false);
+  const lastUsablePanelWidthRef = useRef(
+    Math.max(
+      RIGHT_PANEL_MIN_WIDTH,
+      readStoredWidth(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY) ?? RIGHT_PANEL_DEFAULT_WIDTH,
+    ),
+  );
+
+  useEffect(() => {
+    if (!isElectron) return;
+    const bridge = window.desktopBridge?.setPanelWindowReservation;
+    if (typeof bridge !== "function" || reservationOpenRef.current === options.open) return;
+    reservationOpenRef.current = options.open;
+    hasMeasuredOpenPanelRef.current = false;
+    void bridge({
+      action: options.open ? "open" : "close",
+      width: options.open ? lastUsablePanelWidthRef.current : 0,
+    });
+  }, [options.open]);
+
+  useEffect(() => {
+    if (!isElectron || !options.open || options.panelWidth === null) {
+      return;
+    }
+    const width = Math.max(0, Math.round(options.panelWidth));
+    if (width === 0 && !hasMeasuredOpenPanelRef.current) return;
+    hasMeasuredOpenPanelRef.current = true;
+    void window.desktopBridge?.setPanelWindowReservation?.({ action: "update", width });
+    if (width < RIGHT_PANEL_MIN_WIDTH) return;
+    lastUsablePanelWidthRef.current = width;
+    const handle = window.setTimeout(() => {
+      try {
+        setLocalStorageItem(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY, width, WidthSchema);
+      } catch (error) {
+        console.error("Could not persist side-panel width.", error);
+      }
+    }, 150);
+    return () => window.clearTimeout(handle);
+  }, [options.open, options.panelWidth]);
 }
