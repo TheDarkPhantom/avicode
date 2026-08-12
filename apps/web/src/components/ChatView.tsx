@@ -5750,6 +5750,13 @@ function ChatViewContent(props: ChatViewProps) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
+    // Avi Code addition: establish the read baseline synchronously with the
+    // user's send. If they switch threads before the server echo mounts here,
+    // the later completion must still become Done in the sidebar.
+    markThreadVisited(
+      scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+      messageCreatedAt,
+    );
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -6482,6 +6489,13 @@ function ChatViewContent(props: ChatViewProps) {
       const threadIdForSend = activeThread.id;
       const messageIdForSend = newMessageId();
       const messageCreatedAt = new Date().toISOString();
+      // Avi Code addition: plan follow-ups share the normal send semantics.
+      // Record the baseline before awaiting attachments or the server so an
+      // immediate thread switch cannot suppress the completion indicator.
+      markThreadVisited(
+        scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageCreatedAt,
+      );
       const outgoingMessageText = formatOutgoingPrompt({
         provider: ctxSelectedProvider,
         model: ctxSelectedModel,
@@ -6652,6 +6666,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerRef,
       clearComposerDraftContent,
       composerDraftTarget,
+      markThreadVisited,
     ],
   );
 
