@@ -482,6 +482,27 @@ export function deriveSettleFreezeTarget(
   return { unsettledTurnId, terminalMessageId };
 }
 
+/** Avi Code addition. Guards a multi-frame settle correction against a newer
+ * user gesture, thread switch, or terminal-message replacement. */
+export function isTimelineSettleFreezeCorrectionCurrent(
+  expected: {
+    readonly generation: number;
+    readonly routeThreadKey: string;
+    readonly terminalMessageId: MessageId;
+  },
+  current: {
+    readonly generation: number;
+    readonly routeThreadKey: string;
+    readonly terminalMessageId: MessageId | null;
+  },
+): boolean {
+  return (
+    expected.generation === current.generation &&
+    expected.routeThreadKey === current.routeThreadKey &&
+    expected.terminalMessageId === current.terminalMessageId
+  );
+}
+
 /**
  * Settled turns fold their commentary and tool activity behind a
  * "Worked for ..." row anchored at the turn's first foldable entry; the
