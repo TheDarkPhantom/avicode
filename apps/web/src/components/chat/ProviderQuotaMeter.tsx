@@ -86,7 +86,9 @@ export function ProviderQuotaMeter(props: {
   const isAlarming = limitingWindow ? isQuotaAlarming(quota, limitingWindow, now) : false;
   const constraintHint = formatQuotaConstraintHint(realWindows, now);
   const heading = instanceLabel ? `${instanceLabel} usage` : "Plan usage";
-  const pair = formatComposerQuotaPair(composerWindows);
+  const pair = formatComposerQuotaPair(composerWindows).split("/");
+  const quotaNumberStyle = (window: typeof composerWindows.fiveHour) =>
+    window ? { color: quotaRemainingColor(quotaRemainingPercent(window)) } : undefined;
   const describeWindow = (label: string, window: typeof composerWindows.fiveHour) => {
     if (!window) return `${label} limit unavailable`;
     const remaining = formatPercentage(quotaRemainingPercent(window)) ?? "0%";
@@ -108,11 +110,12 @@ export function ProviderQuotaMeter(props: {
               "inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md border border-transparent px-1 font-medium text-[11px] text-muted-foreground tabular-nums outline-none transition-colors",
               "hover:bg-accent data-[pressed]:bg-accent",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-              isAlarming && "text-red-500",
             )}
             aria-label={accessibleLabel}
           >
-            {pair}
+            <span style={quotaNumberStyle(composerWindows.fiveHour)}>{pair[0]}</span>
+            <span className="text-muted-foreground/50">/</span>
+            <span style={quotaNumberStyle(composerWindows.weekly)}>{pair[1]}</span>
           </button>
         }
       />

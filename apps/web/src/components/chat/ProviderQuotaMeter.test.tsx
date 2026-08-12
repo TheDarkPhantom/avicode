@@ -33,7 +33,10 @@ describe("ProviderQuotaMeter", () => {
       <ProviderQuotaMeter quota={snapshot()} instanceLabel="Work Codex" now={NOW} />,
     );
 
-    expect(markup).toContain(">75/30</button>");
+    expect(markup).toContain('>75</span><span class="text-muted-foreground/50">/</span><span');
+    expect(markup).toContain(">30</span></button>");
+    expect(markup).toContain("hsl(123.2 90% 50%)");
+    expect(markup).toContain("hsl(53.2 90% 50%)");
     expect(markup).not.toContain("height:38%");
     expect(markup).not.toContain('role="meter"');
   });
@@ -58,7 +61,9 @@ describe("ProviderQuotaMeter", () => {
       />,
     );
 
-    expect(markup).toContain(">75/–</button>");
+    expect(markup).toContain(
+      '>75</span><span class="text-muted-foreground/50">/</span><span>–</span>',
+    );
     expect(markup).toContain("weekly limit unavailable");
   });
 
@@ -80,8 +85,7 @@ describe("ProviderQuotaMeter", () => {
       />,
     );
 
-    expect(markup).toContain(">0/–</button>");
-    expect(markup).toContain("text-red-500");
+    expect(markup).toContain("hsl(0.0 90% 50%)");
     expect(markup).not.toContain("animate-pulse");
   });
 
@@ -103,8 +107,8 @@ describe("ProviderQuotaMeter", () => {
       />,
     );
 
-    expect(markup).toContain(">–/5</button>");
-    expect(markup).not.toContain("text-red-500");
+    expect(markup).toContain("<span>–</span>");
+    expect(markup).toContain("hsl(7.0 90% 50%)");
   });
 
   it("warns when low allowance has substantial time left", () => {
@@ -125,7 +129,7 @@ describe("ProviderQuotaMeter", () => {
       />,
     );
 
-    expect(markup).toContain("text-red-500");
+    expect(markup).toContain("hsl(7.0 90% 50%)");
   });
 
   it("renders nothing without a canonical 5-hour or weekly window", () => {
