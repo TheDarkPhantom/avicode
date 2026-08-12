@@ -6,7 +6,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -21,7 +21,7 @@ import {
   useT3ProjectFileScripts,
 } from "~/hooks/useT3ProjectFileScripts";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { cn } from "~/lib/utils";
+import { Separator } from "../ui/separator";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -36,7 +36,7 @@ interface ChatHeaderProps {
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   editorDiscoveryPending: boolean;
-  rightPanelOpen: boolean;
+  layoutControls?: ReactNode;
   gitCwd: string | null;
   onOpenChanges: () => void;
   onNewThreadInProject: () => void;
@@ -61,6 +61,32 @@ export function shouldShowOpenInPicker(input: {
   );
 }
 
+export function ChatHeaderActions({
+  children,
+  layoutControls,
+}: {
+  children?: ReactNode;
+  layoutControls?: ReactNode;
+}) {
+  return (
+    <div
+      data-chat-header-actions
+      className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3"
+    >
+      {children}
+      {layoutControls ? (
+        <div
+          className="flex h-full shrink-0 items-center gap-2 @3xl/header-actions:gap-3"
+          data-chat-header-layout-controls
+        >
+          <Separator orientation="vertical" className="h-4" />
+          {layoutControls}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
@@ -74,7 +100,7 @@ export const ChatHeader = memo(function ChatHeader({
   keybindings,
   availableEditors,
   editorDiscoveryPending,
-  rightPanelOpen,
+  layoutControls,
   gitCwd,
   onOpenChanges,
   onNewThreadInProject,
@@ -141,13 +167,7 @@ export const ChatHeader = memo(function ChatHeader({
           <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
         </Tooltip>
       </div>
-      <div
-        data-chat-header-actions
-        className={cn(
-          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
-        )}
-      >
+      <ChatHeaderActions layoutControls={layoutControls}>
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
@@ -178,7 +198,7 @@ export const ChatHeader = memo(function ChatHeader({
             {...(draftId ? { draftId } : {})}
           />
         )}
-      </div>
+      </ChatHeaderActions>
     </div>
   );
 });
