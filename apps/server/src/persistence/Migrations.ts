@@ -56,6 +56,8 @@ import Migration0037 from "./Migrations/037_ProjectionThreadsForkLineage.ts";
 import Migration0038 from "./Migrations/038_ProjectionThreadTitleRegeneration.ts";
 // Avi Code addition: per-turn communication style.
 import Migration0039 from "./Migrations/039_ProjectionThreadMessageCommunicationStyle.ts";
+import Migration0040 from "./Migrations/040_BackfillProjectionThreadsLatestTurn.ts";
+import Migration0041 from "./Migrations/041_ProjectionThreadProposedPlanDiscardedAt.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -107,6 +109,8 @@ export const migrationEntries = [
   [37, "ProjectionThreadsForkLineage", Migration0037],
   [38, "ProjectionThreadTitleRegeneration", Migration0038],
   [39, "ProjectionThreadMessageCommunicationStyle", Migration0039],
+  [40, "BackfillProjectionThreadsLatestTurn", Migration0040],
+  [41, "ProjectionThreadProposedPlanDiscardedAt", Migration0041],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

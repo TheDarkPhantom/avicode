@@ -10,7 +10,6 @@ import {
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
-import { isLatestTurnSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 
@@ -620,13 +619,15 @@ export type SidebarV2Status =
   | "input"
   | "needs_resume"
   | "working"
+  | "plan_ready"
   | "failed"
   | "ready";
 
 type SidebarV2StatusInput = Pick<
   SidebarThreadSummary,
   "hasPendingApprovals" | "hasPendingUserInput" | "latestTurn" | "session"
->;
+> &
+  Partial<Pick<SidebarThreadSummary, "hasActionableProposedPlan" | "interactionMode">>;
 
 export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2Status {
   if (thread.hasPendingApprovals) {
@@ -658,6 +659,9 @@ export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2S
     thread.latestTurn?.state === "running"
   ) {
     return "working";
+  }
+  if (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) {
+    return "plan_ready";
   }
   return "ready";
 }
@@ -844,7 +848,6 @@ export function resolveThreadStatusPill(input: {
   const hasPlanReadyPrompt =
     !thread.hasPendingUserInput &&
     thread.interactionMode === "plan" &&
-    isLatestTurnSettled(thread.latestTurn, thread.session) &&
     thread.hasActionableProposedPlan;
   if (hasPlanReadyPrompt) {
     return {

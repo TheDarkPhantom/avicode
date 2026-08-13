@@ -15,6 +15,11 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
+import {
+  acknowledgePendingThreadRouteVisit,
+  beginThreadRouteVisit,
+  endThreadRouteVisit,
+} from "../threadVisit";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
@@ -56,6 +61,17 @@ function ChatThreadRouteView() {
   });
   const serverThreadStarted = threadHasStarted(serverThreadDetail);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
+
+  useEffect(() => {
+    if (!threadRef) return;
+    beginThreadRouteVisit(threadRef);
+    return () => endThreadRouteVisit(threadRef);
+  }, [threadRef]);
+
+  useEffect(() => {
+    if (!threadRef || !serverThreadShell) return;
+    acknowledgePendingThreadRouteVisit(threadRef, serverThreadShell.updatedAt);
+  }, [serverThreadShell, threadRef]);
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {

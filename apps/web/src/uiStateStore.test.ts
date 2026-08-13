@@ -19,6 +19,7 @@ import {
   setThreadPlanReadingAnchor,
   setThreadPinned,
   type UiState,
+  useUiStateStore,
 } from "./uiStateStore";
 
 function makeUiState(overrides: Partial<UiState> = {}): UiState {
@@ -453,5 +454,19 @@ describe("uiStateStore persistence", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(resolveProjectExpanded(persisted.projectExpandedById ?? {}, ["unknown"])).toBe(true);
+  });
+
+  it("writes visit markers at once so lock or process loss cannot drop them", () => {
+    useUiStateStore.setState({ threadLastVisitedAtById: {} });
+    useUiStateStore
+      .getState()
+      .markThreadVisited("environment:thread-1", "2026-08-14T00:00:00.000Z");
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(persisted.threadLastVisitedAtById).toEqual({
+      "environment:thread-1": "2026-08-14T00:00:00.000Z",
+    });
   });
 });

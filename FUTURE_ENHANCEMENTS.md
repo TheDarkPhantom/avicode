@@ -17,6 +17,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Completed read state stays local to each client in `t3code:ui-state:v1`, so opening a thread on
+  one device does not clear its label on another. Server sync would change that choice. The local
+  map also has no age or size pruning yet, though stale keys are small and harmless.
 - Numbered-list recovery (`markdown-source-normalize.ts`) only rejoins continuation items that sit
   on their own lines. When a model emits them run together on one physical line (`6. a 7. b 8. c`),
   splitting on mid-sentence `N.` tokens would false-positive on prose ("Windows 11. Then..."), so

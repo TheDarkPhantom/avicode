@@ -84,6 +84,7 @@ import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { acknowledgeThreadVisit } from "../threadVisit";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -824,6 +825,7 @@ function OpenCommandPaletteDialog(props: {
             clientSettings.sidebarThreadSortOrder,
           );
       if (latestThread) {
+        acknowledgeThreadVisit(scopeThreadRef(latestThread.environmentId, latestThread.id));
         await navigate({
           to: "/$environmentId/$threadId",
           params: buildThreadRouteParams(
@@ -917,6 +919,7 @@ function OpenCommandPaletteDialog(props: {
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
         renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
         runThread: async (thread) => {
+          acknowledgeThreadVisit(scopeThreadRef(thread.environmentId, thread.id));
           await navigate({
             to: "/$environmentId/$threadId",
             params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
@@ -1436,6 +1439,7 @@ function OpenCommandPaletteDialog(props: {
           clientSettings.sidebarThreadSortOrder,
         );
         if (latestThread) {
+          acknowledgeThreadVisit(scopeThreadRef(latestThread.environmentId, latestThread.id));
           await navigate({
             to: "/$environmentId/$threadId",
             params: buildThreadRouteParams(

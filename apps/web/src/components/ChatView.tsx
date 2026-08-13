@@ -210,7 +210,6 @@ import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useArchiveThreadWithFeedback } from "../hooks/useArchiveThreadWithFeedback";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useWindowActive } from "../hooks/useWindowActive";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
@@ -336,7 +335,6 @@ import {
   revokeUserMessagePreviewUrls,
   shouldFollowUpWithAttachments,
   snapshotComposerThreadDraft,
-  shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
   waitForStartedServerThread,
@@ -380,6 +378,7 @@ const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const NEW_THREAD_VISIT_BASELINE = "1970-01-01T00:00:00.000Z";
 function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -1242,6 +1241,12 @@ function ChatViewContent(props: ChatViewProps) {
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
     reportFailure: false,
   });
+  const discardThreadProposedPlan = useAtomCommand(threadEnvironment.discardProposedPlan, {
+    reportFailure: false,
+  });
+  const restoreThreadProposedPlan = useAtomCommand(threadEnvironment.restoreProposedPlan, {
+    reportFailure: false,
+  });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
@@ -1288,10 +1293,6 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const activeServerThread = serverThread ?? loadingServerThread;
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
-  const activeThreadLastVisitedAt = useUiStateStore(
-    (store) => store.threadLastVisitedAtById[routeThreadKey],
-  );
-  const windowActive = useWindowActive();
   const settings = useEnvironmentSettings(environmentId);
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
@@ -2060,34 +2061,6 @@ function ChatViewContent(props: ChatViewProps) {
     [openOrReuseProjectDraftThread],
   );
 
-  useEffect(() => {
-    // The rule itself, and why it is shaped that way, lives in
-    // `shouldMarkThreadVisited`. The effect re-runs on refocus, so returning
-    // to a still-open thread clears its indicator.
-    if (!serverThread?.id) return;
-    if (
-      !shouldMarkThreadVisited({
-        threadUpdatedAt: serverThread.updatedAt,
-        lastVisitedAt: activeThreadLastVisitedAt,
-        windowActive,
-      })
-    ) {
-      return;
-    }
-
-    markThreadVisited(
-      scopedThreadKey(scopeThreadRef(serverThread.environmentId, serverThread.id)),
-      serverThread.updatedAt,
-    );
-  }, [
-    activeThreadLastVisitedAt,
-    markThreadVisited,
-    serverThread?.environmentId,
-    serverThread?.id,
-    serverThread?.updatedAt,
-    windowActive,
-  ]);
-
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -2362,14 +2335,11 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, [expiredUserInputs, pendingUserInputState.answersByRequestId, restoreExpiredUserInput]);
   const activeProposedPlan = useMemo(() => {
-    if (!latestTurnSettled) {
-      return null;
-    }
     return findLatestProposedPlan(
       activeThread?.proposedPlans ?? [],
       activeLatestTurn?.turnId ?? null,
     );
-  }, [activeLatestTurn?.turnId, activeThread?.proposedPlans, latestTurnSettled]);
+  }, [activeLatestTurn?.turnId, activeThread?.proposedPlans]);
   const sidebarProposedPlan = useMemo(
     () =>
       findSidebarProposedPlan({
@@ -2385,7 +2355,7 @@ function ChatViewContent(props: ChatViewProps) {
     [activeLatestTurn?.turnId, threadActivities],
   );
   const pendingPlanDecision = derivePendingPlanDecision({
-    latestTurnSettled,
+    planActionsReady: phase !== "running" && phase !== "connecting",
     hasActionablePlan: hasActionableProposedPlan(activeProposedPlan),
     hasPendingUserInput: pendingUserInputs.length > 0,
   });
@@ -2394,6 +2364,47 @@ function ChatViewContent(props: ChatViewProps) {
   const planSidebarLabel =
     sidebarProposedPlan || effectiveInteractionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt = pendingPlanDecision.showPlanFollowUpPrompt;
+  const onDiscardProposedPlan = useCallback(async () => {
+    if (!activeThread || !activeProposedPlan || activeProposedPlan.discardedAt !== null) return;
+    const localApi = readLocalApi();
+    const message = "Discard this plan? You can restore it from the plan card later.";
+    const confirmed = localApi ? await localApi.dialogs.confirm(message) : window.confirm(message);
+    if (!confirmed) return;
+    const result = await discardThreadProposedPlan({
+      environmentId: activeThread.environmentId,
+      input: { threadId: activeThread.id, planId: activeProposedPlan.id },
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not discard plan",
+          description: error instanceof Error ? error.message : "Plan discard failed.",
+        }),
+      );
+    }
+  }, [activeProposedPlan, activeThread, discardThreadProposedPlan]);
+  const onRestoreProposedPlan = useCallback(
+    async (planId: string) => {
+      if (!activeThread) return;
+      const result = await restoreThreadProposedPlan({
+        environmentId: activeThread.environmentId,
+        input: { threadId: activeThread.id, planId },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not restore plan",
+            description: error instanceof Error ? error.message : "Plan restore failed.",
+          }),
+        );
+      }
+    },
+    [activeThread, restoreThreadProposedPlan],
+  );
   const linkedPlanReview = useMemo(
     () =>
       activeThread && activeProposedPlan
@@ -5758,11 +5769,11 @@ function ChatViewContent(props: ChatViewProps) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     // Avi Code addition: establish the read baseline synchronously with the
-    // user's send. If they switch threads before the server echo mounts here,
-    // the later completion must still become Done in the sidebar.
+    // user's send. A new thread uses the epoch so a fast remote completion
+    // cannot be hidden by the client clock running ahead of the server clock.
     markThreadVisited(
       scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-      messageCreatedAt,
+      isServerThread ? activeThread.updatedAt : NEW_THREAD_VISIT_BASELINE,
     );
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
@@ -6501,7 +6512,7 @@ function ChatViewContent(props: ChatViewProps) {
       // immediate thread switch cannot suppress the completion indicator.
       markThreadVisited(
         scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-        messageCreatedAt,
+        activeThread.updatedAt,
       );
       const outgoingMessageText = formatOutgoingPrompt({
         provider: ctxSelectedProvider,
@@ -7629,6 +7640,7 @@ function ChatViewContent(props: ChatViewProps) {
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeWorkspaceRoot}
+                onRestoreProposedPlan={onRestoreProposedPlan}
                 findQuery={findOpen ? findQuery : ""}
                 findActiveMatchIndex={findOpen ? findMatchIndex : -1}
                 onFindMatchesChange={onFindMatchesChange}
@@ -7792,6 +7804,7 @@ function ChatViewContent(props: ChatViewProps) {
                             planImplementIntentRef={planImplementIntentRef}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onDiscardPlan={onDiscardProposedPlan}
                             onReviewPlanWithCodex={onReviewPlanWithCodex}
                             onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                             onRespondToApproval={onRespondToApproval}

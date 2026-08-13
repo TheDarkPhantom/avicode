@@ -487,6 +487,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onInterrupt: () => void;
   onImplementPlan: () => void;
   onImplementPlanInNewThread: () => void;
+  onDiscardPlan: () => void;
   onReviewPlanWithCodex: () => void;
   onOpenLinkedPlanReview: () => void;
 }) {
@@ -535,6 +536,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         onInterrupt={props.onInterrupt}
         onImplementPlan={props.onImplementPlan}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
+        onDiscardPlan={props.onDiscardPlan}
         onReviewPlanWithCodex={props.onReviewPlanWithCodex}
         onOpenLinkedPlanReview={props.onOpenLinkedPlanReview}
       />
@@ -711,6 +713,7 @@ export interface ChatComposerProps {
   planImplementIntentRef: React.RefObject<boolean>;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onDiscardPlan: () => void;
   onReviewPlanWithCodex: () => void;
   onOpenLinkedPlanReview: () => void;
   onRespondToApproval: (
@@ -807,6 +810,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planImplementIntentRef,
     onInterrupt,
     onImplementPlanInNewThread,
+    onDiscardPlan,
     onReviewPlanWithCodex,
     onOpenLinkedPlanReview,
     onRespondToApproval,
@@ -3358,6 +3362,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onInterrupt={handleInterruptPrimaryAction}
                       onImplementPlan={handleImplementPlanPrimaryAction}
                       onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                      onDiscardPlan={onDiscardPlan}
                       onReviewPlanWithCodex={onReviewPlanWithCodex}
                       onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                     />
@@ -3733,6 +3738,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlan={handleImplementPlanPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                    onDiscardPlan={onDiscardPlan}
                     onReviewPlanWithCodex={onReviewPlanWithCodex}
                     onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                   />
@@ -3911,6 +3917,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onInterrupt={handleInterruptPrimaryAction}
                   onImplementPlan={handleImplementPlanPrimaryAction}
                   onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                  onDiscardPlan={onDiscardPlan}
                   onReviewPlanWithCodex={onReviewPlanWithCodex}
                   onOpenLinkedPlanReview={onOpenLinkedPlanReview}
                 />

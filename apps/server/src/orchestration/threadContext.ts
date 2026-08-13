@@ -17,6 +17,7 @@ export interface ReferencedThreadTranscript {
     readonly planMarkdown: string;
     readonly createdAt: string;
     readonly implementedAt: string | null;
+    readonly discardedAt: string | null;
   }>;
 }
 
@@ -48,7 +49,7 @@ export function serializeReferencedThreadContext(
     const proposedPlans = (thread.proposedPlans ?? [])
       .map((plan) =>
         [
-          `<proposed_plan id="${escapeAttribute(plan.id)}" createdAt="${escapeAttribute(plan.createdAt)}" implemented="${plan.implementedAt !== null}">`,
+          `<proposed_plan id="${escapeAttribute(plan.id)}" createdAt="${escapeAttribute(plan.createdAt)}" implemented="${plan.implementedAt !== null}" discarded="${plan.discardedAt !== null}">`,
           plan.planMarkdown,
           "</proposed_plan>",
         ].join("\n"),

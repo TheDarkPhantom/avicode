@@ -748,6 +748,52 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.proposed-plan.discard":
+    case "thread.proposed-plan.restore": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const plan = thread.proposedPlans.find((entry) => entry.id === command.planId);
+      if (!plan) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Proposed plan '${command.planId}' does not exist on thread '${command.threadId}'.`,
+        });
+      }
+      if (plan.implementedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Implemented proposed plan '${command.planId}' cannot be changed.`,
+        });
+      }
+      const isDiscard = command.type === "thread.proposed-plan.discard";
+      if ((isDiscard && plan.discardedAt !== null) || (!isDiscard && plan.discardedAt === null)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Proposed plan '${command.planId}' is already ${isDiscard ? "discarded" : "active"}.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.proposed-plan-upserted",
+        payload: {
+          threadId: command.threadId,
+          proposedPlan: {
+            ...plan,
+            discardedAt: isDiscard ? command.createdAt : null,
+            updatedAt: command.createdAt,
+          },
+        },
+      };
+    }
+
     case "thread.turn.start": {
       const targetThread = yield* requireThread({
         readModel,
@@ -800,6 +846,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: `Proposed plan '${sourceProposedPlan.planId}' does not exist on thread '${sourceProposedPlan.threadId}'.`,
+        });
+      }
+      if (sourcePlan && (sourcePlan.implementedAt !== null || sourcePlan.discardedAt !== null)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Proposed plan '${sourcePlan.id}' is not actionable.`,
         });
       }
       if (sourceThread && sourceThread.projectId !== targetThread.projectId) {

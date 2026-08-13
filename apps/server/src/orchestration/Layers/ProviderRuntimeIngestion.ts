@@ -167,11 +167,17 @@ function findMessageById(
 
 function findProposedPlanById(
   proposedPlans: ReadonlyArray<
-    Pick<OrchestrationProposedPlan, "id" | "createdAt" | "implementedAt" | "implementationThreadId">
+    Pick<
+      OrchestrationProposedPlan,
+      "id" | "createdAt" | "implementedAt" | "implementationThreadId" | "discardedAt"
+    >
   >,
   planId: string,
 ):
-  | Pick<OrchestrationProposedPlan, "id" | "createdAt" | "implementedAt" | "implementationThreadId">
+  | Pick<
+      OrchestrationProposedPlan,
+      "id" | "createdAt" | "implementedAt" | "implementationThreadId" | "discardedAt"
+    >
   | undefined {
   for (let index = 0; index < proposedPlans.length; index += 1) {
     const proposedPlan = proposedPlans[index];
@@ -1155,6 +1161,7 @@ const make = Effect.gen(function* () {
       createdAt: string;
       implementedAt: string | null;
       implementationThreadId: ThreadId | null;
+      discardedAt: string | null;
     }>;
     planId: string;
     turnId?: TurnId;
@@ -1179,6 +1186,7 @@ const make = Effect.gen(function* () {
           planMarkdown,
           implementedAt: existingPlan?.implementedAt ?? null,
           implementationThreadId: existingPlan?.implementationThreadId ?? null,
+          discardedAt: existingPlan?.discardedAt ?? null,
           createdAt: existingPlan?.createdAt ?? input.createdAt,
           updatedAt: input.updatedAt,
         },
@@ -1194,6 +1202,7 @@ const make = Effect.gen(function* () {
       createdAt: string;
       implementedAt: string | null;
       implementationThreadId: ThreadId | null;
+      discardedAt: string | null;
     }>;
     planId: string;
     turnId?: TurnId;
@@ -1330,7 +1339,12 @@ const make = Effect.gen(function* () {
     ) {
       const sourceThread = yield* resolveThreadDetail(sourceThreadId);
       const sourcePlan = sourceThread?.proposedPlans.find((entry) => entry.id === sourcePlanId);
-      if (!sourceThread || !sourcePlan || sourcePlan.implementedAt !== null) {
+      if (
+        !sourceThread ||
+        !sourcePlan ||
+        sourcePlan.implementedAt !== null ||
+        sourcePlan.discardedAt !== null
+      ) {
         return;
       }
 

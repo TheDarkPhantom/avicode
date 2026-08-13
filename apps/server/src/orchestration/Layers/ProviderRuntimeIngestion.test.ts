@@ -1486,6 +1486,7 @@ describe("ProviderRuntimeIngestion", () => {
       sourceThreadBeforeStart.proposedPlans.find((entry) => entry.id === sourcePlan.id),
     ).toMatchObject({
       implementedAt: null,
+      discardedAt: null,
       implementationThreadId: null,
     });
 
@@ -1675,6 +1676,7 @@ describe("ProviderRuntimeIngestion", () => {
           sourceThreadAfterReviewStart?.proposedPlans.find((entry) => entry.id === sourcePlan.id),
         ).toMatchObject({
           implementedAt: null,
+          discardedAt: null,
           implementationThreadId: null,
         });
 
@@ -1828,6 +1830,7 @@ describe("ProviderRuntimeIngestion", () => {
       sourceThreadAfterRejectedStart?.proposedPlans.find((entry) => entry.id === sourcePlan.id),
     ).toMatchObject({
       implementedAt: null,
+      discardedAt: null,
       implementationThreadId: null,
     });
 
@@ -2086,6 +2089,7 @@ describe("ProviderRuntimeIngestion", () => {
       sourceThreadAfterUnrelatedStart?.proposedPlans.find((entry) => entry.id === sourcePlan.id),
     ).toMatchObject({
       implementedAt: null,
+      discardedAt: null,
       implementationThreadId: null,
     });
   });

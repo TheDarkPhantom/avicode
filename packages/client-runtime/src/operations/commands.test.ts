@@ -26,7 +26,9 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  discardThreadProposedPlan,
   forkThread,
+  restoreThreadProposedPlan,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -219,6 +221,43 @@ describe("environment commands", () => {
           commandId: "unsettle-command",
           threadId: "thread-1",
           reason: "user",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches durable proposed plan discard and restore commands", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* discardThreadProposedPlan({
+        commandId: CommandId.make("discard-command"),
+        threadId: ThreadId.make("thread-1"),
+        planId: "plan-1",
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      yield* restoreThreadProposedPlan({
+        commandId: CommandId.make("restore-command"),
+        threadId: ThreadId.make("thread-1"),
+        planId: "plan-1",
+        createdAt: "2026-08-14T00:01:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.proposed-plan.discard",
+          commandId: "discard-command",
+          threadId: "thread-1",
+          planId: "plan-1",
+          createdAt: "2026-08-14T00:00:00.000Z",
+        },
+        {
+          type: "thread.proposed-plan.restore",
+          commandId: "restore-command",
+          threadId: "thread-1",
+          planId: "plan-1",
+          createdAt: "2026-08-14T00:01:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

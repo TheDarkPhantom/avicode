@@ -10,6 +10,7 @@ const plan = (overrides: Partial<ActionablePlanCandidate>): ActionablePlanCandid
   id: "plan-1",
   turnId: "turn-plan",
   implementedAt: null,
+  discardedAt: null,
   updatedAt: "2026-01-01T00:00:00.000Z",
   ...overrides,
 });
@@ -52,6 +53,14 @@ describe("selectPlanToMarkImplemented", () => {
   it("ignores already-implemented plans", () => {
     const selected = selectPlanToMarkImplemented(
       [plan({ id: "plan-a", turnId: "turn-a", implementedAt: "2026-01-01T00:00:00.000Z" })],
+      "turn-build",
+    );
+    expect(selected).toBeNull();
+  });
+
+  it("ignores discarded plans", () => {
+    const selected = selectPlanToMarkImplemented(
+      [plan({ id: "plan-a", turnId: "turn-a", discardedAt: "2026-01-01T00:00:00.000Z" })],
       "turn-build",
     );
     expect(selected).toBeNull();

@@ -10,6 +10,7 @@ import {
 import { SidebarInset } from "../components/ui/sidebar";
 import { waitForDraftHeroTransition } from "../components/chat/draftHeroTransition";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { suppressNextThreadRouteVisit } from "../threadVisit";
 import { useThread, useThreadRefs } from "../state/entities";
 
 function DraftChatThreadRouteView() {
@@ -47,6 +48,7 @@ function DraftChatThreadRouteView() {
       if (cancelled) {
         return;
       }
+      suppressNextThreadRouteVisit(canonicalThreadRef);
       void navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(canonicalThreadRef),

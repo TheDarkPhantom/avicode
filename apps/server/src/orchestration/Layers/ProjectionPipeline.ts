@@ -196,11 +196,13 @@ function deriveHasActionableProposedPlan(input: {
     }
   }
   if (latestForTurn !== null) {
-    return latestForTurn.implementedAt === null;
+    return latestForTurn.implementedAt === null && latestForTurn.discardedAt === null;
   }
 
   const latestPlan = sorted.at(-1) ?? null;
-  return latestPlan !== null && latestPlan.implementedAt === null;
+  return (
+    latestPlan !== null && latestPlan.implementedAt === null && latestPlan.discardedAt === null
+  );
 }
 
 function retainProjectionMessagesAfterRevert(
@@ -851,7 +853,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
-            latestTurnId: event.payload.session.activeTurnId,
+            // Avi Code addition: ready/stopped session events have no active
+            // turn, but the latest completed turn remains thread history.
+            latestTurnId: event.payload.session.activeTurnId ?? existingRow.value.latestTurnId,
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);
@@ -1021,6 +1025,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             planMarkdown: event.payload.proposedPlan.planMarkdown,
             implementedAt: event.payload.proposedPlan.implementedAt,
             implementationThreadId: event.payload.proposedPlan.implementationThreadId,
+            discardedAt: event.payload.proposedPlan.discardedAt,
             createdAt: event.payload.proposedPlan.createdAt,
             updatedAt: event.payload.proposedPlan.updatedAt,
           });

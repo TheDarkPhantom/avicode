@@ -124,6 +124,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
+import { acknowledgeThreadVisit } from "../threadVisit";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
@@ -2478,6 +2479,7 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(scopedThreadKey(threadRef));
+      acknowledgeThreadVisit(threadRef);
       if (isMobile) {
         setOpenMobile(false);
       }

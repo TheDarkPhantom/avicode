@@ -122,6 +122,7 @@ describe("ProposedPlanImplementationReactor", () => {
             turnId: PLAN_TURN_ID,
             planMarkdown: "# Plan\n\nBody",
             implementedAt: null,
+            discardedAt: null,
             implementationThreadId: null,
             createdAt: CREATED_AT,
             updatedAt: CREATED_AT,

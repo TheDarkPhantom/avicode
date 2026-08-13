@@ -1193,6 +1193,7 @@ const make = Effect.gen(function* () {
             planMarkdown: plan.planMarkdown,
             createdAt: plan.createdAt,
             implementedAt: plan.implementedAt,
+            discardedAt: plan.discardedAt,
           })),
         });
       }

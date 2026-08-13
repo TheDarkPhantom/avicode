@@ -34,6 +34,7 @@ interface ComposerPrimaryActionsProps {
   onInterrupt: () => void;
   onImplementPlan: () => void;
   onImplementPlanInNewThread: () => void;
+  onDiscardPlan: () => void;
   onReviewPlanWithCodex: () => void;
   onOpenLinkedPlanReview: () => void;
 }
@@ -135,6 +136,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onInterrupt,
   onImplementPlan,
   onImplementPlanInNewThread,
+  onDiscardPlan,
   onReviewPlanWithCodex,
   onOpenLinkedPlanReview,
 }: ComposerPrimaryActionsProps) {
@@ -273,6 +275,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               onClick={() => void onImplementPlanInNewThread()}
             >
               Implement in a new thread
+            </MenuItem>
+            <MenuItem
+              disabled={isSendBusy || isConnecting || isEnvironmentUnavailable}
+              onClick={onDiscardPlan}
+            >
+              Discard plan
             </MenuItem>
           </MenuPopup>
         </Menu>

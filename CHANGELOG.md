@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Plan actions and thread status survive lock, reload, reconnect, and idle cleanup
 - Right panels stay stable through thread switches and zoom, clear of window controls (#177)
 
 ## 0.0.31-avicode.9.5 (2026-08-12)

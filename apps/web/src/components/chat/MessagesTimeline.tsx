@@ -178,6 +178,7 @@ interface TimelineRowSharedState {
   onProposedPlanExpanded: (planElement: HTMLElement) => void;
   expandedPlanIds: ReadonlySet<string>;
   onProposedPlanExpandedChange: (planId: string, expanded: boolean) => void;
+  onRestoreProposedPlan: ((planId: string) => void) | undefined;
 }
 
 interface TimelineRowActivityState {
@@ -225,6 +226,7 @@ interface MessagesTimelineProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  onRestoreProposedPlan?: (planId: string) => void;
   /** Avi Code addition: find in thread. Empty disables searching entirely. */
   findQuery?: string;
   findActiveMatchIndex?: number;
@@ -284,6 +286,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
+  onRestoreProposedPlan,
   findQuery = "",
   findActiveMatchIndex = -1,
   onFindMatchesChange,
@@ -852,6 +855,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onProposedPlanExpanded,
       expandedPlanIds,
       onProposedPlanExpandedChange,
+      onRestoreProposedPlan,
     }),
     [
       timestampFormat,
@@ -875,6 +879,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onProposedPlanExpanded,
       expandedPlanIds,
       onProposedPlanExpandedChange,
+      onRestoreProposedPlan,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1860,6 +1865,8 @@ function ProposedPlanTimelineRow({
     <div className="min-w-0 px-1 py-0.5">
       <ProposedPlanCard
         planMarkdown={row.proposedPlan.planMarkdown}
+        planId={row.proposedPlan.id}
+        discardedAt={row.proposedPlan.discardedAt}
         environmentId={ctx.activeThreadEnvironmentId}
         threadRef={ctx.threadRef ?? undefined}
         cwd={ctx.markdownCwd}
@@ -1869,6 +1876,7 @@ function ProposedPlanTimelineRow({
         onExpandedChange={(expanded) =>
           ctx.onProposedPlanExpandedChange(row.proposedPlan.id, expanded)
         }
+        onRestore={ctx.onRestoreProposedPlan}
       />
     </div>
   );

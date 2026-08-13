@@ -319,6 +319,8 @@ export const OrchestrationProposedPlan = Schema.Struct({
   implementationThreadId: Schema.NullOr(ThreadId).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  // Avi Code addition: a user can dismiss a plan without deleting its card.
+  discardedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -745,6 +747,22 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadProposedPlanDiscardCommand = Schema.Struct({
+  type: Schema.Literal("thread.proposed-plan.discard"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  planId: OrchestrationProposedPlanId,
+  createdAt: IsoDateTime,
+});
+
+const ThreadProposedPlanRestoreCommand = Schema.Struct({
+  type: Schema.Literal("thread.proposed-plan.restore"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  planId: OrchestrationProposedPlanId,
+  createdAt: IsoDateTime,
+});
+
 const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -922,6 +940,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadProposedPlanDiscardCommand,
+  ThreadProposedPlanRestoreCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -948,6 +968,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadProposedPlanDiscardCommand,
+  ThreadProposedPlanRestoreCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
