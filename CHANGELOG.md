@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Half-done question answers survive thread switches, reloads, and app restarts (#179)
 - Plan actions and thread status survive lock, reload, reconnect, and idle cleanup (#178)
 - Right panels stay stable through thread switches and zoom, clear of window controls (#177)
 
