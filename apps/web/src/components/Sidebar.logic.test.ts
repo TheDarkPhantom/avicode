@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
+  buildTargetedProjectContextMenuItem,
   buildFlatSidebarThreadList,
   buildMultiSelectThreadContextMenuItems,
   createThreadJumpHintVisibilityController,
@@ -33,6 +34,7 @@ import {
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
+  PROJECT_CONTEXT_MENU_ACTIONS,
 } from "./Sidebar.logic";
 import {
   EnvironmentId,
@@ -50,6 +52,47 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("project context menu", () => {
+  it("puts Open in File Manager before Copy Path", () => {
+    expect(PROJECT_CONTEXT_MENU_ACTIONS.map(({ label }) => label)).toEqual([
+      "Rename",
+      "Group into...",
+      "Open in File Manager",
+      "Copy Path",
+      "Remove",
+    ]);
+  });
+
+  it("uses one direct action for one project", () => {
+    expect(
+      buildTargetedProjectContextMenuItem({
+        action: "open-file-manager",
+        label: "Open in File Manager",
+        members: ["local"],
+        makeLeaf: (action, member) => ({ id: `${action}:${member}`, label: member }),
+      }),
+    ).toEqual({ id: "open-file-manager:local", label: "Open in File Manager" });
+  });
+
+  it("builds one file-manager submenu entry per grouped project", () => {
+    expect(
+      buildTargetedProjectContextMenuItem({
+        action: "open-file-manager",
+        label: "Open in File Manager",
+        members: ["local", "remote"],
+        makeLeaf: (action, member) => ({ id: `${action}:${member}`, label: member }),
+      }),
+    ).toEqual({
+      id: "open-file-manager:submenu",
+      label: "Open in File Manager",
+      children: [
+        { id: "open-file-manager:local", label: "local" },
+        { id: "open-file-manager:remote", label: "remote" },
+      ],
+    });
+  });
+});
 
 describe("shouldNavigateAfterProjectRemoval", () => {
   const projectThreads = [{ environmentId: "environment-local", id: "thread-1" }];

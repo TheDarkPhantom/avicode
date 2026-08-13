@@ -115,6 +115,7 @@ import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
 import { projectEnvironment } from "../state/projects";
+import { shellEnvironment } from "../state/shell";
 import { useEnvironmentQuery } from "../state/query";
 import { useEnvironmentThread } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
@@ -184,6 +185,9 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { openCommandPalette } from "../commandPaletteBus";
 import {
   getSidebarThreadIdsToPrewarm,
+  buildTargetedProjectContextMenuItem,
+  PROJECT_CONTEXT_MENU_ACTIONS,
+  type ProjectContextMenuAction,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -552,6 +556,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   });
   const updateProject = useAtomCommand(projectEnvironment.update, {
     reportFailure: false,
+  });
+  const openProjectInFileManager = useAtomCommand(shellEnvironment.openInEditor, {
+    label: "open project in file manager",
   });
   const updateSettings = useUpdateClientSettings();
   const sidebarThreadPreviewCount = useClientSettings<SidebarThreadPreviewCount>(
@@ -1051,7 +1058,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
         const makeLeaf = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: ProjectContextMenuAction,
           member: SidebarProjectGroupMember,
           options?: {
             destructive?: boolean;
@@ -1067,6 +1074,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               case "grouping":
                 openProjectGroupingDialog(member);
                 return;
+              case "open-file-manager":
+                return openProjectInFileManager({
+                  environmentId: member.environmentId,
+                  input: {
+                    cwd: member.workspaceRoot,
+                    editor: "file-manager",
+                  },
+                }).then(() => undefined);
               case "copy-path":
                 copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
                 return;
@@ -1084,35 +1099,26 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
 
         const buildTargetedItem = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: ProjectContextMenuAction,
           label: string,
           options?: {
             destructive?: boolean;
             isDisabled?: (member: SidebarProjectGroupMember) => boolean;
           },
         ): ContextMenuItem<string> => {
-          if (project.memberProjects.length === 1) {
-            const singleMember = project.memberProjects[0]!;
-            return {
-              ...makeLeaf(action, singleMember, {
-                ...(options?.destructive ? { destructive: true } : {}),
-                ...(options?.isDisabled?.(singleMember) ? { disabled: true } : {}),
-              }),
-              label,
-              ...(action === "delete" ? { icon: "trash" } : {}),
-            };
-          }
-
-          return {
-            id: `${action}:submenu`,
+          const item = buildTargetedProjectContextMenuItem({
+            action,
             label,
-            ...(action === "delete" ? { icon: "trash" } : {}),
-            children: project.memberProjects.map((member) =>
-              makeLeaf(action, member, {
+            members: project.memberProjects,
+            makeLeaf: (leafAction, member) =>
+              makeLeaf(leafAction, member, {
                 ...(options?.destructive ? { destructive: true } : {}),
                 ...(options?.isDisabled?.(member) ? { disabled: true } : {}),
               }),
-            ),
+          });
+          return {
+            ...item,
+            ...(action === "delete" ? { icon: "trash" } : {}),
           };
         };
 
@@ -1128,12 +1134,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               id: "toggle-pin",
               label: isProjectPinned ? "Unpin project" : "Pin project",
             },
-            buildTargetedItem("rename", "Rename"),
-            buildTargetedItem("grouping", "Group into..."),
-            buildTargetedItem("copy-path", "Copy Path"),
-            buildTargetedItem("delete", "Remove", {
-              destructive: true,
-            }),
+            ...PROJECT_CONTEXT_MENU_ACTIONS.map(({ action, label, destructive }) =>
+              buildTargetedItem(action, label, destructive ? { destructive: true } : undefined),
+            ),
           ],
           {
             x: event.clientX,
@@ -1154,6 +1157,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       isProjectPinned,
       memberProjectKeys,
       openProjectGroupingDialog,
+      openProjectInFileManager,
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,

@@ -19,6 +19,42 @@ export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
 // nearby thread usually reuses an already-hot subscription.
 export const SIDEBAR_THREAD_PREWARM_LIMIT = 10;
 
+export type ProjectContextMenuAction =
+  | "rename"
+  | "grouping"
+  | "open-file-manager"
+  | "copy-path"
+  | "delete";
+
+export const PROJECT_CONTEXT_MENU_ACTIONS: ReadonlyArray<{
+  readonly action: ProjectContextMenuAction;
+  readonly label: string;
+  readonly destructive?: boolean;
+}> = [
+  { action: "rename", label: "Rename" },
+  { action: "grouping", label: "Group into..." },
+  { action: "open-file-manager", label: "Open in File Manager" },
+  { action: "copy-path", label: "Copy Path" },
+  { action: "delete", label: "Remove", destructive: true },
+];
+
+export function buildTargetedProjectContextMenuItem<TMember>(input: {
+  readonly action: ProjectContextMenuAction;
+  readonly label: string;
+  readonly members: readonly TMember[];
+  readonly makeLeaf: (action: ProjectContextMenuAction, member: TMember) => ContextMenuItem<string>;
+}): ContextMenuItem<string> {
+  if (input.members.length === 1) {
+    return { ...input.makeLeaf(input.action, input.members[0]!), label: input.label };
+  }
+
+  return {
+    id: `${input.action}:submenu`,
+    label: input.label,
+    children: input.members.map((member) => input.makeLeaf(input.action, member)),
+  };
+}
+
 type SidebarProject = {
   id: string;
   title: string;
