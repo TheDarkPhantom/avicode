@@ -3,10 +3,14 @@ import {
   PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS,
 } from "@t3tools/contracts";
 
-export const SUPPORTED_DOCUMENT_EXTENSIONS = [".pdf", ".txt", ".md", ".markdown"] as const;
+export const SUPPORTED_DOCUMENT_EXTENSIONS = [".pdf", ".txt", ".md", ".markdown", ".csv"] as const;
 export const MAX_PDF_PAGES = 250;
 
-export type SupportedDocumentMimeType = "application/pdf" | "text/plain" | "text/markdown";
+export type SupportedDocumentMimeType =
+  | "application/pdf"
+  | "text/plain"
+  | "text/markdown"
+  | "text/csv";
 
 export interface ExtractedDocument {
   readonly mimeType: SupportedDocumentMimeType;
@@ -23,13 +27,14 @@ export function resolveDocumentMimeType(
   if (file.type === "text/markdown" || name.endsWith(".md") || name.endsWith(".markdown")) {
     return "text/markdown";
   }
+  if (file.type === "text/csv" || name.endsWith(".csv")) return "text/csv";
   if (file.type === "text/plain" || name.endsWith(".txt")) return "text/plain";
   return null;
 }
 
 export function validateDocumentFile(file: File): string | null {
   if (!resolveDocumentMimeType(file)) {
-    return `Unsupported file type for '${file.name}'. Attach PDF, TXT, Markdown, or an image.`;
+    return `Unsupported file type for '${file.name}'. Attach PDF, TXT, Markdown, CSV, or an image.`;
   }
   if (file.size <= 0) return `'${file.name}' is empty.`;
   if (file.size > PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES) {

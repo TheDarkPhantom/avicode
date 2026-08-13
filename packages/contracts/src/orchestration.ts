@@ -182,7 +182,7 @@ export const ChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   id: ChatAttachmentId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: Schema.Literals(["application/pdf", "text/plain", "text/markdown"]),
+  mimeType: Schema.Literals(["application/pdf", "text/plain", "text/markdown", "text/csv"]),
   sizeBytes: NonNegativeInt.check(
     Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES),
   ),
@@ -195,7 +195,7 @@ export type ChatDocumentAttachment = typeof ChatDocumentAttachment.Type;
 const UploadChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: Schema.Literals(["application/pdf", "text/plain", "text/markdown"]),
+  mimeType: Schema.Literals(["application/pdf", "text/plain", "text/markdown", "text/csv"]),
   sizeBytes: NonNegativeInt.check(
     Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES),
   ),

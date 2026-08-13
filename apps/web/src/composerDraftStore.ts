@@ -2253,7 +2253,9 @@ export function hydrateImagesFromPersisted(
         id: attachment.id,
         name: attachment.name,
         mimeType:
-          attachment.mimeType === "application/pdf" || attachment.mimeType === "text/markdown"
+          attachment.mimeType === "application/pdf" ||
+          attachment.mimeType === "text/markdown" ||
+          attachment.mimeType === "text/csv"
             ? attachment.mimeType
             : "text/plain",
         sizeBytes: attachment.sizeBytes,
