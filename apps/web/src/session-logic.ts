@@ -516,6 +516,42 @@ export function derivePendingUserInputs(
   );
 }
 
+/** User-input requests whose durable activity stream says they can no longer accept a draft. */
+export function deriveClosedUserInputRequestIds(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ApprovalRequestId[] {
+  const closedRequestIds = new Set<ApprovalRequestId>();
+  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+
+  for (const activity of ordered) {
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const requestId =
+      payload && typeof payload.requestId === "string"
+        ? ApprovalRequestId.make(payload.requestId)
+        : null;
+    if (!requestId) continue;
+
+    if (activity.kind === "user-input.requested") {
+      closedRequestIds.delete(requestId);
+      continue;
+    }
+
+    const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
+    if (
+      activity.kind === "user-input.resolved" ||
+      (activity.kind === "provider.user-input.respond.failed" &&
+        isStalePendingRequestFailureDetail(detail))
+    ) {
+      closedRequestIds.add(requestId);
+    }
+  }
+
+  return [...closedRequestIds];
+}
+
 /**
  * Avi Code addition: questions the server closed because their provider session
  * went away, paired with the questions that were asked.

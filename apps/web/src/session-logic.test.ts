@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
+  deriveClosedUserInputRequestIds,
   deriveExpiredUserInputs,
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -348,6 +349,52 @@ describe("derivePendingUserInputs", () => {
 
   it("clears a prompt the provider closed as expired", () => {
     expect(derivePendingUserInputs(expiredUserInputActivities())).toEqual([]);
+  });
+});
+
+describe("deriveClosedUserInputRequestIds", () => {
+  it("finds resolved and stale requests but not requests still open", () => {
+    const openActivity = expiredUserInputActivities()[0]!;
+    expect(
+      deriveClosedUserInputRequestIds([
+        openActivity,
+        makeActivity({
+          createdAt: "2026-02-23T00:00:02.000Z",
+          kind: "user-input.resolved",
+          payload: { requestId: "req-user-input-expired-1", answers: {} },
+        }),
+        makeActivity({
+          createdAt: "2026-02-23T00:00:03.000Z",
+          kind: "user-input.requested",
+          payload: { requestId: "req-open" },
+        }),
+        makeActivity({
+          createdAt: "2026-02-23T00:00:04.000Z",
+          kind: "provider.user-input.respond.failed",
+          payload: {
+            requestId: "req-stale",
+            detail: "Unknown pending user input request: req-stale",
+          },
+        }),
+      ]),
+    ).toEqual(["req-user-input-expired-1", "req-stale"]);
+  });
+
+  it("does not close a reused request id after a later request", () => {
+    expect(
+      deriveClosedUserInputRequestIds([
+        makeActivity({
+          createdAt: "2026-02-23T00:00:01.000Z",
+          kind: "user-input.resolved",
+          payload: { requestId: "req-reused", answers: {} },
+        }),
+        makeActivity({
+          createdAt: "2026-02-23T00:00:02.000Z",
+          kind: "user-input.requested",
+          payload: { requestId: "req-reused" },
+        }),
+      ]),
+    ).toEqual([]);
   });
 });
 
