@@ -787,6 +787,32 @@ const makeWsRpcLayer = (
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
           let targetWorktreePath = bootstrap?.createThread?.worktreePath ?? null;
 
+          // A client can miss the thread.created response after the bootstrap
+          // commit and retry while it still has the local draft. Resume that
+          // thread instead of rejecting the whole turn as a duplicate create.
+          const existingBootstrapThread = bootstrap?.createThread
+            ? yield* projectionSnapshotQuery.getThreadShellById(command.threadId).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new OrchestrationDispatchCommandError({
+                      message: error.message,
+                      cause: error,
+                    }),
+                ),
+              )
+            : Option.none();
+          const materializedBootstrapThread = Option.getOrNull(
+            Option.filter(
+              existingBootstrapThread,
+              (thread) => thread.projectId === bootstrap?.createThread?.projectId,
+            ),
+          );
+          const bootstrapAlreadyMaterialized = materializedBootstrapThread !== null;
+          if (materializedBootstrapThread) {
+            targetProjectId = materializedBootstrapThread.projectId;
+            targetWorktreePath = materializedBootstrapThread.worktreePath;
+          }
+
           const cleanupCreatedThread = () =>
             createdThread
               ? serverCommandId("bootstrap-thread-delete").pipe(
@@ -918,7 +944,7 @@ const makeWsRpcLayer = (
             });
 
           const bootstrapProgram = Effect.gen(function* () {
-            if (bootstrap?.createThread) {
+            if (bootstrap?.createThread && !bootstrapAlreadyMaterialized) {
               yield* orchestrationEngine.dispatch({
                 type: "thread.create",
                 commandId: yield* serverCommandId("bootstrap-thread-create"),
@@ -935,7 +961,7 @@ const makeWsRpcLayer = (
               createdThread = true;
             }
 
-            if (bootstrap?.prepareWorktree) {
+            if (bootstrap?.prepareWorktree && !bootstrapAlreadyMaterialized) {
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               if (bootstrap.prepareWorktree.startFromOrigin) {
                 yield* gitWorkflow.fetchRemote({
@@ -967,7 +993,9 @@ const makeWsRpcLayer = (
               yield* refreshGitStatus(targetWorktreePath);
             }
 
-            yield* runSetupProgram();
+            if (!bootstrapAlreadyMaterialized) {
+              yield* runSetupProgram();
+            }
 
             return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
           });

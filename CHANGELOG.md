@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Retry new threads without failing when their first server save already worked
 - Attach CSV files as raw text context in chat (#182)
 - Open project folders in their host file manager from the sidebar menu (#181)
 
