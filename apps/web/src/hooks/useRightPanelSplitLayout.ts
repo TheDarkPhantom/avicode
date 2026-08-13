@@ -8,14 +8,17 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
+import { appCssPixelsToWindowUnits, getAppZoomLevel, subscribeToAppZoomLevel } from "../appZoom";
 import { isElectron } from "../env";
 import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
 import {
   clampRightPanelChatWidth,
   resizeRightPanelChatWidthFromKey,
   resolveInitialRightPanelChatWidth,
+  rebaseRightPanelChatWidthForZoom,
   resolveRightPanelLayout,
   RIGHT_PANEL_CHAT_WIDTH_STORAGE_KEY,
   RIGHT_PANEL_DEFAULT_WIDTH,
@@ -25,6 +28,12 @@ import {
 } from "../rightPanelLayout";
 
 const WidthSchema = Schema.Finite;
+
+// Avi Code addition: keep native-window layout state across chat route remounts.
+let desktopPreferredChatWidth: number | null = null;
+let desktopPanelReservationOpen = false;
+let desktopLastUsablePanelWidth: number | null = null;
+
 export interface RightPanelSeparatorHandlers {
   readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -47,10 +56,20 @@ function readStoredWidth(key: string): number | null {
 export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [preferredChatWidth, setPreferredChatWidthState] = useState<number | null>(null);
+  const [preferredChatWidth, setPreferredChatWidthState] = useState<number | null>(() =>
+    isElectron ? desktopPreferredChatWidth : null,
+  );
   const [active, setActive] = useState(false);
-  const preferredChatWidthRef = useRef<number | null>(null);
+  const preferredChatWidthRef = useRef<number | null>(
+    isElectron ? desktopPreferredChatWidth : null,
+  );
   const keyboardDirtyRef = useRef(false);
+  const panelOpenRef = useRef(options.panelOpen);
+  panelOpenRef.current = options.panelOpen;
+  const lastMeasurementRef = useRef({
+    containerWidth: 0,
+    zoomLevel: getAppZoomLevel(),
+  });
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -62,6 +81,7 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
 
   const setPreferredChatWidth = useCallback((width: number) => {
     preferredChatWidthRef.current = width;
+    if (isElectron) desktopPreferredChatWidth = width;
     setPreferredChatWidthState(width);
   }, []);
 
@@ -73,8 +93,28 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
     if (!container) return;
     const measure = () => {
       const width = Math.floor(container.clientWidth);
+      const zoomLevel = getAppZoomLevel();
+      const previousMeasurement = lastMeasurementRef.current;
+      lastMeasurementRef.current = { containerWidth: width, zoomLevel };
       setContainerWidth(width);
-      if (width <= 0 || preferredChatWidthRef.current !== null) return;
+      if (width <= 0) return;
+      const currentPreferredWidth = preferredChatWidthRef.current;
+      if (currentPreferredWidth !== null) {
+        if (
+          panelOpenRef.current &&
+          previousMeasurement.containerWidth > 0 &&
+          previousMeasurement.zoomLevel !== zoomLevel
+        ) {
+          setPreferredChatWidth(
+            rebaseRightPanelChatWidthForZoom({
+              previousContainerWidth: previousMeasurement.containerWidth,
+              nextContainerWidth: width,
+              previousChatWidth: currentPreferredWidth,
+            }),
+          );
+        }
+        return;
+      }
       const initialWidth = isElectron
         ? width
         : resolveInitialRightPanelChatWidth({
@@ -269,13 +309,20 @@ export function useDesktopRightPanelWindowReservation(options: {
   open: boolean;
   panelWidth: number | null;
 }) {
-  const reservationOpenRef = useRef(false);
+  const zoomLevel = useSyncExternalStore(subscribeToAppZoomLevel, getAppZoomLevel, () => 0);
+  const reservationOpenRef = useRef(desktopPanelReservationOpen);
   const hasMeasuredOpenPanelRef = useRef(false);
   const lastUsablePanelWidthRef = useRef(
-    Math.max(
-      RIGHT_PANEL_MIN_WIDTH,
-      readStoredWidth(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY) ?? RIGHT_PANEL_DEFAULT_WIDTH,
-    ),
+    desktopLastUsablePanelWidth ??
+      Math.max(
+        RIGHT_PANEL_MIN_WIDTH,
+        readStoredWidth(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY) ?? RIGHT_PANEL_DEFAULT_WIDTH,
+      ),
+  );
+
+  const toWindowUnits = useCallback(
+    (width: number) => appCssPixelsToWindowUnits(width, zoomLevel),
+    [zoomLevel],
   );
 
   useEffect(() => {
@@ -283,12 +330,13 @@ export function useDesktopRightPanelWindowReservation(options: {
     const bridge = window.desktopBridge?.setPanelWindowReservation;
     if (typeof bridge !== "function" || reservationOpenRef.current === options.open) return;
     reservationOpenRef.current = options.open;
+    desktopPanelReservationOpen = options.open;
     hasMeasuredOpenPanelRef.current = false;
     void bridge({
       action: options.open ? "open" : "close",
-      width: options.open ? lastUsablePanelWidthRef.current : 0,
+      width: options.open ? toWindowUnits(lastUsablePanelWidthRef.current) : 0,
     });
-  }, [options.open]);
+  }, [options.open, toWindowUnits]);
 
   useEffect(() => {
     if (!isElectron || !options.open || options.panelWidth === null) {
@@ -297,9 +345,13 @@ export function useDesktopRightPanelWindowReservation(options: {
     const width = Math.max(0, Math.round(options.panelWidth));
     if (width === 0 && !hasMeasuredOpenPanelRef.current) return;
     hasMeasuredOpenPanelRef.current = true;
-    void window.desktopBridge?.setPanelWindowReservation?.({ action: "update", width });
+    void window.desktopBridge?.setPanelWindowReservation?.({
+      action: "update",
+      width: toWindowUnits(width),
+    });
     if (width < RIGHT_PANEL_MIN_WIDTH) return;
     lastUsablePanelWidthRef.current = width;
+    desktopLastUsablePanelWidth = width;
     const handle = window.setTimeout(() => {
       try {
         setLocalStorageItem(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY, width, WidthSchema);
@@ -308,5 +360,5 @@ export function useDesktopRightPanelWindowReservation(options: {
       }
     }, 150);
     return () => window.clearTimeout(handle);
-  }, [options.open, options.panelWidth]);
+  }, [options.open, options.panelWidth, toWindowUnits]);
 }

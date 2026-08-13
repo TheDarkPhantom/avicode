@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clampRightPanelChatWidth,
   resolveInitialRightPanelChatWidth,
+  rebaseRightPanelChatWidthForZoom,
   resolveRightPanelLayout,
   resizeRightPanelChatWidthFromKey,
 } from "./rightPanelLayout";
@@ -89,5 +90,32 @@ describe("right panel split layout", () => {
         containerWidth: 1_400,
       }),
     ).toBe(650);
+  });
+
+  it("keeps the panel width stable when zoom changes the CSS viewport", () => {
+    expect(
+      rebaseRightPanelChatWidthForZoom({
+        previousContainerWidth: 1_400,
+        nextContainerWidth: 2_016,
+        previousChatWidth: 860,
+      }),
+    ).toBe(1_476);
+    expect(
+      rebaseRightPanelChatWidthForZoom({
+        previousContainerWidth: 1_400,
+        nextContainerWidth: 972,
+        previousChatWidth: 860,
+      }),
+    ).toBe(432);
+  });
+
+  it("keeps both panes usable when zoom leaves too little room", () => {
+    expect(
+      rebaseRightPanelChatWidthForZoom({
+        previousContainerWidth: 1_400,
+        nextContainerWidth: 600,
+        previousChatWidth: 860,
+      }),
+    ).toBe(360);
   });
 });

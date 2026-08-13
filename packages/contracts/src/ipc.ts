@@ -1036,6 +1036,7 @@ export interface DesktopBridge {
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   setPanelWindowReservation: (input: {
     action: "open" | "update" | "close";
+    /** Native BrowserWindow units, after renderer page zoom is applied. */
     width: number;
   }) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;

@@ -61,3 +61,22 @@ export function resolveRightPanelLayout(containerWidth: number, preferredChatWid
     fitsInline: panelWidth >= RIGHT_PANEL_MIN_WIDTH,
   } as const;
 }
+
+/**
+ * Browser zoom changes the renderer's CSS-pixel viewport without changing the native window.
+ * Keep the panel's CSS width stable and let the chat absorb that viewport delta.
+ */
+export function rebaseRightPanelChatWidthForZoom(input: {
+  previousContainerWidth: number;
+  nextContainerWidth: number;
+  previousChatWidth: number;
+}): number {
+  const previousPanelWidth = Math.max(
+    RIGHT_PANEL_MIN_WIDTH,
+    Math.floor(input.previousContainerWidth) - Math.round(input.previousChatWidth),
+  );
+  return clampRightPanelChatWidth(
+    Math.floor(input.nextContainerWidth) - previousPanelWidth,
+    input.nextContainerWidth,
+  );
+}
