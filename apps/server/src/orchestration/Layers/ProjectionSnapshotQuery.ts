@@ -277,6 +277,7 @@ function mapProposedPlanRow(
     planMarkdown: row.planMarkdown,
     implementedAt: row.implementedAt,
     implementationThreadId: row.implementationThreadId,
+    discardedAt: row.discardedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -489,6 +490,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           plan_markdown AS "planMarkdown",
           implemented_at AS "implementedAt",
           implementation_thread_id AS "implementationThreadId",
+          discarded_at AS "discardedAt",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_proposed_plans
@@ -862,6 +864,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           plan_markdown AS "planMarkdown",
           implemented_at AS "implementedAt",
           implementation_thread_id AS "implementationThreadId",
+          discarded_at AS "discardedAt",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_proposed_plans
@@ -1130,6 +1133,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   planMarkdown: row.planMarkdown,
                   implementedAt: row.implementedAt,
                   implementationThreadId: row.implementationThreadId,
+                  discardedAt: row.discardedAt,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                 });

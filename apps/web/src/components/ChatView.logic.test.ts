@@ -32,7 +32,6 @@ import {
   resolveSendEnvMode,
   startNewThreadForProject,
   shouldShowBranchMismatchBanner,
-  shouldMarkThreadVisited,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
 
@@ -40,7 +39,7 @@ describe("derivePendingPlanDecision", () => {
   it("locks a settled actionable plan independently of stored interaction mode", () => {
     expect(
       derivePendingPlanDecision({
-        latestTurnSettled: true,
+        planActionsReady: true,
         hasActionablePlan: true,
         hasPendingUserInput: false,
       }),
@@ -50,7 +49,7 @@ describe("derivePendingPlanDecision", () => {
   it("keeps the lock while pending input temporarily replaces the plan actions", () => {
     expect(
       derivePendingPlanDecision({
-        latestTurnSettled: true,
+        planActionsReady: true,
         hasActionablePlan: true,
         hasPendingUserInput: true,
       }),
@@ -60,8 +59,18 @@ describe("derivePendingPlanDecision", () => {
   it("restores normal mode switching when no actionable plan remains", () => {
     expect(
       derivePendingPlanDecision({
-        latestTurnSettled: true,
+        planActionsReady: true,
         hasActionablePlan: false,
+        hasPendingUserInput: false,
+      }),
+    ).toEqual({ interactionModeLocked: false, showPlanFollowUpPrompt: false });
+  });
+
+  it("waits for the active turn to stop before showing plan actions", () => {
+    expect(
+      derivePendingPlanDecision({
+        planActionsReady: false,
+        hasActionablePlan: true,
         hasPendingUserInput: false,
       }),
     ).toEqual({ interactionModeLocked: false, showPlanFollowUpPrompt: false });
@@ -801,72 +810,5 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
-  });
-});
-
-describe("shouldMarkThreadVisited", () => {
-  const UPDATED_AT = "2026-08-01T10:00:00.000Z";
-
-  it("writes a baseline the first time a thread is seen, even with the window blurred", () => {
-    // The regression this exists for: send a prompt, alt-tab to the editor
-    // before the thread settles, and the thread never gets a visit record at
-    // all — so its completion never shows Done and never chimes.
-    expect(
-      shouldMarkThreadVisited({
-        threadUpdatedAt: UPDATED_AT,
-        lastVisitedAt: undefined,
-        windowActive: false,
-      }),
-    ).toBe(true);
-  });
-
-  it("does not advance a known thread while the window is blurred", () => {
-    expect(
-      shouldMarkThreadVisited({
-        threadUpdatedAt: UPDATED_AT,
-        lastVisitedAt: "2026-08-01T09:00:00.000Z",
-        windowActive: false,
-      }),
-    ).toBe(false);
-  });
-
-  it("advances a known thread once the user is looking at it", () => {
-    expect(
-      shouldMarkThreadVisited({
-        threadUpdatedAt: UPDATED_AT,
-        lastVisitedAt: "2026-08-01T09:00:00.000Z",
-        windowActive: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("leaves an already-current visit alone", () => {
-    expect(
-      shouldMarkThreadVisited({
-        threadUpdatedAt: UPDATED_AT,
-        lastVisitedAt: UPDATED_AT,
-        windowActive: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("repairs a malformed visit timestamp when focused", () => {
-    expect(
-      shouldMarkThreadVisited({
-        threadUpdatedAt: UPDATED_AT,
-        lastVisitedAt: "not-a-date",
-        windowActive: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("writes nothing when the thread's own timestamp is unusable", () => {
-    expect(
-      shouldMarkThreadVisited({
-        threadUpdatedAt: "not-a-date",
-        lastVisitedAt: undefined,
-        windowActive: true,
-      }),
-    ).toBe(false);
   });
 });

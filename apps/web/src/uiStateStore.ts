@@ -544,10 +544,16 @@ interface UiStateStore extends UiState {
 
 export const useUiStateStore = create<UiStateStore>((set) => ({
   ...readPersistedState(),
-  markThreadVisited: (threadId, visitedAt) =>
-    set((state) => markThreadVisited(state, threadId, visitedAt)),
-  markThreadUnread: (threadId, latestTurnCompletedAt) =>
-    set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
+  markThreadVisited: (threadId, visitedAt) => {
+    set((state) => markThreadVisited(state, threadId, visitedAt));
+    debouncedPersistState.cancel();
+    persistState(useUiStateStore.getState());
+  },
+  markThreadUnread: (threadId, latestTurnCompletedAt) => {
+    set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt));
+    debouncedPersistState.cancel();
+    persistState(useUiStateStore.getState());
+  },
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setThreadPlanExpanded: (threadKey, planId, expanded) =>
@@ -574,4 +580,14 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   window.addEventListener("beforeunload", () => {
     debouncedPersistState.flush();
   });
+  window.addEventListener("pagehide", () => {
+    debouncedPersistState.flush();
+  });
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        debouncedPersistState.flush();
+      }
+    });
+  }
 }

@@ -40,14 +40,14 @@ export function canSubmitComposerSendContext(input: {
 /** Avi Code addition: a settled actionable plan owns the interaction mode
  * until the user explicitly starts implementation. */
 export function derivePendingPlanDecision(input: {
-  readonly latestTurnSettled: boolean;
+  readonly planActionsReady: boolean;
   readonly hasActionablePlan: boolean;
   readonly hasPendingUserInput: boolean;
 }): {
   readonly interactionModeLocked: boolean;
   readonly showPlanFollowUpPrompt: boolean;
 } {
-  const interactionModeLocked = input.latestTurnSettled && input.hasActionablePlan;
+  const interactionModeLocked = input.planActionsReady && input.hasActionablePlan;
   return {
     interactionModeLocked,
     showPlanFollowUpPrompt: interactionModeLocked && !input.hasPendingUserInput,
@@ -648,39 +648,4 @@ export function hasServerAcknowledgedLocalDispatch(input: {
     input.localDispatch.sessionStatus !== (session?.status ?? null) ||
     input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
   );
-}
-
-/**
- * Whether the open thread's visit timestamp should be advanced to its current
- * `updatedAt`.
- *
- * Two rules, and the order matters:
- *
- * Only the window the user is actually looking at marks a thread read. Turn
- * completions stream in over the websocket whether or not the app is focused,
- * so without this an agent finishing while the user is in their editor would
- * mark its own work seen and the sidebar's Completed / Done indicator would
- * never appear for a thread that needs review.
- *
- * Avi Code addition: a thread with no visit record at all is invisible to the
- * unread machinery — `hasUnseenCompletion` reports false without one, so the
- * Done indicator and the attention chime both stay silent for it forever. A
- * thread first observed while the window is blurred would land there
- * permanently, which is exactly the "send a prompt, switch to the editor" case
- * the chime exists for. So the very first observation always writes a
- * baseline; the focus rule governs every update after it.
- */
-export function shouldMarkThreadVisited(input: {
-  readonly threadUpdatedAt: string;
-  readonly lastVisitedAt: string | undefined;
-  readonly windowActive: boolean;
-}): boolean {
-  const updatedAtMs = Date.parse(input.threadUpdatedAt);
-  if (Number.isNaN(updatedAtMs)) return false;
-  if (input.lastVisitedAt === undefined) return true;
-  if (!input.windowActive) return false;
-
-  const lastVisitedAtMs = Date.parse(input.lastVisitedAt);
-  if (Number.isNaN(lastVisitedAtMs)) return true;
-  return lastVisitedAtMs < updatedAtMs;
 }

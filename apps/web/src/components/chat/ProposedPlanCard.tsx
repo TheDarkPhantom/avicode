@@ -36,6 +36,8 @@ import { useAtomCommand } from "~/state/use-atom-command";
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
+  planId,
+  discardedAt,
   environmentId,
   threadRef,
   cwd,
@@ -43,8 +45,11 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   onExpanded,
   expanded,
   onExpandedChange,
+  onRestore,
 }: {
   planMarkdown: string;
+  planId: string;
+  discardedAt: string | null;
   environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | undefined;
   cwd: string | undefined;
@@ -57,6 +62,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   onExpanded?: ((planElement: HTMLElement) => void) | undefined;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  onRestore: ((planId: string) => void) | undefined;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -175,7 +181,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     <div ref={rootRef} className="rounded-[24px] border border-border/80 bg-card/70 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="secondary">Plan</Badge>
+          <Badge variant="secondary">{discardedAt === null ? "Plan" : "Discarded"}</Badge>
           <p className="truncate text-sm font-medium text-foreground">{title}</p>
         </div>
         <Menu>
@@ -192,6 +198,9 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             <MenuItem onClick={openSaveDialog} disabled={!workspaceRoot || isSavingToWorkspace}>
               Save to workspace
             </MenuItem>
+            {discardedAt !== null && onRestore ? (
+              <MenuItem onClick={() => onRestore(planId)}>Restore plan</MenuItem>
+            ) : null}
           </MenuPopup>
         </Menu>
       </div>

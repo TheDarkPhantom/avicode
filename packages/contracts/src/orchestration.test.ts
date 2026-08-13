@@ -848,6 +848,7 @@ it.effect("defaults proposed plan implementation metadata for historical rows", 
     });
     assert.strictEqual(parsed.implementedAt, null);
     assert.strictEqual(parsed.implementationThreadId, null);
+    assert.strictEqual(parsed.discardedAt, null);
   }),
 );
 
@@ -858,12 +859,14 @@ it.effect("preserves proposed plan implementation metadata when present", () =>
       turnId: "turn-2",
       planMarkdown: "# Plan",
       implementedAt: "2026-01-02T00:00:00.000Z",
+      discardedAt: "2026-01-02T00:00:01.000Z",
       implementationThreadId: "thread-2",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     });
     assert.strictEqual(parsed.implementedAt, "2026-01-02T00:00:00.000Z");
     assert.strictEqual(parsed.implementationThreadId, "thread-2");
+    assert.strictEqual(parsed.discardedAt, "2026-01-02T00:00:01.000Z");
   }),
 );
 

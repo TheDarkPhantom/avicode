@@ -106,6 +106,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
+import { acknowledgeThreadVisit } from "../threadVisit";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
@@ -581,38 +582,45 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                     className:
                       "animate-sidebar-working-text text-sky-600 motion-reduce:animate-none dark:text-sky-400",
                   }
-                : isWoke
+                : effectiveStatus === "plan_ready"
                   ? {
-                      label: "Woke",
-                      icon: "woke" as const,
-                      chip: false,
-                      className: "text-amber-700 dark:text-amber-300",
+                      label: "Plan Ready",
+                      icon: null,
+                      chip: true,
+                      className: "text-violet-700 dark:text-violet-300",
                     }
-                  : isUnread
+                  : isWoke
                     ? {
-                        label: "Done",
-                        icon: "done" as const,
-                        chip: true,
-                        className: "text-emerald-700 dark:text-emerald-300",
+                        label: "Woke",
+                        icon: "woke" as const,
+                        chip: false,
+                        className: "text-amber-700 dark:text-amber-300",
                       }
-                    : // Avi Code addition: a settled PR is an outcome, not activity, so
-                      // it sits below Working and below an unseen completion instead of
-                      // masking either one.
-                      changeRequestStatus === "merged"
+                    : isUnread
                       ? {
-                          label: "Merged",
-                          icon: "merged" as const,
-                          chip: false,
-                          className: "text-violet-700 dark:text-violet-300",
+                          label: "Done",
+                          icon: "done" as const,
+                          chip: true,
+                          className: "text-emerald-700 dark:text-emerald-300",
                         }
-                      : changeRequestStatus === "closed"
+                      : // Avi Code addition: a settled PR is an outcome, not activity, so
+                        // it sits below Working and below an unseen completion instead of
+                        // masking either one.
+                        changeRequestStatus === "merged"
                         ? {
-                            label: "Closed",
-                            icon: "closed" as const,
+                            label: "Merged",
+                            icon: "merged" as const,
                             chip: false,
-                            className: "text-red-700 dark:text-red-300",
+                            className: "text-violet-700 dark:text-violet-300",
                           }
-                        : null;
+                        : changeRequestStatus === "closed"
+                          ? {
+                              label: "Closed",
+                              icon: "closed" as const,
+                              chip: false,
+                              className: "text-red-700 dark:text-red-300",
+                            }
+                          : null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
@@ -1822,6 +1830,7 @@ export default function SidebarV2() {
         clearSelection();
       }
       setSelectionAnchor(scopedThreadKey(threadRef));
+      acknowledgeThreadVisit(threadRef);
       if (isMobile) {
         setOpenMobile(false);
       }

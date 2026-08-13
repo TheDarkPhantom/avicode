@@ -23,6 +23,7 @@ export interface ActionablePlanCandidate {
   readonly id: string;
   readonly turnId: string | null;
   readonly implementedAt: string | null;
+  readonly discardedAt: string | null;
   readonly updatedAt: string;
 }
 
@@ -40,7 +41,10 @@ export function selectPlanToMarkImplemented<P extends ActionablePlanCandidate>(
   changeTurnId: string,
 ): P | null {
   const actionable = plans
-    .filter((plan) => plan.implementedAt === null && plan.turnId !== changeTurnId)
+    .filter(
+      (plan) =>
+        plan.implementedAt === null && plan.discardedAt === null && plan.turnId !== changeTurnId,
+    )
     .toSorted(
       (left, right) =>
         left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id),

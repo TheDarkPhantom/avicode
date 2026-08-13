@@ -789,6 +789,17 @@ describe("resolveSidebarV2Status", () => {
     ).toBe("working");
   });
 
+  it("keeps plan ready with a stopped session and no latest-turn pointer", () => {
+    expect(
+      resolveSidebarV2Status({
+        ...idle,
+        interactionMode: "plan",
+        hasActionableProposedPlan: true,
+        session: { ...session, status: "stopped" as const, activeTurnId: null },
+      }),
+    ).toBe("plan_ready");
+  });
+
   it("reports failed over a still-running turn when the session errored", () => {
     expect(
       resolveSidebarV2Status({
@@ -1041,6 +1052,19 @@ describe("resolveThreadStatusPill", () => {
             status: "ready",
             activeTurnId: null,
           },
+        },
+      }),
+    ).toMatchObject({ label: "Plan Ready", pulse: false });
+  });
+
+  it("keeps plan ready after idle cleanup stops the session", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          hasActionableProposedPlan: true,
+          latestTurn: null,
+          session: { ...baseThread.session, status: "stopped", activeTurnId: null },
         },
       }),
     ).toMatchObject({ label: "Plan Ready", pulse: false });

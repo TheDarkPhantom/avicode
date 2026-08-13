@@ -74,6 +74,7 @@ describe("serializeReferencedThreadContext", () => {
             planMarkdown: "# Audit\n\nBlocking finding: preserve the context payload.",
             createdAt: "2026-08-10T10:01:00.000Z",
             implementedAt: null,
+            discardedAt: null,
           },
         ],
       },
@@ -82,6 +83,7 @@ describe("serializeReferencedThreadContext", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.text).toContain('<proposed_plan id="review-plan"');
+    expect(result.text).toContain('discarded="false"');
     expect(result.text).toContain("Blocking finding: preserve the context payload.");
   });
 });

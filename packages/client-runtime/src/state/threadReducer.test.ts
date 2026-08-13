@@ -546,6 +546,7 @@ describe("applyThreadDetailEvent", () => {
             turnId: TurnId.make("turn-1"),
             planMarkdown: "## Plan\n- Do stuff",
             implementedAt: null,
+            discardedAt: null,
             implementationThreadId: null,
             createdAt: "2026-04-01T10:00:00.000Z",
             updatedAt: "2026-04-01T10:00:00.000Z",

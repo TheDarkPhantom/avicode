@@ -18,6 +18,7 @@ import { readProject, readThreadShell, useThreadShell } from "../../state/entiti
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiStateStore } from "../../uiStateStore";
+import { acknowledgeThreadVisit } from "../../threadVisit";
 import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
@@ -120,6 +121,7 @@ export function useSidebarThreadHandlers() {
         clearSelection();
       }
       setSelectionAnchor(scopedThreadKey(threadRef));
+      acknowledgeThreadVisit(threadRef);
       if (isMobile) {
         setOpenMobile(false);
       }
@@ -166,6 +168,7 @@ export function useSidebarThreadHandlers() {
         clearSelection();
       }
       setSelectionAnchor(threadKey);
+      acknowledgeThreadVisit(threadRef);
       if (isMobile) {
         setOpenMobile(false);
       }

@@ -42,6 +42,8 @@ export type UnsnoozeThreadInput = CommandInput<"thread.unsnooze">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
+export type DiscardThreadProposedPlanInput = CommandInput<"thread.proposed-plan.discard">;
+export type RestoreThreadProposedPlanInput = CommandInput<"thread.proposed-plan.restore">;
 export type StartThreadTurnInput = CommandInput<"thread.turn.start">;
 export type InterruptThreadTurnInput = CommandInput<"thread.turn.interrupt">;
 export type RespondToThreadApprovalInput = CommandInput<"thread.approval.respond">;
@@ -226,6 +228,28 @@ export const setThreadInteractionMode: (input: SetThreadInteractionModeInput) =>
     return yield* dispatch({
       ...input,
       type: "thread.interaction-mode.set",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
+
+export const discardThreadProposedPlan: (input: DiscardThreadProposedPlanInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.discardThreadProposedPlan")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.proposed-plan.discard",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
+
+export const restoreThreadProposedPlan: (input: RestoreThreadProposedPlanInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.restoreThreadProposedPlan")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.proposed-plan.restore",
       commandId: metadata.commandId,
       createdAt: metadata.createdAt,
     });
