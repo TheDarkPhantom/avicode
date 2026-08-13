@@ -13,6 +13,7 @@
  */
 
 const ZOOM_LEVEL_STORAGE_KEY = "avicode:app-zoom-level";
+const APP_ZOOM_CHANGE_EVENT = "avicode:app-zoom-change";
 
 export const APP_ZOOM_MIN_LEVEL = -5;
 export const APP_ZOOM_MAX_LEVEL = 5;
@@ -20,6 +21,17 @@ export const APP_ZOOM_MAX_LEVEL = 5;
 export function clampAppZoomLevel(level: number): number {
   if (!Number.isFinite(level)) return 0;
   return Math.min(APP_ZOOM_MAX_LEVEL, Math.max(APP_ZOOM_MIN_LEVEL, level));
+}
+
+/** Matches Chromium's page-zoom scale for a discrete Electron zoom level. */
+export function appZoomFactorFromLevel(level: number): number {
+  return 1.2 ** clampAppZoomLevel(level);
+}
+
+/** Converts renderer CSS pixels into the native window units used by BrowserWindow bounds. */
+export function appCssPixelsToWindowUnits(cssPixels: number, level: number): number {
+  if (!Number.isFinite(cssPixels)) return 0;
+  return Math.max(0, Math.round(cssPixels * appZoomFactorFromLevel(level)));
 }
 
 function readStoredZoomLevel(): number {
@@ -63,7 +75,14 @@ export function setAppZoomLevel(level: number): number {
   if (typeof desktop?.setAppZoomLevel !== "function") return 0;
   const applied = clampAppZoomLevel(desktop.setAppZoomLevel(clampAppZoomLevel(level)));
   writeStoredZoomLevel(applied);
+  window.dispatchEvent(new Event(APP_ZOOM_CHANGE_EVENT));
   return applied;
+}
+
+export function subscribeToAppZoomLevel(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(APP_ZOOM_CHANGE_EVENT, onChange);
+  return () => window.removeEventListener(APP_ZOOM_CHANGE_EVENT, onChange);
 }
 
 export function adjustAppZoomLevel(delta: number): number {
