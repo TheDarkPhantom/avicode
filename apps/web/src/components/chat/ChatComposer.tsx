@@ -3671,6 +3671,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               ) : null}
               <ComposerPromptEditor
+                // Avi Code addition: each provider question owns one editor instance. A late
+                // Lexical change from the question being left must never overwrite the draft
+                // restored for the question being entered.
+                key={
+                  activePendingUserInput && activePendingProgress?.activeQuestion
+                    ? `pending:${activePendingUserInput.requestId}:${activePendingProgress.activeQuestion.id}`
+                    : "composer"
+                }
                 editorRef={composerEditorRef}
                 value={
                   isComposerApprovalState

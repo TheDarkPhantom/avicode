@@ -55,7 +55,6 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
 } from "react";
@@ -82,6 +81,7 @@ import {
 } from "../composer-logic";
 import {
   derivePendingApprovals,
+  deriveClosedUserInputRequestIds,
   derivePendingUserInputs,
   deriveExpiredUserInputs,
   derivePhase,
@@ -118,10 +118,10 @@ import {
   hasHandledExpiredUserInputRecovery,
   markExpiredUserInputRecoveryHandled,
   mergeExpiredUserInputWithComposerDraft,
-  initialPendingUserInputState,
-  pendingUserInputReducer,
   type PendingUserInputDraftAnswer,
+  type PendingUserInputSubmissionIntent,
 } from "../pendingUserInput";
+import { selectPendingUserInputState, usePendingUserInputStore } from "../pendingUserInputStore";
 import { useUiStateStore } from "../uiStateStore";
 import {
   buildPlanImplementationThreadTitle,
@@ -1396,10 +1396,11 @@ function ChatViewContent(props: ChatViewProps) {
   // Requests placed here were abandoned by an explicit Stop. Their command
   // may still settle later, but that completion no longer owns visible state.
   const dismissedUserInputRequestIdsRef = useRef(new Set<ApprovalRequestId>());
-  const [pendingUserInputState, dispatchPendingUserInput] = useReducer(
-    pendingUserInputReducer,
-    initialPendingUserInputState,
+  const pendingUserInputState = usePendingUserInputStore((state) =>
+    selectPendingUserInputState(state, routeThreadKey),
   );
+  const dispatchPendingUserInput = usePendingUserInputStore((state) => state.dispatch);
+  const clearPendingUserInputRequests = usePendingUserInputStore((state) => state.clearRequests);
   const useCompactRightPanel = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
@@ -2273,6 +2274,10 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveExpiredUserInputs(threadActivities),
     [threadActivities],
   );
+  const closedUserInputRequestIds = useMemo(
+    () => deriveClosedUserInputRequestIds(threadActivities),
+    [threadActivities],
+  );
   const recoveredExpiredUserInputIdsRef = useRef<Set<string>>(new Set());
   const [deferredExpiredUserInputRecovery, setDeferredExpiredUserInputRecovery] = useState<{
     requestId: string;
@@ -2299,7 +2304,6 @@ function ChatViewContent(props: ChatViewProps) {
         !recoveredExpiredUserInputIdsRef.current.has(entry.requestId) &&
         !hasHandledExpiredUserInputRecovery(window.localStorage, entry.requestId),
     );
-    if (unseen.length === 0) return;
 
     let recoveredPrompt: string | null = null;
     let recoveredRequestId: string | null = null;
@@ -2324,8 +2328,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
 
-    const expiredRequestIds = new Set(unseen.map((entry) => entry.requestId));
-    dispatchPendingUserInput({ type: "requests-cleared", requestIds: expiredRequestIds });
+    clearPendingUserInputRequests(routeThreadKey, new Set(closedUserInputRequestIds));
 
     // Restore immediately when safe. Otherwise the banner below offers an
     // explicit restore that appends without overwriting the current draft.
@@ -2333,7 +2336,14 @@ function ChatViewContent(props: ChatViewProps) {
     if (recoveredRequestId !== null) {
       restoreExpiredUserInput({ requestId: recoveredRequestId, prompt: recoveredPrompt });
     }
-  }, [expiredUserInputs, pendingUserInputState.answersByRequestId, restoreExpiredUserInput]);
+  }, [
+    clearPendingUserInputRequests,
+    closedUserInputRequestIds,
+    expiredUserInputs,
+    pendingUserInputState.answersByRequestId,
+    restoreExpiredUserInput,
+    routeThreadKey,
+  ]);
   const activeProposedPlan = useMemo(() => {
     return findLatestProposedPlan(
       activeThread?.proposedPlans ?? [],
@@ -6264,6 +6274,7 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onInterrupt = async () => {
     if (!activeThread) return;
+    const dismissedUserInputRequestId = activePendingUserInput?.requestId ?? null;
     if (activePendingUserInput) {
       if (respondingUserInputRequestIds.includes(activePendingUserInput.requestId)) {
         dismissedUserInputRequestIdsRef.current.add(activePendingUserInput.requestId);
@@ -6282,6 +6293,8 @@ function ChatViewContent(props: ChatViewProps) {
         activeThread.id,
         error instanceof Error ? error.message : "Failed to interrupt the current turn.",
       );
+    } else if (result._tag === "Success" && dismissedUserInputRequestId) {
+      clearPendingUserInputRequests(routeThreadKey, new Set([dismissedUserInputRequestId]));
     }
   };
 
@@ -6342,12 +6355,29 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadId, environmentId, respondToThreadUserInput, setThreadError],
   );
 
+  const submitPendingUserInputIntent = useCallback(
+    (intent: PendingUserInputSubmissionIntent) => {
+      if (
+        activeThreadId &&
+        shouldFollowUpWithAttachments({
+          isLastQuestion: true,
+          hasResolvedAnswers: true,
+          attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
+        })
+      ) {
+        pendingAnswerAttachmentFollowUpRef.current = activeThreadId;
+      }
+      void onRespondToUserInput(intent.requestId as ApprovalRequestId, intent.answers);
+    },
+    [activeThreadId, composerRef, onRespondToUserInput],
+  );
+
   const onSelectActivePendingUserInputOption = useCallback(
     (questionId: string, optionLabel: string) => {
       if (!activePendingUserInput) {
         return;
       }
-      dispatchPendingUserInput({
+      const submissionIntent = dispatchPendingUserInput(routeThreadKey, {
         type: "option-selected",
         requestId: activePendingUserInput.requestId,
         questions: activePendingUserInput.questions,
@@ -6356,8 +6386,17 @@ function ChatViewContent(props: ChatViewProps) {
       });
       promptRef.current = "";
       composerRef.current?.resetCursorState({ cursor: 0 });
+      if (submissionIntent) {
+        submitPendingUserInputIntent(submissionIntent);
+      }
     },
-    [activePendingUserInput, composerRef],
+    [
+      activePendingUserInput,
+      composerRef,
+      dispatchPendingUserInput,
+      routeThreadKey,
+      submitPendingUserInputIntent,
+    ],
   );
 
   // Avi Code addition: see `pendingAnswerFocusSync` for why this is deferred.
@@ -6390,7 +6429,7 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
       promptRef.current = value;
-      dispatchPendingUserInput({
+      dispatchPendingUserInput(routeThreadKey, {
         type: "custom-answer-changed",
         requestId: activePendingUserInput.requestId,
         questionId,
@@ -6398,41 +6437,27 @@ function ChatViewContent(props: ChatViewProps) {
       });
       pendingAnswerFocusSyncRef.current?.sync({ value, cursor: nextCursor, expandedCursor });
     },
-    [activePendingUserInput],
+    [activePendingUserInput, dispatchPendingUserInput, routeThreadKey],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {
     if (!activePendingUserInput) {
       return;
     }
-    dispatchPendingUserInput({
+    const submissionIntent = dispatchPendingUserInput(routeThreadKey, {
       type: "advance",
       requestId: activePendingUserInput.requestId,
       questions: activePendingUserInput.questions,
     });
-  }, [activePendingUserInput]);
-
-  // Reducer submission intents carry the exact answer snapshot that completed
-  // the questionnaire. Consuming each id once keeps React Strict Mode from
-  // sending the provider response twice while still allowing a failed retry.
-  const consumedPendingSubmissionIdsRef = useRef(new Set<number>());
-  useEffect(() => {
-    const intent = pendingUserInputState.submissionIntent;
-    if (!intent || consumedPendingSubmissionIdsRef.current.has(intent.submissionId)) return;
-    consumedPendingSubmissionIdsRef.current.add(intent.submissionId);
-    dispatchPendingUserInput({ type: "submission-consumed", submissionId: intent.submissionId });
-    if (
-      activeThreadId &&
-      shouldFollowUpWithAttachments({
-        isLastQuestion: true,
-        hasResolvedAnswers: true,
-        attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
-      })
-    ) {
-      pendingAnswerAttachmentFollowUpRef.current = activeThreadId;
+    if (submissionIntent) {
+      submitPendingUserInputIntent(submissionIntent);
     }
-    void onRespondToUserInput(intent.requestId as ApprovalRequestId, intent.answers);
-  }, [activeThreadId, composerRef, onRespondToUserInput, pendingUserInputState.submissionIntent]);
+  }, [
+    activePendingUserInput,
+    dispatchPendingUserInput,
+    routeThreadKey,
+    submitPendingUserInputIntent,
+  ]);
 
   // Avi Code addition: deliver the attachments the answer could not carry.
   //
@@ -6462,8 +6487,11 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activePendingUserInput) {
       return;
     }
-    dispatchPendingUserInput({ type: "previous", requestId: activePendingUserInput.requestId });
-  }, [activePendingUserInput]);
+    dispatchPendingUserInput(routeThreadKey, {
+      type: "previous",
+      requestId: activePendingUserInput.requestId,
+    });
+  }, [activePendingUserInput, dispatchPendingUserInput, routeThreadKey]);
 
   const onSubmitPlanFollowUp = useCallback(
     async ({

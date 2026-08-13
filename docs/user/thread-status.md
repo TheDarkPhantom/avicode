@@ -24,3 +24,9 @@ different thread from the sidebar or command palette does.
 
 Implement stays in the composer after a plan finishes. Discard hides plan actions but keeps the
 plan card and data. Use **Restore plan** from the card menu to make it actionable again.
+
+## Question answers
+
+When an agent asks several questions, each thread keeps its chosen options, custom text, and current
+question on this client. Switching threads, reloading, or restarting Avi Code does not erase the
+unfinished answers. The saved draft clears after the question is answered, dismissed, or expires.
