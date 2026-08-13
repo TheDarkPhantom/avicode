@@ -2824,10 +2824,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const acceptedFiles: File[] = [];
     let error: string | null = null;
     for (const file of files) {
-      // Avi Code change: the fork also accepts PDF/TXT/Markdown, extracted to
+      // Avi Code change: the fork also accepts PDF/TXT/Markdown/CSV, extracted to
       // text in the async pass below. Upstream accepts images only.
       if (!file.type.startsWith("image/") && !resolveDocumentMimeType(file)) {
-        error = `Unsupported file type for '${file.name}'. Attach PDF, TXT, Markdown, or an image.`;
+        error = `Unsupported file type for '${file.name}'. Attach PDF, TXT, Markdown, CSV, or an image.`;
         continue;
       }
       if (reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {

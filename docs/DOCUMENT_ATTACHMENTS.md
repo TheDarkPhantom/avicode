@@ -1,8 +1,8 @@
 # Document attachments
 
-AviCode accepts images plus PDF, TXT, `.md`, and `.markdown` by paste or drag-and-drop.
+AviCode accepts images plus PDF, TXT, CSV, `.md`, and `.markdown` by paste or drag-and-drop.
 
-Extraction is local. TXT/Markdown use UTF-8; PDF uses PDF.js. Sanitized text reaches every provider
+Extraction is local. TXT/Markdown/CSV use UTF-8; PDF uses PDF.js. Sanitized text reaches every provider
 as a delimited context. The original is not uploaded to an AviCode service. History stores
 metadata and a local extracted-text copy; ALFRED gets neither prompts nor attachment contents.
 

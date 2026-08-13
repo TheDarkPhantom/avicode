@@ -3,6 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
+  ChatDocumentAttachment,
+  ClientOrchestrationCommand,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
@@ -28,6 +30,8 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 import { ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
+const decodeChatDocumentAttachment = Schema.decodeUnknownEffect(ChatDocumentAttachment);
+const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
@@ -54,6 +58,64 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+
+it.effect("accepts CSV document attachments in stored and upload shapes", () =>
+  Effect.gen(function* () {
+    const stored = yield* decodeChatDocumentAttachment({
+      type: "document",
+      id: "csv-1",
+      name: "people.csv",
+      mimeType: "text/csv",
+      sizeBytes: 42,
+      extractedChars: 24,
+    });
+    const upload = yield* decodeClientOrchestrationCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-csv",
+      threadId: "thread-csv",
+      message: {
+        messageId: "msg-csv",
+        role: "user",
+        text: "Read this CSV",
+        attachments: [
+          {
+            type: "document",
+            name: "people.csv",
+            mimeType: "text/csv",
+            sizeBytes: 42,
+            extractedText: "name,role\nAda,engineer",
+          },
+        ],
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(stored.mimeType, "text/csv");
+    if (upload.type !== "thread.turn.start") {
+      assert.fail(`Expected thread.turn.start, got ${upload.type}`);
+    }
+    assert.strictEqual(upload.message.attachments[0]?.mimeType, "text/csv");
+  }),
+);
+
+it.effect("rejects unknown document MIME types", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeChatDocumentAttachment({
+        type: "document",
+        id: "sheet-1",
+        name: "people.tsv",
+        mimeType: "text/tab-separated-values",
+        sizeBytes: 42,
+        extractedChars: 24,
+      }),
+    );
+
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {

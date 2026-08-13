@@ -65,6 +65,7 @@ import {
   markPromotedDraftThreadByRef,
   markPromotedDraftThreads,
   markPromotedDraftThreadsByRef,
+  hydrateImagesFromPersisted,
   type ComposerImageAttachment,
   useComposerDraftStore,
   DraftId,
@@ -256,6 +257,32 @@ describe("composerDraftStore addImages", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft?.images.map((image) => image.id)).toEqual(["img-shared"]);
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared");
+  });
+});
+
+describe("hydrateImagesFromPersisted", () => {
+  it("keeps CSV metadata and extracted text when a draft reloads", () => {
+    const [attachment] = hydrateImagesFromPersisted([
+      {
+        type: "document",
+        id: "csv-draft",
+        name: "people.csv",
+        mimeType: "text/csv",
+        sizeBytes: 24,
+        dataUrl: "data:text/csv;base64,bmFtZSxyb2xlCkFkYSxlbmdpbmVlcg==",
+        extractedText: "name,role\nAda,engineer",
+      },
+    ]);
+
+    expect(attachment).toMatchObject({
+      type: "document",
+      id: "csv-draft",
+      name: "people.csv",
+      mimeType: "text/csv",
+      extractedText: "name,role\nAda,engineer",
+      extractedChars: 22,
+    });
+    expect(attachment?.file.type).toBe("text/csv");
   });
 });
 
