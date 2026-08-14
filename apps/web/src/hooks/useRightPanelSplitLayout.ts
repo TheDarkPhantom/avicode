@@ -32,7 +32,26 @@ const WidthSchema = Schema.Finite;
 // Avi Code addition: keep native-window layout state across chat route remounts.
 let desktopPreferredChatWidth: number | null = null;
 let desktopPanelReservationOpen = false;
+let desktopPanelReservationClosing = false;
 let desktopLastUsablePanelWidth: number | null = null;
+
+export function shouldSyncClosedDesktopChatWidth(input: {
+  panelOpen: boolean;
+  reservationOpen: boolean;
+  reservationClosing: boolean;
+}): boolean {
+  return !input.panelOpen && !input.reservationOpen && !input.reservationClosing;
+}
+
+export function resolveClosedDesktopChatWidth(input: {
+  measuredWidth: number;
+  preferredWidth: number;
+  panelOpen: boolean;
+  reservationOpen: boolean;
+  reservationClosing: boolean;
+}): number {
+  return shouldSyncClosedDesktopChatWidth(input) ? input.measuredWidth : input.preferredWidth;
+}
 
 export interface RightPanelSeparatorHandlers {
   readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -100,6 +119,19 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
       if (width <= 0) return;
       const currentPreferredWidth = preferredChatWidthRef.current;
       if (currentPreferredWidth !== null) {
+        if (isElectron && !panelOpenRef.current) {
+          const nextPreferredWidth = resolveClosedDesktopChatWidth({
+            measuredWidth: width,
+            preferredWidth: currentPreferredWidth,
+            panelOpen: panelOpenRef.current,
+            reservationOpen: desktopPanelReservationOpen,
+            reservationClosing: desktopPanelReservationClosing,
+          });
+          if (nextPreferredWidth !== currentPreferredWidth) {
+            setPreferredChatWidth(nextPreferredWidth);
+          }
+          return;
+        }
         if (
           panelOpenRef.current &&
           previousMeasurement.containerWidth > 0 &&
@@ -131,9 +163,15 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
   }, [container, setPreferredChatWidth]);
 
   useLayoutEffect(() => {
-    if (options.panelOpen || containerWidth <= 0) return;
+    if (isElectron || options.panelOpen || containerWidth <= 0) return;
     setPreferredChatWidth(containerWidth);
   }, [containerWidth, options.panelOpen, setPreferredChatWidth]);
+
+  const syncClosedContainerWidth = useCallback(() => {
+    if (panelOpenRef.current || !container) return;
+    const width = Math.floor(container.clientWidth);
+    if (width > 0) setPreferredChatWidth(width);
+  }, [container, setPreferredChatWidth]);
 
   const persist = useCallback((width: number) => {
     try {
@@ -302,12 +340,14 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
       onKeyUp,
       onBlur,
     } satisfies RightPanelSeparatorHandlers,
+    syncClosedContainerWidth,
   };
 }
 
 export function useDesktopRightPanelWindowReservation(options: {
   open: boolean;
   panelWidth: number | null;
+  onCloseSettled: () => void;
 }) {
   const zoomLevel = useSyncExternalStore(subscribeToAppZoomLevel, getAppZoomLevel, () => 0);
   const reservationOpenRef = useRef(desktopPanelReservationOpen);
@@ -325,18 +365,32 @@ export function useDesktopRightPanelWindowReservation(options: {
     [zoomLevel],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isElectron) return;
     const bridge = window.desktopBridge?.setPanelWindowReservation;
     if (typeof bridge !== "function" || reservationOpenRef.current === options.open) return;
     reservationOpenRef.current = options.open;
     desktopPanelReservationOpen = options.open;
+    desktopPanelReservationClosing = !options.open;
     hasMeasuredOpenPanelRef.current = false;
-    void bridge({
+    const operation = bridge({
       action: options.open ? "open" : "close",
       width: options.open ? toWindowUnits(lastUsablePanelWidthRef.current) : 0,
     });
-  }, [options.open, toWindowUnits]);
+    if (options.open) {
+      desktopPanelReservationClosing = false;
+      void operation;
+      return;
+    }
+    const settleClose = () => {
+      window.requestAnimationFrame(() => {
+        if (reservationOpenRef.current) return;
+        desktopPanelReservationClosing = false;
+        options.onCloseSettled();
+      });
+    };
+    void operation.then(settleClose, settleClose);
+  }, [options.onCloseSettled, options.open, toWindowUnits]);
 
   useEffect(() => {
     if (!isElectron || !options.open || options.panelWidth === null) {
