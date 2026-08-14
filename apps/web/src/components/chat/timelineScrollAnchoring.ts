@@ -1,5 +1,42 @@
 export type TimelineScrollMode = "following-end" | "anchoring-new-turn" | "free-scrolling";
 
+export interface TimelineScrollPolicy {
+  readonly maintainScrollAtEnd: boolean;
+  readonly maintainVisibleContentPosition: {
+    readonly data: boolean;
+    readonly size: boolean;
+  };
+  readonly customEndDriverEnabled: boolean;
+}
+
+/**
+ * Avi Code addition. LegendList must not preserve the old viewport while a
+ * separate live-follow owner is moving it. In free-scrolling mode the inverse
+ * applies: the user owns the viewport, so data and size changes preserve their
+ * reading position and every end-follow mechanism stays off.
+ */
+export function resolveTimelineScrollPolicy({
+  mode,
+  hasAnchoredEndSpace,
+}: {
+  readonly mode: TimelineScrollMode;
+  readonly hasAnchoredEndSpace: boolean;
+}): TimelineScrollPolicy {
+  if (mode === "free-scrolling") {
+    return {
+      maintainScrollAtEnd: false,
+      maintainVisibleContentPosition: { data: true, size: true },
+      customEndDriverEnabled: false,
+    };
+  }
+
+  return {
+    maintainScrollAtEnd: mode === "following-end" && !hasAnchoredEndSpace,
+    maintainVisibleContentPosition: { data: false, size: false },
+    customEndDriverEnabled: mode === "anchoring-new-turn",
+  };
+}
+
 export interface TimelineListMeasurementState {
   readonly data: readonly unknown[];
   readonly scroll: number;

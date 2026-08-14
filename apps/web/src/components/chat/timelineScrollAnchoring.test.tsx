@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { getAnchoredTurnMetrics, getRowBottom } from "./timelineScrollAnchoring";
+import {
+  getAnchoredTurnMetrics,
+  getRowBottom,
+  resolveTimelineScrollPolicy,
+} from "./timelineScrollAnchoring";
 
 function buildState({
   positions,
@@ -22,6 +26,43 @@ function buildState({
 }
 
 describe("timeline scroll anchoring", () => {
+  it.each([
+    {
+      mode: "anchoring-new-turn" as const,
+      hasAnchoredEndSpace: true,
+      maintainScrollAtEnd: false,
+      customEndDriverEnabled: true,
+    },
+    {
+      mode: "following-end" as const,
+      hasAnchoredEndSpace: false,
+      maintainScrollAtEnd: true,
+      customEndDriverEnabled: false,
+    },
+    {
+      mode: "following-end" as const,
+      hasAnchoredEndSpace: true,
+      maintainScrollAtEnd: false,
+      customEndDriverEnabled: false,
+    },
+  ])("gives active mode $mode exactly one end-follow owner", (input) => {
+    expect(resolveTimelineScrollPolicy(input)).toEqual({
+      maintainScrollAtEnd: input.maintainScrollAtEnd,
+      maintainVisibleContentPosition: { data: false, size: false },
+      customEndDriverEnabled: input.customEndDriverEnabled,
+    });
+  });
+
+  it("preserves data and size only while the user owns the viewport", () => {
+    expect(
+      resolveTimelineScrollPolicy({ mode: "free-scrolling", hasAnchoredEndSpace: false }),
+    ).toEqual({
+      maintainScrollAtEnd: false,
+      maintainVisibleContentPosition: { data: true, size: true },
+      customEndDriverEnabled: false,
+    });
+  });
+
   it("measures row bottoms from LegendList row position and size", () => {
     const state = buildState({
       positions: [0, 120],

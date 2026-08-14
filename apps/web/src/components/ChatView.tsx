@@ -1352,6 +1352,7 @@ function ChatViewContent(props: ChatViewProps) {
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [timelineLiveFollowEnabled, setTimelineLiveFollowEnabled] = useState(true);
+  const [timelineScrollMode, setTimelineScrollMode] = useState<TimelineScrollMode>("following-end");
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
@@ -3969,6 +3970,7 @@ function ChatViewContent(props: ChatViewProps) {
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
     anchorUserScrollGenerationRef.current += 1;
     timelineScrollModeRef.current = "free-scrolling";
+    setTimelineScrollMode("free-scrolling");
     liveFollowUserScrollGenerationRef.current = null;
     setTimelineLiveFollowEnabled(false);
     pendingTimelineAnchorRef.current = null;
@@ -4033,36 +4035,6 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [composerOverlayHeight],
   );
-  const timelineRealContentOverflowsViewport = useCallback(
-    (list?: LegendListRef | null) => {
-      const resolvedList = list ?? legendListRef.current;
-      const state = resolvedList?.getState();
-      if (!resolvedList || !state || state.data.length === 0) {
-        return false;
-      }
-
-      const lastRowIndex = state.data.length - 1;
-      const lastRowTop = state.positionAtIndex(lastRowIndex);
-      const lastRowHeight = state.sizeAtIndex(lastRowIndex);
-      if (
-        typeof lastRowTop !== "number" ||
-        typeof lastRowHeight !== "number" ||
-        !Number.isFinite(lastRowTop) ||
-        !Number.isFinite(lastRowHeight)
-      ) {
-        return false;
-      }
-
-      const realContentBottom = lastRowTop + Math.max(1, lastRowHeight);
-      const visibleScrollLength = Math.max(
-        0,
-        (state.scrollLength ?? 0) - composerOverlayHeight - CHAT_LIST_ANCHOR_OFFSET,
-      );
-      return realContentBottom > visibleScrollLength;
-    },
-    [composerOverlayHeight],
-  );
-
   // Live-follow stays active after send/thread-open until an actual list scroll
   // gesture opts out.
   const scrollToEnd = useCallback((animated = false) => {
@@ -4070,6 +4042,7 @@ function ChatViewContent(props: ChatViewProps) {
     // Asking for the live edge is consent to follow it again.
     timelineUserScrollDirectionRef.current = "toward-end";
     timelineScrollModeRef.current = "following-end";
+    setTimelineScrollMode("following-end");
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
     setTimelineLiveFollowEnabled(true);
     pendingTimelineAnchorRef.current = null;
@@ -4195,6 +4168,7 @@ function ChatViewContent(props: ChatViewProps) {
       })
     ) {
       timelineScrollModeRef.current = "following-end";
+      setTimelineScrollMode("following-end");
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
     }
@@ -4215,6 +4189,7 @@ function ChatViewContent(props: ChatViewProps) {
       setShowScrollToBottom(false);
     } else {
       timelineScrollModeRef.current = "free-scrolling";
+      setTimelineScrollMode("free-scrolling");
       liveFollowUserScrollGenerationRef.current = null;
       setTimelineLiveFollowEnabled(false);
       showScrollDebouncer.current.maybeExecute();
@@ -4232,6 +4207,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     timelineScrollModeRef.current = "free-scrolling";
+    setTimelineScrollMode("free-scrolling");
     liveFollowUserScrollGenerationRef.current = null;
     setTimelineLiveFollowEnabled(false);
     pendingTimelineAnchorRef.current = null;
@@ -4298,25 +4274,15 @@ function ChatViewContent(props: ChatViewProps) {
           return;
         }
 
-        if (timelineScrollModeRef.current !== "following-end") {
-          return;
-        }
-        if (!timelineRealContentOverflowsViewport(list)) {
-          return;
-        }
-
-        void list.scrollToEnd?.({ animated: false });
+        // LegendList is the sole owner in following-end mode. A second end
+        // driver here competes with its item-layout correction and causes the
+        // upward-then-downward jump seen during response row remeasurement.
       });
     });
     // No cleanup: the pending rAF reads current state from refs and bails via
     // the generation guard when live follow has been disabled. Cancelling on
     // every token arrival was what starved the scroll driver during streaming.
-  }, [
-    activeThread?.id,
-    timelineEntries,
-    getActiveTimelineTurnMetrics,
-    timelineRealContentOverflowsViewport,
-  ]);
+  }, [activeThread?.id, timelineEntries, getActiveTimelineTurnMetrics]);
 
   useEffect(() => {
     setPullRequestDialogState(null);
@@ -4326,6 +4292,7 @@ function ChatViewContent(props: ChatViewProps) {
       isAtEndRef.current = true;
       timelineUserScrollDirectionRef.current = null;
       timelineScrollModeRef.current = "following-end";
+      setTimelineScrollMode("following-end");
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
       pendingTimelineAnchorRef.current = null;
@@ -5825,6 +5792,7 @@ function ChatViewContent(props: ChatViewProps) {
     // streams into the reserved space below it.
     isAtEndRef.current = true;
     timelineScrollModeRef.current = "anchoring-new-turn";
+    setTimelineScrollMode("anchoring-new-turn");
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
     setTimelineLiveFollowEnabled(true);
     pendingTimelineAnchorRef.current = messageIdForSend;
@@ -6589,6 +6557,7 @@ function ChatViewContent(props: ChatViewProps) {
       // Position this sent row once LegendList has measured the anchored tail.
       isAtEndRef.current = true;
       timelineScrollModeRef.current = "anchoring-new-turn";
+      setTimelineScrollMode("anchoring-new-turn");
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
       pendingTimelineAnchorRef.current = messageIdForSend;
@@ -6797,6 +6766,7 @@ function ChatViewContent(props: ChatViewProps) {
       // Position this sent row once LegendList has measured the anchored tail.
       isAtEndRef.current = true;
       timelineScrollModeRef.current = "anchoring-new-turn";
+      setTimelineScrollMode("anchoring-new-turn");
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
       pendingTimelineAnchorRef.current = retryMessageId;
@@ -7679,6 +7649,14 @@ function ChatViewContent(props: ChatViewProps) {
                 onAnchorSizeChanged={onTimelineAnchorSizeChanged}
                 onOpenedAtLastResponse={onTimelineOpenedAtLastResponse}
                 contentInsetEndAdjustment={composerOverlayHeight}
+                scrollMode={timelineScrollMode}
+                initialPositionLifecycle={
+                  threadDetailLoading
+                    ? "loading"
+                    : isWorking || !latestTurnSettled
+                      ? "running"
+                      : "idle"
+                }
                 liveFollowEnabled={timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
