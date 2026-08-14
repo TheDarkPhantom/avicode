@@ -198,6 +198,8 @@ function buildProps() {
     onAnchorReady: () => {},
     onAnchorSizeChanged: () => {},
     contentInsetEndAdjustment: 0,
+    scrollMode: "following-end" as const,
+    initialPositionLifecycle: "idle" as const,
     liveFollowEnabled: true,
     onIsAtEndChange: () => {},
     onManualNavigation: () => {},
@@ -629,8 +631,8 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("[overflow-anchor:none]");
     expect(markup).not.toContain('data-maintain-scroll-at-end="enabled"');
     expect(markup).toContain('data-maintain-visible-content-position="object"');
-    expect(markup).toContain('data-maintain-visible-content-position-data="true"');
-    expect(markup).toContain('data-maintain-visible-content-position-size="true"');
+    expect(markup).toContain('data-maintain-visible-content-position-data="false"');
+    expect(markup).toContain('data-maintain-visible-content-position-size="false"');
     expect(onAnchorReady).toHaveBeenCalledOnce();
     expect(onAnchorReady).toHaveBeenCalledWith(secondEntry.message.id, 1);
     expect(onAnchorSizeChanged).toHaveBeenCalledWith(secondEntry.message.id, 240);
@@ -660,6 +662,7 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         {...buildProps()}
         liveFollowEnabled={false}
+        scrollMode="free-scrolling"
         timelineEntries={[buildUserTimelineEntry(buildLongUserMessageText())]}
       />,
     );

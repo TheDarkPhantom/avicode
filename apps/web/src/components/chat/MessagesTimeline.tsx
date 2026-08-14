@@ -106,6 +106,7 @@ import {
 } from "./find/threadFindMatches";
 import { clearFindHighlights, paintFindHighlights } from "./find/threadFindHighlight";
 import { useChatInitialScrollTarget } from "./openChatAtLastResponse";
+import { resolveTimelineScrollPolicy, type TimelineScrollMode } from "./timelineScrollAnchoring";
 import { capturePlanReadingAnchor, resolvePlanReadingScrollOffset } from "./planReadingState";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -236,6 +237,8 @@ interface MessagesTimelineProps {
   onAnchorReady: (messageId: MessageId, anchorIndex: number) => void;
   onAnchorSizeChanged: (messageId: MessageId, size: number) => void;
   contentInsetEndAdjustment: number;
+  scrollMode: TimelineScrollMode;
+  initialPositionLifecycle: "loading" | "running" | "idle";
   liveFollowEnabled: boolean;
   onIsAtEndChange: (isAbsoluteEnd: boolean) => void;
   onManualNavigation: () => void;
@@ -295,6 +298,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onAnchorReady,
   onAnchorSizeChanged,
   contentInsetEndAdjustment,
+  scrollMode,
+  initialPositionLifecycle,
   liveFollowEnabled,
   onIsAtEndChange,
   onManualNavigation,
@@ -395,6 +400,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const onProposedPlanExpanded = useCallback(
     (planElement: HTMLElement) => {
       if (!scrollToPlanTopOnExpand) return;
+      // This is an explicit navigation request. Transfer ownership before the
+      // plan moves so a pending live-follow frame cannot pull it back.
+      onManualNavigation();
       const list = listRef.current;
       const currentScroll = list?.getState?.().scroll;
       if (!list || typeof currentScroll !== "number") return;
@@ -409,7 +417,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       if (!shouldApplyPlanScroll({ currentScroll, nextOffset })) return;
       list.scrollToOffset({ offset: nextOffset, animated: false });
     },
-    [listRef, scrollToPlanTopOnExpand],
+    [listRef, onManualNavigation, scrollToPlanTopOnExpand],
   );
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
@@ -492,13 +500,20 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // so live follow is already off and nothing pulls the list back to the end.
   const defaultInitialScrollTarget = useChatInitialScrollTarget({
     rows,
-    chatIsIdle: !isWorking && !activeTurnInProgress,
+    lifecycle: initialPositionLifecycle,
     topFadeEnabled,
   });
   const initialScrollTarget =
-    savedReadingIndex >= 0 ? savedReadingIndex : defaultInitialScrollTarget;
+    initialPositionLifecycle === "idle" && savedReadingIndex >= 0
+      ? savedReadingIndex
+      : defaultInitialScrollTarget;
   useLayoutEffect(() => {
-    if (savedReadingIndex < 0 || !savedReadingAnchor) return;
+    // A persisted plan position belongs only to an idle chat. Once a turn is
+    // running, row updates must not restart this multi-frame restoration and
+    // pull the viewport away from the active response.
+    if (initialPositionLifecycle !== "idle" || savedReadingIndex < 0 || !savedReadingAnchor) {
+      return;
+    }
     onOpenedAtLastResponse();
     let cancelled = false;
     let attempts = 12;
@@ -530,7 +545,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     return () => {
       cancelled = true;
     };
-  }, [listRef, onOpenedAtLastResponse, rows, savedReadingAnchor, savedReadingIndex]);
+  }, [
+    initialPositionLifecycle,
+    listRef,
+    onOpenedAtLastResponse,
+    rows,
+    savedReadingAnchor,
+    savedReadingIndex,
+  ]);
 
   const latestRowsRef = useRef(rows);
   latestRowsRef.current = rows;
@@ -630,7 +652,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       rows.some((row) => row.kind === "turn-fold" && row.turnId === settledTurnId);
     const atEnd = list?.getState?.().isAtEnd ?? false;
 
-    if (settledTurnId !== null && foldPresent && before !== null && list && !atEnd) {
+    if (
+      scrollMode === "free-scrolling" &&
+      settledTurnId !== null &&
+      foldPresent &&
+      before !== null &&
+      list &&
+      !atEnd
+    ) {
       // The reader is parked mid-answer: freeze the view and stop the owner's
       // live-follow driver from re-pulling once the collapse changes heights.
       onActiveTurnSettled();
@@ -683,6 +712,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     cancelSettleFreezeCorrection,
     refreshSettleFreezeAnchor,
     routeThreadKey,
+    scrollMode,
   ]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
@@ -716,6 +746,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       ? { ...config, onReady: handleAnchorReady, onSizeChanged: handleAnchorSizeChanged }
       : undefined;
   }, [anchorMessageId, handleAnchorReady, handleAnchorSizeChanged, rows]);
+  const scrollPolicy = useMemo(
+    () =>
+      resolveTimelineScrollPolicy({
+        mode: scrollMode,
+        hasAnchoredEndSpace: Boolean(anchoredEndSpace),
+      }),
+    [anchoredEndSpace, scrollMode],
+  );
 
   const pinnedRevealOffset = topFadeEnabled
     ? TIMELINE_PINNED_MESSAGE_FADED_REVEAL_OFFSET
@@ -1077,7 +1115,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
             maintainScrollAtEnd={
-              anchoredEndSpace || !liveFollowEnabled
+              !liveFollowEnabled || !scrollPolicy.maintainScrollAtEnd
                 ? false
                 : {
                     animated: false,
@@ -1088,10 +1126,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     },
                   }
             }
-            maintainVisibleContentPosition={{
-              data: true,
-              size: true,
-            }}
+            maintainVisibleContentPosition={scrollPolicy.maintainVisibleContentPosition}
             onScroll={handleScroll}
             className={cn(
               "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5",

@@ -12,7 +12,7 @@
  */
 import { useRef } from "react";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
-import { useClientSettings } from "~/hooks/useSettings";
+import { useClientSettings, useClientSettingsHydrated } from "~/hooks/useSettings";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
 /**
@@ -29,6 +29,8 @@ export interface ChatInitialScrollTarget {
   readonly viewOffset: number;
 }
 
+export type ChatInitialPositionLifecycle = "loading" | "running" | "idle";
+
 /**
  * Row index of the newest assistant message — the response a finished chat
  * should open on. Null when the chat has no response to open on yet.
@@ -44,6 +46,38 @@ export function findLastResponseRowIndex(rows: ReadonlyArray<MessagesTimelineRow
   return null;
 }
 
+export function resolveChatInitialScrollTarget({
+  rows,
+  enabled,
+  settingsHydrated,
+  lifecycle,
+  topFadeEnabled,
+}: {
+  readonly rows: ReadonlyArray<MessagesTimelineRow>;
+  readonly enabled: boolean;
+  readonly settingsHydrated: boolean;
+  readonly lifecycle: ChatInitialPositionLifecycle;
+  readonly topFadeEnabled: boolean;
+}): { readonly ready: boolean; readonly target: ChatInitialScrollTarget | null } {
+  if (rows.length === 0 || !settingsHydrated || lifecycle === "loading") {
+    return { ready: false, target: null };
+  }
+
+  const index = enabled && lifecycle === "idle" ? findLastResponseRowIndex(rows) : null;
+  return {
+    ready: true,
+    target:
+      index === null
+        ? null
+        : {
+            index,
+            viewPosition: 0,
+            viewOffset:
+              CHAT_LIST_ANCHOR_OFFSET + (topFadeEnabled ? CHAT_TIMELINE_TOP_FADE_HEIGHT : 0),
+          },
+  };
+}
+
 /**
  * The initial scroll target for a chat open, or null to keep upstream's
  * open-at-the-live-edge behaviour. Resolved once, on the first render that has
@@ -52,33 +86,31 @@ export function findLastResponseRowIndex(rows: ReadonlyArray<MessagesTimelineRow
  */
 export function useChatInitialScrollTarget({
   rows,
-  chatIsIdle,
+  lifecycle,
   topFadeEnabled,
 }: {
   readonly rows: ReadonlyArray<MessagesTimelineRow>;
-  readonly chatIsIdle: boolean;
+  readonly lifecycle: ChatInitialPositionLifecycle;
   readonly topFadeEnabled: boolean;
 }): ChatInitialScrollTarget | null {
   const enabled = useClientSettings((settings) => settings.aviCodeOpenChatsAtLastResponse);
+  const settingsHydrated = useClientSettingsHydrated();
   const resolved = useRef<{ done: boolean; target: ChatInitialScrollTarget | null }>({
     done: false,
     target: null,
   });
 
-  if (!resolved.current.done && rows.length > 0) {
-    const index = enabled && chatIsIdle ? findLastResponseRowIndex(rows) : null;
-    resolved.current = {
-      done: true,
-      target:
-        index === null
-          ? null
-          : {
-              index,
-              viewPosition: 0,
-              viewOffset:
-                CHAT_LIST_ANCHOR_OFFSET + (topFadeEnabled ? CHAT_TIMELINE_TOP_FADE_HEIGHT : 0),
-            },
-    };
+  if (!resolved.current.done) {
+    const next = resolveChatInitialScrollTarget({
+      rows,
+      enabled,
+      settingsHydrated,
+      lifecycle,
+      topFadeEnabled,
+    });
+    if (next.ready) {
+      resolved.current = { done: true, target: next.target };
+    }
   }
 
   return resolved.current.target;
