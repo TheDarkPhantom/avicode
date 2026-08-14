@@ -131,6 +131,7 @@ function matchMedia() {
 }
 
 let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
+let TimelinePinnedUserMessage: typeof import("./MessagesTimeline").TimelinePinnedUserMessage;
 
 beforeAll(async () => {
   const classList = {
@@ -164,7 +165,7 @@ beforeAll(async () => {
     },
   });
 
-  ({ MessagesTimeline } = await import("./MessagesTimeline"));
+  ({ MessagesTimeline, TimelinePinnedUserMessage } = await import("./MessagesTimeline"));
 }, 30_000);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
@@ -515,6 +516,27 @@ describe("MessagesTimeline", () => {
     expect(resolveTimelinePinnedMessageIndex({ revealOffset: 8, rows: [], scrollTop: 700 })).toBe(
       null,
     );
+  });
+
+  it("keeps the pinned prompt clear of Windows window controls", () => {
+    const markup = renderToStaticMarkup(
+      <TimelinePinnedUserMessage
+        item={{
+          id: "entry-1",
+          rowIndex: 0,
+          userText: "A long pinned question that must stay clear of the caption buttons",
+          assistantText: null,
+        }}
+        onSelect={() => {}}
+        pinnedRef={createRef<HTMLDivElement | null>()}
+        topFadeEnabled
+      />,
+    );
+
+    expect(markup).toContain("wco:pr-[var(--workspace-native-controls-inset)]!");
+    expect(markup).toContain("max-w-(--chat-content-max-width)");
+    expect(markup).toContain("max-w-[80%]");
+    expect(markup).toContain("truncate");
   });
 
   it("pushes the pinned pill out before it can cover the next prompt", async () => {
