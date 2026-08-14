@@ -448,6 +448,14 @@ describe("formatQuotaSummaryLine", () => {
 });
 
 describe("quotaRemainingPercent", () => {
+  it("matches Claude's displayed used percentages for Lawrence", () => {
+    expect(
+      [13, 78, 55].map((usedPercent) =>
+        quotaRemainingPercent({ id: "claude", label: "Claude", usedPercent }),
+      ),
+    ).toEqual([87, 22, 45]);
+  });
+
   it.each([
     [0, 100],
     [62, 38],

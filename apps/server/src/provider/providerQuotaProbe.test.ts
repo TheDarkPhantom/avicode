@@ -85,8 +85,7 @@ describe("provider quota probes", () => {
         // need the absence to fall back rather than trust an invented duration.
         { id: "overage", label: "Overage", usedPercent: 5 },
         { id: "extra_usage", label: "Extra usage", usedPercent: 12 },
-        // Unrecognized ids keep flowing through, with a humanized label.
-        { id: "nimbus_quill", label: "Nimbus quill", usedPercent: 0 },
+        { id: "nimbus_quill", label: "Fable", usedPercent: 0 },
       ],
       planType: "max",
       capturedAt: CAPTURED_AT,
@@ -94,5 +93,17 @@ describe("provider quota probes", () => {
     expect(
       normalizeClaudeProbeQuota({ rate_limits_available: false, rate_limits: null }, CAPTURED_AT),
     ).toBeUndefined();
+  });
+
+  it("keeps unknown Claude windows visible with a humanized label", () => {
+    expect(
+      normalizeClaudeProbeQuota(
+        {
+          rate_limits_available: true,
+          rate_limits: { future_model_limit: { utilization: 55 } },
+        },
+        CAPTURED_AT,
+      )?.windows,
+    ).toEqual([{ id: "future_model_limit", label: "Future model limit", usedPercent: 55 }]);
   });
 });

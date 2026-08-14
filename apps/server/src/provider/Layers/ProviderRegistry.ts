@@ -451,6 +451,16 @@ export const ProviderRegistryLive = Layer.effect(
         readonly publish?: boolean;
       },
     ) {
+      // Avi Code addition. A provider status probe carries the complete quota
+      // snapshot. Commit it before decorating the provider so older partial
+      // runtime events cannot mask freshly fetched usage values.
+      if (provider.quota) {
+        yield* quotaTracker.record({
+          instanceId: provider.instanceId,
+          quota: provider.quota,
+          authoritative: true,
+        });
+      }
       return yield* upsertProviders([provider], options);
     });
 
