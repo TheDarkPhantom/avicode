@@ -156,7 +156,11 @@ export function requireThreadAbsent(input: {
   readonly command: OrchestrationCommand;
   readonly threadId: ThreadId;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (!findThreadById(input.readModel, input.threadId)) {
+  const existingThread = findThreadById(input.readModel, input.threadId);
+  // A failed bootstrap deletes its partial thread, but the client keeps the
+  // local draft and retries the same id. Re-creation replaces that tombstoned
+  // aggregate in both projectors and lets the original draft recover.
+  if (!existingThread || existingThread.deletedAt !== null) {
     return Effect.void;
   }
   return Effect.fail(

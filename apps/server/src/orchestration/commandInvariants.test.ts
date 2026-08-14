@@ -199,6 +199,34 @@ describe("commandInvariants", () => {
         }),
       ),
     ).rejects.toThrow("already exists");
+
+    await Effect.runPromise(
+      requireThreadAbsent({
+        readModel: {
+          ...readModel,
+          threads: readModel.threads.map((thread) =>
+            thread.id === ThreadId.make("thread-1") ? { ...thread, deletedAt: now } : thread,
+          ),
+        },
+        command: {
+          type: "thread.create",
+          commandId: CommandId.make("cmd-recreate-deleted"),
+          threadId: ThreadId.make("thread-1"),
+          projectId: ProjectId.make("project-a"),
+          title: "retry",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+        },
+        threadId: ThreadId.make("thread-1"),
+      }),
+    );
   });
 
   it("requires non-negative integers", async () => {
