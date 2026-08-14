@@ -199,7 +199,6 @@ describe("commandInvariants", () => {
         }),
       ),
     ).rejects.toThrow("already exists");
-
   });
 
   it("requires non-negative integers", async () => {
