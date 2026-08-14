@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Pinned questions no longer overlap Windows window controls (#185)
 - Collapsing the right panel keeps its toggle under your pointer (#184)
 - Retry new threads without failing when their first server save already worked (#183)
 - Attach CSV files as raw text context in chat (#182)

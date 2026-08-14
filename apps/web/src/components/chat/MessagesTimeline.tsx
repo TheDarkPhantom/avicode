@@ -1257,7 +1257,7 @@ function resolveTimelineRowHeight(state: TimelinePositionState, rowIndex: number
  * copy stays pinned over the timeline so the question stays visible next to the
  * answer. Clicking it jumps back to the message itself.
  */
-function TimelinePinnedUserMessage({
+export function TimelinePinnedUserMessage({
   item,
   onSelect,
   pinnedRef,
@@ -1275,7 +1275,7 @@ function TimelinePinnedUserMessage({
       className={cn(
         // Mirrors the list's own horizontal padding and centered content column
         // so the pill lands exactly above the bubble it stands in for.
-        "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3 sm:px-5",
+        "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3 sm:px-5 wco:pr-[var(--workspace-native-controls-inset)]!",
         topFadeEnabled ? "top-1.5" : "top-1",
       )}
       data-testid="timeline-pinned-user-message"
