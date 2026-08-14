@@ -45,7 +45,7 @@ Upstream: t3code 0.0.31
 - Claude plan usage matches the latest account limits after refreshing (#186)
 - Pinned questions no longer overlap Windows window controls (#185)
 - Collapsing the right panel keeps its toggle under your pointer (#184)
-- Recover local drafts after failed thread setup leaves a deleted server record
+- Recover local drafts after failed thread setup leaves a deleted server record (#187)
 - Retry new threads without failing when their first server save already worked (#183)
 - Attach CSV files as raw text context in chat (#182)
 - Open project folders in their host file manager from the sidebar menu (#181)
