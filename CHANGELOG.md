@@ -42,7 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- Active AI responses stay at the newest content without jumping upward
+- Active AI responses stay at the newest content without jumping upward (#189)
 - Create new worktree threads in local-only Git projects (#188)
 - Claude plan usage matches the latest account limits after refreshing (#186)
 - Pinned questions no longer overlap Windows window controls (#185)
