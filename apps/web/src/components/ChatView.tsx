@@ -1707,6 +1707,7 @@ function ChatViewContent(props: ChatViewProps) {
   useDesktopRightPanelWindowReservation({
     open: rightPanelOpen && !shouldUsePlanSidebarSheet,
     panelWidth: rightPanelSplitLayout.layout?.panelWidth ?? null,
+    onCloseSettled: rightPanelSplitLayout.syncClosedContainerWidth,
   });
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const rightPanelMaximized =
