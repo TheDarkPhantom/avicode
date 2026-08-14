@@ -25,18 +25,21 @@ import type * as Stream from "effect/Stream";
  */
 export interface ProviderQuotaTrackerShape {
   /**
-   * Merge a newly-observed snapshot into the instance's known state.
+   * Record a newly-observed snapshot in the instance's known state.
    *
    * Merging rather than replacing is required: Claude reports one rate-limit
    * window per event, so a replace would make its 5-hour and weekly readings
    * take turns erasing each other. See `mergeProviderQuotaSnapshots`.
    *
-   * Publishes to `changes` only when the merge actually altered the snapshot,
-   * so repeated identical reports do not churn the provider status stream.
+   * Authoritative provider probes replace prior state. Incremental runtime
+   * reports merge by window so Claude's single-window events accumulate.
+   * Publishes to `changes` only when the resulting snapshot actually changed.
    */
   readonly record: (input: {
     readonly instanceId: ProviderInstanceId;
     readonly quota: ProviderQuotaSnapshot;
+    /** Complete provider probes replace stale partial runtime observations. */
+    readonly authoritative?: boolean;
   }) => Effect.Effect<void>;
 
   /** Last-known quota for one instance, or undefined if it has never reported. */

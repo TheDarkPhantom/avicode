@@ -51,7 +51,9 @@ const makeProviderQuotaTracker = Effect.gen(function* () {
   const record: ProviderQuotaTrackerShape["record"] = (input) =>
     Effect.gen(function* () {
       const changed = yield* Ref.modify(quotasRef, (previous) => {
-        const merged = mergeProviderQuotaSnapshots(previous.get(input.instanceId), input.quota);
+        const merged = input.authoritative
+          ? input.quota
+          : mergeProviderQuotaSnapshots(previous.get(input.instanceId), input.quota);
         if (isQuotaMateriallyEqual(previous.get(input.instanceId), merged)) {
           return [false, previous] as const;
         }

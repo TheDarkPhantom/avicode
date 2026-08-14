@@ -19,6 +19,7 @@ const CLAUDE_QUOTA_WINDOW_LABELS: Record<string, string> = {
   seven_day_oauth_apps: "Weekly (apps)",
   overage: "Overage",
   extra_usage: "Extra usage",
+  nimbus_quill: "Fable",
 };
 
 /**
