@@ -58,6 +58,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Opening the right panel keeps its toggle under your pointer (#190)
 - Active AI responses stay at the newest content without jumping upward (#189)
 - Create new worktree threads in local-only Git projects (#188)
 - Recover local drafts after failed thread setup leaves a deleted server record (#187)
