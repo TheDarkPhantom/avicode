@@ -17,6 +17,11 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Sidebar project folders live in `t3code:ui-state:v1` (per device), so a folder made on one client
+  is not visible on another. Server-synced folders would change that. While Manual project sort is
+  active and folders exist, cross-folder drag reorder is disabled: the folder-section view renders
+  instead of the drag list, so a project moves between folders via its context menu, not by drag.
+  The inline filter also bypasses folders — it flattens the sidebar to the matching rows.
 - Completed read state stays local to each client in `t3code:ui-state:v1`, so opening a thread on
   one device does not clear its label on another. Server sync would change that choice. The local
   map also has no age or size pruning yet, though stale keys are small and harmless.

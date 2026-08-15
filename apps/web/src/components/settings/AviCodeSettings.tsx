@@ -310,6 +310,9 @@ function SidebarLayoutSettings() {
   const mouseBackForwardNavigation = useClientSettings(
     (settings) => settings.sidebarMouseBackForwardNavigation,
   );
+  const projectsCollapsedByDefault = useClientSettings(
+    (settings) => settings.aviCodeSidebarProjectsCollapsedByDefault,
+  );
   const updateSettings = useUpdateClientSettings();
   const isFlat = threadGrouping === "flat";
 
@@ -387,6 +390,20 @@ function SidebarLayoutSettings() {
           }
         />
       ) : null}
+      <SettingsRow
+        title="Collapse projects by default"
+        description="Start every project row collapsed so a long project list opens compact. Expanding or collapsing a project still sticks per project, and the sidebar options menu keeps Expand all and Collapse all for one-click resets."
+        status="Only changes the default for projects you have never toggled. Projects you have expanded or collapsed keep your choice."
+        control={
+          <Switch
+            checked={projectsCollapsedByDefault}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeSidebarProjectsCollapsedByDefault: Boolean(checked) })
+            }
+            aria-label="Collapse projects by default"
+          />
+        }
+      />
       <SettingsRow
         title="Mouse back/forward buttons"
         description="Use mouse back and forward buttons to move through visible sidebar threads instead of browser history."
