@@ -7364,13 +7364,19 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const rightPanelLayoutControls = (
     <div className="workspace-titlebar-controls z-50 gap-1 [-webkit-app-region:no-drag]">
-      {rightPanelOpen && !shouldUsePlanSidebarSheet ? (
-        <RightPanelMaximizeControl
-          maximized={rightPanelMaximized}
-          onToggle={toggleRightPanelMaximized}
-        />
+      {/* Avi Code addition: the non-maximized restore/maximize affordance now
+          lives in the chat header (filling its reserved control band). Over the
+          panel we only surface controls once the panel is maximized and the chat
+          column has collapsed away. */}
+      {rightPanelMaximized ? (
+        <>
+          <RightPanelMaximizeControl
+            maximized={rightPanelMaximized}
+            onToggle={toggleRightPanelMaximized}
+          />
+          {panelToggleControls}
+        </>
       ) : null}
-      {rightPanelMaximized ? panelToggleControls : null}
     </div>
   );
   const rightPanelContent = activeThreadRef ? (
@@ -7498,8 +7504,13 @@ function ChatViewContent(props: ChatViewProps) {
             isElectron
               ? cn(
                   "workspace-topbar drag-region relative pl-3 pr-3 sm:pl-5 sm:pr-5",
+                  // Avi Code addition: keep the WCO control inset reserved even when
+                  // the inline right panel owns the titlebar, so the right-panel
+                  // toggle stays at a fixed screen X across open/close (the window
+                  // grows rightward, so the chat column's right edge is invariant).
+                  // The reserved band is filled by the Maximize control below when
+                  // the panel is open.
                   reserveTitleBarControlInset &&
-                    !inlineRightPanelOwnsTitleBar &&
                     "wco:pr-[var(--workspace-native-controls-inset)]!",
                 )
               : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
@@ -7530,6 +7541,18 @@ function ChatViewContent(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
+          {inlineRightPanelOwnsTitleBar && !rightPanelMaximized ? (
+            // Avi Code addition: fills the reserved control band on the chat
+            // header's right while the panel is open (the OS window controls have
+            // moved over the panel). Absolutely positioned so it stays out of the
+            // justify-end action cluster and never shifts the right-panel toggle.
+            <div className="absolute top-0 right-3 flex h-full items-center [-webkit-app-region:no-drag] sm:right-5">
+              <RightPanelMaximizeControl
+                maximized={rightPanelMaximized}
+                onToggle={toggleRightPanelMaximized}
+              />
+            </div>
+          ) : null}
         </header>
 
         <ThreadErrorBanner
