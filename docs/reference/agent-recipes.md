@@ -16,15 +16,52 @@ vp run dist:desktop:artifact --platform win --target nsis --arch x64 --skip-buil
 `--skip-build` assumes `build:desktop` already ran. `CSC_IDENTITY_AUTO_DISCOVERY=false` disables
 signing. Without `--wsl-prebuild`, the packaged WSL backend will not start.
 
-To build without a local Rust toolchain, dispatch the CI job:
+### Cut and build a new exe on CI (no local toolchain)
 
-```bash
-gh workflow run avicode-guardrails.yml --ref main
-gh run download <run-id> --name avicode-windows-x64-installer --dir release
-```
+This is the default path when you have no local Rust/MSVC toolchain (e.g. the machine has no
+`cargo`, so `stageResourceMonitor`'s `cargo build` and thus `dist:desktop:artifact` fail locally).
+It cuts a new version and builds the Windows x64 installer entirely on CI. Nothing builds on the
+local machine.
 
-`workflow_dispatch` builds with the real package version and uploads for 14 days. PR runs use
-`0.0.0-avicode-ci` and upload nothing.
+1. **Cut the version.** Bump all four fork packages (`apps/server`, `apps/desktop`, `apps/web`,
+   `packages/contracts`) to the next `-avicode.N` version. Increment the last segment: e.g.
+   `0.0.31-avicode.9.6` becomes `0.0.31-avicode.9.7`.
+
+   ```bash
+   node scripts/update-release-package-versions.ts 0.0.31-avicode.9.7
+   ```
+
+   If the worktree has no installed deps, the script fails with `ERR_MODULE_NOT_FOUND`
+   (`@effect/platform-node`). In that case just edit the `"version"` field (line 3) in each of the
+   four `package.json` files directly. The version string is not pinned in `pnpm-lock.yaml`
+   (internal deps use the `workspace:` protocol), so no lockfile refresh is needed.
+
+2. **Commit and push a branch.** Stage only the four `package.json` files. Conventional message,
+   e.g. `chore: release 0.0.31-avicode.9.7`. Push to `origin`.
+
+3. **Dispatch the CI build.** `workflow_dispatch` on `avicode-guardrails.yml` runs the
+   `windows-package` job on a `windows-2025` runner. It builds an **unsigned** NSIS `.exe`
+   (`CSC_IDENTITY_AUTO_DISCOVERY=false`) carrying the **real** package version, and uploads it as
+   artifact `avicode-windows-x64-installer` (retained 14 days). Dispatch on any ref (a feature
+   branch works, not just `main`); the job checks out that ref and builds its code.
+
+   ```bash
+   gh workflow run avicode-guardrails.yml --ref <branch>
+   sleep 8
+   gh run list --workflow avicode-guardrails.yml --branch <branch> --limit 3 \
+     --json databaseId,status,displayTitle,createdAt
+   ```
+
+4. **Watch and download.** The job takes up to 35 minutes.
+
+   ```bash
+   gh run watch <run-id> --exit-status --interval 30
+   gh run download <run-id> --name avicode-windows-x64-installer --dir <out-dir>
+   ```
+
+The unsigned installer triggers a SmartScreen warning on first run (expected for personal-alpha
+builds). PR runs of the same workflow are only a packaging check: they build `0.0.0-avicode-ci` and
+upload nothing.
 
 ## routeTree.gen.ts Regeneration
 
