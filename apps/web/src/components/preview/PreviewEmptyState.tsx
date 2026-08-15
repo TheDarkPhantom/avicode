@@ -8,7 +8,6 @@ import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui
 import { groupLocalServers } from "./localServerAttribution";
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
-import { shouldOfferStartDevServer } from "./startDevServer.logic";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
 
 interface Props {
@@ -53,13 +52,12 @@ export function PreviewEmptyState({
     [projectRoot, servers, threadId, worktreePath],
   );
 
-  const offerStart = shouldOfferStartDevServer({
-    sections,
-    worktreePath,
-    canStart: onStartDevServer != null,
-  });
+  // Avi Code addition: always offer Start when the project has a primary action to
+  // run, even if a server is already listed below. A running dev server (often for
+  // another thread or repo) no longer suppresses starting your own.
+  const canStart = onStartDevServer != null;
 
-  const startButton = offerStart ? (
+  const startButton = canStart ? (
     <Button size="sm" onClick={() => onStartDevServer?.()}>
       <Play className="size-4" />
       {startDevServerLabel ? `Start ${startDevServerLabel}` : "Start dev server"}
