@@ -59,6 +59,9 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Group projects into your own named sidebar folders and collapse the ones you are not using (#191)
+- Filter the sidebar to the projects and threads you are looking for as you type (#191)
+- Start every project collapsed by default, with Expand all and Collapse all in sidebar options (#191)
 - Active AI responses stay at the newest content without jumping upward (#189)
 - Create new worktree threads in local-only Git projects (#188)
 - Recover local drafts after failed thread setup leaves a deleted server record (#187)
