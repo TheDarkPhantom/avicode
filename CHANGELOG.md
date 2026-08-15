@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Start a dev server from the preview panel even when another one is already running (#193)
 - Active AI responses stay at the newest content without jumping upward (#189)
 - Create new worktree threads in local-only Git projects (#188)
 - Claude plan usage matches the latest account limits after refreshing (#186)
