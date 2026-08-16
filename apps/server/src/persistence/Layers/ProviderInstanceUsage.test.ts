@@ -1,11 +1,70 @@
-import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { ProviderInstanceUsageRepository } from "../Services/ProviderInstanceUsage.ts";
+import { ProjectionProjectRepository } from "../Services/ProjectionProjects.ts";
+import { ProjectionThreadRepository } from "../Services/ProjectionThreads.ts";
 import { ProviderInstanceUsageRepositoryLive } from "./ProviderInstanceUsage.ts";
+import { ProjectionProjectRepositoryLive } from "./ProjectionProjects.ts";
+import { ProjectionThreadRepositoryLive } from "./ProjectionThreads.ts";
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
+
+// Seed the projection rows the per-project join reads, via the real
+// repositories so the fixtures track the live schema. `summarizeByProject`
+// only reads `project_id`, `title`, and `workspace_root`; a project row is
+// optional so the LEFT JOIN can be exercised with a missing one.
+const seedThread = (input: { threadId: string; projectId: string }) =>
+  Effect.gen(function* () {
+    const threads = yield* ProjectionThreadRepository;
+    yield* threads.upsert({
+      threadId: ThreadId.make(input.threadId),
+      projectId: ProjectId.make(input.projectId),
+      title: "T",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      forkParentThreadId: null,
+      forkPointMessageId: null,
+      latestTurnId: null,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      snoozedUntil: null,
+      snoozedAt: null,
+      latestUserMessageAt: null,
+      pendingApprovalCount: 0,
+      pendingUserInputCount: 0,
+      hasActionableProposedPlan: 0,
+      deletedAt: null,
+    });
+  });
+
+const seedProject = (input: { projectId: string; title: string; workspaceRoot: string }) =>
+  Effect.gen(function* () {
+    const projects = yield* ProjectionProjectRepository;
+    yield* projects.upsert({
+      projectId: ProjectId.make(input.projectId),
+      title: input.title,
+      workspaceRoot: input.workspaceRoot,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      deletedAt: null,
+    });
+  });
 
 const codexDriver = ProviderDriverKind.make("codex");
 const claudeDriver = ProviderDriverKind.make("claudeAgent");
@@ -13,7 +72,12 @@ const claudeDriver = ProviderDriverKind.make("claudeAgent");
 // The layer — and therefore the database — is shared across the block, so
 // every test scopes itself to its own instance id and filters on it.
 const layer = it.layer(
-  ProviderInstanceUsageRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+  Layer.mergeAll(
+    ProviderInstanceUsageRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionProjectRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    SqlitePersistenceMemory,
+  ),
 );
 
 const row = (input: {
@@ -291,6 +355,76 @@ layer("ProviderInstanceUsageRepository", (it) => {
       });
 
       assert.lengthOf(totals, 0);
+    }),
+  );
+
+  it.effect("groups usage by project and instance, joining the project label", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderInstanceUsageRepository;
+      const instanceA = ProviderInstanceId.make("proj_a_inst");
+      const instanceB = ProviderInstanceId.make("proj_b_inst");
+
+      yield* seedProject({
+        projectId: "proj-a",
+        title: "Repo A",
+        workspaceRoot: "/repos/a",
+      });
+      yield* seedThread({ threadId: "proj-a-thread", projectId: "proj-a" });
+      yield* seedThread({ threadId: "proj-b-thread", projectId: "proj-b" });
+
+      yield* repository.record(
+        row({ instanceId: instanceA, turnId: "pa-1", threadId: "proj-a-thread" }),
+      );
+      yield* repository.record(
+        row({ instanceId: instanceB, turnId: "pb-1", threadId: "proj-b-thread" }),
+      );
+
+      const totals = yield* repository.summarizeByProject({});
+      const projA = totals.find((total) => total.projectId === "proj-a");
+      const projB = totals.find((total) => total.projectId === "proj-b");
+
+      assert.strictEqual(projA?.projectTitle, "Repo A");
+      assert.strictEqual(projA?.workspaceRoot, "/repos/a");
+      assert.strictEqual(projA?.providerInstanceId, instanceA);
+      // proj-b has no project row: the LEFT JOIN keeps the usage but leaves the
+      // label null so the UI can fall back to the id.
+      assert.strictEqual(projB?.projectTitle, null);
+      assert.strictEqual(projB?.providerInstanceId, instanceB);
+    }),
+  );
+
+  it.effect("filters per-project totals by the since cutoff", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderInstanceUsageRepository;
+      const instanceId = ProviderInstanceId.make("proj_cutoff_inst");
+
+      yield* seedThread({ threadId: "proj-cutoff-thread", projectId: "proj-cutoff" });
+      yield* repository.record(
+        row({
+          instanceId,
+          turnId: "pc-old",
+          threadId: "proj-cutoff-thread",
+          createdAt: "2026-07-01T00:00:00.000Z",
+        }),
+      );
+      yield* repository.record(
+        row({
+          instanceId,
+          turnId: "pc-new",
+          threadId: "proj-cutoff-thread",
+          createdAt: "2026-07-29T00:00:00.000Z",
+        }),
+      );
+
+      const all = (yield* repository.summarizeByProject({})).filter(
+        (total) => total.projectId === "proj-cutoff",
+      );
+      const recent = (yield* repository.summarizeByProject({
+        since: "2026-07-15T00:00:00.000Z",
+      })).filter((total) => total.projectId === "proj-cutoff");
+
+      assert.strictEqual(all[0]?.turns, 2);
+      assert.strictEqual(recent[0]?.turns, 1);
     }),
   );
 

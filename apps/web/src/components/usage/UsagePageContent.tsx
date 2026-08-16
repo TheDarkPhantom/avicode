@@ -1,4 +1,9 @@
-import type { ProviderDriverKind, ServerProvider, ServerProviderUsage } from "@t3tools/contracts";
+import type {
+  ProviderDriverKind,
+  ServerProjectUsage,
+  ServerProvider,
+  ServerProviderUsage,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { RefreshCwIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -122,6 +127,70 @@ function InstanceUsageCard(props: {
 }
 
 /**
+ * Avi Code addition: usage for one project (repo), with its per-credential
+ * breakdown. The header prefers the project title, falling back to the
+ * workspace path and then the raw id when the project record is gone.
+ */
+function ProjectUsageCard(props: {
+  usage: ServerProjectUsage;
+  keyPrefix: string;
+  instanceLabels: Map<string, string>;
+}) {
+  const { usage, keyPrefix, instanceLabels } = props;
+  const totalTokens = usage.inputTokens + usage.outputTokens;
+  const label = usage.projectTitle ?? usage.workspaceRoot ?? usage.projectId;
+
+  return (
+    <div className="rounded-lg border border-border/50 bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 truncate text-sm font-medium text-foreground" title={label}>
+          {label}
+        </div>
+        <div className="shrink-0 text-xs text-muted-foreground/70">{usage.turns} turns</div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
+        <div>
+          <div className="text-muted-foreground/60">Input</div>
+          <div className="font-medium tabular-nums text-foreground">
+            {formatTokenCount(usage.inputTokens)}
+          </div>
+        </div>
+        <div>
+          <div className="text-muted-foreground/60">Output</div>
+          <div className="font-medium tabular-nums text-foreground">
+            {formatTokenCount(usage.outputTokens)}
+          </div>
+        </div>
+        <div>
+          <div className="text-muted-foreground/60">Total</div>
+          <div className="font-medium tabular-nums text-foreground">
+            {formatTokenCount(totalTokens)}
+          </div>
+        </div>
+        <div>
+          <div className="text-muted-foreground/60">Cost</div>
+          <div className="font-medium tabular-nums text-foreground">
+            {formatQuotaCost(usage.costUsd)}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2">
+        {usage.instances.map((instance) => (
+          <InstanceUsageCard
+            key={`${keyPrefix}-${usage.projectId}-${instance.instanceId}`}
+            usage={instance}
+            instanceLabel={instanceLabels.get(instance.instanceId) ?? instance.instanceId}
+            driverKind={instance.driver}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Avi Code addition: full Usage page content showing both live quota gauges and
  * queried token/cost usage for all provider instances. Upstream has no
  * equivalent surface; usage was previously only visible per-thread in the
@@ -178,6 +247,19 @@ export function UsagePageContent() {
     environmentId === null
       ? null
       : serverEnvironment.getProviderUsage({
+          environmentId,
+          input: { since: weekAgo },
+        }),
+  );
+
+  // Avi Code addition: per-repo usage, same two windows as the per-credential view.
+  const { data: projectUsageData } = useEnvironmentQuery(
+    environmentId === null ? null : serverEnvironment.getProjectUsage({ environmentId, input: {} }),
+  );
+  const { data: weeklyProjectData } = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.getProjectUsage({
           environmentId,
           input: { since: weekAgo },
         }),
@@ -277,6 +359,54 @@ export function UsagePageContent() {
             </div>
           )}
         </section>
+
+        {/* By repo (project) usage, broken down by credential */}
+        {(weeklyProjectData && weeklyProjectData.projects.length > 0) ||
+        (projectUsageData && projectUsageData.projects.length > 0) ? (
+          <section className="mt-8">
+            <h2 className="mb-3 text-xs font-medium tracking-wide text-muted-foreground/70 uppercase">
+              By Repo
+            </h2>
+
+            {/* Weekly summary */}
+            {weeklyProjectData && weeklyProjectData.projects.length > 0 ? (
+              <div className="mb-4">
+                <div className="mb-2 text-[11px] font-medium text-muted-foreground/60">
+                  Last 7 days
+                </div>
+                <div className="flex flex-col gap-2">
+                  {weeklyProjectData.projects.map((project) => (
+                    <ProjectUsageCard
+                      key={`weekly-repo-${project.projectId}`}
+                      usage={project}
+                      keyPrefix="weekly-repo"
+                      instanceLabels={instanceLabels}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* All-time summary */}
+            {projectUsageData && projectUsageData.projects.length > 0 ? (
+              <div>
+                <div className="mb-2 text-[11px] font-medium text-muted-foreground/60">
+                  All time
+                </div>
+                <div className="flex flex-col gap-2">
+                  {projectUsageData.projects.map((project) => (
+                    <ProjectUsageCard
+                      key={`alltime-repo-${project.projectId}`}
+                      usage={project}
+                      keyPrefix="alltime-repo"
+                      instanceLabels={instanceLabels}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </div>
     </div>
   );

@@ -664,6 +664,12 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetThreadUsage,
       staleTimeMs: 30_000,
     }),
+    // Avi Code addition: per-project (repo) token/cost totals for the usage page.
+    getProjectUsage: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:project-usage",
+      tag: WS_METHODS.serverGetProjectUsage,
+      staleTimeMs: 30_000,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",

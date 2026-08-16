@@ -83,7 +83,11 @@ import * as ProviderService from "./provider/Services/ProviderService.ts";
 // Avi Code addition: in-app `claude auth login` for a provider instance.
 import { ClaudeLoginService } from "./provider/ClaudeLogin/ClaudeLoginService.ts";
 import { ProviderInstanceUsageRepository } from "./persistence/Services/ProviderInstanceUsage.ts";
-import { rollUpProviderUsage, rollUpThreadUsage } from "./provider/providerUsageRollup.ts";
+import {
+  rollUpProjectUsage,
+  rollUpProviderUsage,
+  rollUpThreadUsage,
+} from "./provider/providerUsageRollup.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -1514,6 +1518,23 @@ const makeWsRpcLayer = (
                 Effect.logWarning("failed to summarize thread usage", {
                   cause: Cause.pretty(cause),
                 }).pipe(Effect.as({ usage: null })),
+              ),
+            ),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        // Avi Code addition: per-project (repo) token/cost totals.
+        [WS_METHODS.serverGetProjectUsage]: ({ since }) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetProjectUsage,
+            providerInstanceUsage.summarizeByProject(since === undefined ? {} : { since }).pipe(
+              Effect.map((totals) => ({ projects: rollUpProjectUsage(totals) })),
+              // An unreadable table reports no usage rather than failing the read.
+              Effect.catchCause((cause) =>
+                Effect.logWarning("failed to summarize project usage", {
+                  cause: Cause.pretty(cause),
+                }).pipe(Effect.as({ projects: [] })),
               ),
             ),
             {

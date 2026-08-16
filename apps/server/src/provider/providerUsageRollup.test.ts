@@ -1,8 +1,13 @@
-import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { rollUpProviderUsage, rollUpThreadUsage } from "./providerUsageRollup.ts";
+import {
+  rollUpProjectUsage,
+  rollUpProviderUsage,
+  rollUpThreadUsage,
+} from "./providerUsageRollup.ts";
 import type {
+  ProjectUsageTotals,
   ProviderInstanceUsageTotals,
   ThreadUsageModelTotals,
 } from "../persistence/Services/ProviderInstanceUsage.ts";
@@ -147,5 +152,141 @@ describe("rollUpThreadUsage", () => {
 
   it("returns null when the thread has no recorded usage", () => {
     expect(rollUpThreadUsage(threadId, [])).toBeNull();
+  });
+});
+
+const projectTotals = (input: {
+  readonly projectId: string;
+  readonly instanceId: string;
+  readonly model: string | null;
+  readonly driverKind?: ProviderDriverKind;
+  readonly projectTitle?: string | null;
+  readonly workspaceRoot?: string | null;
+  readonly turns?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly costUsd?: number | null;
+}): ProjectUsageTotals => ({
+  projectId: ProjectId.make(input.projectId),
+  projectTitle: input.projectTitle ?? null,
+  workspaceRoot: input.workspaceRoot ?? null,
+  providerInstanceId: ProviderInstanceId.make(input.instanceId),
+  driverKind: input.driverKind ?? codexDriver,
+  model: input.model,
+  turns: input.turns ?? 1,
+  inputTokens: input.inputTokens ?? 100,
+  cachedInputTokens: 10,
+  cacheCreationInputTokens: 5,
+  outputTokens: input.outputTokens ?? 50,
+  reasoningOutputTokens: 3,
+  costUsd: input.costUsd ?? null,
+});
+
+describe("rollUpProjectUsage", () => {
+  it("groups by project and breaks each project down by credential", () => {
+    const [project] = rollUpProjectUsage([
+      projectTotals({ projectId: "repo-a", instanceId: "codex_work", model: "gpt-5" }),
+      projectTotals({ projectId: "repo-a", instanceId: "codex_personal", model: "gpt-5" }),
+    ]);
+
+    expect(project?.projectId).toBe("repo-a");
+    expect(project?.turns).toBe(2);
+    expect(project?.instances.map((entry) => entry.instanceId).toSorted()).toEqual([
+      "codex_personal",
+      "codex_work",
+    ]);
+  });
+
+  it("keeps separate projects apart and prefers the title for display", () => {
+    const rolled = rollUpProjectUsage([
+      projectTotals({
+        projectId: "repo-a",
+        instanceId: "codex_work",
+        model: "gpt-5",
+        projectTitle: "Repo A",
+      }),
+      projectTotals({ projectId: "repo-b", instanceId: "codex_work", model: "gpt-5" }),
+    ]);
+
+    expect(rolled).toHaveLength(2);
+    expect(rolled.find((entry) => entry.projectId === "repo-a")?.projectTitle).toBe("Repo A");
+  });
+
+  it("sums project cost across credentials that reported one, ignoring those that did not", () => {
+    const [project] = rollUpProjectUsage([
+      projectTotals({
+        projectId: "repo-a",
+        instanceId: "claude",
+        model: "opus",
+        driverKind: claudeDriver,
+        costUsd: 0.2,
+      }),
+      projectTotals({
+        projectId: "repo-a",
+        instanceId: "codex_work",
+        model: "gpt-5",
+        costUsd: null,
+      }),
+      projectTotals({
+        projectId: "repo-a",
+        instanceId: "claude",
+        model: "sonnet",
+        driverKind: claudeDriver,
+        costUsd: 0.05,
+      }),
+    ]);
+
+    expect(project?.costUsd).toBeCloseTo(0.25, 9);
+  });
+
+  it("keeps project cost null when no credential reported one", () => {
+    const [project] = rollUpProjectUsage([
+      projectTotals({
+        projectId: "repo-a",
+        instanceId: "codex_work",
+        model: "gpt-5",
+        costUsd: null,
+      }),
+      projectTotals({
+        projectId: "repo-a",
+        instanceId: "codex_personal",
+        model: "gpt-5",
+        costUsd: null,
+      }),
+    ]);
+
+    expect(project?.costUsd).toBeNull();
+  });
+
+  it("orders heaviest projects first", () => {
+    const rolled = rollUpProjectUsage([
+      projectTotals({
+        projectId: "light",
+        instanceId: "i",
+        model: "m",
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+      projectTotals({
+        projectId: "heavy",
+        instanceId: "i",
+        model: "m",
+        inputTokens: 900,
+        outputTokens: 900,
+      }),
+      projectTotals({
+        projectId: "middle",
+        instanceId: "i",
+        model: "m",
+        inputTokens: 50,
+        outputTokens: 50,
+      }),
+    ]);
+
+    expect(rolled.map((entry) => entry.projectId)).toEqual(["heavy", "middle", "light"]);
+  });
+
+  it("returns nothing when there is no usage", () => {
+    expect(rollUpProjectUsage([])).toEqual([]);
   });
 });
