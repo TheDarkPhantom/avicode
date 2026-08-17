@@ -45,6 +45,8 @@ Upstream: t3code 0.0.31
 - Reorder sidebar folders by dragging them into the order you want (#199)
 - Hide a folder and its projects from the sidebar, then bring it back from Avi Code settings (#199)
 - Keep chats that need you visible under a collapsed folder with a new setting (#199)
+- The in-app browser now shows an error page for HTTP failures instead of a blank panel (#200)
+- Recover from a 431 in the in-app browser with a Clear cookies and reload button (#200)
 
 ## 0.0.31-avicode.9.9 (2026-08-17)
 

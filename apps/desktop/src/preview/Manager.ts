@@ -1330,6 +1330,36 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         }),
       );
     };
+    // Avi Code addition: an HTTP error status (e.g. 431 Request Header Fields Too
+    // Large, 500, 404) still commits a main-frame navigation at the network
+    // layer, so `did-fail-load` never fires and the guest renders the server's
+    // near-empty error body as a silent blank panel. Surface it as LoadFailed so
+    // the preview shows the unreachable card (with a cookie-clear recovery)
+    // instead of a blank. Chromium net errors use negative codes, so a positive
+    // status >= 400 unambiguously marks an HTTP error. Non-error navigations fall
+    // through to the normal state sync.
+    const navigated = (
+      _event: Event,
+      url: string,
+      httpResponseCode: number,
+      httpStatusText: string,
+    ): void => {
+      if (httpResponseCode >= 400) {
+        runFork(
+          update(tabId, {
+            navStatus: {
+              kind: "LoadFailed",
+              url: url || wc.getURL(),
+              title: wc.getTitle(),
+              code: httpResponseCode,
+              description: httpStatusText.length > 0 ? httpStatusText : `HTTP ${httpResponseCode}`,
+            },
+          }),
+        );
+        return;
+      }
+      syncNavigation();
+    };
     const handleHumanInput = Effect.fn("PreviewManager.handleHumanInput")(function* (
       rawSignal?: unknown,
     ) {
@@ -1377,7 +1407,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     yield* Scope.addFinalizer(
       scope,
       attempt({ operation: "detachListeners", tabId, webContentsId: wc.id }, () => {
-        wc.off("did-navigate", syncNavigation);
+        wc.off("did-navigate", navigated as never);
         wc.off("did-navigate-in-page", syncNavigation);
         wc.off("page-title-updated", sync);
         wc.off("did-start-loading", sync);
@@ -1389,7 +1419,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
     const install = Effect.fn("PreviewManager.installWebContentsListeners")(function* () {
       yield* attempt({ operation: "attachListeners", tabId, webContentsId: wc.id }, () => {
-        wc.on("did-navigate", syncNavigation);
+        wc.on("did-navigate", navigated as never);
         wc.on("did-navigate-in-page", syncNavigation);
         wc.on("page-title-updated", sync);
         wc.on("did-start-loading", sync);
