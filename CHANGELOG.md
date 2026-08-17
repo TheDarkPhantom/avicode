@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - See token and cost usage broken down per repo, split by credential, on the usage page (#194)
+- Opening the right panel keeps its toggle under your pointer (#190)
 
 ## 0.0.31-avicode.9.8 (2026-08-17)
 
