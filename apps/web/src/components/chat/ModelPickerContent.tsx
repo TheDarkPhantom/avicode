@@ -27,6 +27,7 @@ import {
   isProviderInstancePickerVisible,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
+import { getLegendListScrollNode } from "../../legendListScrollNode";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 
 type ModelPickerItem = {
@@ -444,8 +445,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     [filteredModels],
   );
   const updateModelListScrollFades = useCallback(() => {
-    const scrollElement = modelListRef.current?.getScrollableNode?.();
-    if (!(scrollElement instanceof HTMLElement)) {
+    const scrollElement = getLegendListScrollNode(modelListRef.current);
+    if (!scrollElement) {
       return;
     }
     const maxScrollOffset = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);

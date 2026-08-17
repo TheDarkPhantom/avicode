@@ -71,6 +71,7 @@ import {
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
+import { getLegendListScrollNode } from "../legendListScrollNode";
 import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
@@ -4077,13 +4078,13 @@ function ChatViewContent(props: ChatViewProps) {
           return;
         }
         const list = legendListRef.current;
-        if (!list) {
+        const scrollNode = list ? getLegendListScrollNode(list) : null;
+        if (!list || !scrollNode) {
           if (remainingAttempts > 0) {
             positionAnchor(remainingAttempts - 1);
           }
           return;
         }
-        const scrollNode = list.getScrollableNode();
         let finished = false;
         const finishAnimatedPositioning = () => {
           if (finished) {

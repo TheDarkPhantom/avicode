@@ -33,6 +33,7 @@ import {
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
 } from "../../session-logic";
+import { getLegendListScrollNode } from "../../legendListScrollNode";
 import { type TurnDiffSummary } from "../../types";
 import {
   getRenderablePatch,
@@ -520,7 +521,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const restore = () => {
       if (cancelled) return;
       const list = listRef.current;
-      const scrollNode = list?.getScrollableNode?.();
+      const scrollNode = getLegendListScrollNode(list);
       const rowElement = scrollNode?.querySelector<HTMLElement>(
         `[data-timeline-row-id="${CSS.escape(savedReadingAnchor.rowId)}"]`,
       );
@@ -1071,7 +1072,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           ref={setTimelineViewportElement}
           className="relative h-full min-h-0"
           onPointerDownCapture={(event) => {
-            if (event.target === listRef.current?.getScrollableNode?.()) {
+            if (event.target === getLegendListScrollNode(listRef.current)) {
               handleManualScroll("unknown");
             }
           }}
@@ -1180,8 +1181,8 @@ function keyExtractor(item: MessagesTimelineRow) {
 // message row. Returns null when the row is not mounted (off-screen or not yet
 // virtualized), so callers can hold their last good value.
 function measureTerminalAssistantRowTop(list: LegendListRef, messageId: MessageId): number | null {
-  const scrollNode = list.getScrollableNode?.();
-  if (!(scrollNode instanceof HTMLElement)) return null;
+  const scrollNode = getLegendListScrollNode(list);
+  if (!scrollNode) return null;
   const element = scrollNode.querySelector<HTMLElement>(
     `[data-message-id="${CSS.escape(messageId)}"][data-message-role="assistant"]`,
   );
@@ -1198,8 +1199,8 @@ function captureCurrentPlanReadingAnchor(
   // clears any stale anchor on leave and lets the thread reopen at the bottom
   // instead of restoring a partway-up row.
   if (list.getState?.()?.isAtEnd) return null;
-  const scrollNode = list.getScrollableNode?.();
-  if (!(scrollNode instanceof HTMLElement)) return null;
+  const scrollNode = getLegendListScrollNode(list);
+  if (!scrollNode) return null;
   const scroll = scrollNode.scrollTop;
   const viewportTop = scrollNode.getBoundingClientRect().top;
   const measurements = rows.flatMap((row) => {

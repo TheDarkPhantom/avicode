@@ -22,6 +22,7 @@ import {
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { getLegendListScrollNode } from "../legendListScrollNode";
 import { readLocalApi } from "../localApi";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { shouldLoadNextBranchPageAfterScroll } from "../state/paginatedBranches";
@@ -552,8 +553,8 @@ export function BranchToolbarBranchSelector({
 
   const branchListRef = useRef<LegendListRef | null>(null);
   const updateBranchListScrollFades = useCallback(() => {
-    const scrollElement = branchListRef.current?.getScrollableNode?.();
-    if (!(scrollElement instanceof HTMLElement)) {
+    const scrollElement = getLegendListScrollNode(branchListRef.current);
+    if (!scrollElement) {
       return;
     }
     branchListScrollElementRef.current = scrollElement;
