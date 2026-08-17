@@ -1,6 +1,7 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
+import { randomUUID } from "./lib/utils";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
@@ -17,6 +18,16 @@ const LEGACY_PERSISTED_STATE_KEYS = [
   "codething:renderer-state:v1",
 ] as const;
 
+// Avi Code addition: a user-defined sidebar folder. Membership is by project
+// key (the same stable key pins and manual order use), a project lives in at
+// most one folder, and array order is display order.
+export interface ProjectFolder {
+  id: string;
+  name: string;
+  projectKeys: string[];
+  collapsed: boolean;
+}
+
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
@@ -25,6 +36,8 @@ export interface PersistedUiState {
   // on activity the way the upstream activity sort does.
   pinnedProjectKeys?: string[];
   pinnedThreadKeys?: string[];
+  // Avi Code addition: user-defined project folders, in display order.
+  projectFolders?: ProjectFolder[];
   threadLastVisitedAtById?: Record<string, string>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
@@ -39,6 +52,8 @@ export interface UiProjectState {
   projectOrder: string[];
   // Avi Code addition: physical project keys, pinned-first in this order.
   pinnedProjectKeys: string[];
+  // Avi Code addition: user-defined project folders, in display order.
+  projectFolders: ProjectFolder[];
 }
 
 export interface UiThreadState {
@@ -69,6 +84,7 @@ const initialState: UiState = {
   projectOrder: [],
   pinnedProjectKeys: [],
   pinnedThreadKeys: [],
+  projectFolders: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   threadPlanReadingStateById: {},
@@ -103,6 +119,33 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
     ),
   );
+}
+
+// Avi Code addition: keep only well-formed folders. A folder needs a non-empty
+// id and name; member keys are de-duplicated the same way pins are.
+function sanitizeProjectFolders(value: unknown): ProjectFolder[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const folders: ProjectFolder[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const candidate = entry as Partial<ProjectFolder>;
+    const id = typeof candidate.id === "string" ? candidate.id : "";
+    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    if (id.length === 0 || name.length === 0) {
+      continue;
+    }
+    folders.push({
+      id,
+      name,
+      projectKeys: sanitizeStringArray(candidate.projectKeys),
+      collapsed: candidate.collapsed === true,
+    });
+  }
+  return folders;
 }
 
 function sanitizeTimestampRecord(value: unknown): Record<string, string> {
@@ -149,6 +192,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectOrder,
     pinnedProjectKeys: sanitizeStringArray(parsed.pinnedProjectKeys),
     pinnedThreadKeys: sanitizeStringArray(parsed.pinnedThreadKeys),
+    projectFolders: sanitizeProjectFolders(parsed.projectFolders),
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
     threadChangedFilesExpandedById:
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
@@ -230,6 +274,7 @@ export function persistState(state: UiState): void {
         projectOrder: state.projectOrder,
         pinnedProjectKeys: state.pinnedProjectKeys,
         pinnedThreadKeys: state.pinnedThreadKeys,
+        projectFolders: state.projectFolders,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
@@ -406,6 +451,10 @@ export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | nu
 export function resolveProjectExpanded(
   projectExpandedById: Readonly<Record<string, boolean>>,
   preferenceKeys: readonly string[],
+  // Avi Code addition: the fallback for a project the user has never toggled.
+  // Callers pass `!aviCodeSidebarProjectsCollapsedByDefault` so the collapse
+  // default only decides untouched projects; explicit choices above still win.
+  defaultExpanded = true,
 ): boolean {
   for (const key of preferenceKeys) {
     const expanded = projectExpandedById[key];
@@ -413,7 +462,7 @@ export function resolveProjectExpanded(
       return expanded;
     }
   }
-  return projectExpandedById[LEGACY_PROJECT_EXPANSION_DEFAULT_KEY] ?? true;
+  return projectExpandedById[LEGACY_PROJECT_EXPANSION_DEFAULT_KEY] ?? defaultExpanded;
 }
 
 export function setProjectExpanded(
@@ -524,6 +573,88 @@ export function reorderProjects(
   };
 }
 
+/**
+ * Avi Code addition: project folder transforms.
+ *
+ * All follow the same contract as the pin/reorder helpers — pure, and they
+ * return the same state reference when nothing changes so callers can skip a
+ * re-render. A project lives in at most one folder.
+ */
+export function createProjectFolder(state: UiState, name: string, id: string): UiState {
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || id.length === 0) {
+    return state;
+  }
+  return {
+    ...state,
+    projectFolders: [
+      ...state.projectFolders,
+      { id, name: trimmed, projectKeys: [], collapsed: false },
+    ],
+  };
+}
+
+export function renameProjectFolder(state: UiState, id: string, name: string): UiState {
+  const trimmed = name.trim();
+  const folder = state.projectFolders.find((entry) => entry.id === id);
+  if (trimmed.length === 0 || !folder || folder.name === trimmed) {
+    return state;
+  }
+  return {
+    ...state,
+    projectFolders: state.projectFolders.map((entry) =>
+      entry.id === id ? { ...entry, name: trimmed } : entry,
+    ),
+  };
+}
+
+export function deleteProjectFolder(state: UiState, id: string): UiState {
+  if (!state.projectFolders.some((entry) => entry.id === id)) {
+    return state;
+  }
+  return {
+    ...state,
+    projectFolders: state.projectFolders.filter((entry) => entry.id !== id),
+  };
+}
+
+export function setProjectFolderCollapsed(state: UiState, id: string, collapsed: boolean): UiState {
+  const folder = state.projectFolders.find((entry) => entry.id === id);
+  if (!folder || folder.collapsed === collapsed) {
+    return state;
+  }
+  return {
+    ...state,
+    projectFolders: state.projectFolders.map((entry) =>
+      entry.id === id ? { ...entry, collapsed } : entry,
+    ),
+  };
+}
+
+export function assignProjectToFolder(
+  state: UiState,
+  projectKey: string,
+  folderId: string | null,
+): UiState {
+  if (projectKey.length === 0) {
+    return state;
+  }
+  let changed = false;
+  const projectFolders = state.projectFolders.map((folder) => {
+    const isTarget = folder.id === folderId;
+    const has = folder.projectKeys.includes(projectKey);
+    if (isTarget) {
+      if (has) return folder;
+      changed = true;
+      return { ...folder, projectKeys: [...folder.projectKeys, projectKey] };
+    }
+    if (!has) return folder;
+    changed = true;
+    return { ...folder, projectKeys: folder.projectKeys.filter((key) => key !== projectKey) };
+  });
+  return changed ? { ...state, projectFolders } : state;
+}
+
 interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
@@ -540,6 +671,13 @@ interface UiStateStore extends UiState {
     draggedProjectIds: readonly string[],
     targetProjectIds: readonly string[],
   ) => void;
+  // Avi Code addition: project folders. createProjectFolder returns the new
+  // folder id so a caller that just made one can immediately move a project in.
+  createProjectFolder: (name: string) => string | null;
+  renameProjectFolder: (id: string, name: string) => void;
+  deleteProjectFolder: (id: string) => void;
+  setProjectFolderCollapsed: (id: string, collapsed: boolean) => void;
+  assignProjectToFolder: (projectKey: string, folderId: string | null) => void;
 }
 
 export const useUiStateStore = create<UiStateStore>((set) => ({
@@ -572,6 +710,20 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
     ),
+  createProjectFolder: (name) => {
+    if (name.trim().length === 0) {
+      return null;
+    }
+    const id = randomUUID();
+    set((state) => createProjectFolder(state, name, id));
+    return id;
+  },
+  renameProjectFolder: (id, name) => set((state) => renameProjectFolder(state, id, name)),
+  deleteProjectFolder: (id) => set((state) => deleteProjectFolder(state, id)),
+  setProjectFolderCollapsed: (id, collapsed) =>
+    set((state) => setProjectFolderCollapsed(state, id, collapsed)),
+  assignProjectToFolder: (projectKey, folderId) =>
+    set((state) => assignProjectToFolder(state, projectKey, folderId)),
 }));
 
 useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));

@@ -5,6 +5,8 @@ import {
   buildTargetedProjectContextMenuItem,
   buildFlatSidebarThreadList,
   buildMultiSelectThreadContextMenuItems,
+  filterProjectsByQuery,
+  partitionProjectsIntoFolders,
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
@@ -91,6 +93,95 @@ describe("project context menu", () => {
         { id: "open-file-manager:remote", label: "remote" },
       ],
     });
+  });
+});
+
+// Avi Code addition: sidebar folder partition + inline filter.
+describe("partitionProjectsIntoFolders", () => {
+  const projects = [
+    { projectKey: "a" },
+    { projectKey: "b" },
+    { projectKey: "c" },
+    { projectKey: "d" },
+  ];
+
+  it("groups members under their folder in stored order, ungrouped last", () => {
+    const sections = partitionProjectsIntoFolders(projects, [
+      { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false },
+      { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: true },
+    ]);
+
+    expect(sections).toEqual([
+      {
+        folder: { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false },
+        projects: [{ projectKey: "a" }, { projectKey: "c" }],
+      },
+      {
+        folder: { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: true },
+        projects: [{ projectKey: "b" }],
+      },
+      { folder: null, projects: [{ projectKey: "d" }] },
+    ]);
+  });
+
+  it("keeps member order matching the incoming sort, not the folder list", () => {
+    const sections = partitionProjectsIntoFolders(projects, [
+      { id: "f1", name: "Clients", projectKeys: ["d", "b"], collapsed: false },
+    ]);
+
+    // b precedes d in the sorted input, so the folder shows them in that order.
+    expect(sections[0]?.projects.map((p) => p.projectKey)).toEqual(["b", "d"]);
+  });
+
+  it("returns a single ungrouped section when there are no folders", () => {
+    const sections = partitionProjectsIntoFolders(projects, []);
+    expect(sections).toEqual([{ folder: null, projects }]);
+  });
+
+  it("renders an empty folder and skips stale keys with no live project", () => {
+    const sections = partitionProjectsIntoFolders(
+      [{ projectKey: "a" }],
+      [{ id: "f1", name: "Empty", projectKeys: ["gone"], collapsed: false }],
+    );
+
+    expect(sections[0]?.projects).toEqual([]);
+    expect(sections[1]).toEqual({ folder: null, projects: [{ projectKey: "a" }] });
+  });
+});
+
+describe("filterProjectsByQuery", () => {
+  const projects = [
+    { projectKey: "web", title: "Web App" },
+    { projectKey: "api", title: "Billing API" },
+  ];
+  const getTitle = (p: { title: string }) => p.title;
+  const threads: Record<string, { key: string; title: string }[]> = {
+    web: [{ key: "web:1", title: "Fix login" }],
+    api: [{ key: "api:1", title: "Stripe webhook" }],
+  };
+  const getThreads = (p: { projectKey: string }) => threads[p.projectKey] ?? [];
+
+  it("returns every project and no matches for a blank query", () => {
+    const result = filterProjectsByQuery(projects, "  ", getTitle, getThreads);
+    expect(result.projects).toEqual(projects);
+    expect(result.matchedThreadKeys.size).toBe(0);
+  });
+
+  it("keeps a project whose title matches, case-insensitively", () => {
+    const result = filterProjectsByQuery(projects, "web app", getTitle, getThreads);
+    expect(result.projects.map((p) => p.projectKey)).toEqual(["web"]);
+  });
+
+  it("keeps a project when a thread title matches and records the thread key", () => {
+    const result = filterProjectsByQuery(projects, "stripe", getTitle, getThreads);
+    expect(result.projects.map((p) => p.projectKey)).toEqual(["api"]);
+    expect([...result.matchedThreadKeys]).toEqual(["api:1"]);
+  });
+
+  it("returns no projects when nothing matches", () => {
+    const result = filterProjectsByQuery(projects, "zzz", getTitle, getThreads);
+    expect(result.projects).toEqual([]);
+    expect(result.matchedThreadKeys.size).toBe(0);
   });
 });
 

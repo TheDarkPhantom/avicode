@@ -223,6 +223,12 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeSidebarShowPrIndicator: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
+  // Avi Code addition. Seeds every project row collapsed so a long project
+  // list opens compact and the user expands only what they are working in.
+  // Per-project expand/collapse choices still win over this default.
+  aviCodeSidebarProjectsCollapsedByDefault: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Avi Code addition. How wide the chat column is allowed to grow.
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
@@ -930,6 +936,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarAlwaysShowDevServerStart: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowPrIndicator: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarProjectsCollapsedByDefault: Schema.optionalKey(Schema.Boolean),
   aviCodeCommunicationStyleId: Schema.optionalKey(Schema.String),
   aviCodeCommunicationStyles: Schema.optionalKey(
     Schema.Array(AviCodeCommunicationStylePreset).check(

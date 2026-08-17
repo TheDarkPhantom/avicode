@@ -4,6 +4,7 @@ import {
   ChevronRightIcon,
   CloudIcon,
   ContainerIcon,
+  FolderIcon,
   FolderPlusIcon,
   Globe2Icon,
   LoaderIcon,
@@ -12,6 +13,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
+  XIcon,
 } from "lucide-react";
 import {
   ChangeRequestStatusIcon,
@@ -94,6 +96,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { previewEnvironment } from "../state/preview";
 import {
   legacyProjectCwdPreferenceKey,
+  type ProjectFolder,
   resolveProjectExpanded,
   useUiStateStore,
 } from "../uiStateStore";
@@ -186,6 +189,8 @@ import { openCommandPalette } from "../commandPaletteBus";
 import {
   getSidebarThreadIdsToPrewarm,
   buildTargetedProjectContextMenuItem,
+  filterProjectsByQuery,
+  partitionProjectsIntoFolders,
   PROJECT_CONTEXT_MENU_ACTIONS,
   type ProjectContextMenuAction,
   resolveAdjacentThreadId,
@@ -528,6 +533,9 @@ interface SidebarProjectItemProps {
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   isManualProjectSorting: boolean;
   dragHandleProps: SortableProjectHandleProps | null;
+  // Avi Code addition: while the inline filter is active every matching row is
+  // shown expanded so its threads are visible regardless of stored state.
+  forceExpanded?: boolean;
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
@@ -546,6 +554,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     suppressProjectClickForContextMenuRef,
     isManualProjectSorting,
     dragHandleProps,
+    forceExpanded = false,
   } = props;
   const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
@@ -576,6 +585,17 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     isPinnedByKeys(state.pinnedProjectKeys, memberProjectKeys),
   );
   const setProjectPinned = useUiStateStore((state) => state.setProjectPinned);
+  // Avi Code addition: user folders. Membership is keyed by the row's logical
+  // projectKey (the same key partitionProjectsIntoFolders groups on).
+  const projectFolders = useUiStateStore((state) => state.projectFolders);
+  const assignProjectToFolder = useUiStateStore((state) => state.assignProjectToFolder);
+  const createProjectFolderAction = useUiStateStore((state) => state.createProjectFolder);
+  const currentFolder = useMemo(
+    () => projectFolders.find((folder) => folder.projectKeys.includes(project.projectKey)) ?? null,
+    [projectFolders, project.projectKey],
+  );
+  const [isNewFolderDialogOpen, setIsNewFolderDialogOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const pinnedThreadKeys = useUiStateStore((state) => state.pinnedThreadKeys);
   // Thread-row behaviour is shared with the flat sidebar; only project-scoped
   // concerns (rename/grouping/removal, the archived menu, new-thread) stay here.
@@ -635,9 +655,19 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       });
   }, [archivedSnapshots, project.memberProjects]);
   const projectPreferenceKeys = useMemo(() => projectExpansionPreferenceKeys(project), [project]);
-  const projectExpanded = useUiStateStore((state) =>
-    resolveProjectExpanded(state.projectExpandedById, projectPreferenceKeys),
+  const projectsCollapsedByDefault = useClientSettings(
+    (settings) => settings.aviCodeSidebarProjectsCollapsedByDefault,
   );
+  const projectExpanded = useUiStateStore((state) =>
+    resolveProjectExpanded(
+      state.projectExpandedById,
+      projectPreferenceKeys,
+      !projectsCollapsedByDefault,
+    ),
+  );
+  // While filtering, a matching row always shows its threads; otherwise the
+  // stored (or defaulted) expansion state decides.
+  const displayProjectExpanded = forceExpanded || projectExpanded;
   const threadLastVisitedAts = useUiStateStore(
     useShallow((state) =>
       projectThreads.map(
@@ -737,7 +767,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   }, [pinnedThreadKeys, projectThreads, threadLastVisitedAts, threadSortOrder]);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
-    if (!activeThreadKey || projectExpanded) {
+    if (!activeThreadKey || displayProjectExpanded) {
       return null;
     }
     return (
@@ -746,7 +776,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === activeThreadKey,
       ) ?? null
     );
-  }, [activeRouteThreadKey, projectExpanded, visibleProjectThreads]);
+  }, [activeRouteThreadKey, displayProjectExpanded, visibleProjectThreads]);
 
   const {
     hasOverflowingThreads,
@@ -800,10 +830,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         hiddenThreads.map((thread) => resolveProjectThreadStatus(thread)),
       ),
       renderedThreads,
-      showEmptyThreadState: projectExpanded && visibleProjectThreads.length === 0,
-      shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
+      showEmptyThreadState: displayProjectExpanded && visibleProjectThreads.length === 0,
+      shouldShowThreadPanel: displayProjectExpanded || pinnedCollapsedThread !== null,
     };
   }, [
+    displayProjectExpanded,
     isThreadListExpanded,
     pinnedCollapsedThread,
     pinnedVisibleThreadCount,
@@ -1128,12 +1159,54 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           setProjectPinned(memberProjectKeys, !isProjectPinned);
         });
 
+        // Avi Code addition: move-to-folder is also a whole-row action, keyed by
+        // the logical projectKey. Building the submenu here keeps the folder list
+        // live each time the menu opens.
+        const folderMenuItem: ContextMenuItem<string> = {
+          id: "folder:submenu",
+          label: "Move to folder",
+          children: [
+            ...projectFolders.map((folder): ContextMenuItem<string> => {
+              const id = `folder:assign:${folder.id}`;
+              const isCurrent = currentFolder?.id === folder.id;
+              actionHandlers.set(id, () => {
+                assignProjectToFolder(project.projectKey, folder.id);
+              });
+              // `icon` is stripped on desktop native menus, so the current
+              // folder is marked in the label and disabled — it's already there.
+              return {
+                id,
+                label: isCurrent ? `${folder.name} ✓` : folder.name,
+                ...(isCurrent ? { disabled: true } : {}),
+              };
+            }),
+            ...(currentFolder
+              ? [
+                  ((): ContextMenuItem<string> => {
+                    actionHandlers.set("folder:remove", () => {
+                      assignProjectToFolder(project.projectKey, null);
+                    });
+                    return { id: "folder:remove", label: "Remove from folder" };
+                  })(),
+                ]
+              : []),
+            ((): ContextMenuItem<string> => {
+              actionHandlers.set("folder:new", () => {
+                setNewFolderName("");
+                setIsNewFolderDialogOpen(true);
+              });
+              return { id: "folder:new", label: "New folder…" };
+            })(),
+          ],
+        };
+
         const clicked = await api.contextMenu.show(
           [
             {
               id: "toggle-pin",
               label: isProjectPinned ? "Unpin project" : "Pin project",
             },
+            folderMenuItem,
             ...PROJECT_CONTEXT_MENU_ACTIONS.map(({ action, label, destructive }) =>
               buildTargetedItem(action, label, destructive ? { destructive: true } : undefined),
             ),
@@ -1152,7 +1225,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       })();
     },
     [
+      assignProjectToFolder,
       copyPathToClipboard,
+      currentFolder,
       handleRemoveProject,
       isProjectPinned,
       memberProjectKeys,
@@ -1161,10 +1236,21 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
+      project.projectKey,
+      projectFolders,
       setProjectPinned,
       suppressProjectClickForContextMenuRef,
     ],
   );
+
+  const submitNewFolder = useCallback(() => {
+    const created = createProjectFolderAction(newFolderName);
+    if (created) {
+      assignProjectToFolder(project.projectKey, created);
+    }
+    setIsNewFolderDialogOpen(false);
+    setNewFolderName("");
+  }, [assignProjectToFolder, createProjectFolderAction, newFolderName, project.projectKey]);
 
   const createThreadForProjectMember = useCallback(
     (member: SidebarProjectGroupMember) => {
@@ -1336,7 +1422,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           onKeyDown={handleProjectButtonKeyDown}
           onContextMenu={handleProjectButtonContextMenu}
         >
-          {!projectExpanded && projectStatus ? (
+          {!displayProjectExpanded && projectStatus ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1360,7 +1446,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ) : (
             <ChevronRightIcon
               className={`-ml-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
-                projectExpanded ? "rotate-90" : ""
+                displayProjectExpanded ? "rotate-90" : ""
               }`}
             />
           )}
@@ -1498,7 +1584,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       <SidebarProjectThreadList
         projectKey={project.projectKey}
-        projectExpanded={projectExpanded}
+        projectExpanded={displayProjectExpanded}
         hasOverflowingThreads={hasOverflowingThreads}
         hiddenThreadStatus={hiddenThreadStatus}
         orderedProjectThreadKeys={orderedProjectThreadKeys}
@@ -1532,6 +1618,57 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         expandThreadListForProject={expandThreadListForProject}
         collapseThreadListForProject={collapseThreadListForProject}
       />
+
+      {/* Avi Code addition: name a new folder and drop this project into it. */}
+      <Dialog
+        open={isNewFolderDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsNewFolderDialogOpen(false);
+            setNewFolderName("");
+          }
+        }}
+      >
+        <DialogPopup className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+            <DialogDescription>
+              {`Create a folder and move ${project.displayName} into it.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-foreground">Folder name</span>
+              <Input
+                aria-label="Folder name"
+                autoFocus
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitNewFolder();
+                  }
+                }}
+              />
+            </div>
+          </DialogPanel>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsNewFolderDialogOpen(false);
+                setNewFolderName("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button disabled={newFolderName.trim().length === 0} onClick={submitNewFolder}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
 
       <Dialog
         open={projectRenameTarget !== null}
@@ -1662,6 +1799,45 @@ const SidebarProjectListRow = memo(function SidebarProjectListRow(props: Sidebar
   );
 });
 
+// Avi Code addition: a collapsible header for one user folder. Its member rows
+// are passed as children so this component owns only the header + collapse.
+const SidebarProjectFolderSection = memo(function SidebarProjectFolderSection({
+  folder,
+  memberCount,
+  onToggleCollapsed,
+  children,
+}: {
+  folder: ProjectFolder;
+  memberCount: number;
+  onToggleCollapsed: (id: string, collapsed: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <SidebarMenuItem className="rounded-md">
+        <button
+          type="button"
+          aria-expanded={!folder.collapsed}
+          onClick={() => onToggleCollapsed(folder.id, !folder.collapsed)}
+          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-sidebar-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <ChevronRightIcon
+            className={`size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
+              folder.collapsed ? "" : "rotate-90"
+            }`}
+          />
+          <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+          <span className="min-w-0 flex-1 truncate text-left">{folder.name}</span>
+          {memberCount > 0 ? (
+            <span className="shrink-0 text-[10px] text-muted-foreground/50">{memberCount}</span>
+          ) : null}
+        </button>
+      </SidebarMenuItem>
+      {folder.collapsed ? null : children}
+    </>
+  );
+});
+
 function LocalSecondaryStatus() {
   const { environments } = useEnvironments();
   // The desktop reports which local secondary backends (e.g. the WSL backend)
@@ -1753,6 +1929,8 @@ function ProjectSortMenu({
   onThreadPreviewCountChange,
   onThreadGroupingChange,
   onFlatThreadCountChange,
+  onExpandAllProjects,
+  onCollapseAllProjects,
 }: {
   projectSortOrder: SidebarProjectSortOrder;
   threadSortOrder: SidebarThreadSortOrder;
@@ -1764,6 +1942,9 @@ function ProjectSortMenu({
   onThreadPreviewCountChange: (count: SidebarThreadPreviewCount) => void;
   onThreadGroupingChange: (grouping: SidebarThreadGrouping) => void;
   onFlatThreadCountChange: (count: SidebarFlatThreadCount) => void;
+  // Avi Code addition: bulk expand/collapse every project row at once.
+  onExpandAllProjects: () => void;
+  onCollapseAllProjects: () => void;
 }) {
   const isFlat = threadGrouping === "flat";
   const handleThreadPreviewCountChange = useCallback(
@@ -1845,6 +2026,20 @@ function ProjectSortMenu({
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>
+          </MenuGroup>
+        )}
+        {/* Avi Code addition: one-click reset of every row's expansion. */}
+        {isFlat ? null : (
+          <MenuGroup>
+            <div className="px-2 pt-2 pb-1 sm:text-xs font-medium text-muted-foreground">
+              Projects
+            </div>
+            <MenuItem className="min-h-7 py-1 sm:text-xs" onClick={onExpandAllProjects}>
+              Expand all
+            </MenuItem>
+            <MenuItem className="min-h-7 py-1 sm:text-xs" onClick={onCollapseAllProjects}>
+              Collapse all
+            </MenuItem>
           </MenuGroup>
         )}
         <MenuGroup>
@@ -1979,6 +2174,12 @@ interface SidebarProjectsContentProps {
   handleProjectDragCancel: (event: DragCancelEvent) => void;
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   sortedProjects: readonly SidebarProjectSnapshot[];
+  // Avi Code addition: inline filter + bulk expand/collapse.
+  projectFilterQuery: string;
+  setProjectFilterQuery: (query: string) => void;
+  filteredProjects: readonly SidebarProjectSnapshot[];
+  onExpandAllProjects: () => void;
+  onCollapseAllProjects: () => void;
   expandedThreadListsByProject: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
   routeThreadKey: string | null;
@@ -2026,6 +2227,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleProjectDragCancel,
     handleNewThread,
     sortedProjects,
+    projectFilterQuery,
+    setProjectFilterQuery,
+    filteredProjects,
+    onExpandAllProjects,
+    onCollapseAllProjects,
     expandedThreadListsByProject,
     activeRouteProjectKey,
     routeThreadKey,
@@ -2041,6 +2247,10 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     attachProjectListAutoAnimateRef,
     projectsLength,
   } = props;
+  // Avi Code addition: user folders live in client UI state.
+  const projectFolders = useUiStateStore((state) => state.projectFolders);
+  const setProjectFolderCollapsed = useUiStateStore((state) => state.setProjectFolderCollapsed);
+  const isFilteringProjects = projectFilterQuery.trim().length > 0;
 
   const handleProjectSortOrderChange = useCallback(
     (sortOrder: SidebarProjectSortOrder) => {
@@ -2073,6 +2283,41 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     [updateSettings],
   );
   const handleFlatNewThread = useFlatNewThread(sortedProjects, handleNewThread);
+
+  // Avi Code addition: one row renderer shared by the folder, ungrouped, and
+  // filtered views so their props stay identical.
+  const renderProjectRow = (
+    project: SidebarProjectSnapshot,
+    options?: { forceExpanded?: boolean; threadListExpanded?: boolean },
+  ) => (
+    <SidebarProjectListRow
+      key={project.projectKey}
+      project={project}
+      isThreadListExpanded={
+        options?.threadListExpanded ?? expandedThreadListsByProject.has(project.projectKey)
+      }
+      activeRouteThreadKey={activeRouteProjectKey === project.projectKey ? routeThreadKey : null}
+      newThreadShortcutLabel={newThreadShortcutLabel}
+      handleNewThread={handleNewThread}
+      threadJumpLabelByKey={threadJumpLabelByKey}
+      attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+      expandThreadListForProject={expandThreadListForProject}
+      collapseThreadListForProject={collapseThreadListForProject}
+      dragInProgressRef={dragInProgressRef}
+      suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
+      suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
+      isManualProjectSorting={isManualProjectSorting}
+      dragHandleProps={null}
+      forceExpanded={options?.forceExpanded ?? false}
+    />
+  );
+
+  // Folders and manual drag are bypassed while filtering: the list flattens to
+  // the matches, each shown expanded.
+  const folderSections = isFilteringProjects
+    ? []
+    : partitionProjectsIntoFolders(sortedProjects, projectFolders);
+  const hasFolders = projectFolders.length > 0;
 
   return (
     <SidebarContent
@@ -2163,6 +2408,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               onThreadPreviewCountChange={handleThreadPreviewCountChange}
               onThreadGroupingChange={handleThreadGroupingChange}
               onFlatThreadCountChange={handleFlatThreadCountChange}
+              onExpandAllProjects={onExpandAllProjects}
+              onCollapseAllProjects={onCollapseAllProjects}
             />
             <Tooltip>
               <TooltipTrigger
@@ -2183,6 +2430,33 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </div>
         </div>
 
+        {/* Avi Code addition: inline project filter. Hidden in flat mode,
+            where the list is already threads-first. */}
+        {isFlatSidebar ? null : (
+          <div className="mb-1.5 px-1">
+            <div className="relative">
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+              <Input
+                aria-label="Filter projects"
+                placeholder="Filter projects"
+                value={projectFilterQuery}
+                onChange={(event) => setProjectFilterQuery(event.target.value)}
+                className="h-7 pr-7 pl-7 text-xs"
+              />
+              {isFilteringProjects ? (
+                <button
+                  type="button"
+                  aria-label="Clear filter"
+                  onClick={() => setProjectFilterQuery("")}
+                  className="absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
+
         {isFlatSidebar ? (
           <SidebarMenu>
             <SidebarMenuItem className="rounded-md">
@@ -2201,7 +2475,17 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               />
             </SidebarMenuItem>
           </SidebarMenu>
-        ) : isManualProjectSorting ? (
+        ) : isFilteringProjects ? (
+          filteredProjects.length === 0 ? (
+            <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">No matches</div>
+          ) : (
+            <SidebarMenu ref={attachProjectListAutoAnimateRef}>
+              {filteredProjects.map((project) =>
+                renderProjectRow(project, { forceExpanded: true, threadListExpanded: true }),
+              )}
+            </SidebarMenu>
+          )
+        ) : isManualProjectSorting && !hasFolders ? (
           <DndContext
             sensors={projectDnDSensors}
             collisionDetection={projectCollisionDetection}
@@ -2246,27 +2530,27 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </DndContext>
         ) : (
           <SidebarMenu ref={attachProjectListAutoAnimateRef}>
-            {sortedProjects.map((project) => (
-              <SidebarProjectListRow
-                key={project.projectKey}
-                project={project}
-                isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
-                activeRouteThreadKey={
-                  activeRouteProjectKey === project.projectKey ? routeThreadKey : null
-                }
-                newThreadShortcutLabel={newThreadShortcutLabel}
-                handleNewThread={handleNewThread}
-                threadJumpLabelByKey={threadJumpLabelByKey}
-                attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
-                expandThreadListForProject={expandThreadListForProject}
-                collapseThreadListForProject={collapseThreadListForProject}
-                dragInProgressRef={dragInProgressRef}
-                suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
-                suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
-                isManualProjectSorting={isManualProjectSorting}
-                dragHandleProps={null}
-              />
-            ))}
+            {folderSections.map((section) =>
+              section.folder ? (
+                <SidebarProjectFolderSection
+                  key={section.folder.id}
+                  folder={section.folder}
+                  memberCount={section.projects.length}
+                  onToggleCollapsed={setProjectFolderCollapsed}
+                >
+                  {section.projects.map((project) => renderProjectRow(project))}
+                </SidebarProjectFolderSection>
+              ) : section.projects.length === 0 ? null : (
+                <React.Fragment key="__ungrouped">
+                  {hasFolders ? (
+                    <div className="px-2 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground/50 uppercase">
+                      Ungrouped
+                    </div>
+                  ) : null}
+                  {section.projects.map((project) => renderProjectRow(project))}
+                </React.Fragment>
+              ),
+            )}
           </SidebarMenu>
         )}
 
@@ -2295,6 +2579,9 @@ export default function Sidebar() {
   const isOnSettings = pathname.startsWith("/settings");
   const sidebarThreadSortOrder = useClientSettings((s) => s.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
+  const projectsCollapsedByDefault = useClientSettings(
+    (s) => s.aviCodeSidebarProjectsCollapsedByDefault,
+  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
   const sidebarThreadGrouping = useClientSettings((s) => s.sidebarThreadGrouping);
@@ -2606,6 +2893,40 @@ export default function Sidebar() {
     visibleThreads,
   ]);
   const isManualProjectSorting = sidebarProjectSortOrder === "manual";
+
+  // Avi Code addition: inline filter, collapse-by-default, and bulk expand.
+  const [projectFilterQuery, setProjectFilterQuery] = useState("");
+  const filteredProjects = useMemo(() => {
+    if (projectFilterQuery.trim().length === 0) {
+      return [];
+    }
+    return filterProjectsByQuery(
+      sortedProjects,
+      projectFilterQuery,
+      (project) => project.displayName,
+      (project) =>
+        (threadsByProjectKey.get(project.projectKey) ?? [])
+          .filter((thread) => thread.archivedAt === null)
+          .map((thread) => ({
+            key: scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            title: thread.title,
+          })),
+    ).projects;
+  }, [projectFilterQuery, sortedProjects, threadsByProjectKey]);
+  const setProjectExpandedAction = useUiStateStore((store) => store.setProjectExpanded);
+  const allProjectPreferenceKeys = useMemo(
+    () => sidebarProjects.flatMap((project) => projectExpansionPreferenceKeys(project)),
+    [sidebarProjects],
+  );
+  const handleExpandAllProjects = useCallback(
+    () => setProjectExpandedAction(allProjectPreferenceKeys, true),
+    [allProjectPreferenceKeys, setProjectExpandedAction],
+  );
+  const handleCollapseAllProjects = useCallback(
+    () => setProjectExpandedAction(allProjectPreferenceKeys, false),
+    [allProjectPreferenceKeys, setProjectExpandedAction],
+  );
+
   const groupedSidebarThreadKeys = useMemo(
     () =>
       sortedProjects.flatMap((project) => {
@@ -2628,6 +2949,7 @@ export default function Sidebar() {
         const projectExpanded = resolveProjectExpanded(
           projectExpandedById,
           projectExpansionPreferenceKeys(project),
+          !projectsCollapsedByDefault,
         );
         const activeThreadKey = routeThreadKey ?? undefined;
         const pinnedCollapsedThread =
@@ -2662,6 +2984,7 @@ export default function Sidebar() {
       expandedThreadListsByProject,
       pinnedThreadKeys,
       projectExpandedById,
+      projectsCollapsedByDefault,
       routeThreadKey,
       sortedProjects,
       threadsByProjectKey,
@@ -3018,6 +3341,11 @@ export default function Sidebar() {
             handleProjectDragCancel={handleProjectDragCancel}
             handleNewThread={handleNewThread}
             sortedProjects={sortedProjects}
+            projectFilterQuery={projectFilterQuery}
+            setProjectFilterQuery={setProjectFilterQuery}
+            filteredProjects={filteredProjects}
+            onExpandAllProjects={handleExpandAllProjects}
+            onCollapseAllProjects={handleCollapseAllProjects}
             expandedThreadListsByProject={expandedThreadListsByProject}
             activeRouteProjectKey={activeRouteProjectKey}
             routeThreadKey={routeThreadKey}

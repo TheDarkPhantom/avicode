@@ -2,6 +2,9 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  assignProjectToFolder,
+  createProjectFolder,
+  deleteProjectFolder,
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
   markThreadVisited,
@@ -9,10 +12,12 @@ import {
   PERSISTED_STATE_KEY,
   type PersistedUiState,
   persistState,
+  renameProjectFolder,
   reorderProjects,
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
+  setProjectFolderCollapsed,
   setProjectPinned,
   setThreadChangedFilesExpanded,
   setThreadPlanExpanded,
@@ -28,6 +33,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectOrder: [],
     pinnedProjectKeys: [],
     pinnedThreadKeys: [],
+    projectFolders: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     threadPlanReadingStateById: {},
@@ -73,6 +79,15 @@ describe("uiStateStore pure functions", () => {
     );
     expect(resolveProjectExpanded({ [legacyKey]: false }, ["new-logical", legacyKey])).toBe(false);
     expect(resolveProjectExpanded({}, ["new-logical"])).toBe(true);
+  });
+
+  it("falls back to the supplied default only when no preference exists", () => {
+    // Collapse-by-default: an unseen project follows the passed default…
+    expect(resolveProjectExpanded({}, ["unseen"], false)).toBe(false);
+    expect(resolveProjectExpanded({}, ["unseen"], true)).toBe(true);
+    // …but an explicit per-project choice still wins over the default.
+    expect(resolveProjectExpanded({ seen: true }, ["seen"], false)).toBe(true);
+    expect(resolveProjectExpanded({ seen: false }, ["seen"], true)).toBe(false);
   });
 
   it("sets expansion for every stable key belonging to a logical project", () => {
@@ -274,6 +289,106 @@ describe("uiStateStore pinning", () => {
   });
 });
 
+// Avi Code addition: user-defined sidebar project folders.
+describe("uiStateStore project folders", () => {
+  it("creates a folder with a trimmed name and no members", () => {
+    const next = createProjectFolder(makeUiState(), "  Clients  ", "folder-1");
+
+    expect(next.projectFolders).toEqual([
+      { id: "folder-1", name: "Clients", projectKeys: [], collapsed: false },
+    ]);
+  });
+
+  it("ignores a blank folder name", () => {
+    const state = makeUiState();
+    expect(createProjectFolder(state, "   ", "folder-1")).toBe(state);
+  });
+
+  it("renames a folder and leaves state untouched when nothing changes", () => {
+    const created = createProjectFolder(makeUiState(), "Clients", "folder-1");
+
+    expect(renameProjectFolder(created, "folder-1", "Work").projectFolders[0]?.name).toBe("Work");
+    expect(renameProjectFolder(created, "folder-1", "Clients")).toBe(created);
+    expect(renameProjectFolder(created, "missing", "Work")).toBe(created);
+    expect(renameProjectFolder(created, "folder-1", "  ")).toBe(created);
+  });
+
+  it("assigns a project to one folder, moving it out of any other", () => {
+    let state = createProjectFolder(makeUiState(), "Clients", "folder-1");
+    state = createProjectFolder(state, "Personal", "folder-2");
+
+    const assigned = assignProjectToFolder(state, "proj-a", "folder-1");
+    expect(assigned.projectFolders[0]?.projectKeys).toEqual(["proj-a"]);
+
+    const moved = assignProjectToFolder(assigned, "proj-a", "folder-2");
+    expect(moved.projectFolders[0]?.projectKeys).toEqual([]);
+    expect(moved.projectFolders[1]?.projectKeys).toEqual(["proj-a"]);
+  });
+
+  it("removes a project from all folders when the target is null", () => {
+    let state = createProjectFolder(makeUiState(), "Clients", "folder-1");
+    state = assignProjectToFolder(state, "proj-a", "folder-1");
+
+    const ungrouped = assignProjectToFolder(state, "proj-a", null);
+    expect(ungrouped.projectFolders[0]?.projectKeys).toEqual([]);
+    // Removing an already-ungrouped project changes nothing.
+    expect(assignProjectToFolder(ungrouped, "proj-a", null)).toBe(ungrouped);
+  });
+
+  it("toggles folder collapse and no-ops on unchanged or missing folders", () => {
+    const created = createProjectFolder(makeUiState(), "Clients", "folder-1");
+
+    expect(setProjectFolderCollapsed(created, "folder-1", true).projectFolders[0]?.collapsed).toBe(
+      true,
+    );
+    expect(setProjectFolderCollapsed(created, "folder-1", false)).toBe(created);
+    expect(setProjectFolderCollapsed(created, "missing", true)).toBe(created);
+  });
+
+  it("deletes a folder so its projects fall back to ungrouped", () => {
+    let state = createProjectFolder(makeUiState(), "Clients", "folder-1");
+    state = assignProjectToFolder(state, "proj-a", "folder-1");
+
+    expect(deleteProjectFolder(state, "folder-1").projectFolders).toEqual([]);
+    expect(deleteProjectFolder(state, "missing")).toBe(state);
+  });
+
+  it("round-trips folders through persistence and drops malformed entries", () => {
+    let state = createProjectFolder(makeUiState(), "Clients", "folder-1");
+    state = assignProjectToFolder(state, "proj-a", "folder-1");
+
+    expect(parsePersistedState(toPersisted(state)).projectFolders).toEqual(state.projectFolders);
+
+    const sanitized = parsePersistedState({
+      projectFolders: [
+        { id: "ok", name: "Keep", projectKeys: ["proj-a", "", "proj-a"], collapsed: true },
+        { id: "", name: "no id", projectKeys: [], collapsed: false },
+        { id: "no-name", name: "   ", projectKeys: [], collapsed: false },
+        "nonsense" as unknown as never,
+      ],
+    });
+    expect(sanitized.projectFolders).toEqual([
+      { id: "ok", name: "Keep", projectKeys: ["proj-a"], collapsed: true },
+    ]);
+  });
+
+  it("defaults to no folders for state saved before the feature existed", () => {
+    expect(parsePersistedState({ projectOrder: ["physical-a"] }).projectFolders).toEqual([]);
+  });
+});
+
+function toPersisted(state: UiState): PersistedUiState {
+  return {
+    projectExpandedById: state.projectExpandedById,
+    projectOrder: state.projectOrder,
+    pinnedProjectKeys: state.pinnedProjectKeys,
+    pinnedThreadKeys: state.pinnedThreadKeys,
+    projectFolders: state.projectFolders,
+    threadLastVisitedAtById: state.threadLastVisitedAtById,
+    defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
+  };
+}
+
 describe("parsePersistedState", () => {
   it("hydrates raw UI-owned state without server entities", () => {
     const parsed = parsePersistedState({
@@ -303,6 +418,7 @@ describe("parsePersistedState", () => {
       projectOrder: ["physical-b", "physical-a"],
       pinnedProjectKeys: [],
       pinnedThreadKeys: [],
+      projectFolders: [],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
@@ -425,6 +541,7 @@ describe("uiStateStore persistence", () => {
       projectOrder: ["physical-b", "physical-a"],
       pinnedProjectKeys: [],
       pinnedThreadKeys: [],
+      projectFolders: [],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },

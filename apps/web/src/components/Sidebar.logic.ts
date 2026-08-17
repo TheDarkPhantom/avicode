@@ -12,6 +12,7 @@ import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
+import type { ProjectFolder } from "../uiStateStore";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
@@ -53,6 +54,87 @@ export function buildTargetedProjectContextMenuItem<TMember>(input: {
     label: input.label,
     children: input.members.map((member) => input.makeLeaf(input.action, member)),
   };
+}
+
+// Avi Code addition: a rendered sidebar section — one user folder plus the
+// visible projects that belong to it, or the trailing ungrouped section
+// (`folder: null`). Members keep the order of the sorted input.
+export interface ProjectFolderSection<T> {
+  readonly folder: ProjectFolder | null;
+  readonly projects: T[];
+}
+
+export function partitionProjectsIntoFolders<T extends { projectKey: string }>(
+  projects: readonly T[],
+  folders: readonly ProjectFolder[],
+): ProjectFolderSection<T>[] {
+  if (folders.length === 0) {
+    return [{ folder: null, projects: [...projects] }];
+  }
+  const folderIdByProjectKey = new Map<string, string>();
+  for (const folder of folders) {
+    for (const key of folder.projectKeys) {
+      if (!folderIdByProjectKey.has(key)) {
+        folderIdByProjectKey.set(key, folder.id);
+      }
+    }
+  }
+  const membersByFolderId = new Map<string, T[]>();
+  const ungrouped: T[] = [];
+  for (const project of projects) {
+    const folderId = folderIdByProjectKey.get(project.projectKey);
+    if (folderId === undefined) {
+      ungrouped.push(project);
+      continue;
+    }
+    const existing = membersByFolderId.get(folderId);
+    if (existing) {
+      existing.push(project);
+    } else {
+      membersByFolderId.set(folderId, [project]);
+    }
+  }
+  const sections: ProjectFolderSection<T>[] = folders.map((folder) => ({
+    folder,
+    projects: membersByFolderId.get(folder.id) ?? [],
+  }));
+  sections.push({ folder: null, projects: ungrouped });
+  return sections;
+}
+
+// Avi Code addition: inline sidebar filter. A project is kept when its own
+// title matches or any of its threads' titles match; the matched thread keys
+// come back so the caller can force those thread lists open while filtering.
+export interface ProjectQueryFilterResult<T> {
+  readonly projects: T[];
+  readonly matchedThreadKeys: Set<string>;
+}
+
+export function filterProjectsByQuery<T>(
+  projects: readonly T[],
+  query: string,
+  getProjectTitle: (project: T) => string,
+  getProjectThreads: (project: T) => readonly { key: string; title: string }[],
+): ProjectQueryFilterResult<T> {
+  const needle = query.trim().toLowerCase();
+  if (needle.length === 0) {
+    return { projects: [...projects], matchedThreadKeys: new Set() };
+  }
+  const kept: T[] = [];
+  const matchedThreadKeys = new Set<string>();
+  for (const project of projects) {
+    const titleMatches = getProjectTitle(project).toLowerCase().includes(needle);
+    const matchingThreads = getProjectThreads(project).filter((thread) =>
+      thread.title.toLowerCase().includes(needle),
+    );
+    if (titleMatches || matchingThreads.length > 0) {
+      kept.push(project);
+      for (const thread of matchingThreads) {
+        matchedThreadKeys.add(thread.key);
+      }
+    }
+  }
+  return { projects: kept, matchedThreadKeys };
 }
 
 type SidebarProject = {
