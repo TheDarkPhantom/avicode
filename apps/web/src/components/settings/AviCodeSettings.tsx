@@ -12,7 +12,9 @@ import {
   AlignCenterIcon,
   BellRingIcon,
   DatabaseBackupIcon,
+  EyeIcon,
   EyeOffIcon,
+  FolderIcon,
   LoaderIcon,
   MapIcon,
   MicIcon,
@@ -36,6 +38,7 @@ import {
   useUpdatePrimarySettings,
 } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
+import { useUiStateStore } from "../../uiStateStore";
 import {
   COLOR_THEMES,
   type ColorThemeDefinition,
@@ -599,6 +602,9 @@ function ChatListSettings() {
     (settings) => settings.aviCodeSidebarAlwaysShowDevServerStart,
   );
   const showPrIndicator = useClientSettings((settings) => settings.aviCodeSidebarShowPrIndicator);
+  const showAttentionUnderCollapsedFolders = useClientSettings(
+    (settings) => settings.aviCodeSidebarShowAttentionUnderCollapsedFolders,
+  );
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -656,6 +662,72 @@ function ChatListSettings() {
           />
         }
       />
+      <SettingsRow
+        title="Show attention chats under collapsed folders"
+        description="Keep chats that need you — waiting on approval or input, a failed run, or a plan ready to act on — visible beneath a collapsed folder. When off, a collapsed folder hides all of its chats."
+        status="Off by default to keep collapsed folders quiet."
+        control={
+          <Switch
+            checked={showAttentionUnderCollapsedFolders}
+            onCheckedChange={(checked) =>
+              updateSettings({
+                aviCodeSidebarShowAttentionUnderCollapsedFolders: Boolean(checked),
+              })
+            }
+            aria-label="Show attention chats under collapsed folders"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
+/**
+ * Avi Code addition. Sidebar folders are hidden from their header overflow menu;
+ * this is the one place to bring them back. Every folder is listed with a
+ * visibility toggle so a hidden folder (and its projects) can be restored.
+ */
+function SidebarFoldersSettings() {
+  const projectFolders = useUiStateStore((state) => state.projectFolders);
+  const setProjectFolderHidden = useUiStateStore((state) => state.setProjectFolderHidden);
+
+  return (
+    <SettingsSection title="Sidebar folders" icon={<FolderIcon className="size-5" />}>
+      {projectFolders.length === 0 ? (
+        <SettingsRow
+          title="No folders yet"
+          description="Group projects into folders from a project’s right-click menu in the sidebar. Hidden folders will show up here so you can bring them back."
+        />
+      ) : (
+        projectFolders.map((folder) => (
+          <SettingsRow
+            key={folder.id}
+            title={folder.name}
+            description={
+              folder.hidden
+                ? "Hidden from the sidebar along with its projects."
+                : `${folder.projectKeys.length} project${
+                    folder.projectKeys.length === 1 ? "" : "s"
+                  } · visible in the sidebar.`
+            }
+            control={
+              <Button
+                size="sm"
+                variant={folder.hidden ? "default" : "outline"}
+                onClick={() => setProjectFolderHidden(folder.id, !folder.hidden)}
+                aria-label={folder.hidden ? `Show ${folder.name}` : `Hide ${folder.name}`}
+              >
+                {folder.hidden ? (
+                  <EyeIcon className="size-4" />
+                ) : (
+                  <EyeOffIcon className="size-4" />
+                )}
+                {folder.hidden ? "Show" : "Hide"}
+              </Button>
+            }
+          />
+        ))
+      )}
     </SettingsSection>
   );
 }
@@ -919,6 +991,7 @@ export function AviCodeSettings() {
           <NotificationSettings />
           <TimeLoggingSettings />
           <ChatListSettings />
+          <SidebarFoldersSettings />
           <ProjectIsolationSettings />
 
           <VoiceSettingsSection />

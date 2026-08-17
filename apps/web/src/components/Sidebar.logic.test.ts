@@ -15,6 +15,7 @@ import {
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
   hasUnseenCompletion,
+  isAttentionStatus,
   isContextMenuPointerDown,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
@@ -107,17 +108,17 @@ describe("partitionProjectsIntoFolders", () => {
 
   it("groups members under their folder in stored order, ungrouped last", () => {
     const sections = partitionProjectsIntoFolders(projects, [
-      { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false },
-      { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: true },
+      { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false, hidden: false },
+      { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: true, hidden: false },
     ]);
 
     expect(sections).toEqual([
       {
-        folder: { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false },
+        folder: { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false, hidden: false },
         projects: [{ projectKey: "a" }, { projectKey: "c" }],
       },
       {
-        folder: { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: true },
+        folder: { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: true, hidden: false },
         projects: [{ projectKey: "b" }],
       },
       { folder: null, projects: [{ projectKey: "d" }] },
@@ -126,7 +127,7 @@ describe("partitionProjectsIntoFolders", () => {
 
   it("keeps member order matching the incoming sort, not the folder list", () => {
     const sections = partitionProjectsIntoFolders(projects, [
-      { id: "f1", name: "Clients", projectKeys: ["d", "b"], collapsed: false },
+      { id: "f1", name: "Clients", projectKeys: ["d", "b"], collapsed: false, hidden: false },
     ]);
 
     // b precedes d in the sorted input, so the folder shows them in that order.
@@ -141,11 +142,45 @@ describe("partitionProjectsIntoFolders", () => {
   it("renders an empty folder and skips stale keys with no live project", () => {
     const sections = partitionProjectsIntoFolders(
       [{ projectKey: "a" }],
-      [{ id: "f1", name: "Empty", projectKeys: ["gone"], collapsed: false }],
+      [{ id: "f1", name: "Empty", projectKeys: ["gone"], collapsed: false, hidden: false }],
     );
 
     expect(sections[0]?.projects).toEqual([]);
     expect(sections[1]).toEqual({ folder: null, projects: [{ projectKey: "a" }] });
+  });
+
+  it("drops a hidden folder and its members without leaking them to ungrouped", () => {
+    const sections = partitionProjectsIntoFolders(projects, [
+      { id: "f1", name: "Clients", projectKeys: ["a"], collapsed: false, hidden: true },
+      { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: false, hidden: false },
+    ]);
+
+    // f1 is hidden, so neither its header nor project "a" appears; "a" does not
+    // fall back into Ungrouped. Only "c" and "d" (never in a folder) are ungrouped.
+    expect(sections).toEqual([
+      {
+        folder: { id: "f2", name: "Personal", projectKeys: ["b"], collapsed: false, hidden: false },
+        projects: [{ projectKey: "b" }],
+      },
+      { folder: null, projects: [{ projectKey: "c" }, { projectKey: "d" }] },
+    ]);
+  });
+});
+
+describe("isAttentionStatus", () => {
+  const pill = (label: string) => ({ label }) as Parameters<typeof isAttentionStatus>[0];
+
+  it("is true for the labels that mean the chat needs you", () => {
+    for (const label of ["Pending Approval", "Waiting", "Needs Resume", "Failed", "Plan Ready"]) {
+      expect(isAttentionStatus(pill(label))).toBe(true);
+    }
+  });
+
+  it("is false for progress labels and for no status", () => {
+    for (const label of ["Working", "Connecting", "Merging", "Completed"]) {
+      expect(isAttentionStatus(pill(label))).toBe(false);
+    }
+    expect(isAttentionStatus(null)).toBe(false);
   });
 });
 

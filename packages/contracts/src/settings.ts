@@ -229,6 +229,12 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeSidebarProjectsCollapsedByDefault: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  // Avi Code addition. Keeps chats that need attention (waiting on you, a
+  // failed run, a plan ready) visible beneath a collapsed folder instead of
+  // hiding them with the rest of the folder's contents.
+  aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Avi Code addition. How wide the chat column is allowed to grow.
   aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
@@ -937,6 +943,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeSidebarAlwaysShowDevServerStart: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarShowPrIndicator: Schema.optionalKey(Schema.Boolean),
   aviCodeSidebarProjectsCollapsedByDefault: Schema.optionalKey(Schema.Boolean),
+  aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.optionalKey(Schema.Boolean),
   aviCodeCommunicationStyleId: Schema.optionalKey(Schema.String),
   aviCodeCommunicationStyles: Schema.optionalKey(
     Schema.Array(AviCodeCommunicationStylePreset).check(

@@ -4,9 +4,11 @@ import {
   ChevronRightIcon,
   CloudIcon,
   ContainerIcon,
+  EllipsisIcon,
   FolderIcon,
   FolderPlusIcon,
   Globe2Icon,
+  GripVerticalIcon,
   LoaderIcon,
   PinIcon,
   SearchIcon,
@@ -41,7 +43,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -195,6 +202,7 @@ import {
   type ProjectContextMenuAction,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
+  isAttentionStatus,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
@@ -1799,27 +1807,49 @@ const SidebarProjectListRow = memo(function SidebarProjectListRow(props: Sidebar
   );
 });
 
-// Avi Code addition: a collapsible header for one user folder. Its member rows
-// are passed as children so this component owns only the header + collapse.
-const SidebarProjectFolderSection = memo(function SidebarProjectFolderSection({
+// Avi Code addition: a draggable, collapsible header for one user folder. The
+// grip reorders folders while the header button toggles collapse and the
+// overflow button opens rename/hide/delete. Member rows are rendered by the
+// parent as siblings so only the header participates in the sortable list.
+const SortableFolderHeader = memo(function SortableFolderHeader({
   folder,
   memberCount,
   onToggleCollapsed,
-  children,
+  onOpenMenu,
 }: {
   folder: ProjectFolder;
   memberCount: number;
   onToggleCollapsed: (id: string, collapsed: boolean) => void;
-  children: React.ReactNode;
+  onOpenMenu: (folder: ProjectFolder, position: { x: number; y: number }) => void;
 }) {
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging, isOver } =
+    useSortable({ id: folder.id });
   return (
-    <>
-      <SidebarMenuItem className="rounded-md">
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`group/folder relative rounded-md ${isDragging ? "z-20 opacity-80" : ""} ${
+        isOver && !isDragging ? "ring-1 ring-primary/40" : ""
+      }`}
+      data-sidebar="menu-item"
+      data-slot="sidebar-menu-item"
+    >
+      <div className="flex w-full items-center rounded-md text-xs font-medium text-sidebar-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          aria-label={`Reorder ${folder.name}`}
+          className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/40 opacity-0 transition-opacity duration-150 group-hover/folder:opacity-100 active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVerticalIcon className="size-3.5" />
+        </button>
         <button
           type="button"
           aria-expanded={!folder.collapsed}
           onClick={() => onToggleCollapsed(folder.id, !folder.collapsed)}
-          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-sidebar-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+          className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-0.5 text-left"
         >
           <ChevronRightIcon
             className={`size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
@@ -1827,15 +1857,82 @@ const SidebarProjectFolderSection = memo(function SidebarProjectFolderSection({
             }`}
           />
           <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
-          <span className="min-w-0 flex-1 truncate text-left">{folder.name}</span>
+          <span className="min-w-0 flex-1 truncate">{folder.name}</span>
           {memberCount > 0 ? (
             <span className="shrink-0 text-[10px] text-muted-foreground/50">{memberCount}</span>
           ) : null}
         </button>
-      </SidebarMenuItem>
-      {folder.collapsed ? null : children}
-    </>
+        <button
+          type="button"
+          aria-label={`Folder options for ${folder.name}`}
+          onClick={(event) => onOpenMenu(folder, { x: event.clientX, y: event.clientY })}
+          className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 opacity-0 transition-opacity duration-150 group-hover/folder:opacity-100 hover:bg-accent hover:text-foreground"
+        >
+          <EllipsisIcon className="size-3.5" />
+        </button>
+      </div>
+    </li>
   );
+});
+
+// Avi Code addition: renders a member row under a collapsed folder only when
+// that project has a chat needing attention. Fetching the project's shells here
+// (cheap, from the shared shell atom) keeps the decision out of the row so no
+// empty menu items are emitted for the projects it skips.
+const CollapsedFolderAttentionRow = memo(function CollapsedFolderAttentionRow({
+  project,
+  renderRow,
+}: {
+  project: SidebarProjectSnapshot;
+  renderRow: (project: SidebarProjectSnapshot) => React.ReactNode;
+}) {
+  const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
+    (settings) => settings.sidebarThreadSortOrder,
+  );
+  const pinnedThreadKeys = useUiStateStore((state) => state.pinnedThreadKeys);
+  const projectThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const threadLastVisitedAts = useUiStateStore(
+    useShallow((state) =>
+      projectThreads.map(
+        (thread) =>
+          state.threadLastVisitedAtById[
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+          ] ?? null,
+      ),
+    ),
+  );
+  const needsAttention = useMemo(() => {
+    const lastVisitedAtByThreadKey = new Map(
+      projectThreads.map((thread, index) => [
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        threadLastVisitedAts[index] ?? null,
+      ]),
+    );
+    const { ordered } = orderPinnedFirst({
+      items: sortThreads(
+        projectThreads.filter((thread) => thread.archivedAt === null),
+        threadSortOrder,
+      ),
+      pinnedKeys: pinnedThreadKeys,
+      getItemKeys: (thread) => [scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+    });
+    const status = resolveProjectStatusIndicator(
+      ordered.map((thread) => {
+        const lastVisitedAt = lastVisitedAtByThreadKey.get(
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        );
+        return resolveThreadStatusPill({
+          thread: {
+            ...thread,
+            ...(lastVisitedAt !== null && lastVisitedAt !== undefined ? { lastVisitedAt } : {}),
+          },
+        });
+      }),
+    );
+    return isAttentionStatus(status);
+  }, [pinnedThreadKeys, projectThreads, threadLastVisitedAts, threadSortOrder]);
+
+  return needsAttention ? <>{renderRow(project)}</> : null;
 });
 
 function LocalSecondaryStatus() {
@@ -2250,6 +2347,17 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   // Avi Code addition: user folders live in client UI state.
   const projectFolders = useUiStateStore((state) => state.projectFolders);
   const setProjectFolderCollapsed = useUiStateStore((state) => state.setProjectFolderCollapsed);
+  const setProjectFolderHidden = useUiStateStore((state) => state.setProjectFolderHidden);
+  const reorderProjectFolders = useUiStateStore((state) => state.reorderProjectFolders);
+  const renameProjectFolder = useUiStateStore((state) => state.renameProjectFolder);
+  const deleteProjectFolder = useUiStateStore((state) => state.deleteProjectFolder);
+  // Avi Code addition: keep attention-needing chats visible under a collapsed
+  // folder when the user opts in.
+  const showAttentionUnderCollapsedFolders = useClientSettings(
+    (settings) => settings.aviCodeSidebarShowAttentionUnderCollapsedFolders,
+  );
+  const [folderRenameTarget, setFolderRenameTarget] = useState<ProjectFolder | null>(null);
+  const [folderRenameName, setFolderRenameName] = useState("");
   const isFilteringProjects = projectFilterQuery.trim().length > 0;
 
   const handleProjectSortOrderChange = useCallback(
@@ -2312,12 +2420,75 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     />
   );
 
+  // Avi Code addition: drag reorders the visible (non-hidden) folders. Hidden
+  // folders aren't rendered, so they trail the reordered set in the store.
+  const handleFolderDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) {
+        return;
+      }
+      const visibleIds = projectFolders
+        .filter((folder) => !folder.hidden)
+        .map((folder) => folder.id);
+      const oldIndex = visibleIds.indexOf(String(active.id));
+      const newIndex = visibleIds.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) {
+        return;
+      }
+      reorderProjectFolders(arrayMove(visibleIds, oldIndex, newIndex));
+    },
+    [projectFolders, reorderProjectFolders],
+  );
+
+  // Avi Code addition: the folder header overflow menu. Hide drops the folder
+  // and its members from the sidebar (unhide lives in AviCode settings); rename
+  // and delete finally wire up the store transforms that were previously unused.
+  const openFolderMenu = useCallback(
+    (folder: ProjectFolder, position: { x: number; y: number }) => {
+      void (async () => {
+        const api = readLocalApi();
+        if (!api) {
+          return;
+        }
+        const clicked = await api.contextMenu.show(
+          [
+            { id: "folder:rename", label: "Rename folder…" },
+            { id: "folder:hide", label: "Hide folder" },
+            { id: "folder:delete", label: "Delete folder", destructive: true },
+          ],
+          position,
+        );
+        if (clicked === "folder:rename") {
+          setFolderRenameTarget(folder);
+          setFolderRenameName(folder.name);
+        } else if (clicked === "folder:hide") {
+          setProjectFolderHidden(folder.id, true);
+        } else if (clicked === "folder:delete") {
+          deleteProjectFolder(folder.id);
+        }
+      })();
+    },
+    [deleteProjectFolder, setProjectFolderHidden],
+  );
+
+  const submitFolderRename = useCallback(() => {
+    if (folderRenameTarget) {
+      renameProjectFolder(folderRenameTarget.id, folderRenameName);
+    }
+    setFolderRenameTarget(null);
+    setFolderRenameName("");
+  }, [folderRenameName, folderRenameTarget, renameProjectFolder]);
+
   // Folders and manual drag are bypassed while filtering: the list flattens to
   // the matches, each shown expanded.
   const folderSections = isFilteringProjects
     ? []
     : partitionProjectsIntoFolders(sortedProjects, projectFolders);
   const hasFolders = projectFolders.length > 0;
+  const visibleFolderIds = folderSections
+    .filter((section) => section.folder !== null)
+    .map((section) => section.folder!.id);
 
   return (
     <SidebarContent
@@ -2528,28 +2699,58 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               </SortableContext>
             </SidebarMenu>
           </DndContext>
+        ) : hasFolders ? (
+          <DndContext
+            sensors={projectDnDSensors}
+            collisionDetection={projectCollisionDetection}
+            modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+            onDragEnd={handleFolderDragEnd}
+          >
+            <SidebarMenu ref={attachProjectListAutoAnimateRef}>
+              <SortableContext items={visibleFolderIds} strategy={verticalListSortingStrategy}>
+                {folderSections.map((section) =>
+                  section.folder ? (
+                    <React.Fragment key={section.folder.id}>
+                      <SortableFolderHeader
+                        folder={section.folder}
+                        memberCount={section.projects.length}
+                        onToggleCollapsed={setProjectFolderCollapsed}
+                        onOpenMenu={openFolderMenu}
+                      />
+                      {section.folder.collapsed
+                        ? showAttentionUnderCollapsedFolders
+                          ? section.projects.map((project) => (
+                              <CollapsedFolderAttentionRow
+                                key={project.projectKey}
+                                project={project}
+                                renderRow={renderProjectRow}
+                              />
+                            ))
+                          : null
+                        : section.projects.map((project) => renderProjectRow(project))}
+                    </React.Fragment>
+                  ) : section.projects.length === 0 ? null : (
+                    <React.Fragment key="__ungrouped">
+                      {visibleFolderIds.length > 0 ? (
+                        <div className="px-2 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground/50 uppercase">
+                          Ungrouped
+                        </div>
+                      ) : null}
+                      {section.projects.map((project) => renderProjectRow(project))}
+                    </React.Fragment>
+                  ),
+                )}
+              </SortableContext>
+            </SidebarMenu>
+          </DndContext>
         ) : (
           <SidebarMenu ref={attachProjectListAutoAnimateRef}>
             {folderSections.map((section) =>
-              section.folder ? (
-                <SidebarProjectFolderSection
-                  key={section.folder.id}
-                  folder={section.folder}
-                  memberCount={section.projects.length}
-                  onToggleCollapsed={setProjectFolderCollapsed}
-                >
-                  {section.projects.map((project) => renderProjectRow(project))}
-                </SidebarProjectFolderSection>
-              ) : section.projects.length === 0 ? null : (
+              !section.folder && section.projects.length > 0 ? (
                 <React.Fragment key="__ungrouped">
-                  {hasFolders ? (
-                    <div className="px-2 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground/50 uppercase">
-                      Ungrouped
-                    </div>
-                  ) : null}
                   {section.projects.map((project) => renderProjectRow(project))}
                 </React.Fragment>
-              ),
+              ) : null,
             )}
           </SidebarMenu>
         )}
@@ -2560,6 +2761,55 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </div>
         )}
       </SidebarGroup>
+
+      {/* Avi Code addition: rename a folder from its header overflow menu. */}
+      <Dialog
+        open={folderRenameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFolderRenameTarget(null);
+            setFolderRenameName("");
+          }
+        }}
+      >
+        <DialogPopup className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Rename folder</DialogTitle>
+            <DialogDescription>Give this folder a new name.</DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-foreground">Folder name</span>
+              <Input
+                aria-label="Folder name"
+                autoFocus
+                value={folderRenameName}
+                onChange={(event) => setFolderRenameName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitFolderRename();
+                  }
+                }}
+              />
+            </div>
+          </DialogPanel>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFolderRenameTarget(null);
+                setFolderRenameName("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button disabled={folderRenameName.trim().length === 0} onClick={submitFolderRename}>
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </SidebarContent>
   );
 });

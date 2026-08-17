@@ -94,10 +94,15 @@ export function partitionProjectsIntoFolders<T extends { projectKey: string }>(
       membersByFolderId.set(folderId, [project]);
     }
   }
-  const sections: ProjectFolderSection<T>[] = folders.map((folder) => ({
-    folder,
-    projects: membersByFolderId.get(folder.id) ?? [],
-  }));
+  // Hidden folders drop out of the sidebar entirely. Their members were still
+  // claimed by `folderIdByProjectKey` above, so they vanish with the folder
+  // instead of leaking into the Ungrouped section.
+  const sections: ProjectFolderSection<T>[] = folders
+    .filter((folder) => !folder.hidden)
+    .map((folder) => ({
+      folder,
+      projects: membersByFolderId.get(folder.id) ?? [],
+    }));
   sections.push({ folder: null, projects: ungrouped });
   return sections;
 }
@@ -994,6 +999,22 @@ export function resolveThreadStatusPill(input: {
   }
 
   return null;
+}
+
+// Avi Code addition: the pill labels that mean "this chat needs you" — waiting
+// on approval or input, a stalled run to resume, a failure, or a plan ready to
+// act on. Used to decide which member chats stay visible under a collapsed
+// folder. Working/Connecting/Merging/Completed are progress, not a prompt.
+const ATTENTION_STATUS_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
+  "Pending Approval",
+  "Waiting",
+  "Needs Resume",
+  "Failed",
+  "Plan Ready",
+]);
+
+export function isAttentionStatus(status: ThreadStatusPill | null): boolean {
+  return status !== null && ATTENTION_STATUS_LABELS.has(status.label);
 }
 
 export function resolveProjectStatusIndicator(

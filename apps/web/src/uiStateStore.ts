@@ -26,6 +26,10 @@ export interface ProjectFolder {
   name: string;
   projectKeys: string[];
   collapsed: boolean;
+  // Avi Code addition: a hidden folder and its member projects drop out of the
+  // sidebar entirely; the only way back is the folder manager in AviCode
+  // settings. Absent in older persisted state, so it defaults to false.
+  hidden: boolean;
 }
 
 export interface PersistedUiState {
@@ -143,6 +147,7 @@ function sanitizeProjectFolders(value: unknown): ProjectFolder[] {
       name,
       projectKeys: sanitizeStringArray(candidate.projectKeys),
       collapsed: candidate.collapsed === true,
+      hidden: candidate.hidden === true,
     });
   }
   return folders;
@@ -580,6 +585,35 @@ export function reorderProjects(
  * return the same state reference when nothing changes so callers can skip a
  * re-render. A project lives in at most one folder.
  */
+
+// Reorder the folder array to match `orderedFolderIds`. Only ids that already
+// exist are honored; folders whose ids are omitted (e.g. hidden ones the caller
+// never rendered) keep their relative order and trail the reordered set. Returns
+// the same state reference when the array is unchanged.
+export function reorderProjectFolders(
+  state: UiState,
+  orderedFolderIds: readonly string[],
+): UiState {
+  const known = new Set(state.projectFolders.map((folder) => folder.id));
+  const seen = new Set<string>();
+  const orderedKnownIds: string[] = [];
+  for (const id of orderedFolderIds) {
+    if (known.has(id) && !seen.has(id)) {
+      seen.add(id);
+      orderedKnownIds.push(id);
+    }
+  }
+  if (orderedKnownIds.length === 0) {
+    return state;
+  }
+  const byId = new Map(state.projectFolders.map((folder) => [folder.id, folder] as const));
+  const reordered = orderedKnownIds.map((id) => byId.get(id)!);
+  const remainder = state.projectFolders.filter((folder) => !seen.has(folder.id));
+  const nextFolders = [...reordered, ...remainder];
+  const unchanged = nextFolders.every((folder, index) => folder === state.projectFolders[index]);
+  return unchanged ? state : { ...state, projectFolders: nextFolders };
+}
+
 export function createProjectFolder(state: UiState, name: string, id: string): UiState {
   const trimmed = name.trim();
   if (trimmed.length === 0 || id.length === 0) {
@@ -589,7 +623,7 @@ export function createProjectFolder(state: UiState, name: string, id: string): U
     ...state,
     projectFolders: [
       ...state.projectFolders,
-      { id, name: trimmed, projectKeys: [], collapsed: false },
+      { id, name: trimmed, projectKeys: [], collapsed: false, hidden: false },
     ],
   };
 }
@@ -627,6 +661,19 @@ export function setProjectFolderCollapsed(state: UiState, id: string, collapsed:
     ...state,
     projectFolders: state.projectFolders.map((entry) =>
       entry.id === id ? { ...entry, collapsed } : entry,
+    ),
+  };
+}
+
+export function setProjectFolderHidden(state: UiState, id: string, hidden: boolean): UiState {
+  const folder = state.projectFolders.find((entry) => entry.id === id);
+  if (!folder || folder.hidden === hidden) {
+    return state;
+  }
+  return {
+    ...state,
+    projectFolders: state.projectFolders.map((entry) =>
+      entry.id === id ? { ...entry, hidden } : entry,
     ),
   };
 }
@@ -677,6 +724,8 @@ interface UiStateStore extends UiState {
   renameProjectFolder: (id: string, name: string) => void;
   deleteProjectFolder: (id: string) => void;
   setProjectFolderCollapsed: (id: string, collapsed: boolean) => void;
+  setProjectFolderHidden: (id: string, hidden: boolean) => void;
+  reorderProjectFolders: (orderedFolderIds: readonly string[]) => void;
   assignProjectToFolder: (projectKey: string, folderId: string | null) => void;
 }
 
@@ -722,6 +771,10 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   deleteProjectFolder: (id) => set((state) => deleteProjectFolder(state, id)),
   setProjectFolderCollapsed: (id, collapsed) =>
     set((state) => setProjectFolderCollapsed(state, id, collapsed)),
+  setProjectFolderHidden: (id, hidden) =>
+    set((state) => setProjectFolderHidden(state, id, hidden)),
+  reorderProjectFolders: (orderedFolderIds) =>
+    set((state) => reorderProjectFolders(state, orderedFolderIds)),
   assignProjectToFolder: (projectKey, folderId) =>
     set((state) => assignProjectToFolder(state, projectKey, folderId)),
 }));
