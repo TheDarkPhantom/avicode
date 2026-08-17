@@ -92,8 +92,10 @@ source (three-file allowlist). Use `AVICODE_IDENTITY` (`packages/shared/src/avic
 `~/.t3` is upstream data plus dev state (`T3CODE_HOME`). Dev servers use per-worktree `.t3/`.
 
 **Fork versioning.** `-avicode.N` suffix on upstream's version. Four packages move together:
-`apps/desktop`, `apps/server`, `apps/web`, `packages/contracts`. To cut a version and build a new
-installer without a local toolchain, see "Cut and build a new exe on CI" in
+`apps/desktop`, `apps/server`, `apps/web`, `packages/contracts`. Cutting a version also means cutting
+`CHANGELOG.md` (rename `## Unreleased` to the new version) — the bundled changelog renders at
+`/changelog`, so a version bump without a changelog cut ships a build with no matching entry. To cut
+a version and build a new installer without a local toolchain, see "Cut and build a new exe on CI" in
 `docs/reference/agent-recipes.md`.
 
 **Beta sidebar default.** `resolveSidebarV2Default` overrides to `true` for dev/nightly. Dev shows
