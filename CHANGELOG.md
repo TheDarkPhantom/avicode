@@ -36,20 +36,13 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
-## Unreleased
-
-Upstream: t3code 0.0.31
-
-### Avi Code
-
-- Scrolling or switching threads no longer crashes the chat with a getScrollableNode error (#197)
-
 ## 0.0.31-avicode.9.9 (2026-08-17)
 
 Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Scrolling or switching threads no longer crashes the chat with a getScrollableNode error (#197)
 - See token and cost usage broken down per repo, split by credential, on the usage page (#194)
 - Opening the right panel keeps its toggle under your pointer (#190)
 - Group projects into your own named sidebar folders and collapse the ones you are not using (#191)
