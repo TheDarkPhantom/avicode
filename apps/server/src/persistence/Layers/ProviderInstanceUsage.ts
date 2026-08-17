@@ -8,10 +8,12 @@ import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
 
 import {
   DeleteProviderInstanceUsageInput,
+  ProjectUsageTotals,
   ProviderInstanceUsageRepository,
   type ProviderInstanceUsageRepositoryShape,
   ProviderInstanceUsageRow,
   ProviderInstanceUsageTotals,
+  SummarizeProjectUsageInput,
   SummarizeProviderInstanceUsageInput,
   SummarizeThreadUsageInput,
   ThreadUsageModelTotals,
@@ -128,6 +130,37 @@ const makeProviderInstanceUsageRepository = Effect.gen(function* () {
       `,
   });
 
+  // Avi Code addition: per-project (repo) totals. Joins usage rows to their
+  // thread's project so a repo's spend can be split by credential; LEFT JOIN to
+  // projects so usage still shows when the project row is gone (title null).
+  const summarizeProjectUsageRows = SqlSchema.findAll({
+    Request: SummarizeProjectUsageInput,
+    Result: ProjectUsageTotals,
+    execute: ({ since }) =>
+      sql`
+        SELECT
+          t.project_id AS "projectId",
+          p.title AS "projectTitle",
+          p.workspace_root AS "workspaceRoot",
+          u.provider_instance_id AS "providerInstanceId",
+          u.driver_kind AS "driverKind",
+          u.model,
+          COUNT(*) AS "turns",
+          SUM(u.input_tokens) AS "inputTokens",
+          SUM(u.cached_input_tokens) AS "cachedInputTokens",
+          SUM(u.cache_creation_input_tokens) AS "cacheCreationInputTokens",
+          SUM(u.output_tokens) AS "outputTokens",
+          SUM(u.reasoning_output_tokens) AS "reasoningOutputTokens",
+          SUM(u.cost_usd) AS "costUsd"
+        FROM provider_instance_usage u
+        JOIN projection_threads t ON t.thread_id = u.thread_id
+        LEFT JOIN projection_projects p ON p.project_id = t.project_id
+        WHERE ${since === undefined ? sql`1 = 1` : sql`u.created_at >= ${since}`}
+        GROUP BY t.project_id, u.provider_instance_id, u.driver_kind, u.model
+        ORDER BY t.project_id ASC, u.provider_instance_id ASC, u.model ASC
+      `,
+  });
+
   const deleteProviderInstanceUsageRows = SqlSchema.void({
     Request: DeleteProviderInstanceUsageInput,
     execute: ({ threadId }) =>
@@ -167,6 +200,16 @@ const makeProviderInstanceUsageRepository = Effect.gen(function* () {
       ),
     );
 
+  const summarizeByProject: ProviderInstanceUsageRepositoryShape["summarizeByProject"] = (input) =>
+    summarizeProjectUsageRows(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProviderInstanceUsageRepository.summarizeByProject:query",
+          "ProviderInstanceUsageRepository.summarizeByProject:decodeRows",
+        ),
+      ),
+    );
+
   const deleteByThreadId: ProviderInstanceUsageRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProviderInstanceUsageRows(input).pipe(
       Effect.mapError(
@@ -178,6 +221,7 @@ const makeProviderInstanceUsageRepository = Effect.gen(function* () {
     record,
     summarize,
     summarizeByThread,
+    summarizeByProject,
     deleteByThreadId,
   } satisfies ProviderInstanceUsageRepositoryShape;
 });

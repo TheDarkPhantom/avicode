@@ -10,6 +10,7 @@
 import {
   IsoDateTime,
   NonNegativeInt,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
@@ -71,6 +72,39 @@ export const DeleteProviderInstanceUsageInput = Schema.Struct({
 });
 export type DeleteProviderInstanceUsageInput = typeof DeleteProviderInstanceUsageInput.Type;
 
+// Avi Code addition: per-project (repo) usage.
+export const SummarizeProjectUsageInput = Schema.Struct({
+  /** Inclusive lower bound on `createdAt`. Omit for all-time totals. */
+  since: Schema.optional(IsoDateTime),
+});
+export type SummarizeProjectUsageInput = typeof SummarizeProjectUsageInput.Type;
+
+/**
+ * Avi Code addition: totals for one (project, instance, model) triple.
+ *
+ * `provider_instance_usage` joins to the thread's project, so a repo's spend
+ * can be broken down by the credentials that served it. `projectTitle` and
+ * `workspaceRoot` come from the projects projection and are null when that row
+ * is gone. Same null-cost semantics as `ProviderInstanceUsageTotals`.
+ */
+export const ProjectUsageTotals = Schema.Struct({
+  projectId: ProjectId,
+  projectTitle: Schema.NullOr(Schema.String),
+  workspaceRoot: Schema.NullOr(Schema.String),
+  providerInstanceId: ProviderInstanceId,
+  driverKind: ProviderDriverKind,
+  model: Schema.NullOr(TrimmedNonEmptyString),
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationInputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningOutputTokens: NonNegativeInt,
+  /** Null when no row in the group reported a cost. */
+  costUsd: Schema.NullOr(Schema.Number),
+});
+export type ProjectUsageTotals = typeof ProjectUsageTotals.Type;
+
 // Avi Code addition: per-thread usage.
 export const SummarizeThreadUsageInput = Schema.Struct({
   threadId: ThreadId,
@@ -125,6 +159,14 @@ export interface ProviderInstanceUsageRepositoryShape {
   readonly summarizeByThread: (
     input: SummarizeThreadUsageInput,
   ) => Effect.Effect<ReadonlyArray<ThreadUsageModelTotals>, ProjectionRepositoryError>;
+
+  /**
+   * Avi Code addition: aggregate totals grouped by (project, instance, model),
+   * joining usage rows to their thread's project.
+   */
+  readonly summarizeByProject: (
+    input: SummarizeProjectUsageInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectUsageTotals>, ProjectionRepositoryError>;
 
   /**
    * Drop a thread's usage rows, for when the thread itself is deleted.

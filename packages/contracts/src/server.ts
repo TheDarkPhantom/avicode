@@ -253,6 +253,35 @@ export const ServerProviderUsageResult = Schema.Struct({
 export type ServerProviderUsageResult = typeof ServerProviderUsageResult.Type;
 
 /**
+ * Avi Code addition: rolled-up usage for one project (repo), broken down by the
+ * provider instances that served its turns.
+ *
+ * A repo maps to a project. `projectTitle`/`workspaceRoot` are the display
+ * label and are null when the project record is gone (deleted, or usage from a
+ * thread whose project row no longer exists). `costUsd` follows the same
+ * null-vs-zero rule as the per-instance shape.
+ */
+export const ServerProjectUsage = Schema.Struct({
+  projectId: ProjectId,
+  projectTitle: Schema.NullOr(Schema.String),
+  workspaceRoot: Schema.NullOr(Schema.String),
+  turns: NonNegativeInt,
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationInputTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningOutputTokens: NonNegativeInt,
+  costUsd: Schema.NullOr(Schema.Number),
+  instances: Schema.Array(ServerProviderUsage),
+});
+export type ServerProjectUsage = typeof ServerProjectUsage.Type;
+
+export const ServerProjectUsageResult = Schema.Struct({
+  projects: Schema.Array(ServerProjectUsage),
+});
+export type ServerProjectUsageResult = typeof ServerProjectUsageResult.Type;
+
+/**
  * Avi Code addition: rolled-up token/cost usage for a single thread.
  *
  * Answers "how much has this thread cost." `costUsd` follows the same rule as

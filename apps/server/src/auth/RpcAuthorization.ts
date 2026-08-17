@@ -45,6 +45,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetProviderUsage]: AuthOrchestrationReadScope,
   // Avi Code addition: reading a thread's usage totals is a read.
   [WS_METHODS.serverGetThreadUsage]: AuthOrchestrationReadScope,
+  // Avi Code addition: reading per-project usage totals is a read.
+  [WS_METHODS.serverGetProjectUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceGetCredential]: AuthOrchestrationOperateScope,
   // `/btw` reads the thread and runs the model with tools denied. It mutates
   // nothing — not even the thread's own transcript — so it is a read.

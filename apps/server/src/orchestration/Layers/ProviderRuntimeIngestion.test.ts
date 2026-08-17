@@ -259,6 +259,7 @@ describe("ProviderRuntimeIngestion", () => {
         }),
       summarize: () => Effect.succeed([]),
       summarizeByThread: () => Effect.succeed([]),
+      summarizeByProject: () => Effect.succeed([]),
       deleteByThreadId: () => Effect.void,
     });
 
