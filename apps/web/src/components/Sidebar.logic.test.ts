@@ -139,9 +139,10 @@ describe("partitionProjectsIntoFolders", () => {
   });
 
   it("renders an empty folder and skips stale keys with no live project", () => {
-    const sections = partitionProjectsIntoFolders([{ projectKey: "a" }], [
-      { id: "f1", name: "Empty", projectKeys: ["gone"], collapsed: false },
-    ]);
+    const sections = partitionProjectsIntoFolders(
+      [{ projectKey: "a" }],
+      [{ id: "f1", name: "Empty", projectKeys: ["gone"], collapsed: false }],
+    );
 
     expect(sections[0]?.projects).toEqual([]);
     expect(sections[1]).toEqual({ folder: null, projects: [{ projectKey: "a" }] });

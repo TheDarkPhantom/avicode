@@ -2296,9 +2296,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
       isThreadListExpanded={
         options?.threadListExpanded ?? expandedThreadListsByProject.has(project.projectKey)
       }
-      activeRouteThreadKey={
-        activeRouteProjectKey === project.projectKey ? routeThreadKey : null
-      }
+      activeRouteThreadKey={activeRouteProjectKey === project.projectKey ? routeThreadKey : null}
       newThreadShortcutLabel={newThreadShortcutLabel}
       handleNewThread={handleNewThread}
       threadJumpLabelByKey={threadJumpLabelByKey}
