@@ -114,7 +114,13 @@ describe("partitionProjectsIntoFolders", () => {
 
     expect(sections).toEqual([
       {
-        folder: { id: "f1", name: "Clients", projectKeys: ["c", "a"], collapsed: false, hidden: false },
+        folder: {
+          id: "f1",
+          name: "Clients",
+          projectKeys: ["c", "a"],
+          collapsed: false,
+          hidden: false,
+        },
         projects: [{ projectKey: "a" }, { projectKey: "c" }],
       },
       {

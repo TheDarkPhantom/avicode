@@ -717,11 +717,7 @@ function SidebarFoldersSettings() {
                 onClick={() => setProjectFolderHidden(folder.id, !folder.hidden)}
                 aria-label={folder.hidden ? `Show ${folder.name}` : `Hide ${folder.name}`}
               >
-                {folder.hidden ? (
-                  <EyeIcon className="size-4" />
-                ) : (
-                  <EyeOffIcon className="size-4" />
-                )}
+                {folder.hidden ? <EyeIcon className="size-4" /> : <EyeOffIcon className="size-4" />}
                 {folder.hidden ? "Show" : "Hide"}
               </Button>
             }

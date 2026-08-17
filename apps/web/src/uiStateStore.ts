@@ -771,8 +771,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   deleteProjectFolder: (id) => set((state) => deleteProjectFolder(state, id)),
   setProjectFolderCollapsed: (id, collapsed) =>
     set((state) => setProjectFolderCollapsed(state, id, collapsed)),
-  setProjectFolderHidden: (id, hidden) =>
-    set((state) => setProjectFolderHidden(state, id, hidden)),
+  setProjectFolderHidden: (id, hidden) => set((state) => setProjectFolderHidden(state, id, hidden)),
   reorderProjectFolders: (orderedFolderIds) =>
     set((state) => reorderProjectFolders(state, orderedFolderIds)),
   assignProjectToFolder: (projectKey, folderId) =>

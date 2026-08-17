@@ -1822,8 +1822,16 @@ const SortableFolderHeader = memo(function SortableFolderHeader({
   onToggleCollapsed: (id: string, collapsed: boolean) => void;
   onOpenMenu: (folder: ProjectFolder, position: { x: number; y: number }) => void;
 }) {
-  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging, isOver } =
-    useSortable({ id: folder.id });
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id: folder.id });
   return (
     <li
       ref={setNodeRef}
