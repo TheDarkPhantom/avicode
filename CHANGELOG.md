@@ -36,6 +36,16 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Reorder sidebar folders by dragging them into the order you want (#199)
+- Hide a folder and its projects from the sidebar, then bring it back from Avi Code settings (#199)
+- Keep chats that need you visible under a collapsed folder with a new setting (#199)
+
 ## 0.0.31-avicode.9.9 (2026-08-17)
 
 Upstream: t3code 0.0.31
