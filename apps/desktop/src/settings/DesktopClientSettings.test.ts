@@ -26,6 +26,7 @@ const clientSettings: ClientSettings = {
   aviCodeScrollToPlanTopOnExpand: true,
   aviCodeSendWhileRunning: "steer",
   aviCodeSidebarAlwaysShowDevServerStart: false,
+  aviCodeSidebarProjectsCollapsedByDefault: false,
   aviCodeSidebarShowPrIndicator: true,
   aviCodeSidebarShowStatusLabels: true,
   aviCodeSidebarShowWorktreeIcon: true,
