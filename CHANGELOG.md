@@ -36,19 +36,26 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
-## Unreleased
+## 0.0.31-avicode.9.8 (2026-08-17)
 
 Upstream: t3code 0.0.31
 
 ### Avi Code
 
 - Start a dev server from the preview panel even when another one is already running (#193)
+
+## 0.0.31-avicode.9.7 (2026-08-15)
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
 - Active AI responses stay at the newest content without jumping upward (#189)
 - Create new worktree threads in local-only Git projects (#188)
+- Recover local drafts after failed thread setup leaves a deleted server record (#187)
 - Claude plan usage matches the latest account limits after refreshing (#186)
 - Pinned questions no longer overlap Windows window controls (#185)
 - Collapsing the right panel keeps its toggle under your pointer (#184)
-- Recover local drafts after failed thread setup leaves a deleted server record (#187)
 - Retry new threads without failing when their first server save already worked (#183)
 - Attach CSV files as raw text context in chat (#182)
 - Open project folders in their host file manager from the sidebar menu (#181)

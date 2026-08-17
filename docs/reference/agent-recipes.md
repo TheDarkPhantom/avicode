@@ -36,10 +36,27 @@ local machine.
    four `package.json` files directly. The version string is not pinned in `pnpm-lock.yaml`
    (internal deps use the `workspace:` protocol), so no lockfile refresh is needed.
 
-2. **Commit and push a branch.** Stage only the four `package.json` files. Conventional message,
-   e.g. `chore: release 0.0.31-avicode.9.7`. Push to `origin`.
+2. **Cut the changelog. Do not skip this — the version bump alone leaves it wrong.** `CHANGELOG.md`
+   is bundled into the app (imported `?raw`) and rendered at `/changelog`, so an uncut changelog
+   ships a stale "Unreleased" pile with no version header for the build you just made. Rename the
+   `## Unreleased` heading to `## <new-version> (<YYYY-MM-DD>)` and move its entries under it. Cases:
 
-3. **Dispatch the CI build.** `workflow_dispatch` on `avicode-guardrails.yml` runs the
+   - **Normal cut:** rename `## Unreleased` to the new version with today's date. Leave no empty
+     `## Unreleased` behind, since `parseChangelog.test.ts` requires every section to be non-empty;
+     the next landed change re-adds the heading.
+   - **Entries piled across skipped cuts** (a prior bump forgot this step): split the accumulated
+     entries by PR merge time versus each prior `chore: release` commit. Entries merged before a
+     given release commit belong to that version; later ones belong to the next. Find merge times
+     with `gh pr list --state merged --json number,mergedAt` and release commits with
+     `git log --grep '^chore: release'`.
+   - Only user-visible PRs get an entry. Release-bump and internal tooling/doc PRs do not.
+   - Follow the format in the HTML comment at the top of `CHANGELOG.md`: one short sentence,
+     present tense, no em dashes, `(#<pr>)` suffix.
+
+3. **Commit and push a branch.** Stage the four `package.json` files and `CHANGELOG.md`.
+   Conventional message, e.g. `chore: release 0.0.31-avicode.9.7`. Push to `origin`.
+
+4. **Dispatch the CI build.** `workflow_dispatch` on `avicode-guardrails.yml` runs the
    `windows-package` job on a `windows-2025` runner. It builds an **unsigned** NSIS `.exe`
    (`CSC_IDENTITY_AUTO_DISCOVERY=false`) carrying the **real** package version, and uploads it as
    artifact `avicode-windows-x64-installer` (retained 14 days). Dispatch on any ref (a feature
@@ -52,7 +69,7 @@ local machine.
      --json databaseId,status,displayTitle,createdAt
    ```
 
-4. **Watch and download.** The job takes up to 35 minutes.
+5. **Watch and download.** The job takes up to 35 minutes.
 
    ```bash
    gh run watch <run-id> --exit-status --interval 30
