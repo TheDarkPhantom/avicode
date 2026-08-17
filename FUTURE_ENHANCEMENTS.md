@@ -22,6 +22,14 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   active and folders exist, cross-folder drag reorder is disabled: the folder-section view renders
   instead of the drag list, so a project moves between folders via its context menu, not by drag.
   The inline filter also bypasses folders — it flattens the sidebar to the matching rows.
+- Folder reorder, hide, and collapsed-attention all live only on the v1 `Sidebar.tsx`. SidebarV2
+  (the fork default) has no folder concept, so none of these appear there; bringing folders to v2
+  is a separate, larger effort. Folder reorder drags the header only, so member rows do not travel
+  with it during the drag; they snap to the new position on drop. Reordering the visible folders
+  moves any hidden folders to the tail of the stored order (they are invisible, so position does
+  not matter until they are shown again). "Show attention chats under collapsed folders" renders
+  the whole member project row (collapsed) when any of its chats needs you, rather than only the
+  individual attention chats; a tighter per-chat rollup is possible later.
 - Completed read state stays local to each client in `t3code:ui-state:v1`, so opening a thread on
   one device does not clear its label on another. Server sync would change that choice. The local
   map also has no age or size pruning yet, though stale keys are small and harmless.

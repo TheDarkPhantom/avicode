@@ -11,13 +11,16 @@ import {
   parsePersistedState,
   PERSISTED_STATE_KEY,
   type PersistedUiState,
+  type ProjectFolder,
   persistState,
   renameProjectFolder,
+  reorderProjectFolders,
   reorderProjects,
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
   setProjectFolderCollapsed,
+  setProjectFolderHidden,
   setProjectPinned,
   setThreadChangedFilesExpanded,
   setThreadPlanExpanded,
@@ -295,7 +298,7 @@ describe("uiStateStore project folders", () => {
     const next = createProjectFolder(makeUiState(), "  Clients  ", "folder-1");
 
     expect(next.projectFolders).toEqual([
-      { id: "folder-1", name: "Clients", projectKeys: [], collapsed: false },
+      { id: "folder-1", name: "Clients", projectKeys: [], collapsed: false, hidden: false },
     ]);
   });
 
@@ -360,20 +363,76 @@ describe("uiStateStore project folders", () => {
     expect(parsePersistedState(toPersisted(state)).projectFolders).toEqual(state.projectFolders);
 
     const sanitized = parsePersistedState({
+      // Deliberately legacy/malformed JSON: entries predate the `hidden` field
+      // and some are junk, so the array is cast past the typed shape.
       projectFolders: [
         { id: "ok", name: "Keep", projectKeys: ["proj-a", "", "proj-a"], collapsed: true },
         { id: "", name: "no id", projectKeys: [], collapsed: false },
         { id: "no-name", name: "   ", projectKeys: [], collapsed: false },
-        "nonsense" as unknown as never,
-      ],
+        "nonsense",
+      ] as unknown as ProjectFolder[],
     });
     expect(sanitized.projectFolders).toEqual([
-      { id: "ok", name: "Keep", projectKeys: ["proj-a"], collapsed: true },
+      { id: "ok", name: "Keep", projectKeys: ["proj-a"], collapsed: true, hidden: false },
     ]);
   });
 
   it("defaults to no folders for state saved before the feature existed", () => {
     expect(parsePersistedState({ projectOrder: ["physical-a"] }).projectFolders).toEqual([]);
+  });
+
+  it("toggles folder visibility and no-ops on unchanged or missing folders", () => {
+    const created = createProjectFolder(makeUiState(), "Clients", "folder-1");
+
+    expect(setProjectFolderHidden(created, "folder-1", true).projectFolders[0]?.hidden).toBe(true);
+    expect(setProjectFolderHidden(created, "folder-1", false)).toBe(created);
+    expect(setProjectFolderHidden(created, "missing", true)).toBe(created);
+  });
+
+  it("defaults hidden to false for folders saved before the feature existed", () => {
+    const parsed = parsePersistedState({
+      // Legacy folder JSON with no `hidden` key, cast past the typed shape.
+      projectFolders: [
+        { id: "legacy", name: "Legacy", projectKeys: [], collapsed: false },
+      ] as unknown as ProjectFolder[],
+    });
+    expect(parsed.projectFolders[0]?.hidden).toBe(false);
+  });
+
+  it("reorders folders to the given id order", () => {
+    let state = createProjectFolder(makeUiState(), "A", "folder-a");
+    state = createProjectFolder(state, "B", "folder-b");
+    state = createProjectFolder(state, "C", "folder-c");
+
+    const reordered = reorderProjectFolders(state, ["folder-c", "folder-a", "folder-b"]);
+    expect(reordered.projectFolders.map((folder) => folder.id)).toEqual([
+      "folder-c",
+      "folder-a",
+      "folder-b",
+    ]);
+  });
+
+  it("keeps unlisted folders after the reordered ones", () => {
+    let state = createProjectFolder(makeUiState(), "A", "folder-a");
+    state = createProjectFolder(state, "B", "folder-b");
+    state = createProjectFolder(state, "C", "folder-c");
+
+    // Only the visible subset (a, b) is passed; the omitted folder trails.
+    const reordered = reorderProjectFolders(state, ["folder-b", "folder-a"]);
+    expect(reordered.projectFolders.map((folder) => folder.id)).toEqual([
+      "folder-b",
+      "folder-a",
+      "folder-c",
+    ]);
+  });
+
+  it("no-ops when the order is unchanged, empty, or all ids are unknown", () => {
+    let state = createProjectFolder(makeUiState(), "A", "folder-a");
+    state = createProjectFolder(state, "B", "folder-b");
+
+    expect(reorderProjectFolders(state, ["folder-a", "folder-b"])).toBe(state);
+    expect(reorderProjectFolders(state, [])).toBe(state);
+    expect(reorderProjectFolders(state, ["missing"])).toBe(state);
   });
 });
 
