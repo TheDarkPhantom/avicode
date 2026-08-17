@@ -195,6 +195,23 @@ export function PreviewView({
     if (previewBridge && runtimeTabId) void previewBridge.refresh(runtimeTabId);
   }, [runtimeTabId]);
 
+  // Avi Code addition: recovery for cookie/header HTTP errors (e.g. 431). Clears
+  // the isolated preview partition's cookies, then reloads so the fresh request
+  // fits under the dev server's header limit.
+  const handleClearCookiesAndReload = useCallback(() => {
+    if (!previewBridge || !runtimeTabId) return;
+    const bridge = previewBridge;
+    const tab = runtimeTabId;
+    void (async () => {
+      try {
+        await bridge.clearCookies();
+      } catch {
+        // Reload anyway; the reload surfaces any remaining error.
+      }
+      void bridge.refresh(tab);
+    })();
+  }, [runtimeTabId]);
+
   const handleZoomIn = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.zoomIn(runtimeTabId);
   }, [runtimeTabId]);
@@ -748,6 +765,7 @@ export function PreviewView({
               code={navStatus.code}
               description={navStatus.description}
               onReload={handleRefresh}
+              onClearCookies={previewBridge ? handleClearCookiesAndReload : undefined}
             />
           </div>
         ) : null}

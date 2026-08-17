@@ -691,6 +691,65 @@ describe("PreviewManager", () => {
     ),
   );
 
+  // Avi Code addition: a 431 (or any >= 400) still commits a navigation, so
+  // did-fail-load never fires; did-navigate must surface it as a load failure.
+  effectIt.effect("surfaces an HTTP error status from did-navigate as a load failure", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const url = "http://localhost:3000/";
+        const listeners = new Map<string, (...args: unknown[]) => void>();
+        fromId.mockReturnValue({
+          id: 43,
+          isDestroyed: () => false,
+          getType: () => "webview",
+          getURL: () => url,
+          getTitle: () => "localhost:3000",
+          isLoading: () => false,
+          getZoomFactor: () => 1,
+          setZoomFactor: vi.fn(),
+          on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+            listeners.set(event, listener);
+          }),
+          off: vi.fn(),
+          ipc: { on: vi.fn(), off: vi.fn() },
+          send: webviewSend,
+          navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+          setWindowOpenHandler: vi.fn(),
+          debugger: {
+            isAttached: () => false,
+            attach: vi.fn(),
+            sendCommand: vi.fn(async () => undefined),
+            on: vi.fn(),
+            off: vi.fn(),
+          },
+        } as never);
+        const statuses: PreviewManager.PreviewNavStatus[] = [];
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            statuses.push(state.navStatus);
+          }),
+        );
+        yield* manager.createTab("tab_http_431");
+        yield* manager.registerWebview("tab_http_431", 43);
+
+        listeners.get("did-navigate")?.({}, url, 431, "Request Header Fields Too Large");
+        yield* Effect.yieldNow;
+        expect(statuses.at(-1)).toEqual({
+          kind: "LoadFailed",
+          url,
+          title: "localhost:3000",
+          code: 431,
+          description: "Request Header Fields Too Large",
+        });
+
+        // A subsequent OK navigation clears the failure.
+        listeners.get("did-navigate")?.({}, url, 200, "OK");
+        yield* Effect.yieldNow;
+        expect(statuses.at(-1)?.kind).toBe("Success");
+      }),
+    ),
+  );
+
   effectIt.effect("captures a PNG screenshot into browser artifacts", () =>
     withManager((manager) =>
       Effect.gen(function* () {
