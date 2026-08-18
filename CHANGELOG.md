@@ -42,7 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- The left sidebar no longer overlaps the main chat after the window shrinks (#206)
+- The left sidebar no longer overlaps the main chat after the window shrinks (#209)
 - The right panel now opens as an overlay when the window is fullscreen or maximized (#205)
 - Sort the archived threads page by recently archived, project, creation date, or title (#204)
 - Search projects in a combobox when starting a new thread from the flat sidebar (#203)
