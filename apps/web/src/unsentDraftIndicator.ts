@@ -83,3 +83,29 @@ export function selectProjectHasUnsentDraft(
 export function useProjectHasUnsentDraft(logicalProjectKey: string): boolean {
   return useComposerDraftStore((state) => selectProjectHasUnsentDraft(state, logicalProjectKey));
 }
+
+/**
+ * Whether the existing thread keyed by `threadKey` holds an unsent draft.
+ *
+ * Simpler than the project case: a real thread's draft is filed directly under
+ * its scoped thread key (`environmentId:threadId`) in `draftsByThreadKey`, not
+ * under a draft session, so there is no promotion handoff to exclude.
+ */
+export function selectThreadHasUnsentDraft(
+  state: UnsentDraftLookupState,
+  threadKey: string,
+): boolean {
+  const normalizedKey = threadKey.trim();
+  if (normalizedKey.length === 0) return false;
+
+  return hasUnsentComposerContent(state.draftsByThreadKey[normalizedKey]);
+}
+
+/**
+ * Sidebar-facing hook for an existing thread row. Collapses to a boolean like
+ * its project counterpart so a row only re-renders on the empty↔non-empty
+ * transition, not on every keystroke.
+ */
+export function useThreadHasUnsentDraft(threadKey: string): boolean {
+  return useComposerDraftStore((state) => selectThreadHasUnsentDraft(state, threadKey));
+}

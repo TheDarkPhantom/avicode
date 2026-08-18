@@ -1,4 +1,4 @@
-import { useProjectHasUnsentDraft } from "../../unsentDraftIndicator";
+import { useProjectHasUnsentDraft, useThreadHasUnsentDraft } from "../../unsentDraftIndicator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
@@ -35,6 +35,41 @@ export function ProjectUnsentDraftDot({
           <span
             data-testid="project-unsent-draft-dot"
             aria-label={`Unsent draft in ${projectName}`}
+            className="size-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-300/90"
+          />
+        }
+      />
+      <TooltipPopup side="top">Unsent draft</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/**
+ * Avi Code addition: the same marker for an existing thread row.
+ *
+ * A message typed into an open thread and left unsent is invisible once you
+ * navigate away — the row shows the thread's title, not that you have words
+ * waiting in its composer. This puts the marker on the thread itself, mirroring
+ * the project dot above. The hook lives inside the component so both sidebars
+ * can drop it into a row unconditionally.
+ */
+export function ThreadUnsentDraftDot({
+  threadKey,
+  threadTitle,
+}: {
+  readonly threadKey: string;
+  readonly threadTitle: string;
+}) {
+  const hasUnsentDraft = useThreadHasUnsentDraft(threadKey);
+  if (!hasUnsentDraft) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            data-testid="thread-unsent-draft-dot"
+            aria-label={`Unsent draft in ${threadTitle}`}
             className="size-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-300/90"
           />
         }
