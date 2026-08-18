@@ -185,6 +185,7 @@ function ColorThemeSettings() {
 
 const SIDEBAR_THREAD_GROUPING_LABELS: Record<SidebarThreadGrouping, string> = {
   project: "Group by project",
+  project_no_folders: "Group by project (no folders)",
   flat: "Flat, by activity",
 };
 
@@ -337,7 +338,7 @@ function SidebarLayoutSettings() {
     <SettingsSection title="Sidebar layout" icon={<PanelLeftIcon className="size-5" />}>
       <SettingsRow
         title="Thread list"
-        description="Group by project keeps the two-level tree, where a chat only moves within its project's block. Flat drops the grouping and orders every chat against every other by recent activity, so the ctrl+1…ctrl+9 jump shortcuts land on your most recently used chats regardless of project."
+        description="Group by project keeps the two-level tree, where a chat only moves within its project's block. Group by project (no folders) is that same tree with folder headers hidden, listing every project flat while keeping your folders as data. Flat drops the grouping and orders every chat against every other by recent activity, so the ctrl+1…ctrl+9 jump shortcuts land on your most recently used chats regardless of project."
         control={
           <Select
             value={threadGrouping}
@@ -351,6 +352,9 @@ function SidebarLayoutSettings() {
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem hideIndicator value="project">
                 {SIDEBAR_THREAD_GROUPING_LABELS.project}
+              </SelectItem>
+              <SelectItem hideIndicator value="project_no_folders">
+                {SIDEBAR_THREAD_GROUPING_LABELS.project_no_folders}
               </SelectItem>
               <SelectItem hideIndicator value="flat">
                 {SIDEBAR_THREAD_GROUPING_LABELS.flat}

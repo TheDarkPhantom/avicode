@@ -256,6 +256,7 @@ const SIDEBAR_THREAD_SORT_LABELS: Record<SidebarThreadSortOrder, string> = {
 };
 const SIDEBAR_THREAD_GROUPING_LABELS: Record<SidebarThreadGrouping, string> = {
   project: "Group by project",
+  project_no_folders: "Group by project (no folders)",
   flat: "Flat, by activity",
 };
 const SIDEBAR_LIST_ANIMATION_OPTIONS = {
@@ -2494,6 +2495,9 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     ? []
     : partitionProjectsIntoFolders(sortedProjects, projectFolders);
   const hasFolders = projectFolders.length > 0;
+  // Folders only render in the canonical "project" mode. "project_no_folders" is
+  // the same tree with folder headers suppressed, so it renders every project flat.
+  const foldersActive = hasFolders && threadGrouping === "project";
   const visibleFolderIds = folderSections
     .filter((section) => section.folder !== null)
     .map((section) => section.folder!.id);
@@ -2664,7 +2668,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               )}
             </SidebarMenu>
           )
-        ) : isManualProjectSorting && !hasFolders ? (
+        ) : isManualProjectSorting && !foldersActive ? (
           <DndContext
             sensors={projectDnDSensors}
             collisionDetection={projectCollisionDetection}
@@ -2707,7 +2711,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               </SortableContext>
             </SidebarMenu>
           </DndContext>
-        ) : hasFolders ? (
+        ) : foldersActive ? (
           <DndContext
             sensors={projectDnDSensors}
             collisionDetection={projectCollisionDetection}
@@ -2752,14 +2756,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             </SidebarMenu>
           </DndContext>
         ) : (
+          // Plain grouped-by-project list: every project flat, folder headers
+          // suppressed. Renders sortedProjects directly rather than folderSections
+          // so "project_no_folders" mode still shows projects that live in a folder.
           <SidebarMenu ref={attachProjectListAutoAnimateRef}>
-            {folderSections.map((section) =>
-              !section.folder && section.projects.length > 0 ? (
-                <React.Fragment key="__ungrouped">
-                  {section.projects.map((project) => renderProjectRow(project))}
-                </React.Fragment>
-              ) : null,
-            )}
+            {sortedProjects.map((project) => renderProjectRow(project))}
           </SidebarMenu>
         )}
 
