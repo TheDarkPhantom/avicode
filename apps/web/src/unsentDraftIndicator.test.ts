@@ -6,6 +6,7 @@ import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE } from "./types";
 import {
   hasUnsentComposerContent,
   selectProjectHasUnsentDraft,
+  selectThreadHasUnsentDraft,
   type UnsentDraftLookupState,
 } from "./unsentDraftIndicator";
 
@@ -143,5 +144,58 @@ describe("selectProjectHasUnsentDraft", () => {
   it("tolerates a padded key and refuses an empty one", () => {
     expect(selectProjectHasUnsentDraft(makeState(), ` ${LOGICAL_PROJECT_KEY} `)).toBe(true);
     expect(selectProjectHasUnsentDraft(makeState(), "   ")).toBe(false);
+  });
+});
+
+describe("selectThreadHasUnsentDraft", () => {
+  const THREAD_KEY = "env-1:thread-1";
+
+  function makeThreadState(
+    draft: Partial<UnsentDraftLookupState["draftsByThreadKey"]> = {
+      [THREAD_KEY]: { ...createEmptyThreadDraft(), prompt: "half a thought" },
+    },
+  ): UnsentDraftLookupState {
+    return {
+      draftsByThreadKey: draft as UnsentDraftLookupState["draftsByThreadKey"],
+      draftThreadsByThreadKey: {},
+      logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+    };
+  }
+
+  it("reports a thread holding text that was never sent", () => {
+    expect(selectThreadHasUnsentDraft(makeThreadState(), THREAD_KEY)).toBe(true);
+  });
+
+  it("reports nothing for a thread with no draft", () => {
+    expect(selectThreadHasUnsentDraft(makeThreadState(), "env-1:other-thread")).toBe(false);
+  });
+
+  it("reports nothing when the draft exists but the composer is empty", () => {
+    expect(
+      selectThreadHasUnsentDraft(
+        makeThreadState({ [THREAD_KEY]: createEmptyThreadDraft() }),
+        THREAD_KEY,
+      ),
+    ).toBe(false);
+  });
+
+  it("reports nothing for a draft that only carries composer defaults", () => {
+    expect(
+      selectThreadHasUnsentDraft(
+        makeThreadState({
+          [THREAD_KEY]: {
+            ...createEmptyThreadDraft(),
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+            interactionMode: DEFAULT_INTERACTION_MODE,
+          },
+        }),
+        THREAD_KEY,
+      ),
+    ).toBe(false);
+  });
+
+  it("tolerates a padded key and refuses an empty one", () => {
+    expect(selectThreadHasUnsentDraft(makeThreadState(), ` ${THREAD_KEY} `)).toBe(true);
+    expect(selectThreadHasUnsentDraft(makeThreadState(), "   ")).toBe(false);
   });
 });

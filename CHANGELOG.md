@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- See a dot in the sidebar on any thread that still has a pre-typed message you never sent (#208)
 - Save custom quick-send chips and click one to send its message when the composer is empty (#206)
 - The right panel toggle no longer flickers when you open the panel in a windowed desktop (#207)
 - The right panel now opens as an overlay when the window is fullscreen or maximized (#205)
