@@ -43,6 +43,31 @@ export const AviCodeCommunicationStylePreset = Schema.Struct({
 });
 export type AviCodeCommunicationStylePreset = typeof AviCodeCommunicationStylePreset.Type;
 
+// Avi Code addition. Quick-send chips: saved shortcuts shown in the composer
+// while the input is empty. Clicking one sends its text as a message. Each chip
+// carries a short label, a palette colour token (resolved to a CSS value on the
+// client), and the message text to send. The list is capped so the row stays a
+// glanceable strip rather than an overflowing wall of buttons.
+export const AVICODE_CHIP_MAX = 10;
+export const AVICODE_CHIP_MAX_LABEL_CHARS = 24;
+export const AVICODE_CHIP_MAX_TEXT_CHARS = 2000;
+
+export const AviCodeChip = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString.check(Schema.isMaxLength(AVICODE_CHIP_MAX_LABEL_CHARS)),
+  // A palette token (see composerChips.ts on the client). Kept as a free string
+  // so an unknown token degrades to a plain chip rather than a decode failure.
+  color: TrimmedNonEmptyString,
+  text: TrimmedNonEmptyString.check(Schema.isMaxLength(AVICODE_CHIP_MAX_TEXT_CHARS)),
+});
+export type AviCodeChip = typeof AviCodeChip.Type;
+
+// Two starter chips seed the feature so its value is obvious on first open.
+export const DEFAULT_AVICODE_CHIPS: ReadonlyArray<AviCodeChip> = [
+  { id: "pr-merge", label: "pr merge", color: "green", text: "pr merge and deploy" },
+  { id: "no-deploy", label: "no deploy", color: "orange", text: "pr merge dont deploy" },
+];
+
 // ── Client Settings (local-only) ───────────────────────────────
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
@@ -276,6 +301,11 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeCommunicationStyles: Schema.Array(AviCodeCommunicationStylePreset)
     .check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_STORED))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Avi Code addition. Quick-send chips shown above the composer footer while the
+  // input is empty. Seeded with two starter chips so the feature explains itself.
+  aviCodeChips: Schema.Array(AviCodeChip)
+    .check(Schema.isMaxLength(AVICODE_CHIP_MAX))
+    .pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHIPS))),
   // Avi Code addition. Opening a chat lands at the live edge, so reading a
   // finished answer from its first line means scrolling back up. With this on,
   // opening a chat that is not working lands at the top of its last response
@@ -975,6 +1005,9 @@ export const ClientSettingsPatch = Schema.Struct({
     Schema.Array(AviCodeCommunicationStylePreset).check(
       Schema.isMaxLength(COMMUNICATION_STYLE_MAX_STORED),
     ),
+  ),
+  aviCodeChips: Schema.optionalKey(
+    Schema.Array(AviCodeChip).check(Schema.isMaxLength(AVICODE_CHIP_MAX)),
   ),
   aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
   aviCodeOpenSettingsToAviCodePage: Schema.optionalKey(Schema.Boolean),
