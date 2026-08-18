@@ -49,6 +49,7 @@ import {
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { ComposerChipRow } from "./ComposerChipRow";
 import { ComposerDictateButton } from "./ComposerDictateButton";
 import { DictationLevelMeter } from "./DictationLevelMeter";
 import {
@@ -863,6 +864,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // Avi Code addition: gate local OCR of scanned PDFs on the opt-in setting.
   const ocrScannedPdfs = useClientSettings((settings) => settings.aviCodeOcrScannedPdfs);
+  // Avi Code addition: user-defined quick-send chips, shown while the input is empty.
+  const composerChips = useClientSettings((settings) => settings.aviCodeChips);
   const customCommunicationStyles = useMemo(
     () => toCommunicationStyles(communicationStylePresets),
     [communicationStylePresets],
@@ -2073,6 +2076,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !isComposerApprovalState &&
     pendingUserInputs.length === 0;
 
+  // Avi Code addition: quick-send chips share the dictate pill's "input is
+  // empty" gate, and additionally hide when there is nothing to send to (no
+  // provider or no project chosen) since a click could not go anywhere.
+  const showComposerChips =
+    composerChips.length > 0 &&
+    prompt.trim().length === 0 &&
+    !isComposerApprovalState &&
+    pendingUserInputs.length === 0 &&
+    !projectSelectionRequired &&
+    !noProviderAvailable;
+
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
     trigger: ComposerTrigger | null;
@@ -2337,6 +2351,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       planImplementIntentRef,
       shouldBlurMobileComposerOnSubmit,
     ],
+  );
+  // Avi Code addition: clicking a quick-send chip drops its text into the
+  // composer and submits immediately. `onSend` reads `promptRef.current` as its
+  // source of truth, and `setPrompt` keeps the store/editor consistent if the
+  // send is blocked. `submitComposer` still applies the send guards.
+  const onPickChip = useCallback(
+    (text: string) => {
+      promptRef.current = text;
+      setPrompt(text);
+      submitComposer();
+    },
+    [promptRef, setPrompt, submitComposer],
   );
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
@@ -3756,6 +3782,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               ) : null}
             </div>
           </div>
+
+          {/* Avi Code addition: quick-send chips, shown only while the input is
+              empty so they never sit over live typing. */}
+          {showComposerChips ? (
+            <ComposerChipRow chips={composerChips} onPick={onPickChip} disabled={isSendDisabled} />
+          ) : null}
 
           {/* Bottom toolbar */}
           {isComposerCollapsedMobile ? null : activePendingApproval ? (

@@ -71,6 +71,7 @@ import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
 import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
+import { ChipsSettings } from "./ChipsSettings";
 import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
 import {
   SettingResetButton,
@@ -1001,6 +1002,7 @@ export function AviCodeSettings() {
           <NewChatSettings />
           <WorktreeAutomationSettings />
           <CommunicationStyleSettings />
+          <ChipsSettings />
           <ChatLayoutSettings />
           <SidebarLayoutSettings />
           <NotificationSettings />
