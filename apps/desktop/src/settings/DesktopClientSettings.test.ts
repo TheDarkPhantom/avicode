@@ -16,6 +16,10 @@ const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
   aviCodeArchivedThreadsSortMode: "project",
   aviCodeChatContentWidth: "comfortable",
+  aviCodeChips: [
+    { id: "pr-merge", label: "pr merge", color: "green", text: "pr merge and deploy" },
+    { id: "no-deploy", label: "no deploy", color: "orange", text: "pr merge dont deploy" },
+  ],
   aviCodeCommunicationStyleId: "default",
   aviCodeCommunicationStyles: [],
   aviCodeDictationDeviceId: "",

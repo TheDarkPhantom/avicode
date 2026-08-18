@@ -44,8 +44,7 @@ export function ChipsSettings() {
   const duplicateLabel = chips.some(
     (chip) => chip.label.toLocaleLowerCase() === trimmedLabel.toLocaleLowerCase(),
   );
-  const canAdd =
-    trimmedLabel.length > 0 && trimmedText.length > 0 && !atLimit && !duplicateLabel;
+  const canAdd = trimmedLabel.length > 0 && trimmedText.length > 0 && !atLimit && !duplicateLabel;
 
   const beginEdit = (chip: AviCodeChip) => {
     setEditingId(chip.id);
@@ -66,7 +65,9 @@ export function ChipsSettings() {
     const text = editText.trim();
     if (label.length === 0 || text.length === 0) return;
     writeChips(
-      chips.map((chip) => (chip.id === chipId ? { id: chipId, label, color: editColor, text } : chip)),
+      chips.map((chip) =>
+        chip.id === chipId ? { id: chipId, label, color: editColor, text } : chip,
+      ),
     );
     cancelEdit();
   };
