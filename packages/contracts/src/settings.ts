@@ -101,6 +101,18 @@ export const AviCodeSendWhileRunning = Schema.Literals(["steer", "queue"]);
 export type AviCodeSendWhileRunning = typeof AviCodeSendWhileRunning.Type;
 export const DEFAULT_AVICODE_SEND_WHILE_RUNNING: AviCodeSendWhileRunning = "steer";
 
+// Avi Code addition. Sort order of the Settings > Archived list. "project"
+// keeps the historical grouped-by-project view; the other three flatten the
+// list and sort by archive time, creation time, or title.
+export const AviCodeArchivedThreadsSortMode = Schema.Literals([
+  "project",
+  "recentlyArchived",
+  "threadCreated",
+  "title",
+]);
+export type AviCodeArchivedThreadsSortMode = typeof AviCodeArchivedThreadsSortMode.Type;
+export const DEFAULT_AVICODE_ARCHIVED_THREADS_SORT_MODE: AviCodeArchivedThreadsSortMode = "project";
+
 // Avi Code addition. The chime used to be a single hard-coded rising two-note
 // sine — the same shape other desktop tools use, so hearing it did not tell you
 // which app wanted you. These five are synthesized from preset tables in
@@ -246,6 +258,10 @@ export const ClientSettingsSchema = Schema.Struct({
   // the send until the turn finishes.
   aviCodeSendWhileRunning: AviCodeSendWhileRunning.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_SEND_WHILE_RUNNING)),
+  ),
+  // Avi Code addition. Sort order of the Settings > Archived list.
+  aviCodeArchivedThreadsSortMode: AviCodeArchivedThreadsSortMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_ARCHIVED_THREADS_SORT_MODE)),
   ),
   // Avi Code addition. Communication styles. `aviCodeCommunicationStyleId` is
   // the last style picked anywhere and is what a brand-new chat starts on;
@@ -944,6 +960,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
   aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
   aviCodeSendWhileRunning: Schema.optionalKey(AviCodeSendWhileRunning),
+  aviCodeArchivedThreadsSortMode: Schema.optionalKey(AviCodeArchivedThreadsSortMode),
   aviCodeProviderBadgeLabels: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
   ),

@@ -200,6 +200,31 @@ describe("ClientSettings Avi Code chat content width", () => {
   });
 });
 
+describe("ClientSettings Avi Code archived threads sort mode", () => {
+  it("defaults to project so the historical grouped view is unchanged", () => {
+    expect(decodeClientSettings({}).aviCodeArchivedThreadsSortMode).toBe("project");
+  });
+
+  it.each(["project", "recentlyArchived", "threadCreated", "title"] as const)(
+    "accepts %s",
+    (value) => {
+      expect(
+        decodeClientSettings({ aviCodeArchivedThreadsSortMode: value })
+          .aviCodeArchivedThreadsSortMode,
+      ).toBe(value);
+      expect(
+        decodeClientSettingsPatch({ aviCodeArchivedThreadsSortMode: value })
+          .aviCodeArchivedThreadsSortMode,
+      ).toBe(value);
+    },
+  );
+
+  it("rejects a mode outside the union", () => {
+    expect(() => decodeClientSettings({ aviCodeArchivedThreadsSortMode: "random" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ aviCodeArchivedThreadsSortMode: "random" })).toThrow();
+  });
+});
+
 describe("ClientSettings Avi Code notification sound", () => {
   it("stays opt-in, and defaults to the new sound rather than the old chime", () => {
     const settings = decodeClientSettings({});
