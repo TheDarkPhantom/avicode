@@ -87,6 +87,7 @@ import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { isElectron } from "../env";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
+import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isMacPlatform } from "../lib/utils";
 import {
@@ -220,11 +221,8 @@ import {
 import { SidebarThreadRow, SIDEBAR_ICON_ACTION_BUTTON_CLASS } from "./sidebar/SidebarThreadRow";
 import { ProjectMergeRunButton } from "./sidebar/ProjectMergeRunButton";
 import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
-import {
-  resolveFlatSidebarThreads,
-  SidebarFlatThreadList,
-  useFlatNewThread,
-} from "./sidebar/SidebarFlatThreadList";
+import { resolveFlatSidebarThreads, SidebarFlatThreadList } from "./sidebar/SidebarFlatThreadList";
+import { FlatNewThreadButton } from "./sidebar/FlatNewThreadButton";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 // Avi Code addition: pinned rows sort ahead of the upstream activity order.
 import { isPinnedByKeys, orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
@@ -2399,7 +2397,6 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     },
     [updateSettings],
   );
-  const handleFlatNewThread = useFlatNewThread(sortedProjects, handleNewThread);
 
   // Avi Code addition: one row renderer shared by the folder, ungrouped, and
   // filtered views so their props stay identical.
@@ -2561,24 +2558,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </span>
           <div className="flex items-center gap-1">
             {isFlatSidebar ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label="New thread"
-                      data-testid="flat-new-thread-button"
-                      className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-[calc(--spacing(1)-1px)] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                      onClick={handleFlatNewThread}
-                    />
-                  }
-                >
-                  <SquarePenIcon className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipPopup side="right">
-                  {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
-                </TooltipPopup>
-              </Tooltip>
+              <FlatNewThreadButton
+                projects={sortedProjects}
+                handleNewThread={handleNewThread}
+                newThreadShortcutLabel={newThreadShortcutLabel}
+              />
             ) : null}
             <ProjectSortMenu
               projectSortOrder={projectSortOrder}
@@ -3370,6 +3354,7 @@ export default function Sidebar() {
     currentThreadKey: routeThreadKey,
     getThreadByKey: getSidebarThreadByKey,
     navigateToThread,
+    shouldSuppress: isPreviewFocused,
   });
 
   useEffect(() => {
