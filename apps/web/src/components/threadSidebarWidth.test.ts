@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  resolveAppliedThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
   THREAD_SIDEBAR_DEFAULT_WIDTH,
@@ -30,5 +31,17 @@ describe("thread sidebar width", () => {
 
   it("keeps the sidebar minimum when the whole layout is narrower than its minimums", () => {
     expect(resolveInitialThreadSidebarWidth(900, 700)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+  });
+
+  it("applies the preferred width unchanged when it fits the viewport", () => {
+    expect(resolveAppliedThreadSidebarWidth(256, 1600)).toBe(256);
+  });
+
+  it("re-clamps the applied width to leave room for the main content when the window shrank", () => {
+    expect(resolveAppliedThreadSidebarWidth(900, 1000)).toBe(1000 - THREAD_MAIN_CONTENT_MIN_WIDTH);
+  });
+
+  it("never drops the applied width below the sidebar minimum on a tiny window", () => {
+    expect(resolveAppliedThreadSidebarWidth(900, 700)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
   });
 });
