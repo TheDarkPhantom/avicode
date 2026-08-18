@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The right panel now opens as an overlay when the window is fullscreen or maximized (#205)
 - Sort the archived threads page by recently archived, project, creation date, or title (#204)
 - Search projects in a combobox when starting a new thread from the flat sidebar (#203)
 - Move through browser history with your mouse back and forward buttons when the preview is focused (#203)

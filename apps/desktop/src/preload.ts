@@ -154,6 +154,24 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
     };
   },
+  // Avi Code addition: fullscreen OR maximized — the states where the native window
+  // cannot grow to reserve right-panel space, so the renderer uses the overlay sheet.
+  getWindowPanelReservationBlocked: () =>
+    ipcRenderer.sendSync(IpcChannels.GET_WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL) === true,
+  onWindowPanelReservationBlockedChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, blocked: unknown) => {
+      if (typeof blocked !== "boolean") return;
+      listener(blocked);
+    };
+
+    ipcRenderer.on(IpcChannels.WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(
+        IpcChannels.WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL,
+        wrappedListener,
+      );
+    };
+  },
   getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
   setUpdateChannel: (channel) =>
     ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),

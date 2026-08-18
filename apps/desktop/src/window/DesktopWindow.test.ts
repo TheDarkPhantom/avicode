@@ -44,7 +44,11 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
+import {
+  MENU_ACTION_CHANNEL,
+  WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import * as PreviewManager from "../preview/Manager.ts";
@@ -954,12 +958,53 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("fullscreen listeners were not registered");
         }
 
+        // Avi Code addition: each transition also broadcasts the reservation-blocked
+        // state so the renderer can switch the right panel to the overlay sheet.
+        fakeWindow.isFullScreen.mockReturnValue(true);
         enterFullscreen();
+        fakeWindow.isFullScreen.mockReturnValue(false);
         leaveFullscreen();
         assert.deepEqual(fakeWindow.send.mock.calls, [
+          [WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL, true],
           [WINDOW_FULLSCREEN_STATE_CHANNEL, true],
+          [WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL, false],
           [WINDOW_FULLSCREEN_STATE_CHANNEL, false],
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("applies a panel reservation deferred during fullscreen when leaving fullscreen", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const leaveFullscreen = fakeWindow.windowListeners.get("leave-full-screen");
+        if (!leaveFullscreen) {
+          return yield* Effect.die("leave-full-screen listener was not registered");
+        }
+
+        // Opening the panel while fullscreen cannot grow the window; the request is
+        // recorded but no native resize happens.
+        fakeWindow.isFullScreen.mockReturnValue(true);
+        yield* desktopWindow.setPanelWindowReservation({ action: "open", width: 540 });
+        assert.equal(fakeWindow.setBounds.mock.calls.length, 0);
+
+        // Leaving fullscreen reconciles the deferred reservation and grows the window.
+        fakeWindow.isFullScreen.mockReturnValue(false);
+        leaveFullscreen();
+        assert.deepEqual(fakeWindow.setBounds.mock.calls.at(-1)?.[0], {
+          x: 0,
+          y: 0,
+          width: 1640,
+          height: 780,
+        });
       }).pipe(Effect.provide(layer));
     }),
   );

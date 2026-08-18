@@ -160,6 +160,7 @@ import {
   useDesktopRightPanelWindowReservation,
   useRightPanelSplitLayout,
 } from "../hooks/useRightPanelSplitLayout";
+import { useDesktopWindowReservationBlocked } from "../hooks/useDesktopWindowReservationBlocked";
 import {
   isPreviewSupportedInRuntime,
   setActivePreviewTab,
@@ -1704,8 +1705,14 @@ function ChatViewContent(props: ChatViewProps) {
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
   const rightPanelSplitLayout = useRightPanelSplitLayout({ panelOpen: rightPanelOpen });
+  // Avi Code addition: when the desktop window is fullscreen or maximized it cannot grow
+  // to reserve panel space, so present the panel as an overlay sheet (chat never shrinks)
+  // rather than a 0px inline split. The hook already returns false on web.
+  const desktopReservationBlocked = useDesktopWindowReservationBlocked();
   const shouldUsePlanSidebarSheet =
-    useCompactRightPanel || (!isElectron && rightPanelSplitLayout.layout?.fitsInline === false);
+    useCompactRightPanel ||
+    desktopReservationBlocked ||
+    (!isElectron && rightPanelSplitLayout.layout?.fitsInline === false);
   useDesktopRightPanelWindowReservation({
     open: rightPanelOpen && !shouldUsePlanSidebarSheet,
     panelWidth: rightPanelSplitLayout.layout?.panelWidth ?? null,
