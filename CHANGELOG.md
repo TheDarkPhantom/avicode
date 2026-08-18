@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Attach Word (.docx) and JSON files and have their text read into the chat (#202)
+- Turn on OCR in Avi Code settings to read scanned PDFs that have no selectable text (#202)
 - Add a third sidebar layout that groups by project without folders (#201)
 - Reorder sidebar folders by dragging them into the order you want (#199)
 - Hide a folder and its projects from the sidebar, then bring it back from Avi Code settings (#199)
