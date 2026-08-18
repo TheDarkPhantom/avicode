@@ -7,6 +7,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ProviderInteractionMode,
+  DOCUMENT_ATTACHMENT_MIME_TYPES,
   ProviderDriverKind,
   ProviderOptionSelection,
   PreviewAnnotationPayloadSchema,
@@ -2252,12 +2253,11 @@ export function hydrateImagesFromPersisted(
         type: "document",
         id: attachment.id,
         name: attachment.name,
-        mimeType:
-          attachment.mimeType === "application/pdf" ||
-          attachment.mimeType === "text/markdown" ||
-          attachment.mimeType === "text/csv"
-            ? attachment.mimeType
-            : "text/plain",
+        mimeType: (DOCUMENT_ATTACHMENT_MIME_TYPES as readonly string[]).includes(
+          attachment.mimeType,
+        )
+          ? (attachment.mimeType as (typeof DOCUMENT_ATTACHMENT_MIME_TYPES)[number])
+          : "text/plain",
         sizeBytes: attachment.sizeBytes,
         extractedChars: attachment.extractedText.length,
         extractedText: attachment.extractedText,

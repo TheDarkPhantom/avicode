@@ -275,6 +275,12 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeOpenSettingsToAviCodePage: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  // Avi Code addition. A scanned (image-only) PDF has no selectable text, so
+  // attaching one normally fails with a clear "needs OCR" error. With this on,
+  // the client runs local OCR (tesseract.js) over such a PDF's pages instead.
+  // Off by default: OCR is slow on long documents and runs entirely in the
+  // renderer, so it is opt-in per the FUTURE_ENHANCEMENTS note.
+  aviCodeOcrScannedPdfs: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -955,6 +961,7 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
   aviCodeOpenSettingsToAviCodePage: Schema.optionalKey(Schema.Boolean),
+  aviCodeOcrScannedPdfs: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(

@@ -10,10 +10,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 ## Worth doing next
 
 1. Use the alpha for real work and fix observed friction.
-2. Add local, opt-in OCR for scanned PDFs.
-3. Add a document preview drawer with page/heading navigation.
-4. Add per-attachment inclusion controls for large extracted documents.
-5. Expand diagnostics with Avi Code/upstream commits and ALFRED metadata status.
+2. Add a document preview drawer with page/heading navigation.
+3. Add per-attachment inclusion controls for large extracted documents.
+4. Expand diagnostics with Avi Code/upstream commits and ALFRED metadata status.
 
 ## Deferred
 
@@ -171,7 +170,8 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   that just landed, so a later PR in the run can still be stale even though it merged cleanly. A
   real merge queue, or nominating one thread as the integrator, would close that.
 - Explorer drag progress and cancellation.
-- DOCX, CSV, JSON, and source archives.
+- Source archives (zip/tar) and RTF documents. DOCX and JSON now extract like the other document
+  types. OCR is opt-in and English-only in v1; page language selection would be the next step.
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.
@@ -211,7 +211,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deliberate limits
 
-- No OCR in v1.
+- OCR is opt-in, runs client-side, and recognizes English only in v1.
 - 20MB, 250 pages, and 500,000 extracted characters per document.
 - Twelve combined attachments per message.
 - Five explicit thread references and 600,000 serialized context characters per turn.
@@ -223,6 +223,7 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - 2026-07-28: upstream synchronization and guardrails.
 - 2026-07-28: identity, branding, updater boundary, and T3 import.
 - 2026-07-28: PDF/TXT/Markdown attachments.
+- 2026-08-18: DOCX and JSON attachments, plus opt-in local OCR for scanned PDFs.
 - 2026-07-28: ALFRED metadata and privacy mode.
 - 2026-07-29: repeatable, backed-up T3 workspace refresh from Avi Code settings.
 - 2026-07-29: native repository/thread titles fixed for ActivityWatch and ALFRED attribution.

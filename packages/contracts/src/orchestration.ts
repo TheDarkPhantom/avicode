@@ -178,11 +178,22 @@ const UploadChatImageAttachment = Schema.Struct({
 });
 export type UploadChatImageAttachment = typeof UploadChatImageAttachment.Type;
 
+// Avi Code addition: JSON and DOCX join the original document types. All still
+// persist as extracted `.txt`, so the mime is only a prompt-context label here.
+export const DOCUMENT_ATTACHMENT_MIME_TYPES = [
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+] as const;
+
 export const ChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   id: ChatAttachmentId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: Schema.Literals(["application/pdf", "text/plain", "text/markdown", "text/csv"]),
+  mimeType: Schema.Literals(DOCUMENT_ATTACHMENT_MIME_TYPES),
   sizeBytes: NonNegativeInt.check(
     Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES),
   ),
@@ -195,7 +206,7 @@ export type ChatDocumentAttachment = typeof ChatDocumentAttachment.Type;
 const UploadChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: Schema.Literals(["application/pdf", "text/plain", "text/markdown", "text/csv"]),
+  mimeType: Schema.Literals(DOCUMENT_ATTACHMENT_MIME_TYPES),
   sizeBytes: NonNegativeInt.check(
     Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES),
   ),

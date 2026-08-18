@@ -15,7 +15,8 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Copy-only first-launch T3 import with Import, Start Fresh, and Not Now choices.
 - [x] Repeatable Settings → Avi Code import with online snapshot, attachment copy, backup, and
       backend restart.
-- [x] PDF, TXT, Markdown, and CSV extraction and attachment metadata.
+- [x] PDF, TXT, Markdown, CSV, JSON, and DOCX extraction and attachment metadata.
+- [x] Opt-in local OCR fallback for scanned PDFs with no selectable text.
 - [x] Repository/thread native window titles and privacy mode.
 - [x] Electron-native title propagation so ActivityWatch receives the repository/thread title
       instead of the static application name.

@@ -861,6 +861,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const communicationStylePresets = useClientSettings(
     (settings) => settings.aviCodeCommunicationStyles,
   );
+  // Avi Code addition: gate local OCR of scanned PDFs on the opt-in setting.
+  const ocrScannedPdfs = useClientSettings((settings) => settings.aviCodeOcrScannedPdfs);
   const customCommunicationStyles = useMemo(
     () => toCommunicationStyles(communicationStylePresets),
     [communicationStylePresets],
@@ -2850,7 +2852,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // send still waits for a slow PDF the way it waits for a large image.
         if (!file.type.startsWith("image/")) {
           try {
-            const extracted = await extractDocument(file);
+            const extracted = await extractDocument(file, { ocrScannedPdfs });
             nextImages.push({
               type: "document",
               id: randomUUID(),
