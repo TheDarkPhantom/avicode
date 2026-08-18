@@ -213,6 +213,7 @@ function ChatLayoutSettings() {
   const rightPanelFollowsThreads = useClientSettings(
     (settings) => settings.rightPanelFollowsThreads,
   );
+  const ocrScannedPdfs = useClientSettings((settings) => settings.aviCodeOcrScannedPdfs);
   const updateSettings = useUpdateClientSettings();
 
   return (
@@ -256,6 +257,20 @@ function ChatLayoutSettings() {
               updateSettings({ aviCodeOpenChatsAtLastResponse: Boolean(checked) })
             }
             aria-label="Open chats at the last response"
+          />
+        }
+      />
+      <SettingsRow
+        title="OCR scanned PDFs"
+        description="A scanned PDF is images, not text, so attaching one normally fails with nothing to read. With this on, Avi Code reads the pages locally with OCR and attaches the recognized text."
+        status="OCR runs in the app and can be slow on long PDFs. English only for now."
+        control={
+          <Switch
+            checked={ocrScannedPdfs}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeOcrScannedPdfs: Boolean(checked) })
+            }
+            aria-label="OCR scanned PDFs"
           />
         }
       />
