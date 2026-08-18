@@ -42,6 +42,8 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Search projects in a combobox when starting a new thread from the flat sidebar (#203)
+- Move through browser history with your mouse back and forward buttons when the preview is focused (#203)
 - Attach Word (.docx) and JSON files and have their text read into the chat (#202)
 - Turn on OCR in Avi Code settings to read scanned PDFs that have no selectable text (#202)
 - Add a third sidebar layout that groups by project without folders (#201)
