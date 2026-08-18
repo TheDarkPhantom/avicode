@@ -20,6 +20,7 @@ const clientSettings: ClientSettings = {
   aviCodeDictationDeviceId: "",
   aviCodeNewThreadsStartInPlanMode: false,
   aviCodeNotificationSound: "pebble",
+  aviCodeOcrScannedPdfs: false,
   aviCodeOpenChatsAtLastResponse: false,
   aviCodeOpenSettingsToAviCodePage: false,
   aviCodeProviderBadgeLabels: {},
