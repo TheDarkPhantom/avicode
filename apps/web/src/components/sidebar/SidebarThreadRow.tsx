@@ -33,6 +33,7 @@ import {
 } from "../ThreadStatusIndicators";
 import { resolveThreadRowClassName, resolveThreadStatusPill } from "../Sidebar.logic";
 import { ThreadModelBadge } from "./ThreadModelBadge";
+import { ThreadUnsentDraftDot } from "./UnsentDraftDot";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarMenuSubButton, SidebarMenuSubItem } from "../ui/sidebar";
@@ -434,6 +435,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               className="size-3 shrink-0 text-muted-foreground/60"
             />
           )}
+          {/* Avi Code addition: unsent-draft marker. */}
+          <ThreadUnsentDraftDot threadKey={threadKey} threadTitle={thread.title} />
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}

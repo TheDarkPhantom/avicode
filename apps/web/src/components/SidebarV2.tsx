@@ -170,7 +170,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 import { ProjectMergeRunButton } from "./sidebar/ProjectMergeRunButton";
 import { ThreadDevServerButton } from "./sidebar/ThreadDevServerButton";
-import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
+import { ProjectUnsentDraftDot, ThreadUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -851,6 +851,9 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
     <PinIcon aria-label="Pinned thread" className="size-3 shrink-0 text-muted-foreground/60" />
   ) : null;
 
+  // Avi Code addition: unsent-draft marker, rendered in both row variants.
+  const draftDot = <ThreadUnsentDraftDot threadKey={threadKey} threadTitle={thread.title} />;
+
   const prBadge =
     prStatus && pr && showPrIndicator ? (
       <button
@@ -930,6 +933,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
             </span>
             {modelBadge}
             {pinnedMarker}
+            {draftDot}
             {title}
             {devServerButton}
             {terminalStatusIcon}
@@ -1138,6 +1142,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
               {pinnedMarker}
+              {draftDot}
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
