@@ -50,19 +50,29 @@ function clearWindowControlsOverlayGeometry(): void {
   }
 }
 
-function applyWindowControlsOverlayGeometry(overlay: WindowControlsOverlayLike): void {
-  if (!overlay.visible || typeof overlay.getTitlebarAreaRect !== "function") {
-    clearWindowControlsOverlayGeometry();
-    return;
+/**
+ * Avi Code addition: decide whether a freshly measured caption-button inset is safe to
+ * apply. Opening the right panel grows the native window asynchronously; during the grow
+ * `window.innerWidth` updates a frame or two before `getTitlebarAreaRect()` catches up, so
+ * a resize-driven read briefly reports a much larger `rightInset` and shoves the panel
+ * toggle inward. The native-controls band never widens on a plain resize, so reject a
+ * non-authoritative read that inflates the inset above the last stable value and wait for
+ * the authoritative `geometrychange` snapshot. The first value (no prior) always applies.
+ */
+export function shouldApplyWindowControlsOverlayInset(input: {
+  readonly candidateRightInset: number;
+  readonly lastAppliedRightInset: number | null;
+  readonly authoritative: boolean;
+}): boolean {
+  if (input.authoritative || input.lastAppliedRightInset === null) {
+    return true;
   }
-  const geometry = resolveWindowControlsOverlayGeometry({
-    rect: overlay.getTitlebarAreaRect(),
-    viewportWidth: window.innerWidth,
-  });
-  if (geometry.height === 0) {
-    clearWindowControlsOverlayGeometry();
-    return;
-  }
+  return input.candidateRightInset <= input.lastAppliedRightInset;
+}
+
+function applyResolvedWindowControlsOverlayGeometry(
+  geometry: ReturnType<typeof resolveWindowControlsOverlayGeometry>,
+): void {
   const style = document.documentElement.style;
   style.setProperty("--workspace-topbar-height", `${geometry.height}px`);
   style.setProperty("--workspace-controls-top", `${geometry.y}px`);
@@ -80,26 +90,85 @@ export function syncDocumentWindowControlsOverlayClass(): () => void {
   }
 
   const overlay = getWindowControlsOverlay();
-  const update = () => {
+
+  const syncClass = () => {
     document.documentElement.classList.toggle(WCO_CLASS_NAME, overlay !== null && overlay.visible);
-    if (overlay) {
-      applyWindowControlsOverlayGeometry(overlay);
-    } else {
-      clearWindowControlsOverlayGeometry();
-    }
   };
 
-  update();
+  // Avi Code addition: coalesce geometry reads into a frame and reject mid-grow transients
+  // (see shouldApplyWindowControlsOverlayInset). `geometrychange` and zoom are authoritative
+  // self-consistent snapshots; a bare `resize` may read a stale titlebar rect.
+  let frame: number | null = null;
+  let pendingAuthoritative = false;
+  let lastAppliedRightInset: number | null = null;
+
+  const applyGeometry = () => {
+    frame = null;
+    const authoritative = pendingAuthoritative;
+    pendingAuthoritative = false;
+    if (!overlay || !overlay.visible || typeof overlay.getTitlebarAreaRect !== "function") {
+      clearWindowControlsOverlayGeometry();
+      lastAppliedRightInset = null;
+      return;
+    }
+    const geometry = resolveWindowControlsOverlayGeometry({
+      rect: overlay.getTitlebarAreaRect(),
+      viewportWidth: window.innerWidth,
+    });
+    if (geometry.height === 0) {
+      clearWindowControlsOverlayGeometry();
+      lastAppliedRightInset = null;
+      return;
+    }
+    if (
+      !shouldApplyWindowControlsOverlayInset({
+        candidateRightInset: geometry.rightInset,
+        lastAppliedRightInset,
+        authoritative,
+      })
+    ) {
+      return;
+    }
+    applyResolvedWindowControlsOverlayGeometry(geometry);
+    lastAppliedRightInset = geometry.rightInset;
+  };
+
+  const scheduleGeometry = (authoritative: boolean) => {
+    if (authoritative) {
+      pendingAuthoritative = true;
+    }
+    if (frame !== null) {
+      return;
+    }
+    frame =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(applyGeometry)
+        : (applyGeometry(), null);
+  };
+
+  const onAuthoritative = () => {
+    syncClass();
+    scheduleGeometry(true);
+  };
+  const onResize = () => {
+    syncClass();
+    scheduleGeometry(false);
+  };
+
+  onAuthoritative();
   if (!overlay) {
     return () => {};
   }
 
-  overlay.addEventListener("geometrychange", update);
-  window.addEventListener("resize", update);
-  const unsubscribeFromZoom = subscribeToAppZoomLevel(update);
+  overlay.addEventListener("geometrychange", onAuthoritative);
+  window.addEventListener("resize", onResize);
+  const unsubscribeFromZoom = subscribeToAppZoomLevel(onAuthoritative);
   return () => {
-    overlay.removeEventListener("geometrychange", update);
-    window.removeEventListener("resize", update);
+    if (frame !== null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(frame);
+    }
+    overlay.removeEventListener("geometrychange", onAuthoritative);
+    window.removeEventListener("resize", onResize);
     unsubscribeFromZoom();
     clearWindowControlsOverlayGeometry();
   };
