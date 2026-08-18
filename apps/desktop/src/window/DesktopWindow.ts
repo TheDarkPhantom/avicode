@@ -15,7 +15,11 @@ import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
+import {
+  MENU_ACTION_CHANNEL,
+  WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL,
+} from "../ipc/channels.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 
@@ -611,26 +615,49 @@ export const make = Effect.gen(function* () {
       event.preventDefault();
       window.setTitle(resolveNativeWindowTitle(environment.displayName, title));
     });
+    // Avi Code addition: the renderer shows the right panel as an overlay sheet when
+    // the window cannot grow to reserve space (fullscreen or maximized). Broadcast that
+    // state on every transition, on all platforms, so the fallback engages promptly.
+    const broadcastReservationBlocked = () => {
+      if (window.isDestroyed()) return;
+      window.webContents.send(
+        WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL,
+        window.isFullScreen() || window.isMaximized(),
+      );
+    };
+
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
-    window.on("maximize", scheduleBoundsPersist);
+    window.on("maximize", () => {
+      broadcastReservationBlocked();
+      scheduleBoundsPersist();
+    });
     window.on("unmaximize", () => {
       reconcilePanelWindowReservation();
+      broadcastReservationBlocked();
       scheduleBoundsPersist();
     });
     window.on("close", () => {
       runFork(flushBoundsPersist);
     });
 
-    if (environment.platform === "darwin") {
-      window.on("enter-full-screen", () => {
+    // Avi Code addition: reconcile the panel reservation on every platform when leaving
+    // fullscreen. In fullscreen `reconcilePanelWindowReservation` early-returns, so a
+    // panel opened/closed while fullscreen leaves `panelReservationDesired` out of sync;
+    // reapplying on exit restores the correct window width (upstream only did this on mac).
+    window.on("enter-full-screen", () => {
+      broadcastReservationBlocked();
+      if (environment.platform === "darwin") {
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
-      });
-      window.on("leave-full-screen", () => {
-        reconcilePanelWindowReservation();
+      }
+    });
+    window.on("leave-full-screen", () => {
+      reconcilePanelWindowReservation();
+      broadcastReservationBlocked();
+      if (environment.platform === "darwin") {
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
-      });
-    }
+      }
+    });
 
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;

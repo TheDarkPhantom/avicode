@@ -1034,6 +1034,10 @@ export interface DesktopBridge {
   onMenuAction: (listener: (action: string) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
+  // Avi Code addition: true when the native window is fullscreen or maximized and
+  // therefore cannot grow to reserve right-panel space (renderer falls back to sheet).
+  getWindowPanelReservationBlocked: () => boolean;
+  onWindowPanelReservationBlockedChange: (listener: (blocked: boolean) => void) => () => void;
   setPanelWindowReservation: (input: {
     action: "open" | "update" | "close";
     /** Native BrowserWindow units, after renderer page zoom is applied. */

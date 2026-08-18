@@ -6,6 +6,12 @@ export const OPEN_EXTERNAL_CHANNEL = "desktop:open-external";
 export const MENU_ACTION_CHANNEL = "desktop:menu-action";
 export const GET_WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:get-window-fullscreen-state";
 export const WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:window-fullscreen-state";
+// Avi Code addition: distinct from the fullscreen channel — this reports whether the
+// native window can grow to reserve right-panel space, which is blocked while the
+// window is fullscreen OR maximized. The renderer falls back to the overlay sheet.
+export const GET_WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL =
+  "desktop:get-window-panel-reservation-blocked";
+export const WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL = "desktop:window-panel-reservation-blocked";
 export const WINDOW_SET_PANEL_RESERVATION_CHANNEL = "desktop:window-set-panel-reservation";
 export const UPDATE_STATE_CHANNEL = "desktop:update-state";
 export const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";

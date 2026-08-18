@@ -8,7 +8,11 @@ import type * as Electron from "electron";
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
-import { getLocalEnvironmentBootstraps, getWindowFullscreenState } from "./window.ts";
+import {
+  getLocalEnvironmentBootstraps,
+  getWindowFullscreenState,
+  getWindowPanelReservationBlocked,
+} from "./window.ts";
 
 const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
   executablePath: "wsl.exe",
@@ -145,4 +149,43 @@ describe("getWindowFullscreenState", () => {
       ),
     );
   });
+});
+
+describe("getWindowPanelReservationBlocked", () => {
+  const provideWindow = (window: Pick<Electron.BrowserWindow, "isFullScreen" | "isMaximized">) =>
+    Effect.provide(
+      Layer.mock(ElectronWindow.ElectronWindow)({
+        currentMainOrFirst: Effect.succeed(Option.some(window as Electron.BrowserWindow)),
+      }),
+    );
+
+  it.effect("is blocked when the window is fullscreen", () =>
+    Effect.gen(function* () {
+      assert.isTrue(yield* getWindowPanelReservationBlocked.handler());
+    }).pipe(provideWindow({ isFullScreen: () => true, isMaximized: () => false })),
+  );
+
+  it.effect("is blocked when the window is maximized", () =>
+    Effect.gen(function* () {
+      assert.isTrue(yield* getWindowPanelReservationBlocked.handler());
+    }).pipe(provideWindow({ isFullScreen: () => false, isMaximized: () => true })),
+  );
+
+  it.effect("is not blocked in a normal resizable window", () =>
+    Effect.gen(function* () {
+      assert.isFalse(yield* getWindowPanelReservationBlocked.handler());
+    }).pipe(provideWindow({ isFullScreen: () => false, isMaximized: () => false })),
+  );
+
+  it.effect("is not blocked when there is no window", () =>
+    Effect.gen(function* () {
+      assert.isFalse(yield* getWindowPanelReservationBlocked.handler());
+    }).pipe(
+      Effect.provide(
+        Layer.mock(ElectronWindow.ElectronWindow)({
+          currentMainOrFirst: Effect.succeed(Option.none()),
+        }),
+      ),
+    ),
+  );
 });

@@ -66,6 +66,19 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
   }),
 });
 
+// Avi Code addition: the native window cannot grow to reserve right-panel space
+// while it is fullscreen or maximized. When blocked, the renderer shows the panel
+// as an overlay sheet instead of requesting a window resize that would be ignored.
+export const getWindowPanelReservationBlocked = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_PANEL_RESERVATION_BLOCKED_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getWindowPanelReservationBlocked")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    return Option.isSome(window) && (window.value.isFullScreen() || window.value.isMaximized());
+  }),
+});
+
 export const setPanelWindowReservation = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.WINDOW_SET_PANEL_RESERVATION_CHANNEL,
   payload: Schema.Struct({
