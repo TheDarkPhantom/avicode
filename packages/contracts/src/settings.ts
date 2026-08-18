@@ -59,11 +59,14 @@ export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "update
 
 // Avi Code addition. "project" is the upstream two-level tree: projects sort by
 // their newest thread, threads sort within their project, so a thread can never
-// rise above its project's block. "flat" drops the grouping entirely and sorts
-// every thread against every other by `sidebarThreadSortOrder`, which is what
-// makes the ctrl+1…ctrl+9 jump slots track the globally most recent threads
-// instead of whichever rows happen to sit at the top of each expanded project.
-export const SidebarThreadGrouping = Schema.Literals(["project", "flat"]);
+// rise above its project's block. "project_no_folders" is that same two-level
+// tree but with folder headers ignored — the old pre-folders view, for users who
+// keep folders as data yet want a flat list of every project. "flat" drops the
+// grouping entirely and sorts every thread against every other by
+// `sidebarThreadSortOrder`, which is what makes the ctrl+1…ctrl+9 jump slots track
+// the globally most recent threads instead of whichever rows happen to sit at the
+// top of each expanded project.
+export const SidebarThreadGrouping = Schema.Literals(["project", "flat", "project_no_folders"]);
 export type SidebarThreadGrouping = typeof SidebarThreadGrouping.Type;
 export const DEFAULT_SIDEBAR_THREAD_GROUPING: SidebarThreadGrouping = "project";
 

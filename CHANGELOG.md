@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Add a third sidebar layout that groups by project without folders (#201)
 - Reorder sidebar folders by dragging them into the order you want (#199)
 - Hide a folder and its projects from the sidebar, then bring it back from Avi Code settings (#199)
 - Keep chats that need you visible under a collapsed folder with a new setting (#199)
