@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
   scopedThreadKey,
@@ -8,13 +8,9 @@ import {
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
-import { readLocalApi } from "../../localApi";
 import type { SidebarThreadSummary } from "../../types";
 import type { useNewThreadHandler } from "../../hooks/useHandleNewThread";
-import type {
-  SidebarProjectGroupMember,
-  SidebarProjectSnapshot,
-} from "../../sidebarProjectGrouping";
+import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { buildFlatSidebarThreadList } from "../Sidebar.logic";
 import { useUiStateStore } from "../../uiStateStore";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -212,16 +208,13 @@ export const SidebarFlatThreadList = memo(function SidebarFlatThreadList(
 });
 
 /** "New thread" for the flat list. There is no project header to hang the
- * button off, so it asks which project first (skipping the prompt when there
- * is only one). */
-export function useFlatNewThread(
-  projects: readonly SidebarProjectSnapshot[],
-  handleNewThread: ReturnType<typeof useNewThreadHandler>,
-) {
+ * button off, so callers ask which project first (skipping the prompt when
+ * there is only one). This hook owns the actual create + error handling; the
+ * project selection UI lives in `FlatNewThreadButton`. */
+export function useCreateThreadInProject(handleNewThread: ReturnType<typeof useNewThreadHandler>) {
   const { isMobile, setOpenMobile } = useSidebar();
-  const members = useMemo(() => projects.flatMap((project) => project.memberProjects), [projects]);
 
-  const createInProject = useCallback(
+  return useCallback(
     (member: SidebarProjectGroupMember) => {
       if (isMobile) {
         setOpenMobile(false);
@@ -245,35 +238,5 @@ export function useFlatNewThread(
       })();
     },
     [handleNewThread, isMobile, setOpenMobile],
-  );
-
-  return useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (members.length === 0) return;
-      if (members.length === 1) {
-        createInProject(members[0]!);
-        return;
-      }
-      void (async () => {
-        const api = readLocalApi();
-        if (!api) return;
-        const clicked = await api.contextMenu.show(
-          members.map((member) => ({
-            id: member.physicalProjectKey,
-            label: member.environmentLabel
-              ? `${member.title} — ${member.environmentLabel}`
-              : member.title,
-          })),
-          { x: event.clientX, y: event.clientY },
-        );
-        if (!clicked) return;
-        const target = members.find((member) => member.physicalProjectKey === clicked);
-        if (!target) return;
-        createInProject(target);
-      })();
-    },
-    [createInProject, members],
   );
 }

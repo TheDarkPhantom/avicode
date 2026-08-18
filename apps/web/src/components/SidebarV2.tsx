@@ -109,6 +109,7 @@ import {
 import { acknowledgeThreadVisit } from "../threadVisit";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
+import { isPreviewFocused } from "~/lib/previewFocus";
 import { cn } from "~/lib/utils";
 import {
   buildBulkTitleRegenerationContextMenuItem,
@@ -1853,6 +1854,7 @@ export default function SidebarV2() {
     currentThreadKey: routeThreadKey,
     getThreadByKey,
     navigateToThread,
+    shouldSuppress: isPreviewFocused,
   });
 
   const [renamingThreadKey, setRenamingThreadKey] = useState<string | null>(null);

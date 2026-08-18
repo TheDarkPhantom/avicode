@@ -16,9 +16,23 @@ export function useMouseBackForwardThreadNavigation<
   currentThreadKey: string | null;
   getThreadByKey: (threadKey: string) => TThread | undefined;
   navigateToThread: (threadRef: ScopedThreadRef) => void;
+  /**
+   * Evaluated per event: when it returns true the buttons are left untouched so
+   * a focused surface (e.g. the browser preview) handles its own history. Must
+   * be checked at event time, not in the effect gate, since focus changes do
+   * not re-run the effect.
+   */
+  shouldSuppress?: () => boolean;
 }): void {
-  const { active, currentThreadKey, enabled, getThreadByKey, navigateToThread, orderedThreadKeys } =
-    input;
+  const {
+    active,
+    currentThreadKey,
+    enabled,
+    getThreadByKey,
+    navigateToThread,
+    orderedThreadKeys,
+    shouldSuppress,
+  } = input;
 
   useEffect(() => {
     if (!enabled || !active) {
@@ -26,6 +40,9 @@ export function useMouseBackForwardThreadNavigation<
     }
 
     const resolveEventTarget = (event: MouseEvent) => {
+      if (shouldSuppress?.()) {
+        return null;
+      }
       const result = resolveMouseBackForwardThreadNavigationTarget({
         enabled,
         active,
@@ -68,5 +85,13 @@ export function useMouseBackForwardThreadNavigation<
       window.removeEventListener("mouseup", handleMouseHistoryButton, { capture: true });
       window.removeEventListener("auxclick", handleMouseHistoryButton, { capture: true });
     };
-  }, [active, currentThreadKey, enabled, getThreadByKey, navigateToThread, orderedThreadKeys]);
+  }, [
+    active,
+    currentThreadKey,
+    enabled,
+    getThreadByKey,
+    navigateToThread,
+    orderedThreadKeys,
+    shouldSuppress,
+  ]);
 }
