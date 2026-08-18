@@ -20,3 +20,12 @@ export function resolveInitialThreadSidebarWidth(
       : Math.max(THREAD_SIDEBAR_MIN_WIDTH, storedWidth);
   return Math.min(preferredWidth, resolveThreadSidebarMaximumWidth(viewportWidth));
 }
+
+// Clamp the preferred width to the live viewport every render, so a width persisted on a
+// larger window can never exceed the current maximum and let the fixed sidebar overlap the chat.
+export function resolveAppliedThreadSidebarWidth(
+  sidebarWidth: number,
+  viewportWidth: number,
+): number {
+  return Math.min(sidebarWidth, resolveThreadSidebarMaximumWidth(viewportWidth));
+}
