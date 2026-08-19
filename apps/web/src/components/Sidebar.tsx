@@ -2787,7 +2787,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               void navigate({ to: "/settings/avicode" });
             }}
           >
-            {hiddenFolderCount} hidden folder{hiddenFolderCount === 1 ? "" : "s"}. Manage in settings.
+            {hiddenFolderCount} hidden folder{hiddenFolderCount === 1 ? "" : "s"}. Manage in
+            settings.
           </button>
         ) : null}
       </SidebarGroup>

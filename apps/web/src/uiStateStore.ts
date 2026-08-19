@@ -151,7 +151,9 @@ function sanitizeProjectFolders(value: unknown): ProjectFolder[] {
     const rawName = typeof candidate.name === "string" ? candidate.name.trim() : "";
     const name = rawName.length === 0 ? DEFAULT_FOLDER_NAME : rawName;
     if (rawName.length === 0) {
-      console.warn(`Repaired persisted folder "${id}" with blank name to "${DEFAULT_FOLDER_NAME}".`);
+      console.warn(
+        `Repaired persisted folder "${id}" with blank name to "${DEFAULT_FOLDER_NAME}".`,
+      );
     }
     folders.push({
       id,
@@ -247,7 +249,16 @@ export function readPersistedState(): UiState {
   if (typeof window === "undefined") {
     return initialState;
   }
-  const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
+  // Storage access itself can throw (localStorage missing in a test window, or
+  // disabled/blocked by the browser); treat that as "no saved state" rather
+  // than crashing module load. A parse failure is different: the data exists
+  // but is corrupt, so it gets backed up before resetting.
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
+  } catch {
+    return initialState;
+  }
   if (raw) {
     try {
       return parsePersistedState(JSON.parse(raw) as PersistedUiState);
@@ -257,7 +268,12 @@ export function readPersistedState(): UiState {
     }
   }
   for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-    const legacyRaw = window.localStorage.getItem(legacyKey);
+    let legacyRaw: string | null;
+    try {
+      legacyRaw = window.localStorage.getItem(legacyKey);
+    } catch {
+      return initialState;
+    }
     if (!legacyRaw) {
       continue;
     }
