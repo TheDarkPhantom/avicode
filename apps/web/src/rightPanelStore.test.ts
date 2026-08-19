@@ -542,3 +542,110 @@ describe("rightPanelStore", () => {
     ).toEqual(["terminal:term-1", "browser:tab-b", "browser:tab-c"]);
   });
 });
+
+// Avi Code addition: two previews side by side.
+describe("right panel preview split", () => {
+  const surfaces = () =>
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces;
+
+  it("splitPreview absorbs the second tab and activates the primary", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+
+    expect(surfaces()).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+    ]);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({ activeSurfaceId: "browser:tab-a", isOpen: true });
+  });
+
+  it("splitPreview no-ops when the primary is not a preview", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "terminal:term-1", "tab-b");
+
+    expect(surfaces().map((surface) => surface.id)).toEqual(["terminal:term-1", "browser:tab-b"]);
+  });
+
+  it("splitPreview no-ops when the primary is already split", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().openBrowser(refA, "tab-c");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-c");
+
+    expect(surfaces()).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+      { id: "browser:tab-c", kind: "preview", resourceId: "tab-c" },
+    ]);
+  });
+
+  it("splitPreview no-ops when the second tab equals the primary", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-a");
+
+    expect(surfaces()).toEqual([{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }]);
+  });
+
+  it("unsplitPreview restores the second tab right after the primary", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+    useRightPanelStore.getState().unsplitPreview(refA, "browser:tab-a");
+
+    expect(surfaces()).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a" },
+      { id: "browser:tab-b", kind: "preview", resourceId: "tab-b" },
+    ]);
+  });
+
+  it("reconcile does not resurrect an absorbed second tab", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+    useRightPanelStore.getState().reconcileBrowserSurfaces(refA, ["tab-a", "tab-b"]);
+
+    expect(surfaces()).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+    ]);
+  });
+
+  it("reconcile auto-unsplits when the second tab's session disappears", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+    useRightPanelStore.getState().reconcileBrowserSurfaces(refA, ["tab-a"]);
+
+    expect(surfaces()).toEqual([{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }]);
+  });
+
+  it("migration keeps a valid secondaryTabId and drops an invalid one", () => {
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        keep: {
+          isOpen: true,
+          activeSurfaceId: "browser:tab-a",
+          surfaces: [
+            { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+          ],
+        },
+        drop: {
+          isOpen: true,
+          activeSurfaceId: "browser:tab-a",
+          surfaces: [
+            { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-a" },
+          ],
+        },
+      },
+    });
+
+    expect(migrated.byThreadKey.keep?.surfaces).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+    ]);
+    expect(migrated.byThreadKey.drop?.surfaces).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a" },
+    ]);
+  });
+});

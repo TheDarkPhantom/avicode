@@ -18,8 +18,12 @@ export const RIGHT_PANEL_KINDS = ["plan", "diff", "files", "file", "preview", "t
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
 export type RightPanelSurface =
-  | { id: `browser:${string}`; kind: "preview"; resourceId: string }
-  | { id: "browser:new"; kind: "preview"; resourceId: null }
+  // Avi Code addition: `secondaryTabId` pairs a second preview tab into this
+  // surface so two previews render side by side (local dev vs prod). Exactly two
+  // is enforced structurally by a single optional scalar; the `browser:new`
+  // placeholder never splits.
+  | { id: `browser:${string}`; kind: "preview"; resourceId: string; secondaryTabId?: string }
+  | { id: "browser:new"; kind: "preview"; resourceId: null; secondaryTabId?: never }
   | {
       id: `terminal:${string}`;
       kind: "terminal";
@@ -46,7 +50,8 @@ export type RightPanelSurface =
   | { id: "plan"; kind: "plan" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 8;
+// Avi Code addition: bumped 8 -> 9 for preview `secondaryTabId` validation.
+const RIGHT_PANEL_STORAGE_VERSION = 9;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -79,6 +84,34 @@ function isFollowKind(kind: RightPanelKind): kind is RightPanelFollowKind {
   return (RIGHT_PANEL_FOLLOW_KINDS as readonly RightPanelKind[]).includes(kind);
 }
 
+/** A live (non-placeholder) preview surface: has a real tab id to render. */
+export type LivePreviewSurface = {
+  id: `browser:${string}`;
+  kind: "preview";
+  resourceId: string;
+} & {
+  secondaryTabId?: string;
+};
+
+/**
+ * Avi Code addition: whether `dragged` may split into `active` as a second
+ * preview pane. True only when both are live previews, `active` is not already
+ * split, and the two point at different tabs.
+ */
+export function canSplitPreview(
+  active: RightPanelSurface | null | undefined,
+  dragged: RightPanelSurface | null | undefined,
+): active is LivePreviewSurface {
+  return (
+    active?.kind === "preview" &&
+    active.resourceId !== null &&
+    active.secondaryTabId === undefined &&
+    dragged?.kind === "preview" &&
+    dragged.resourceId !== null &&
+    dragged.resourceId !== active.resourceId
+  );
+}
+
 const DEFAULT_VISIBILITY_PREFERENCE: RightPanelVisibilityPreference = {
   isOpen: false,
   preferredKind: null,
@@ -107,6 +140,13 @@ interface RightPanelStoreState {
   ) => void;
   activateTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
   closeTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
+  /**
+   * Avi Code addition: pairs `secondaryTabId` into the preview surface so two
+   * previews render side by side; absorbs the secondary's standalone tab.
+   */
+  splitPreview: (ref: ScopedThreadRef, surfaceId: string, secondaryTabId: string) => void;
+  /** Avi Code addition: undoes {@link splitPreview}, restoring the second tab. */
+  unsplitPreview: (ref: ScopedThreadRef, surfaceId: string) => void;
   activateSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeOtherSurfaces: (ref: ScopedThreadRef, surfaceId: string) => void;
@@ -291,6 +331,18 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                           ? surface.revealRequestId
                           : 0;
                       return [{ ...surface, revealLine, revealRequestId }];
+                    }
+                    // Avi Code addition: keep `secondaryTabId` only when it is a
+                    // string that differs from the primary tab; drop it otherwise.
+                    if (surface.kind === "preview" && surface.resourceId !== null) {
+                      const rawSecondary = (surface as { secondaryTabId?: unknown }).secondaryTabId;
+                      if (typeof rawSecondary === "string" && rawSecondary !== surface.resourceId) {
+                        return [{ ...surface, secondaryTabId: rawSecondary }];
+                      }
+                      const { secondaryTabId: _dropped, ...rest } = surface as typeof surface & {
+                        secondaryTabId?: string;
+                      };
+                      return [rest];
                     }
                     if (surface.kind !== "terminal") return [surface];
                     if (
@@ -504,6 +556,64 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             };
           }),
         })),
+      // Avi Code addition: split/unsplit two previews side by side. Incidental
+      // like splitTerminal, so it does not rewrite the visibility preference.
+      splitPreview: (ref, surfaceId, secondaryTabId) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const target = current.surfaces.find(
+              (surface): surface is LivePreviewSurface =>
+                surface.id === surfaceId &&
+                surface.kind === "preview" &&
+                surface.resourceId !== null,
+            );
+            if (
+              !target ||
+              target.secondaryTabId !== undefined ||
+              secondaryTabId === target.resourceId
+            ) {
+              return current;
+            }
+            // Absorb the secondary's standalone tab, mirroring terminals folding
+            // two ids into one surface.
+            const surfaces = current.surfaces.flatMap<RightPanelSurface>((surface) => {
+              if (surface.id === `browser:${secondaryTabId}`) return [];
+              if (
+                surface.id === surfaceId &&
+                surface.kind === "preview" &&
+                surface.resourceId !== null
+              ) {
+                return [{ ...surface, secondaryTabId }];
+              }
+              return [surface];
+            });
+            return { ...current, isOpen: true, activeSurfaceId: surfaceId, surfaces };
+          }),
+        })),
+      unsplitPreview: (ref, surfaceId) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const target = current.surfaces.find(
+              (surface): surface is LivePreviewSurface =>
+                surface.id === surfaceId &&
+                surface.kind === "preview" &&
+                surface.secondaryTabId !== undefined,
+            );
+            if (!target?.secondaryTabId) return current;
+            const secondaryTabId = target.secondaryTabId;
+            const alreadyOpen = current.surfaces.some(
+              (surface) => surface.id === `browser:${secondaryTabId}`,
+            );
+            const surfaces = current.surfaces.flatMap<RightPanelSurface>((surface) => {
+              if (surface.id !== surfaceId || surface.kind !== "preview") return [surface];
+              const { secondaryTabId: _dropped, ...primary } = surface;
+              // Re-insert the second tab right after the primary unless it is
+              // somehow already present.
+              return alreadyOpen ? [primary] : [primary, browserSurface(secondaryTabId)];
+            });
+            return { ...current, activeSurfaceId: surfaceId, surfaces };
+          }),
+        })),
       activateSurface: (ref, surfaceId) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
@@ -570,17 +680,40 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       reconcileBrowserSurfaces: (ref, tabIds) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const liveTabIds = new Set(tabIds);
             const validIds = new Set(tabIds.map((tabId) => `browser:${tabId}`));
             const nonBrowser = current.surfaces.filter((surface) => surface.kind !== "preview");
-            const existingBrowser = current.surfaces.filter(
-              (surface): surface is Extract<RightPanelSurface, { kind: "preview" }> =>
-                surface.kind === "preview" &&
-                surface.id !== "browser:new" &&
-                validIds.has(surface.id),
-            );
+            const existingBrowser = current.surfaces
+              .filter(
+                (surface): surface is Extract<RightPanelSurface, { kind: "preview" }> =>
+                  surface.kind === "preview" &&
+                  surface.id !== "browser:new" &&
+                  validIds.has(surface.id),
+              )
+              // Avi Code addition: auto-unsplit when the second tab's session is
+              // gone, so a split never points at a dead pane.
+              .map((surface): Extract<RightPanelSurface, { kind: "preview" }> => {
+                if (
+                  surface.secondaryTabId === undefined ||
+                  liveTabIds.has(surface.secondaryTabId)
+                ) {
+                  return surface;
+                }
+                const { secondaryTabId: _gone, ...rest } = surface;
+                return rest;
+              });
             const knownIds = new Set(existingBrowser.map((surface) => surface.id));
+            // Avi Code addition: an absorbed second pane has no standalone tab; do
+            // not resurrect it as one.
+            const absorbedSecondaries = new Set(
+              existingBrowser.flatMap((surface) =>
+                surface.secondaryTabId !== undefined ? [surface.secondaryTabId] : [],
+              ),
+            );
             const added = tabIds
-              .filter((tabId) => !knownIds.has(`browser:${tabId}`))
+              .filter(
+                (tabId) => !knownIds.has(`browser:${tabId}`) && !absorbedSecondaries.has(tabId),
+              )
               .map((tabId) => browserSurface(tabId));
             const surfaces = [...nonBrowser, ...existingBrowser, ...added];
             const activeStillExists = surfaces.some(

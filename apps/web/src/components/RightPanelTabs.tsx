@@ -3,6 +3,7 @@ import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { ClipboardList, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
   type ReactNode,
   useCallback,
@@ -12,7 +13,9 @@ import {
 } from "react";
 
 import { isElectron } from "~/env";
-import type { RightPanelSurface } from "~/rightPanelStore";
+import { canSplitPreview, type RightPanelSurface } from "~/rightPanelStore";
+import { exceedsDragThreshold, isRightHalfDrop } from "~/rightPanelDrop";
+import { usePreviewTabDragStore } from "./preview/previewTabDragStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -49,6 +52,10 @@ interface RightPanelTabsProps {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  /** Avi Code addition: pair the dragged preview tab beside the active preview. */
+  onSplitPreview: (draggedSurfaceId: string) => void;
+  /** Avi Code addition: undo a preview split from the context menu. */
+  onUnsplitPreview: (surfaceId: string) => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -61,7 +68,13 @@ const SURFACE_DISABLED_REASONS = {
   diff: "Diff is only available for server threads in Git repositories.",
 } as const;
 
-type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
+type TabContextMenuAction =
+  | "copy-path"
+  | "unsplit"
+  | "close"
+  | "close-others"
+  | "close-to-right"
+  | "close-all";
 
 function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement }) {
   return (
@@ -294,6 +307,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       if (surface.kind === "file") {
         items.push({ id: "copy-path", label: "Copy path" });
       }
+      // Avi Code addition: offer "Unsplit" on a split preview surface.
+      if (surface.kind === "preview" && surface.secondaryTabId !== undefined) {
+        items.push({ id: "unsplit", label: "Unsplit" });
+      }
       items.push(
         { id: "close", label: "Close" },
         {
@@ -317,6 +334,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       switch (action) {
         case "copy-path":
           if (surface.kind === "file") props.onCopyFilePath(surface.relativePath);
+          break;
+        case "unsplit":
+          props.onUnsplitPreview(surface.id);
           break;
         case "close":
           props.onCloseSurface(surface);
@@ -349,6 +369,75 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     [props],
   );
+
+  // Avi Code addition: drag a preview tab to the right edge of the panel to
+  // pair it beside the active preview as a second pane.
+  const setPreviewTabDragging = usePreviewTabDragStore((state) => state.setDragging);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const suppressClickRef = useRef(false);
+  const [dragZone, setDragZone] = useState<"left" | "right" | null>(null);
+  const activeSurface =
+    props.surfaces.find((surface) => surface.id === props.activeSurfaceId) ?? null;
+
+  const handleTabPointerDown = useCallback(
+    (event: ReactPointerEvent, surface: RightPanelSurface) => {
+      if (event.button !== 0) return;
+      // Only a preview dropped onto a different, not-yet-split active preview can
+      // pair. Other tabs keep their plain click behavior.
+      if (!canSplitPreview(activeSurface, surface)) return;
+      const origin = { x: event.clientX, y: event.clientY };
+      const draggedSurfaceId = surface.id;
+      const onMove = (moveEvent: PointerEvent) => {
+        if (!draggingRef.current) {
+          if (!exceedsDragThreshold(moveEvent.clientX - origin.x, moveEvent.clientY - origin.y)) {
+            return;
+          }
+          draggingRef.current = true;
+          suppressClickRef.current = true;
+          setPreviewTabDragging(true);
+        }
+        const rect = bodyRef.current?.getBoundingClientRect();
+        setDragZone(rect && isRightHalfDrop(moveEvent.clientX, rect) ? "right" : "left");
+      };
+      const finish = (upEvent: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", finish);
+        const wasDragging = draggingRef.current;
+        draggingRef.current = false;
+        setDragZone(null);
+        setPreviewTabDragging(false);
+        if (!wasDragging) return;
+        const rect = bodyRef.current?.getBoundingClientRect();
+        if (upEvent.type === "pointerup" && rect && isRightHalfDrop(upEvent.clientX, rect)) {
+          props.onSplitPreview(draggedSurfaceId);
+        }
+        // Swallow the click that follows this pointerup, then re-enable activate.
+        requestAnimationFrame(() => {
+          suppressClickRef.current = false;
+        });
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+    },
+    [activeSurface, props, setPreviewTabDragging],
+  );
+
+  const handleTabActivateClick = useCallback(
+    (surface: RightPanelSurface) => {
+      if (suppressClickRef.current) return;
+      props.onActivate(surface);
+    },
+    [props],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (draggingRef.current) setPreviewTabDragging(false);
+    };
+  }, [setPreviewTabDragging]);
 
   useEffect(() => {
     const activeTab = tabListRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
@@ -403,7 +492,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                         <button
                           type="button"
                           className="flex min-w-0 flex-1 items-center gap-1.5"
-                          onClick={() => props.onActivate(surface)}
+                          onPointerDown={(event) => handleTabPointerDown(event, surface)}
+                          onClick={() => handleTabActivateClick(surface)}
                         >
                           <SurfaceIcon
                             surface={surface}
@@ -484,7 +574,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         </ScrollArea>
         {props.layoutControls}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={bodyRef} className="relative flex min-h-0 flex-1 flex-col">
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
@@ -498,6 +588,25 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         ) : (
           props.children
         )}
+        {/* Avi Code addition: split drop zone. Preview webviews hide while a tab
+            drags (see previewTabDragStore), so this DOM overlay is visible. */}
+        {dragZone ? (
+          <div className="pointer-events-none absolute inset-0 z-20 flex">
+            <div className="flex-1" />
+            <div
+              className={cn(
+                "flex flex-1 items-center justify-center border-l-2 border-dashed transition-colors",
+                dragZone === "right" ? "border-primary bg-primary/10" : "border-border/40",
+              )}
+            >
+              {dragZone === "right" ? (
+                <span className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow">
+                  Split preview
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </PreviewPanelShell>
   );

@@ -20,6 +20,8 @@ interface Props {
   startDevServerLabel?: string | null;
   onStartDevServer?: (() => void) | undefined;
   visible: boolean;
+  /** Avi Code addition: forwarded so only the focused split pane takes keybinds. */
+  focused?: boolean;
 }
 
 export function PreviewPanel({
@@ -32,6 +34,7 @@ export function PreviewPanel({
   startDevServerLabel = null,
   onStartDevServer,
   visible,
+  focused = true,
 }: Props) {
   if (!isPreviewSupportedInRuntime()) {
     return (
@@ -56,6 +59,7 @@ export function PreviewPanel({
         startDevServerLabel={startDevServerLabel}
         onStartDevServer={onStartDevServer}
         visible={visible}
+        focused={focused}
       />
     </PreviewPanelShell>
   );
