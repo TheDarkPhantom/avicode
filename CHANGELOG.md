@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Drag a preview tab to the right edge to compare two previews side by side in the right panel (#210)
+- Deleting a sidebar folder now asks first, and corrupt saved state no longer wipes your folders (#211)
 - The left sidebar no longer overlaps the main chat after the window shrinks (#209)
 - See a dot in the sidebar on any thread that still has a pre-typed message you never sent (#208)
 - Save custom quick-send chips and click one to send its message when the composer is empty (#206)

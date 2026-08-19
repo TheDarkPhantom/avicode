@@ -2358,6 +2358,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   const reorderProjectFolders = useUiStateStore((state) => state.reorderProjectFolders);
   const renameProjectFolder = useUiStateStore((state) => state.renameProjectFolder);
   const deleteProjectFolder = useUiStateStore((state) => state.deleteProjectFolder);
+  // Avi Code addition: a hidden folder and its projects vanish from the sidebar,
+  // which reads as deletion. Surface a count that links to the folder manager so
+  // an accidental hide is discoverable and reversible.
+  const hiddenFolderCount = projectFolders.filter((folder) => folder.hidden).length;
+  const navigate = useNavigate();
   // Avi Code addition: keep attention-needing chats visible under a collapsed
   // folder when the user opts in.
   const showAttentionUnderCollapsedFolders = useClientSettings(
@@ -2471,7 +2476,24 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         } else if (clicked === "folder:hide") {
           setProjectFolderHidden(folder.id, true);
         } else if (clicked === "folder:delete") {
-          deleteProjectFolder(folder.id);
+          // Avi Code addition: confirm first. Deleting a folder is permanent and
+          // was previously a single misclick away; projects survive but the
+          // folder and its grouping are gone.
+          const memberCount = folder.projectKeys.length;
+          const confirmed = await api.dialogs.confirm(
+            [
+              `Delete folder "${folder.name}"?`,
+              ...(memberCount > 0
+                ? [
+                    `Its ${memberCount} project${memberCount === 1 ? "" : "s"} stay in the sidebar; only the folder grouping is removed.`,
+                  ]
+                : []),
+              "This action cannot be undone.",
+            ].join("\n"),
+          );
+          if (confirmed) {
+            deleteProjectFolder(folder.id);
+          }
         }
       })();
     },
@@ -2753,6 +2775,22 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             No projects yet
           </div>
         )}
+
+        {/* Avi Code addition: recovery hint for hidden folders. Hiding removes a
+            folder and its projects from the sidebar; without this, the only way
+            back is knowing the manager exists in settings. */}
+        {hiddenFolderCount > 0 ? (
+          <button
+            type="button"
+            className="mt-1 w-full rounded-md px-2 py-1 text-left text-[11px] text-sidebar-muted-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => {
+              void navigate({ to: "/settings/avicode" });
+            }}
+          >
+            {hiddenFolderCount} hidden folder{hiddenFolderCount === 1 ? "" : "s"}. Manage in
+            settings.
+          </button>
+        ) : null}
       </SidebarGroup>
 
       {/* Avi Code addition: rename a folder from its header overflow menu. */}

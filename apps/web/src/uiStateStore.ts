@@ -125,8 +125,13 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
   );
 }
 
-// Avi Code addition: keep only well-formed folders. A folder needs a non-empty
-// id and name; member keys are de-duplicated the same way pins are.
+// Avi Code addition: a folder without a usable id genuinely can't be addressed,
+// so drop it. A blank name is recoverable, so repair it with a default label
+// rather than dropping the folder and orphaning its grouping. Member keys are
+// de-duplicated the same way pins are. Every drop is logged so silent loss is
+// no longer possible.
+const DEFAULT_FOLDER_NAME = "Untitled folder";
+
 function sanitizeProjectFolders(value: unknown): ProjectFolder[] {
   if (!Array.isArray(value)) {
     return [];
@@ -134,13 +139,21 @@ function sanitizeProjectFolders(value: unknown): ProjectFolder[] {
   const folders: ProjectFolder[] = [];
   for (const entry of value) {
     if (!entry || typeof entry !== "object") {
+      console.warn("Dropping malformed persisted folder: not an object.");
       continue;
     }
     const candidate = entry as Partial<ProjectFolder>;
     const id = typeof candidate.id === "string" ? candidate.id : "";
-    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
-    if (id.length === 0 || name.length === 0) {
+    if (id.length === 0) {
+      console.warn("Dropping persisted folder with no usable id.");
       continue;
+    }
+    const rawName = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    const name = rawName.length === 0 ? DEFAULT_FOLDER_NAME : rawName;
+    if (rawName.length === 0) {
+      console.warn(
+        `Repaired persisted folder "${id}" with blank name to "${DEFAULT_FOLDER_NAME}".`,
+      );
     }
     folders.push({
       id,
@@ -212,26 +225,66 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
   };
 }
 
-function readPersistedState(): UiState {
+// Avi Code addition: before falling back to empty on a corrupt read, stash the
+// raw value under a timestamped key and warn. A failed parse used to silently
+// wipe every folder, pin, and manual order with no trace; the backup keeps the
+// data recoverable and the log makes the loss visible.
+function backupCorruptPersistedState(raw: string): void {
+  try {
+    const backupKey = `${PERSISTED_STATE_KEY}:corrupt-${Date.now()}`;
+    window.localStorage.setItem(backupKey, raw);
+    console.warn(
+      `Failed to parse persisted UI state (${raw.length} chars); backed up to "${backupKey}" and reset to defaults.`,
+    );
+  } catch {
+    // Storage may be full or unavailable; the warning below still fires.
+    console.warn(
+      `Failed to parse persisted UI state (${raw.length} chars) and could not back it up; reset to defaults.`,
+    );
+  }
+}
+
+// Avi Code addition: exported for tests to verify corrupt-read recovery.
+export function readPersistedState(): UiState {
   if (typeof window === "undefined") {
     return initialState;
   }
+  // Storage access itself can throw (localStorage missing in a test window, or
+  // disabled/blocked by the browser); treat that as "no saved state" rather
+  // than crashing module load. A parse failure is different: the data exists
+  // but is corrupt, so it gets backed up before resetting.
+  let raw: string | null;
   try {
-    const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
-    if (!raw) {
-      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        const legacyRaw = window.localStorage.getItem(legacyKey);
-        if (!legacyRaw) {
-          continue;
-        }
-        return parsePersistedState(JSON.parse(legacyRaw) as PersistedUiState);
-      }
-      return initialState;
-    }
-    return parsePersistedState(JSON.parse(raw) as PersistedUiState);
+    raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
   } catch {
     return initialState;
   }
+  if (raw) {
+    try {
+      return parsePersistedState(JSON.parse(raw) as PersistedUiState);
+    } catch {
+      backupCorruptPersistedState(raw);
+      return initialState;
+    }
+  }
+  for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
+    let legacyRaw: string | null;
+    try {
+      legacyRaw = window.localStorage.getItem(legacyKey);
+    } catch {
+      return initialState;
+    }
+    if (!legacyRaw) {
+      continue;
+    }
+    try {
+      return parsePersistedState(JSON.parse(legacyRaw) as PersistedUiState);
+    } catch {
+      backupCorruptPersistedState(legacyRaw);
+      return initialState;
+    }
+  }
+  return initialState;
 }
 
 function sanitizePersistedThreadChangedFilesExpanded(
