@@ -27,6 +27,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
+import { usePreviewTabDragStore } from "./previewTabDragStore";
 import { openPreviewSession } from "./openPreviewSession";
 import { PreviewChromeRow } from "./PreviewChromeRow";
 import { formatPreviewUrl } from "./previewUrlPresentation";
@@ -73,6 +74,12 @@ interface Props {
   startDevServerLabel?: string | null;
   onStartDevServer?: (() => void) | undefined;
   visible: boolean;
+  /**
+   * Avi Code addition: in a side-by-side preview split, only the focused pane
+   * responds to global preview keybinds (refresh/zoom/focus-url). Defaults to
+   * true so a single, unsplit preview behaves exactly as before.
+   */
+  focused?: boolean;
 }
 
 const localApi = typeof window === "undefined" ? null : ensureLocalApi();
@@ -90,8 +97,11 @@ export function PreviewView({
   startDevServerLabel = null,
   onStartDevServer,
   visible,
+  focused = true,
 }: Props) {
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
+  // Avi Code addition: hide the native view while a preview tab is dragged.
+  const previewTabDragging = usePreviewTabDragStore((state) => state.dragging);
   const [pickActive, setPickActive] = useState(false);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
   const pickActiveRef = useRef(false);
@@ -649,6 +659,9 @@ export function PreviewView({
   useEffect(() => {
     if (!visible) return;
     return subscribePreviewAction((action) => {
+      // Avi Code addition: pane-targeted actions hit only the focused pane, so a
+      // split does not double-fire refresh/zoom/focus-url across both webviews.
+      if (!focused) return;
       switch (action) {
         case "refresh":
           handleRefresh();
@@ -669,7 +682,7 @@ export function PreviewView({
           return;
       }
     });
-  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
+  }, [focused, handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
 
   return (
     <div
@@ -726,7 +739,9 @@ export function PreviewView({
           <BrowserSurfaceSlot
             key={runtimeTabId}
             tabId={runtimeTabId}
-            visible={visible && !isUnreachable}
+            // Avi Code addition: hide the native view while a preview tab is
+            // dragging so the split drop-zone overlay is visible above the DOM.
+            visible={visible && !isUnreachable && !previewTabDragging}
             className="absolute inset-0 h-full w-full"
           />
         ) : null}

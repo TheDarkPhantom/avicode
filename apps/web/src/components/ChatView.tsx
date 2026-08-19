@@ -150,6 +150,7 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
+  canSplitPreview,
   resolveFollowedRightPanelState,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -191,6 +192,7 @@ import {
   TriangleAlertIcon,
   SquarePenIcon,
   WifiOffIcon,
+  XIcon,
 } from "lucide-react";
 import { chatContentMaxWidthCss } from "~/lib/chatContentWidth";
 import { cn, randomHex } from "~/lib/utils";
@@ -1666,6 +1668,19 @@ function ChatViewContent(props: ChatViewProps) {
     [rightPanelState],
   );
   const activeRightPanelKind = activeRightPanelSurface?.kind ?? null;
+  // Avi Code addition: which pane of a side-by-side preview split currently
+  // takes global preview keybinds. Reset to the primary whenever the split
+  // shape changes so it never points at a pane that just unmounted.
+  const activePreviewPrimaryTabId =
+    activeRightPanelSurface?.kind === "preview" ? activeRightPanelSurface.resourceId : null;
+  const activePreviewSecondaryTabId =
+    activeRightPanelSurface?.kind === "preview"
+      ? (activeRightPanelSurface.secondaryTabId ?? null)
+      : null;
+  const [focusedPreviewPane, setFocusedPreviewPane] = useState<string | null>(null);
+  useEffect(() => {
+    setFocusedPreviewPane(activePreviewPrimaryTabId);
+  }, [activePreviewPrimaryTabId, activePreviewSecondaryTabId]);
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   const diffOpen = activeRightPanelKind === "diff";
@@ -3721,6 +3736,29 @@ function ChatViewContent(props: ChatViewProps) {
       }
     },
     [activeThreadRef, diffOpen, dismissPlanSidebarForCurrentTurn, onDiffPanelOpen, planSidebarOpen],
+  );
+  // Avi Code addition: a preview tab dropped on the right edge pairs beside the
+  // active preview as a second pane.
+  const splitActivePreview = useCallback(
+    (draggedSurfaceId: string) => {
+      if (!activeThreadRef) return;
+      const dragged =
+        rightPanelState.surfaces.find((surface) => surface.id === draggedSurfaceId) ?? null;
+      if (!canSplitPreview(activeRightPanelSurface, dragged)) return;
+      if (dragged?.kind !== "preview" || dragged.resourceId === null) return;
+      useRightPanelStore
+        .getState()
+        .splitPreview(activeThreadRef, activeRightPanelSurface.id, dragged.resourceId);
+      setFocusedPreviewPane(activeRightPanelSurface.resourceId);
+    },
+    [activeRightPanelSurface, activeThreadRef, rightPanelState.surfaces],
+  );
+  const unsplitActivePreview = useCallback(
+    (surfaceId: string) => {
+      if (!activeThreadRef) return;
+      useRightPanelStore.getState().unsplitPreview(activeThreadRef, surfaceId);
+    },
+    [activeThreadRef],
   );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
@@ -7389,18 +7427,65 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const rightPanelContent = activeThreadRef ? (
     activeRightPanelSurface?.kind === "preview" ? (
+      // Avi Code addition: a split preview surface renders both tabs side by side
+      // in a two-column grid; otherwise the single preview path is unchanged.
       <Suspense fallback={null}>
-        <PreviewPanel
-          mode="embedded"
-          threadRef={activeThreadRef}
-          tabId={activeRightPanelSurface.resourceId}
-          configuredUrls={configuredPreviewUrls}
-          projectRoot={activeProjectCwd}
-          worktreePath={activeThreadWorktreePath}
-          startDevServerLabel={activePrimaryScript?.name ?? null}
-          onStartDevServer={activePrimaryScript ? handleStartDevServer : undefined}
-          visible
-        />
+        {activeRightPanelSurface.secondaryTabId ? (
+          <div
+            className="relative grid h-full min-h-0 w-full"
+            style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+          >
+            {[activeRightPanelSurface.resourceId, activeRightPanelSurface.secondaryTabId].map(
+              (paneTabId, index) => (
+                <div
+                  key={paneTabId}
+                  onPointerDownCapture={() => setFocusedPreviewPane(paneTabId)}
+                  className={cn(
+                    "flex min-h-0 min-w-0 flex-col overflow-hidden",
+                    index === 1 && "border-l",
+                    paneTabId === focusedPreviewPane ? "border-border" : "border-border/70",
+                  )}
+                >
+                  <PreviewPanel
+                    mode="embedded"
+                    threadRef={activeThreadRef}
+                    tabId={paneTabId}
+                    configuredUrls={configuredPreviewUrls}
+                    projectRoot={activeProjectCwd}
+                    worktreePath={activeThreadWorktreePath}
+                    startDevServerLabel={activePrimaryScript?.name ?? null}
+                    onStartDevServer={activePrimaryScript ? handleStartDevServer : undefined}
+                    visible
+                    focused={paneTabId === focusedPreviewPane}
+                  />
+                </div>
+              ),
+            )}
+            {/* Sits over the chrome-row seam (DOM, not the native webview) so the
+                click lands. Tab context menu offers the same "Unsplit". */}
+            <button
+              type="button"
+              aria-label="Unsplit preview"
+              title="Unsplit preview"
+              onClick={() => unsplitActivePreview(activeRightPanelSurface.id)}
+              className="absolute left-1/2 top-1 z-10 -translate-x-1/2 rounded-full border border-border bg-background/90 p-1 text-muted-foreground shadow-sm hover:text-foreground"
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <PreviewPanel
+            mode="embedded"
+            threadRef={activeThreadRef}
+            tabId={activeRightPanelSurface.resourceId}
+            configuredUrls={configuredPreviewUrls}
+            projectRoot={activeProjectCwd}
+            worktreePath={activeThreadWorktreePath}
+            startDevServerLabel={activePrimaryScript?.name ?? null}
+            onStartDevServer={activePrimaryScript ? handleStartDevServer : undefined}
+            visible
+          />
+        )}
       </Suspense>
     ) : activeRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel
@@ -8014,6 +8099,8 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onSplitPreview={splitActivePreview}
+          onUnsplitPreview={unsplitActivePreview}
           browserAvailable={isPreviewSupportedInRuntime()}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
@@ -8040,6 +8127,8 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onSplitPreview={splitActivePreview}
+            onUnsplitPreview={unsplitActivePreview}
             browserAvailable={isPreviewSupportedInRuntime()}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
