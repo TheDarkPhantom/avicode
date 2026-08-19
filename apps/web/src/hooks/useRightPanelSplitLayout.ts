@@ -72,15 +72,19 @@ function readStoredWidth(key: string): number | null {
   }
 }
 
-export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
+export function useRightPanelSplitLayout(options: { panelOpen: boolean; constrained?: boolean }) {
+  // Avi Code addition: the grow-window model widens the native desktop window to make room for
+  // the panel. When the window cannot grow (fullscreen / maximized, `constrained`), fall back to
+  // the web shrink-chat model so the panel still gets width inside the fixed viewport.
+  const growWindowModel = isElectron && !options.constrained;
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [preferredChatWidth, setPreferredChatWidthState] = useState<number | null>(() =>
-    isElectron ? desktopPreferredChatWidth : null,
+    growWindowModel ? desktopPreferredChatWidth : null,
   );
   const [active, setActive] = useState(false);
   const preferredChatWidthRef = useRef<number | null>(
-    isElectron ? desktopPreferredChatWidth : null,
+    growWindowModel ? desktopPreferredChatWidth : null,
   );
   const keyboardDirtyRef = useRef(false);
   const panelOpenRef = useRef(options.panelOpen);
@@ -119,7 +123,7 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
       if (width <= 0) return;
       const currentPreferredWidth = preferredChatWidthRef.current;
       if (currentPreferredWidth !== null) {
-        if (isElectron && !panelOpenRef.current) {
+        if (growWindowModel && !panelOpenRef.current) {
           const nextPreferredWidth = resolveClosedDesktopChatWidth({
             measuredWidth: width,
             preferredWidth: currentPreferredWidth,
@@ -147,7 +151,7 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
         }
         return;
       }
-      const initialWidth = isElectron
+      const initialWidth = growWindowModel
         ? width
         : resolveInitialRightPanelChatWidth({
             containerWidth: width,
@@ -160,12 +164,34 @@ export function useRightPanelSplitLayout(options: { panelOpen: boolean }) {
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(container);
     return () => observer?.disconnect();
-  }, [container, setPreferredChatWidth]);
+  }, [container, setPreferredChatWidth, growWindowModel]);
 
   useLayoutEffect(() => {
-    if (isElectron || options.panelOpen || containerWidth <= 0) return;
+    if (growWindowModel || options.panelOpen || containerWidth <= 0) return;
     setPreferredChatWidth(containerWidth);
-  }, [containerWidth, options.panelOpen, setPreferredChatWidth]);
+  }, [containerWidth, options.panelOpen, setPreferredChatWidth, growWindowModel]);
+
+  // Avi Code addition: when the window flips between the grow-window and shrink-chat models
+  // (entering / leaving fullscreen or maximize), recompute the preferred chat width for the now
+  // active model. Otherwise a grow-model full-container width would leave a 0px panel in
+  // fullscreen, and a stale fractional width would linger after leaving it.
+  const previousGrowWindowModelRef = useRef(growWindowModel);
+  useLayoutEffect(() => {
+    if (previousGrowWindowModelRef.current === growWindowModel) return;
+    previousGrowWindowModelRef.current = growWindowModel;
+    if (containerWidth <= 0) return;
+    if (growWindowModel) {
+      setPreferredChatWidth(containerWidth);
+      return;
+    }
+    setPreferredChatWidth(
+      resolveInitialRightPanelChatWidth({
+        containerWidth,
+        storedChatWidth: readStoredWidth(RIGHT_PANEL_CHAT_WIDTH_STORAGE_KEY),
+        legacyPanelWidth: readStoredWidth(RIGHT_PANEL_LEGACY_WIDTH_STORAGE_KEY),
+      }),
+    );
+  }, [growWindowModel, containerWidth, setPreferredChatWidth]);
 
   const syncClosedContainerWidth = useCallback(() => {
     if (panelOpenRef.current || !container) return;

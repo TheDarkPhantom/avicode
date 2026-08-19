@@ -42,13 +42,13 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The right panel now expands and resizes inline in fullscreen instead of a fixed narrow overlay (#212)
 - Drag a preview tab to the right edge to compare two previews side by side in the right panel (#210)
 - Deleting a sidebar folder now asks first, and corrupt saved state no longer wipes your folders (#211)
 - The left sidebar no longer overlaps the main chat after the window shrinks (#209)
 - See a dot in the sidebar on any thread that still has a pre-typed message you never sent (#208)
 - Save custom quick-send chips and click one to send its message when the composer is empty (#206)
 - The right panel toggle no longer flickers when you open the panel in a windowed desktop (#207)
-- The right panel now opens as an overlay when the window is fullscreen or maximized (#205)
 - Sort the archived threads page by recently archived, project, creation date, or title (#204)
 - Search projects in a combobox when starting a new thread from the flat sidebar (#203)
 - Move through browser history with your mouse back and forward buttons when the preview is focused (#203)

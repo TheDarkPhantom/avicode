@@ -1719,17 +1719,19 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
-  const rightPanelSplitLayout = useRightPanelSplitLayout({ panelOpen: rightPanelOpen });
-  // Avi Code addition: when the desktop window is fullscreen or maximized it cannot grow
-  // to reserve panel space, so present the panel as an overlay sheet (chat never shrinks)
-  // rather than a 0px inline split. The hook already returns false on web.
+  // Avi Code addition: when the desktop window is fullscreen or maximized it cannot grow to
+  // reserve panel space. Instead of falling back to the narrow overlay sheet, render the inline
+  // split in the web shrink-chat model (`constrained`) so the panel still expands and resizes
+  // inside the fixed viewport. The hook returns false on web.
   const desktopReservationBlocked = useDesktopWindowReservationBlocked();
+  const rightPanelSplitLayout = useRightPanelSplitLayout({
+    panelOpen: rightPanelOpen,
+    constrained: desktopReservationBlocked,
+  });
   const shouldUsePlanSidebarSheet =
-    useCompactRightPanel ||
-    desktopReservationBlocked ||
-    (!isElectron && rightPanelSplitLayout.layout?.fitsInline === false);
+    useCompactRightPanel || (!isElectron && rightPanelSplitLayout.layout?.fitsInline === false);
   useDesktopRightPanelWindowReservation({
-    open: rightPanelOpen && !shouldUsePlanSidebarSheet,
+    open: rightPanelOpen && !shouldUsePlanSidebarSheet && !desktopReservationBlocked,
     panelWidth: rightPanelSplitLayout.layout?.panelWidth ?? null,
     onCloseSettled: rightPanelSplitLayout.syncClosedContainerWidth,
   });
