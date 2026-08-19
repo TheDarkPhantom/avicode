@@ -13,6 +13,7 @@ import {
   type PersistedUiState,
   type ProjectFolder,
   persistState,
+  readPersistedState,
   renameProjectFolder,
   reorderProjectFolders,
   reorderProjects,
@@ -356,7 +357,7 @@ describe("uiStateStore project folders", () => {
     expect(deleteProjectFolder(state, "missing")).toBe(state);
   });
 
-  it("round-trips folders through persistence and drops malformed entries", () => {
+  it("round-trips folders through persistence, dropping id-less junk but repairing blank names", () => {
     let state = createProjectFolder(makeUiState(), "Clients", "folder-1");
     state = assignProjectToFolder(state, "proj-a", "folder-1");
 
@@ -372,8 +373,12 @@ describe("uiStateStore project folders", () => {
         "nonsense",
       ] as unknown as ProjectFolder[],
     });
+    // A folder with no usable id (or non-object junk) is dropped, but a blank
+    // name is recoverable so the folder is kept with a default label rather than
+    // silently losing its grouping.
     expect(sanitized.projectFolders).toEqual([
       { id: "ok", name: "Keep", projectKeys: ["proj-a"], collapsed: true, hidden: false },
+      { id: "no-name", name: "Untitled folder", projectKeys: [], collapsed: false, hidden: false },
     ]);
   });
 
@@ -630,6 +635,28 @@ describe("uiStateStore persistence", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(resolveProjectExpanded(persisted.projectExpandedById ?? {}, ["unknown"])).toBe(true);
+  });
+
+  it("backs up a corrupt persisted value instead of silently wiping it", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    localStorageStub.setItem(PERSISTED_STATE_KEY, "{ not valid json");
+
+    const recovered = readPersistedState();
+
+    // A failed parse resets to defaults rather than throwing…
+    expect(recovered.projectFolders).toEqual([]);
+    expect(recovered.pinnedProjectKeys).toEqual([]);
+    // …but the raw value is preserved under a timestamped backup key and the
+    // loss is logged, so folders/pins are recoverable and no longer vanish
+    // without a trace.
+    const backupKey = [...Array(localStorageStub.length).keys()]
+      .map((index) => localStorageStub.key(index)!)
+      .find((key) => key.startsWith(`${PERSISTED_STATE_KEY}:corrupt-`));
+    expect(backupKey).toBeDefined();
+    expect(localStorageStub.getItem(backupKey!)).toBe("{ not valid json");
+    expect(warn).toHaveBeenCalledOnce();
+
+    warn.mockRestore();
   });
 
   it("writes visit markers at once so lock or process loss cannot drop them", () => {
