@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Swap the two sides of a preview split, and split or exit from a tab-bar button or mod+shift+s (#214)
 - The active preview tab can now be dragged to split, not only a background tab (#213)
 - The right panel now expands and resizes inline in fullscreen instead of a fixed narrow overlay (#212)
 - Drag a preview tab to the right edge to compare two previews side by side in the right panel (#210)

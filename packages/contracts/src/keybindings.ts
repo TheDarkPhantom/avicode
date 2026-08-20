@@ -86,6 +86,9 @@ const STATIC_KEYBINDING_COMMANDS = [
   "preview.zoomIn",
   "preview.zoomOut",
   "preview.resetZoom",
+  // Avi Code addition: split the preview panel into two side-by-side previews,
+  // or exit the split. Toggles against the active preview.
+  "preview.toggleSplit",
   "commandPalette.toggle",
   // Avi Code addition: find within the open thread. The browser's own find only
   // sees mounted rows, and the transcript is virtualized, so it silently misses

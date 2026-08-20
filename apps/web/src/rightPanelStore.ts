@@ -223,11 +223,16 @@ interface RightPanelStoreState {
   closeTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
   /**
    * Avi Code addition: pairs `secondaryTabId` into the preview surface so two
-   * previews render side by side; absorbs the secondary's standalone tab.
+   * previews render side by side; both tabs stay in the strip.
    */
   splitPreview: (ref: ScopedThreadRef, surfaceId: string, secondaryTabId: string) => void;
-  /** Avi Code addition: undoes {@link splitPreview}, restoring the second tab. */
+  /** Avi Code addition: undoes {@link splitPreview}, dropping the pairing link. */
   unsplitPreview: (ref: ScopedThreadRef, surfaceId: string) => void;
+  /**
+   * Avi Code addition: swaps the left/right panes of the split whose primary is
+   * `surfaceId`, so the second pane becomes the primary.
+   */
+  swapPreviewSplit: (ref: ScopedThreadRef, surfaceId: string) => void;
   activateSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeOtherSurfaces: (ref: ScopedThreadRef, surfaceId: string) => void;
@@ -696,6 +701,42 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : surface,
             );
             return { ...current, surfaces };
+          }),
+        })),
+      swapPreviewSplit: (ref, surfaceId) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const primary = current.surfaces.find(
+              (surface): surface is LivePreviewSurface =>
+                surface.id === surfaceId &&
+                surface.kind === "preview" &&
+                surface.secondaryTabId !== undefined,
+            );
+            if (!primary?.secondaryTabId) return current;
+            const secondaryId = `browser:${primary.secondaryTabId}` as const;
+            const secondary = current.surfaces.find((surface) => surface.id === secondaryId);
+            if (!isLivePreview(secondary)) return current;
+            // Move the pairing link onto the old secondary so it becomes the
+            // primary, then reorder it left of the old primary.
+            const relinked = current.surfaces.map((surface) => {
+              if (surface.id === surfaceId && isLivePreview(surface)) {
+                return stripPreviewSecondary(surface);
+              }
+              if (surface.id === secondaryId && isLivePreview(surface)) {
+                return { ...surface, secondaryTabId: primary.resourceId };
+              }
+              return surface;
+            });
+            const newPrimary = relinked.find((surface) => surface.id === secondaryId);
+            if (!newPrimary) return current;
+            const without = relinked.filter((surface) => surface.id !== secondaryId);
+            const insertAt = without.findIndex((surface) => surface.id === surfaceId);
+            const surfaces = [
+              ...without.slice(0, insertAt),
+              newPrimary,
+              ...without.slice(insertAt),
+            ];
+            return { ...current, activeSurfaceId: secondaryId, surfaces };
           }),
         })),
       activateSurface: (ref, surfaceId) =>

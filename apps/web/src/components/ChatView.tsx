@@ -194,6 +194,7 @@ import {
   SquarePenIcon,
   WifiOffIcon,
   XIcon,
+  ArrowLeftRightIcon,
 } from "lucide-react";
 import { chatContentMaxWidthCss } from "~/lib/chatContentWidth";
 import { cn, randomHex } from "~/lib/utils";
@@ -3766,6 +3767,47 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeThreadRef],
   );
+  // Avi Code addition: swap the two panes of the active split.
+  const swapActivePreview = useCallback(() => {
+    if (!activeThreadRef || !activePreviewSplit) return;
+    useRightPanelStore
+      .getState()
+      .swapPreviewSplit(activeThreadRef, `browser:${activePreviewSplit.primaryTabId}`);
+    setFocusedPreviewPane(activePreviewSplit.secondaryTabId);
+  }, [activePreviewSplit, activeThreadRef]);
+  // Avi Code addition: split/exit toggle shared by the tab-bar button and the
+  // `preview.toggleSplit` shortcut. "off" means a split is possible from here.
+  const previewSplitToggleState: "on" | "off" | "unavailable" =
+    activeRightPanelSurface?.kind !== "preview"
+      ? "unavailable"
+      : activePreviewSplit
+        ? "on"
+        : resolvePreviewSplitSecondary(
+              rightPanelState.surfaces,
+              activeRightPanelSurface.id,
+              activeRightPanelSurface.id,
+            ) !== null
+          ? "off"
+          : "unavailable";
+  const togglePreviewSplit = useCallback(() => {
+    if (!activeThreadRef || activeRightPanelSurface?.kind !== "preview") return;
+    if (activePreviewSplit) {
+      useRightPanelStore
+        .getState()
+        .unsplitPreview(activeThreadRef, `browser:${activePreviewSplit.primaryTabId}`);
+      return;
+    }
+    const secondaryTabId = resolvePreviewSplitSecondary(
+      rightPanelState.surfaces,
+      activeRightPanelSurface.id,
+      activeRightPanelSurface.id,
+    );
+    if (secondaryTabId === null) return;
+    useRightPanelStore
+      .getState()
+      .splitPreview(activeThreadRef, activeRightPanelSurface.id, secondaryTabId);
+    setFocusedPreviewPane(activeRightPanelSurface.resourceId);
+  }, [activePreviewSplit, activeRightPanelSurface, activeThreadRef, rightPanelState.surfaces]);
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
     if (rightPanelOpen) {
@@ -3911,8 +3953,10 @@ function ChatViewContent(props: ChatViewProps) {
     () =>
       subscribePreviewAction((action) => {
         if (action === "toggle-panel") togglePreviewPanel();
+        // Avi Code addition: the split toggle is owned here, not per-pane.
+        if (action === "toggle-split") togglePreviewSplit();
       }),
-    [togglePreviewPanel],
+    [togglePreviewPanel, togglePreviewSplit],
   );
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
@@ -7469,16 +7513,27 @@ function ChatViewContent(props: ChatViewProps) {
               ),
             )}
             {/* Sits over the chrome-row seam (DOM, not the native webview) so the
-                click lands. Tab context menu offers the same "Unsplit". */}
-            <button
-              type="button"
-              aria-label="Unsplit preview"
-              title="Unsplit preview"
-              onClick={() => unsplitActivePreview(`browser:${activePreviewSplit.primaryTabId}`)}
-              className="absolute left-1/2 top-1 z-10 -translate-x-1/2 rounded-full border border-border bg-background/90 p-1 text-muted-foreground shadow-sm hover:text-foreground"
-            >
-              <XIcon className="size-3.5" />
-            </button>
+                clicks land. Tab context menu offers the same "Unsplit". */}
+            <div className="absolute left-1/2 top-1 z-10 flex -translate-x-1/2 items-center gap-1">
+              <button
+                type="button"
+                aria-label="Swap preview sides"
+                title="Swap sides"
+                onClick={swapActivePreview}
+                className="rounded-full border border-border bg-background/90 p-1 text-muted-foreground shadow-sm hover:text-foreground"
+              >
+                <ArrowLeftRightIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label="Unsplit preview"
+                title="Unsplit preview"
+                onClick={() => unsplitActivePreview(`browser:${activePreviewSplit.primaryTabId}`)}
+                className="rounded-full border border-border bg-background/90 p-1 text-muted-foreground shadow-sm hover:text-foreground"
+              >
+                <XIcon className="size-3.5" />
+              </button>
+            </div>
           </div>
         ) : (
           <PreviewPanel
@@ -8108,6 +8163,8 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onSplitPreview={splitActivePreview}
           onUnsplitPreview={unsplitActivePreview}
+          previewSplitToggle={previewSplitToggleState}
+          onTogglePreviewSplit={togglePreviewSplit}
           browserAvailable={isPreviewSupportedInRuntime()}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
@@ -8136,6 +8193,8 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onSplitPreview={splitActivePreview}
             onUnsplitPreview={unsplitActivePreview}
+            previewSplitToggle={previewSplitToggleState}
+            onTogglePreviewSplit={togglePreviewSplit}
             browserAvailable={isPreviewSupportedInRuntime()}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
