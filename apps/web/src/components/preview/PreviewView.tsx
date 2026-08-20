@@ -756,6 +756,7 @@ export function PreviewView({
             startDevServerLabel={startDevServerLabel}
             onStartDevServer={onStartDevServer}
             onOpenUrl={(next) => void handleOpenServerUrl(next)}
+            onOpenBookmarkUrl={(next) => void handleSubmitUrl(next)}
           />
         ) : null}
         {snapshot && desktopOverlay ? (
