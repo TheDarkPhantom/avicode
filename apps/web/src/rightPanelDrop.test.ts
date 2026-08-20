@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { exceedsDragThreshold, isRightHalfDrop } from "./rightPanelDrop";
-import { canSplitPreview, type RightPanelSurface } from "./rightPanelStore";
+import {
+  canSplitPreview,
+  resolvePreviewSplitSecondary,
+  type RightPanelSurface,
+} from "./rightPanelStore";
 
 const preview = (tabId: string, secondaryTabId?: string): RightPanelSurface => ({
   id: `browser:${tabId}`,
@@ -56,5 +60,38 @@ describe("canSplitPreview", () => {
     expect(canSplitPreview(diff, preview("b"))).toBe(false);
     expect(canSplitPreview(preview("a"), diff)).toBe(false);
     expect(canSplitPreview(null, preview("b"))).toBe(false);
+  });
+});
+
+describe("resolvePreviewSplitSecondary", () => {
+  it("pairs a dragged background preview with the active preview", () => {
+    const surfaces = [preview("a"), preview("b")];
+    expect(resolvePreviewSplitSecondary(surfaces, "browser:a", "browser:b")).toBe("b");
+  });
+
+  it("pairs the active tab itself with the other open preview", () => {
+    const surfaces = [preview("a"), preview("b")];
+    expect(resolvePreviewSplitSecondary(surfaces, "browser:a", "browser:a")).toBe("b");
+  });
+
+  it("returns null when the active preview is the only one", () => {
+    const surfaces = [preview("a"), diff];
+    expect(resolvePreviewSplitSecondary(surfaces, "browser:a", "browser:a")).toBeNull();
+  });
+
+  it("returns null when the active surface is not a preview", () => {
+    const surfaces = [diff, preview("b")];
+    expect(resolvePreviewSplitSecondary(surfaces, "diff", "browser:b")).toBeNull();
+  });
+
+  it("returns null when the active preview is already split", () => {
+    const surfaces = [preview("a", "c"), preview("b")];
+    expect(resolvePreviewSplitSecondary(surfaces, "browser:a", "browser:b")).toBeNull();
+  });
+
+  it("returns null for a placeholder or non-preview dragged tab", () => {
+    const surfaces = [preview("a"), previewPlaceholder, diff];
+    expect(resolvePreviewSplitSecondary(surfaces, "browser:a", "browser:new")).toBeNull();
+    expect(resolvePreviewSplitSecondary(surfaces, "browser:a", "diff")).toBeNull();
   });
 });
