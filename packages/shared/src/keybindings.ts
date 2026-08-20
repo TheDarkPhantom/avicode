@@ -40,6 +40,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+-", command: "app.zoomOut" },
   { key: "mod+0", command: "app.resetZoom" },
   { key: "mod+shift+j", command: "preview.toggle" },
+  // Avi Code addition: toggle the side-by-side preview split. Guarded to when a
+  // preview panel is open so it does not shadow the chord elsewhere.
+  { key: "mod+shift+s", command: "preview.toggleSplit", when: "previewOpen" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
   // Registered after the app-zoom rules on purpose: `resolveShortcutCommand`

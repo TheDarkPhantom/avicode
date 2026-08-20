@@ -1,6 +1,15 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { ClipboardList, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
+import {
+  ClipboardList,
+  Columns2,
+  FileDiff,
+  Files,
+  Globe2,
+  Plus,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -56,6 +65,13 @@ interface RightPanelTabsProps {
   onSplitPreview: (draggedSurfaceId: string) => void;
   /** Avi Code addition: undo a preview split from the context menu. */
   onUnsplitPreview: (surfaceId: string) => void;
+  /**
+   * Avi Code addition: split/exit toggle for the active preview. "on" when
+   * already split, "off" when a split is possible, "unavailable" otherwise (the
+   * button is hidden).
+   */
+  previewSplitToggle: "on" | "off" | "unavailable";
+  onTogglePreviewSplit: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -532,6 +548,26 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
               );
             })}
+            {/* Avi Code addition: split/exit toggle for the active preview. */}
+            {props.previewSplitToggle !== "unavailable" ? (
+              <button
+                type="button"
+                onClick={props.onTogglePreviewSplit}
+                aria-label={
+                  props.previewSplitToggle === "on" ? "Exit split view" : "Split preview view"
+                }
+                aria-pressed={props.previewSplitToggle === "on"}
+                title={props.previewSplitToggle === "on" ? "Exit split view" : "Split view"}
+                className={cn(
+                  "relative inline-flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-accent hover:text-foreground",
+                  props.previewSplitToggle === "on"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                <Columns2 className="size-4" />
+              </button>
+            ) : null}
             {props.surfaces.length > 0 ? (
               <Menu>
                 <MenuTrigger

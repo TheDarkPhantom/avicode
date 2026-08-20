@@ -145,6 +145,16 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      // Avi Code addition: toggle the side-by-side preview split. ChatView owns
+      // the split state and decides whether this splits or exits.
+      if (command === "preview.toggleSplit") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!routeThreadRef || !isPreviewSupportedInRuntime()) return;
+        dispatchPreviewAction("toggle-split");
+        return;
+      }
+
       // The remaining preview commands only fire when the panel is the
       // currently-focused tenant. The `when: previewFocus` rule already
       // gates this, but defend against the keybinding being misconfigured.

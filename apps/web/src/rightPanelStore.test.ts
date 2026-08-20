@@ -653,6 +653,32 @@ describe("right panel preview split", () => {
     expect(surfaces()).toEqual([{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }]);
   });
 
+  it("swapPreviewSplit moves the link and reorders the panes", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+    useRightPanelStore.getState().swapPreviewSplit(refA, "browser:tab-a");
+
+    expect(surfaces()).toEqual([
+      { id: "browser:tab-b", kind: "preview", resourceId: "tab-b", secondaryTabId: "tab-a" },
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a" },
+    ]);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).activeSurfaceId,
+    ).toBe("browser:tab-b");
+  });
+
+  it("swapPreviewSplit no-ops when the surface is not split", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().swapPreviewSplit(refA, "browser:tab-a");
+
+    expect(surfaces()).toEqual([
+      { id: "browser:tab-a", kind: "preview", resourceId: "tab-a" },
+      { id: "browser:tab-b", kind: "preview", resourceId: "tab-b" },
+    ]);
+  });
+
   it("migration keeps a valid secondaryTabId and drops an invalid one", () => {
     const migrated = migratePersistedRightPanelState({
       byThreadKey: {

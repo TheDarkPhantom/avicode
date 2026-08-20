@@ -11,7 +11,10 @@ export type PreviewAction =
   | "focus-url"
   | "zoom-in"
   | "zoom-out"
-  | "reset-zoom";
+  | "reset-zoom"
+  // Avi Code addition: toggle the side-by-side preview split. Handled in
+  // ChatView (which owns the split state), not per-pane in PreviewView.
+  | "toggle-split";
 
 const EVENT_NAME = "t3code:preview-action";
 
