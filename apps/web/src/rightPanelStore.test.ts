@@ -548,17 +548,31 @@ describe("right panel preview split", () => {
   const surfaces = () =>
     selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces;
 
-  it("splitPreview absorbs the second tab and activates the primary", () => {
+  it("splitPreview links the primary and keeps both tabs visible", () => {
     useRightPanelStore.getState().openBrowser(refA, "tab-a");
     useRightPanelStore.getState().openBrowser(refA, "tab-b");
     useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
 
     expect(surfaces()).toEqual([
       { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+      { id: "browser:tab-b", kind: "preview", resourceId: "tab-b" },
     ]);
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA),
     ).toMatchObject({ activeSurfaceId: "browser:tab-a", isOpen: true });
+  });
+
+  it("splitPreview moves the second tab next to the primary", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().openBrowser(refA, "tab-c");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-c");
+
+    expect(surfaces().map((surface) => surface.id)).toEqual([
+      "browser:tab-a",
+      "browser:tab-c",
+      "browser:tab-b",
+    ]);
   });
 
   it("splitPreview no-ops when the primary is not a preview", () => {
@@ -567,6 +581,13 @@ describe("right panel preview split", () => {
     useRightPanelStore.getState().splitPreview(refA, "terminal:term-1", "tab-b");
 
     expect(surfaces().map((surface) => surface.id)).toEqual(["terminal:term-1", "browser:tab-b"]);
+  });
+
+  it("splitPreview no-ops when the second tab is not open", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+
+    expect(surfaces()).toEqual([{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }]);
   });
 
   it("splitPreview no-ops when the primary is already split", () => {
@@ -578,6 +599,7 @@ describe("right panel preview split", () => {
 
     expect(surfaces()).toEqual([
       { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+      { id: "browser:tab-b", kind: "preview", resourceId: "tab-b" },
       { id: "browser:tab-c", kind: "preview", resourceId: "tab-c" },
     ]);
   });
@@ -589,7 +611,7 @@ describe("right panel preview split", () => {
     expect(surfaces()).toEqual([{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }]);
   });
 
-  it("unsplitPreview restores the second tab right after the primary", () => {
+  it("unsplitPreview drops the link but keeps both tabs", () => {
     useRightPanelStore.getState().openBrowser(refA, "tab-a");
     useRightPanelStore.getState().openBrowser(refA, "tab-b");
     useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
@@ -601,7 +623,16 @@ describe("right panel preview split", () => {
     ]);
   });
 
-  it("reconcile does not resurrect an absorbed second tab", () => {
+  it("closing the second pane clears the split link on the primary", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowser(refA, "tab-b");
+    useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
+    useRightPanelStore.getState().closeSurface(refA, "browser:tab-b");
+
+    expect(surfaces()).toEqual([{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }]);
+  });
+
+  it("reconcile keeps both tabs of a split", () => {
     useRightPanelStore.getState().openBrowser(refA, "tab-a");
     useRightPanelStore.getState().openBrowser(refA, "tab-b");
     useRightPanelStore.getState().splitPreview(refA, "browser:tab-a", "tab-b");
@@ -609,6 +640,7 @@ describe("right panel preview split", () => {
 
     expect(surfaces()).toEqual([
       { id: "browser:tab-a", kind: "preview", resourceId: "tab-a", secondaryTabId: "tab-b" },
+      { id: "browser:tab-b", kind: "preview", resourceId: "tab-b" },
     ]);
   });
 

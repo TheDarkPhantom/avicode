@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- The active preview tab can now be dragged to split, not only a background tab (#213)
 - The right panel now expands and resizes inline in fullscreen instead of a fixed narrow overlay (#212)
 - Drag a preview tab to the right edge to compare two previews side by side in the right panel (#210)
 - Deleting a sidebar folder now asks first, and corrupt saved state no longer wipes your folders (#211)

@@ -150,7 +150,8 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
-  canSplitPreview,
+  resolveActivePreviewSplit,
+  resolvePreviewSplitSecondary,
   resolveFollowedRightPanelState,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -1668,19 +1669,20 @@ function ChatViewContent(props: ChatViewProps) {
     [rightPanelState],
   );
   const activeRightPanelKind = activeRightPanelSurface?.kind ?? null;
-  // Avi Code addition: which pane of a side-by-side preview split currently
-  // takes global preview keybinds. Reset to the primary whenever the split
-  // shape changes so it never points at a pane that just unmounted.
-  const activePreviewPrimaryTabId =
-    activeRightPanelSurface?.kind === "preview" ? activeRightPanelSurface.resourceId : null;
-  const activePreviewSecondaryTabId =
-    activeRightPanelSurface?.kind === "preview"
-      ? (activeRightPanelSurface.secondaryTabId ?? null)
-      : null;
+  // Avi Code addition: the two panes rendered side by side, resolved from either
+  // paired tab (both stay in the strip). Null when the active preview is plain.
+  const activePreviewSplit = useMemo(
+    () => resolveActivePreviewSplit(rightPanelState.surfaces, activeRightPanelSurface),
+    [activeRightPanelSurface, rightPanelState.surfaces],
+  );
+  // Which pane takes global preview keybinds. Follows the active tab, and falls
+  // back to the primary so it never points at a pane that just unmounted.
   const [focusedPreviewPane, setFocusedPreviewPane] = useState<string | null>(null);
+  const activePreviewTabId =
+    activeRightPanelSurface?.kind === "preview" ? activeRightPanelSurface.resourceId : null;
   useEffect(() => {
-    setFocusedPreviewPane(activePreviewPrimaryTabId);
-  }, [activePreviewPrimaryTabId, activePreviewSecondaryTabId]);
+    setFocusedPreviewPane(activePreviewTabId ?? activePreviewSplit?.primaryTabId ?? null);
+  }, [activePreviewSplit?.primaryTabId, activePreviewSplit?.secondaryTabId, activePreviewTabId]);
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   const diffOpen = activeRightPanelKind === "diff";
@@ -3743,14 +3745,16 @@ function ChatViewContent(props: ChatViewProps) {
   // active preview as a second pane.
   const splitActivePreview = useCallback(
     (draggedSurfaceId: string) => {
-      if (!activeThreadRef) return;
-      const dragged =
-        rightPanelState.surfaces.find((surface) => surface.id === draggedSurfaceId) ?? null;
-      if (!canSplitPreview(activeRightPanelSurface, dragged)) return;
-      if (dragged?.kind !== "preview" || dragged.resourceId === null) return;
+      if (!activeThreadRef || activeRightPanelSurface?.kind !== "preview") return;
+      const secondaryTabId = resolvePreviewSplitSecondary(
+        rightPanelState.surfaces,
+        activeRightPanelSurface.id,
+        draggedSurfaceId,
+      );
+      if (secondaryTabId === null) return;
       useRightPanelStore
         .getState()
-        .splitPreview(activeThreadRef, activeRightPanelSurface.id, dragged.resourceId);
+        .splitPreview(activeThreadRef, activeRightPanelSurface.id, secondaryTabId);
       setFocusedPreviewPane(activeRightPanelSurface.resourceId);
     },
     [activeRightPanelSurface, activeThreadRef, rightPanelState.surfaces],
@@ -7429,15 +7433,16 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const rightPanelContent = activeThreadRef ? (
     activeRightPanelSurface?.kind === "preview" ? (
-      // Avi Code addition: a split preview surface renders both tabs side by side
-      // in a two-column grid; otherwise the single preview path is unchanged.
+      // Avi Code addition: a split renders both paired tabs side by side in a
+      // two-column grid; otherwise the single preview path is unchanged. The
+      // split shows whichever of the two tabs is active (both stay in the strip).
       <Suspense fallback={null}>
-        {activeRightPanelSurface.secondaryTabId ? (
+        {activePreviewSplit ? (
           <div
             className="relative grid h-full min-h-0 w-full"
             style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
           >
-            {[activeRightPanelSurface.resourceId, activeRightPanelSurface.secondaryTabId].map(
+            {[activePreviewSplit.primaryTabId, activePreviewSplit.secondaryTabId].map(
               (paneTabId, index) => (
                 <div
                   key={paneTabId}
@@ -7469,7 +7474,7 @@ function ChatViewContent(props: ChatViewProps) {
               type="button"
               aria-label="Unsplit preview"
               title="Unsplit preview"
-              onClick={() => unsplitActivePreview(activeRightPanelSurface.id)}
+              onClick={() => unsplitActivePreview(`browser:${activePreviewSplit.primaryTabId}`)}
               className="absolute left-1/2 top-1 z-10 -translate-x-1/2 rounded-full border border-border bg-background/90 p-1 text-muted-foreground shadow-sm hover:text-foreground"
             >
               <XIcon className="size-3.5" />

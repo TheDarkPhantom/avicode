@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import { isElectron } from "~/env";
-import { canSplitPreview, type RightPanelSurface } from "~/rightPanelStore";
+import { resolvePreviewSplitSecondary, type RightPanelSurface } from "~/rightPanelStore";
 import { exceedsDragThreshold, isRightHalfDrop } from "~/rightPanelDrop";
 import { usePreviewTabDragStore } from "./preview/previewTabDragStore";
 import { cn } from "~/lib/utils";
@@ -377,15 +377,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const draggingRef = useRef(false);
   const suppressClickRef = useRef(false);
   const [dragZone, setDragZone] = useState<"left" | "right" | null>(null);
-  const activeSurface =
-    props.surfaces.find((surface) => surface.id === props.activeSurfaceId) ?? null;
 
   const handleTabPointerDown = useCallback(
     (event: ReactPointerEvent, surface: RightPanelSurface) => {
       if (event.button !== 0) return;
-      // Only a preview dropped onto a different, not-yet-split active preview can
-      // pair. Other tabs keep their plain click behavior.
-      if (!canSplitPreview(activeSurface, surface)) return;
+      // Any preview tab is draggable as long as a split is possible, including
+      // the active/visible one. Other tabs keep their plain click behavior.
+      if (
+        resolvePreviewSplitSecondary(props.surfaces, props.activeSurfaceId, surface.id) === null
+      ) {
+        return;
+      }
       const origin = { x: event.clientX, y: event.clientY };
       const draggedSurfaceId = surface.id;
       const onMove = (moveEvent: PointerEvent) => {
@@ -422,7 +424,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       window.addEventListener("pointerup", finish);
       window.addEventListener("pointercancel", finish);
     },
-    [activeSurface, props, setPreviewTabDragging],
+    [props, setPreviewTabDragging],
   );
 
   const handleTabActivateClick = useCallback(
