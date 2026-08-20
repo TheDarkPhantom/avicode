@@ -87,3 +87,5 @@ export const PREVIEW_RECORDING_SAVE_CHANNEL = "desktop:preview-recording-save";
 export const PREVIEW_RECORDING_FRAME_CHANNEL = "desktop:preview-recording-frame";
 export const PREVIEW_STATE_CHANGE_CHANNEL = "desktop:preview-state-change";
 export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
+// Avi Code addition: guest page asked for a new background tab (middle/Ctrl-click).
+export const PREVIEW_OPEN_TAB_REQUEST_CHANNEL = "desktop:preview-open-tab-request";

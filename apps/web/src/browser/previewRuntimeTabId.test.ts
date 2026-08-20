@@ -1,7 +1,11 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { isCurrentPreviewRuntimeTab, previewRuntimeTabId } from "./previewRuntimeTabId";
+import {
+  isCurrentPreviewRuntimeTab,
+  parsePreviewRuntimeTabId,
+  previewRuntimeTabId,
+} from "./previewRuntimeTabId";
 
 describe("previewRuntimeTabId", () => {
   it("scopes process-local tab ids to their environment, thread, and server epoch", () => {
@@ -42,5 +46,32 @@ describe("previewRuntimeTabId", () => {
 
     expect(isCurrentPreviewRuntimeTab(ref, "epoch-a", "tab_1", runtimeTabId)).toBe(true);
     expect(isCurrentPreviewRuntimeTab(ref, "epoch-b", "tab_1", runtimeTabId)).toBe(false);
+  });
+});
+
+describe("parsePreviewRuntimeTabId", () => {
+  const ref = {
+    environmentId: EnvironmentId.make("environment-a"),
+    threadId: ThreadId.make("thread-a"),
+  };
+
+  it("round-trips a runtime tab id back to its thread", () => {
+    const parsed = parsePreviewRuntimeTabId(previewRuntimeTabId(ref, "epoch-a", "tab_1"));
+    expect(parsed?.threadRef.environmentId).toBe(ref.environmentId);
+    expect(parsed?.threadRef.threadId).toBe(ref.threadId);
+    expect(parsed?.serverEpoch).toBe("epoch-a");
+    expect(parsed?.tabId).toBe("tab_1");
+  });
+
+  it("preserves a null server epoch", () => {
+    expect(
+      parsePreviewRuntimeTabId(previewRuntimeTabId(ref, null, "tab_1"))?.serverEpoch,
+    ).toBeNull();
+  });
+
+  it("returns null for malformed input", () => {
+    expect(parsePreviewRuntimeTabId("not json")).toBeNull();
+    expect(parsePreviewRuntimeTabId(JSON.stringify(["only", "three", "items"]))).toBeNull();
+    expect(parsePreviewRuntimeTabId(JSON.stringify([1, 2, null, "tab"]))).toBeNull();
   });
 });

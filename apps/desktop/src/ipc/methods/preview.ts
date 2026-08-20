@@ -38,6 +38,10 @@ export const installPreviewEventForwarding = Effect.fn(
   yield* manager.subscribeStateChanges((tabId, state) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_STATE_CHANGE_CHANNEL, tabId, state),
   );
+  // Avi Code addition: forward new-background-tab requests to the renderer.
+  yield* manager.subscribeOpenTabRequests((request) =>
+    electronWindow.sendAll(IpcChannels.PREVIEW_OPEN_TAB_REQUEST_CHANNEL, request),
+  );
   yield* manager.subscribeRecordingFrames((frame) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, frame),
   );

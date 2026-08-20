@@ -205,6 +205,11 @@ interface RightPanelStoreState {
   adoptVisibilityPreference: (ref: ScopedThreadRef) => void;
   open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
+  /**
+   * Avi Code addition: adds a browser tab without activating it, for a
+   * middle-click / Ctrl-click "open in new background tab".
+   */
+  openBrowserBackground: (ref: ScopedThreadRef, tabId: string) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number, root?: string) => void;
   /**
    * Avi Code addition: moves an open file tab onto the repo that actually holds
@@ -506,6 +511,21 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
           }),
         ),
+      // Avi Code addition: incidental like a terminal split, so it does not
+      // rewrite the visibility preference or steal focus from the current tab.
+      openBrowserBackground: (ref, tabId) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const withoutPlaceholder = current.surfaces.filter(
+              (entry) => entry.id !== "browser:new",
+            );
+            return upsertSurface(
+              { ...current, surfaces: withoutPlaceholder },
+              browserSurface(tabId),
+              false,
+            );
+          }),
+        })),
       openFile: (ref, relativePath, line, root) =>
         set((state) =>
           updateThreadAndRememberVisibility(state, ref, (current) => {

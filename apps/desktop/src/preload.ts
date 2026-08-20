@@ -1,5 +1,6 @@
 import type {
   DesktopBridge,
+  DesktopPreviewOpenTabRequest,
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
@@ -288,6 +289,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.on(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
       return () =>
         ipcRenderer.removeListener(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
+    },
+    onOpenTabRequest: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, request: unknown) => {
+        if (typeof request !== "object" || request === null) return;
+        listener(request as DesktopPreviewOpenTabRequest);
+      };
+      ipcRenderer.on(IpcChannels.PREVIEW_OPEN_TAB_REQUEST_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.PREVIEW_OPEN_TAB_REQUEST_CHANNEL, wrappedListener);
     },
   },
 } satisfies DesktopBridge);

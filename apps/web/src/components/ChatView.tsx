@@ -170,6 +170,7 @@ import {
 } from "../previewStateStore";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { useAutoOpenScriptPreview } from "./preview/useAutoOpenScriptPreview";
+import { useOpenBackgroundTabRequests } from "./preview/useOpenBackgroundTabRequests";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
@@ -1623,6 +1624,9 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  // Avi Code addition: middle-click / Ctrl-click a link in the preview to open it
+  // in a new background tab (works from either pane of a split).
+  useOpenBackgroundTabRequests({ openPreview, activeThreadRef });
   // Avi Code addition: the turn this thread is holding, if any. Declared up here
   // because the composer banner and the timeline both read it long before the
   // send path that creates it.

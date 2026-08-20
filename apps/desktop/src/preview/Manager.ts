@@ -8,6 +8,7 @@
 import type {
   DesktopPreviewAnnotationTheme,
   DesktopPreviewColorScheme,
+  DesktopPreviewOpenTabRequest,
   DesktopPreviewPointerEvent,
   PreviewAnnotationPayload,
   PreviewAnnotationRect,
@@ -384,6 +385,8 @@ interface BrowserDiagnostics {
 }
 
 type PointerEventListener = (event: DesktopPreviewPointerEvent) => Effect.Effect<void>;
+// Avi Code addition: a guest page asked to open a link in a new background tab.
+type OpenTabRequestListener = (request: DesktopPreviewOpenTabRequest) => Effect.Effect<void>;
 
 interface ExpectedAgentInput {
   readonly signal: PreviewInputSignal;
@@ -471,6 +474,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
   const listenersRef = yield* Ref.make<ReadonlySet<Listener>>(new Set());
   const pointerEventListenersRef = yield* Ref.make<ReadonlySet<PointerEventListener>>(new Set());
+  const openTabRequestListenersRef = yield* Ref.make<ReadonlySet<OpenTabRequestListener>>(
+    new Set(),
+  );
   const recordingFrameListenersRef = yield* Ref.make<ReadonlySet<RecordingFrameListener>>(
     new Set(),
   );
@@ -586,7 +592,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   });
 
   const deliverEvent = (
-    eventKind: "state-change" | "recording-frame" | "pointer-event",
+    eventKind: "state-change" | "recording-frame" | "pointer-event" | "open-tab-request",
     tabId: string,
     delivery: () => Effect.Effect<void>,
   ) =>
@@ -1426,7 +1432,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("did-stop-loading", sync);
         wc.on("did-fail-load", failed as never);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
-        wc.setWindowOpenHandler(({ url }) => {
+        wc.setWindowOpenHandler(({ url, disposition }) => {
+          // Avi Code addition: middle-click and Ctrl/Cmd-click both arrive as
+          // "background-tab"; open those in a new background tab. Everything else
+          // (target=_blank, window.open) keeps navigating this same tab.
+          if (disposition === "background-tab") {
+            runFork(emitOpenTabRequest({ sourceTabId: tabId, url }).pipe(Effect.ignore));
+            return { action: "deny" };
+          }
           runFork(
             attemptPromise({ operation: "openPreviewWindow", tabId, webContentsId: wc.id }, () =>
               wc.loadURL(url),
@@ -2818,6 +2831,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  // Avi Code addition: notify renderer listeners that a guest page asked for a
+  // new background tab (middle-click or Ctrl/Cmd-click on a link).
+  const emitOpenTabRequest = Effect.fn("PreviewManager.emitOpenTabRequest")(function* (
+    request: DesktopPreviewOpenTabRequest,
+  ) {
+    const listeners = yield* Ref.get(openTabRequestListenersRef);
+    yield* Effect.forEach(
+      listeners,
+      (listener) => deliverEvent("open-tab-request", request.sourceTabId, () => listener(request)),
+      { discard: true },
+    );
+  });
+
   const performAutomationClick = Effect.fn("PreviewManager.performAutomationClick")(function* (
     tabId: string,
     input: PreviewAutomationClickInput,
@@ -3283,6 +3309,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         Ref.set(listenersRef, new Set()),
         Ref.set(expectedAgentInputsRef, new Map()),
         Ref.set(pointerEventListenersRef, new Set()),
+        Ref.set(openTabRequestListenersRef, new Set()),
         Ref.set(recordingFrameListenersRef, new Set()),
       ],
       { discard: true },
@@ -3328,6 +3355,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     subscribeRecordingFrames: (listener: RecordingFrameListener) =>
       subscribe(recordingFrameListenersRef, listener),
     subscribeStateChanges: (listener: Listener) => subscribe(listenersRef, listener),
+    subscribeOpenTabRequests: (listener: OpenTabRequestListener) =>
+      subscribe(openTabRequestListenersRef, listener),
     zoomIn: (tabId: string) => applyZoom(tabId, (current) => nextZoomLevel(current, "in")),
     zoomOut: (tabId: string) => applyZoom(tabId, (current) => nextZoomLevel(current, "out")),
   };
@@ -3671,6 +3700,9 @@ export class PreviewManager extends Context.Service<
       input: PreviewAutomationWaitForInput,
     ) => Effect.Effect<void, PreviewManagerError>;
     readonly subscribeStateChanges: (listener: Listener) => Effect.Effect<void, never, Scope.Scope>;
+    readonly subscribeOpenTabRequests: (
+      listener: OpenTabRequestListener,
+    ) => Effect.Effect<void, never, Scope.Scope>;
     readonly subscribePointerEvents: (
       listener: PointerEventListener,
     ) => Effect.Effect<void, never, Scope.Scope>;
@@ -3758,6 +3790,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     automationEvaluate: operations.automationEvaluate,
     automationWaitFor: operations.automationWaitFor,
     subscribeStateChanges: operations.subscribeStateChanges,
+    subscribeOpenTabRequests: operations.subscribeOpenTabRequests,
     subscribePointerEvents: operations.subscribePointerEvents,
     subscribeRecordingFrames: operations.subscribeRecordingFrames,
   });

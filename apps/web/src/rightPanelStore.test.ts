@@ -387,6 +387,17 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("openBrowserBackground adds a tab without stealing focus", () => {
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().openBrowserBackground(refA, "tab-b");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual(["browser:tab-a", "browser:tab-b"]);
+    expect(state.isOpen).toBe(true);
+    // Focus stays on the tab that was active before the background tab opened.
+    expect(state.activeSurfaceId).toBe("browser:tab-a");
+  });
+
   it("tracks one surface per terminal session", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().openTerminal(refA, "term-2");

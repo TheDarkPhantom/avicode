@@ -575,6 +575,22 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
   });
 
 /**
+ * Avi Code addition: a guest page asked to open `url` in a new background tab
+ * (middle-click or Ctrl/Cmd-click). `sourceTabId` is the runtime tab id of the
+ * tab the click came from, used to resolve which thread should get the new tab.
+ */
+export interface DesktopPreviewOpenTabRequest {
+  sourceTabId: string;
+  url: string;
+}
+
+export const DesktopPreviewOpenTabRequestSchema: Schema.Codec<DesktopPreviewOpenTabRequest> =
+  Schema.Struct({
+    sourceTabId: DesktopPreviewTabIdSchema,
+    url: Schema.String,
+  });
+
+/**
  * Static config a renderer needs to mount a preview `<webview>`. Returned
  * atomically by `DesktopPreviewBridge.getPreviewConfig()` so the renderer
  * doesn't have to wait on three separate IPC round-trips before the webview
@@ -1125,6 +1141,11 @@ export interface DesktopPreviewBridge {
   };
   onStateChange: (listener: (tabId: string, state: DesktopPreviewTabState) => void) => () => void;
   onPointerEvent: (listener: (event: DesktopPreviewPointerEvent) => void) => () => void;
+  /**
+   * Avi Code addition: a guest page requested a new background tab (middle-click
+   * or Ctrl/Cmd-click on a link).
+   */
+  onOpenTabRequest: (listener: (request: DesktopPreviewOpenTabRequest) => void) => () => void;
 }
 
 /**
