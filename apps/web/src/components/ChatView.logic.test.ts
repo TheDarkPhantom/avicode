@@ -46,9 +46,9 @@ describe("shouldMarkCompletionSeen", () => {
   });
 
   it("does not mark read when the turn has not completed", () => {
-    expect(shouldMarkCompletionSeen({ completedAt: null, isAtEnd: true, isWindowActive: true })).toBe(
-      false,
-    );
+    expect(
+      shouldMarkCompletionSeen({ completedAt: null, isAtEnd: true, isWindowActive: true }),
+    ).toBe(false);
     expect(
       shouldMarkCompletionSeen({ completedAt: undefined, isAtEnd: true, isWindowActive: true }),
     ).toBe(false);
