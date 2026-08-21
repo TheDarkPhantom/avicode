@@ -21,6 +21,7 @@ import {
   deriveComposerSendState,
   derivePendingPlanDecision,
   shouldFollowUpWithAttachments,
+  shouldMarkCompletionSeen,
   dismissBranchMismatchForSession,
   getStartedThreadModelChangeBlockReason,
   hasServerAcknowledgedLocalDispatch,
@@ -34,6 +35,37 @@ import {
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+
+describe("shouldMarkCompletionSeen", () => {
+  const completedAt = "2026-08-22T00:00:00.000Z";
+
+  it("marks read only when completed, at the bottom, and the window is active", () => {
+    expect(shouldMarkCompletionSeen({ completedAt, isAtEnd: true, isWindowActive: true })).toBe(
+      true,
+    );
+  });
+
+  it("does not mark read when the turn has not completed", () => {
+    expect(
+      shouldMarkCompletionSeen({ completedAt: null, isAtEnd: true, isWindowActive: true }),
+    ).toBe(false);
+    expect(
+      shouldMarkCompletionSeen({ completedAt: undefined, isAtEnd: true, isWindowActive: true }),
+    ).toBe(false);
+  });
+
+  it("does not mark read when the reader is not at the bottom", () => {
+    expect(shouldMarkCompletionSeen({ completedAt, isAtEnd: false, isWindowActive: true })).toBe(
+      false,
+    );
+  });
+
+  it("does not mark read when the window is not focused or visible", () => {
+    expect(shouldMarkCompletionSeen({ completedAt, isAtEnd: true, isWindowActive: false })).toBe(
+      false,
+    );
+  });
+});
 
 describe("derivePendingPlanDecision", () => {
   it("locks a settled actionable plan independently of stored interaction mode", () => {

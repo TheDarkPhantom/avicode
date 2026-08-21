@@ -17,8 +17,10 @@ cleared by old idle cleanup.
 ## Read state
 
 Completed read state is local to each client. It is saved at once and survives reload or app
-restart. Window focus, unlock, and automatic route restore do not mark a thread read. Opening a
-different thread from the sidebar or command palette does.
+restart. Window focus, unlock, and automatic route restore alone do not mark a thread read. Opening a
+different thread from the sidebar or command palette does. Reading a thread to the bottom also marks
+it read: when the open thread is scrolled to the bottom and the window is focused, the Completed
+status clears, both when the turn finishes while you watch and when you scroll to the end afterward.
 
 ## Plan actions
 

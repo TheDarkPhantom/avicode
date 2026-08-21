@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Completed threads clear their status when you read to the bottom of the open thread (#217)
 - Middle-click or Ctrl/Cmd-click a preview link to open it in a new background tab, even when split (#216)
 - Save, rename, and remove browser bookmarks from a bar on the preview's new-tab page (#215)
 - Swap the two sides of a preview split, and split or exit from a tab-bar button or mod+shift+s (#214)
