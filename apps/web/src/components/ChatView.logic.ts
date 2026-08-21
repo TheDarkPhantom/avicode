@@ -592,6 +592,19 @@ export function createLocalDispatchSnapshot(
   };
 }
 
+// Avi Code addition: gate for auto-marking a completed thread read while the
+// reader is actually looking at it. Marks read only when the latest turn has
+// finished, the timeline is at the absolute bottom, and the app window is
+// focused and visible. `markThreadVisited` is monotonic, so an already-seen
+// thread is a safe no-op and this predicate need not re-derive unseen state.
+export function shouldMarkCompletionSeen(input: {
+  completedAt: string | null | undefined;
+  isAtEnd: boolean;
+  isWindowActive: boolean;
+}): boolean {
+  return Boolean(input.completedAt) && input.isAtEnd && input.isWindowActive;
+}
+
 export function hasServerAcknowledgedLocalDispatch(input: {
   localDispatch: LocalDispatchSnapshot | null;
   phase: SessionPhase;

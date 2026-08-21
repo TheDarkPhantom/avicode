@@ -341,6 +341,7 @@ import {
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldFollowUpWithAttachments,
+  shouldMarkCompletionSeen,
   snapshotComposerThreadDraft,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
@@ -4253,6 +4254,51 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, []);
 
+  // Avi Code addition: mark the open thread read once its completion is actually
+  // seen. Fires when a turn finishes while the reader is parked at the bottom
+  // with the window focused, when the reader scrolls to the bottom of an
+  // already-completed thread, and when focus returns to a thread left at the
+  // bottom. `markThreadVisited` is monotonic, so redundant calls are safe.
+  const maybeMarkCompletionSeen = useCallback(() => {
+    if (!activeThreadKey) return;
+    const completedAt = activeLatestTurn?.completedAt ?? null;
+    const isWindowActive =
+      typeof document !== "undefined" &&
+      document.visibilityState === "visible" &&
+      document.hasFocus();
+    if (
+      shouldMarkCompletionSeen({
+        completedAt,
+        isAtEnd: isAtEndRef.current,
+        isWindowActive,
+      })
+    ) {
+      markThreadVisited(activeThreadKey, completedAt!);
+    }
+  }, [activeThreadKey, activeLatestTurn?.completedAt, markThreadVisited]);
+
+  // `onIsAtEndChange` keeps a stable identity for the timeline, so reach the
+  // latest callback through a ref instead of widening its dependency list.
+  const maybeMarkCompletionSeenRef = useRef(maybeMarkCompletionSeen);
+  maybeMarkCompletionSeenRef.current = maybeMarkCompletionSeen;
+
+  // Turn finished (or the mounted thread changed) while at the bottom: mark read.
+  useEffect(() => {
+    maybeMarkCompletionSeen();
+  }, [maybeMarkCompletionSeen, activeLatestTurn?.turnId]);
+
+  // Focus or tab-visibility returned to a thread left at the bottom: mark read.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => maybeMarkCompletionSeen();
+    window.addEventListener("focus", handler);
+    document.addEventListener("visibilitychange", handler);
+    return () => {
+      window.removeEventListener("focus", handler);
+      document.removeEventListener("visibilitychange", handler);
+    };
+  }, [maybeMarkCompletionSeen]);
+
   // Avi Code addition: keyed off the absolute live edge rather than LegendList's
   // `isNearEnd`, which counts half a viewport as "at the end". Under the old
   // reading, a shorter scroll up left live follow off with the pill still hidden,
@@ -4287,6 +4333,8 @@ function ChatViewContent(props: ChatViewProps) {
     if (isAbsoluteEnd) {
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
+      // Avi Code addition: reaching the live edge means the completion is seen.
+      maybeMarkCompletionSeenRef.current();
     } else {
       timelineScrollModeRef.current = "free-scrolling";
       setTimelineScrollMode("free-scrolling");
