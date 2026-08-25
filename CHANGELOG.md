@@ -42,7 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- The sidebar no longer shows a hidden folders count and hint below your projects (#PR)
+- The sidebar no longer shows a hidden folders count and hint below your projects (#219)
 
 ## 0.0.31-avicode.9.10 (2026-08-22)
 
