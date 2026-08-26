@@ -42,7 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
-- The sidebar project filter now hides behind a magnifier toggle in the Projects header
+- The sidebar project filter now hides behind a magnifier toggle in the Projects header (#221)
 
 ## 0.0.31-avicode.9.11 (2026-08-25)
 
