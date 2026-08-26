@@ -2366,6 +2366,28 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   const [folderRenameTarget, setFolderRenameTarget] = useState<ProjectFolder | null>(null);
   const [folderRenameName, setFolderRenameName] = useState("");
   const isFilteringProjects = projectFilterQuery.trim().length > 0;
+  // Avi Code addition: the inline project filter hides behind a magnifier
+  // toggle. An active query keeps it visible so it never hides itself.
+  const [isProjectFilterOpen, setProjectFilterOpen] = useState(false);
+  const projectFilterInputRef = useRef<HTMLInputElement>(null);
+  const isProjectFilterVisible = isProjectFilterOpen || isFilteringProjects;
+  const toggleProjectFilter = useCallback(() => {
+    setProjectFilterOpen((open) => {
+      const next = !open;
+      if (!next) setProjectFilterQuery("");
+      return next;
+    });
+  }, [setProjectFilterQuery]);
+  const closeProjectFilter = useCallback(() => {
+    setProjectFilterQuery("");
+    setProjectFilterOpen(false);
+  }, [setProjectFilterQuery]);
+  useEffect(() => {
+    if (isProjectFilterOpen) {
+      const frame = requestAnimationFrame(() => projectFilterInputRef.current?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [isProjectFilterOpen]);
 
   const handleProjectSortOrderChange = useCallback(
     (sortOrder: SidebarProjectSortOrder) => {
@@ -2581,6 +2603,30 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 newThreadShortcutLabel={newThreadShortcutLabel}
               />
             ) : null}
+            {/* Avi Code addition: magnifier toggles the inline project filter. */}
+            {isFlatSidebar ? null : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Filter projects"
+                      aria-pressed={isProjectFilterVisible}
+                      data-testid="sidebar-filter-projects-trigger"
+                      className={`inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-[calc(--spacing(1)-1px)] transition-colors hover:bg-accent hover:text-foreground ${
+                        isProjectFilterVisible
+                          ? "bg-accent text-foreground"
+                          : "text-muted-foreground/60"
+                      }`}
+                      onClick={toggleProjectFilter}
+                    />
+                  }
+                >
+                  <SearchIcon className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipPopup side="right">Filter projects</TooltipPopup>
+              </Tooltip>
+            )}
             <ProjectSortMenu
               projectSortOrder={projectSortOrder}
               threadSortOrder={threadSortOrder}
@@ -2615,23 +2661,31 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         </div>
 
         {/* Avi Code addition: inline project filter. Hidden in flat mode,
-            where the list is already threads-first. */}
-        {isFlatSidebar ? null : (
+            where the list is already threads-first, and behind the magnifier
+            toggle until the user opens it or a query is active. */}
+        {isFlatSidebar || !isProjectFilterVisible ? null : (
           <div className="mb-1.5 px-1">
             <div className="relative">
               <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
               <Input
+                ref={projectFilterInputRef}
                 aria-label="Filter projects"
                 placeholder="Filter projects"
                 value={projectFilterQuery}
                 onChange={(event) => setProjectFilterQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeProjectFilter();
+                  }
+                }}
                 className="h-7 pr-7 pl-7 text-xs"
               />
               {isFilteringProjects ? (
                 <button
                   type="button"
                   aria-label="Clear filter"
-                  onClick={() => setProjectFilterQuery("")}
+                  onClick={closeProjectFilter}
                   className="absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
                 >
                   <XIcon className="size-3.5" />
