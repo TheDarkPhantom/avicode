@@ -36,6 +36,23 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Upstream t3code
+
+- On Windows, agent terminals now show full 256-color output (#5693 by yassiEmp)
+- On Windows, a repaired PATH no longer carries stray quotes (#8746 by Utkarsh Patil)
+- The app starts faster by probing the Windows shell environment in parallel (#5878 by Tyler)
+- Startup skips Linux library detection on Windows and macOS (#5354 by bkntr)
+- The database waits for a busy writer instead of failing with SQLITE_BUSY (#5134 by Ostap)
+- Rebuilding the read model replays every pending event so nothing is dropped (#7538 by Tradi3)
+- Codex stays fast when handling large inputs (#8605 by Julius Marminge)
+- Automatic thread titles retry after a failed attempt (#8087 by Bilal Bakr)
+- Grok lets you switch models in an existing thread (#8392 by Ahmed Besic)
+- Generated commit and pull request text follows your repo's AGENTS.md and CLAUDE.md (#8804 by maria)
+
 ## 0.0.31-avicode.9.12 (2026-08-26)
 
 Upstream: t3code 0.0.31
