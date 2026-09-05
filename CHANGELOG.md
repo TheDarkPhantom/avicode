@@ -40,6 +40,10 @@ Add every user-visible change to Unreleased as it lands. The release bump rename
 
 Upstream: t3code 0.0.31
 
+### Avi Code
+
+- Pick Claude Fable 5.1 from the model picker (#224)
+
 ### Upstream t3code
 
 - On Windows, agent terminals now show full 256-color output (#5693 by yassiEmp)
