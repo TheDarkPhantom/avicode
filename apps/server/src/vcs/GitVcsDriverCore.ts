@@ -264,6 +264,56 @@ function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
   return worktreePaths;
 }
 
+// Avi Code addition: parse full `git worktree list --porcelain -z` entries for cleanup.
+function parseWorktreeEntries(stdout: string): GitVcsDriver.GitWorktreeEntry[] {
+  const entries: GitVcsDriver.GitWorktreeEntry[] = [];
+  let path: string | null = null;
+  let branch: string | null = null;
+  let bare = false;
+  let detached = false;
+  let locked = false;
+
+  const flush = () => {
+    if (path !== null) {
+      entries.push({
+        path,
+        branch,
+        isMain: entries.length === 0,
+        isBare: bare,
+        isDetached: detached,
+        isLocked: locked,
+      });
+    }
+    path = null;
+    branch = null;
+    bare = false;
+    detached = false;
+    locked = false;
+  };
+
+  for (const field of stdout.split("\0")) {
+    if (field === "") {
+      flush();
+    } else if (field.startsWith("worktree ")) {
+      // A fresh `worktree` line without a preceding empty separator still starts
+      // a new entry, so flush any in-progress one first.
+      flush();
+      path = field.slice("worktree ".length);
+    } else if (field.startsWith("branch refs/heads/")) {
+      branch = field.slice("branch refs/heads/".length);
+    } else if (field === "bare") {
+      bare = true;
+    } else if (field === "detached") {
+      detached = true;
+    } else if (field === "locked" || field.startsWith("locked ")) {
+      locked = true;
+    }
+  }
+  flush();
+
+  return entries;
+}
+
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
   const parts = input.split("\0");
   if (parts.length === 0) return [];
@@ -2750,6 +2800,57 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { branch: targetBranch };
   });
 
+  // Avi Code addition: worktree cleanup driver ops
+  const listWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listWorktrees"] = Effect.fn(
+    "listWorktrees",
+  )(function* (input) {
+    const result = yield* executeGit(
+      "GitVcsDriver.listWorktrees",
+      input.cwd,
+      ["worktree", "list", "--porcelain", "-z"],
+      {
+        timeoutMs: 30_000,
+        allowNonZeroExit: true,
+        maxOutputBytes: 16 * 1024 * 1024,
+      },
+    );
+    if (result.exitCode !== 0) {
+      return [] as ReadonlyArray<GitVcsDriver.GitWorktreeEntry>;
+    }
+    return parseWorktreeEntries(result.stdout);
+  });
+
+  const deleteBranch: GitVcsDriver.GitVcsDriver["Service"]["deleteBranch"] = Effect.fn(
+    "deleteBranch",
+  )(function* (input) {
+    const flag = input.force === false ? "-d" : "-D";
+    yield* executeGit(
+      "GitVcsDriver.deleteBranch",
+      input.cwd,
+      ["branch", flag, "--", input.branch],
+      {
+        timeoutMs: 10_000,
+        fallbackErrorDetail: "git branch delete failed",
+      },
+    );
+  });
+
+  const pruneWorktrees: GitVcsDriver.GitVcsDriver["Service"]["pruneWorktrees"] = Effect.fn(
+    "pruneWorktrees",
+  )(function* (input) {
+    yield* executeGit("GitVcsDriver.pruneWorktrees", input.cwd, ["worktree", "prune"], {
+      timeoutMs: 15_000,
+      fallbackErrorDetail: "git worktree prune failed",
+    });
+  });
+
+  const gc: GitVcsDriver.GitVcsDriver["Service"]["gc"] = Effect.fn("gc")(function* (input) {
+    yield* executeGit("GitVcsDriver.gc", input.cwd, ["gc", "--prune=now"], {
+      timeoutMs: 600_000,
+      fallbackErrorDetail: "git gc failed",
+    });
+  });
+
   const switchRef: GitVcsDriver.GitVcsDriver["Service"]["switchRef"] = Effect.fn("switchRef")(
     function* (input) {
       const [localInputExists, remoteExists] = yield* Effect.all(
@@ -2923,6 +3024,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
+    // Avi Code addition: worktree cleanup driver ops
+    listWorktrees: (input) => listWorktrees(input),
+    deleteBranch: (input) => withListRefsInvalidation(input.cwd, deleteBranch(input)),
+    pruneWorktrees: (input) => withListRefsInvalidation(input.cwd, pruneWorktrees(input)),
+    gc: (input) => withListRefsInvalidation(input.cwd, gc(input)),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),
     switchRef: (input) => withListRefsInvalidation(input.cwd, switchRef(input)),
     initRepo: initRepoWithListRefsInvalidation,

@@ -26,6 +26,7 @@ import {
   SlidersHorizontalIcon,
   SparklesIcon,
   TagsIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useState } from "react";
@@ -53,6 +54,7 @@ import {
   setWindowTitlePrivacyEnabled,
 } from "../../lib/windowTitleMetadata";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
+import { readProject, useProjectRefs } from "../../state/entities";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
@@ -73,6 +75,10 @@ import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
 import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
 import { ChipsSettings } from "./ChipsSettings";
 import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
+import {
+  WorktreeCleanupDialog,
+  type WorktreeCleanupTarget,
+} from "./WorktreeCleanupDialog";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -615,6 +621,54 @@ function WorktreeAutomationSettings() {
   );
 }
 
+// Avi Code addition. Global entry point for reclaiming disk from dead worktrees
+// across every project, with a read-only preview before anything is deleted.
+function WorktreeCleanupSettings() {
+  const projectRefs = useProjectRefs();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const targets: ReadonlyArray<WorktreeCleanupTarget> = projectRefs.flatMap((ref) => {
+    const project = readProject(ref);
+    if (!project) {
+      return [];
+    }
+    return [
+      {
+        environmentId: project.environmentId,
+        projectId: project.id,
+        cwd: project.workspaceRoot,
+        title: project.title,
+      },
+    ];
+  });
+
+  return (
+    <SettingsSection title="Worktree cleanup" icon={<Trash2Icon className="size-5" />}>
+      <SettingsRow
+        title="Remove dead worktrees"
+        description="Find worktrees for archived, settled, or merged threads and reclaim their disk space. You review and confirm before anything is deleted."
+        status={
+          targets.length === 0
+            ? "No projects are available to scan."
+            : `Scans ${targets.length} ${targets.length === 1 ? "project" : "projects"}.`
+        }
+        control={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={targets.length === 0}
+            onClick={() => setDialogOpen(true)}
+          >
+            <Trash2Icon className="size-4" />
+            Scan for dead worktrees
+          </Button>
+        }
+      />
+      <WorktreeCleanupDialog open={dialogOpen} onOpenChange={setDialogOpen} targets={targets} />
+    </SettingsSection>
+  );
+}
+
 function ChatListSettings() {
   const showStatusLabels = useClientSettings((settings) => settings.aviCodeSidebarShowStatusLabels);
   const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
@@ -1001,6 +1055,8 @@ export function AviCodeSettings() {
           <ColorThemeSettings />
           <NewChatSettings />
           <WorktreeAutomationSettings />
+          {/* Avi Code addition */}
+          <WorktreeCleanupSettings />
           <CommunicationStyleSettings />
           <ChipsSettings />
           <ChatLayoutSettings />
