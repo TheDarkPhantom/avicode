@@ -36,6 +36,14 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Clean up dead worktrees branches and checkpoints per repo to reclaim disk space (#226)
+
 ## 0.0.31-avicode.9.13 (2026-09-05)
 
 Upstream: t3code 0.0.31

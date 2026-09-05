@@ -38,6 +38,12 @@ export interface VcsDeleteCheckpointRefsInput {
   readonly checkpointRefs: ReadonlyArray<CheckpointRef>;
 }
 
+// Avi Code addition: enumerate checkpoint refs under a prefix (for cleanup).
+export interface VcsListCheckpointRefsInput {
+  readonly cwd: string;
+  readonly refPrefix: string;
+}
+
 export interface VcsCheckpointOps {
   readonly captureCheckpoint: (input: VcsCaptureCheckpointInput) => Effect.Effect<void, VcsError>;
   readonly hasCheckpointRef: (
@@ -50,6 +56,10 @@ export interface VcsCheckpointOps {
   readonly deleteCheckpointRefs: (
     input: VcsDeleteCheckpointRefsInput,
   ) => Effect.Effect<void, VcsError>;
+  // Avi Code addition: list checkpoint refs under a prefix for bulk cleanup.
+  readonly listCheckpointRefs: (
+    input: VcsListCheckpointRefsInput,
+  ) => Effect.Effect<ReadonlyArray<CheckpointRef>, VcsError>;
 }
 
 export class VcsDriver extends Context.Service<
