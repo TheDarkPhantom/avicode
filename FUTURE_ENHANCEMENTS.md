@@ -206,6 +206,13 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family
   visualization if lineage banners alone become difficult to navigate.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
+- Worktree cleanup marks a candidate `isActive` only when a referencing thread is in a supplied
+  active-thread set, which the scan currently leaves empty, so active-session detection relies on
+  the archived/settled signal plus the dirty check rather than live runtime session state. The disk
+  estimate is the recursive size of each worktree directory (the real duplicated cost); space that
+  `git gc` reclaims from `.git` is additional and not shown in the pre-delete total. Cleanup lists
+  on-disk worktrees only, so a dead thread whose worktree is already gone leaves its lingering local
+  branch untouched.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
 

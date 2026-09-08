@@ -9,6 +9,11 @@ export function checkpointRefForThreadTurn(threadId: ThreadId, turnCount: number
   );
 }
 
+// Avi Code addition: ref prefix covering every checkpoint ref for a thread.
+export function checkpointRefsPrefixForThread(threadId: ThreadId): string {
+  return `${CHECKPOINT_REFS_PREFIX}/${Encoding.encodeBase64Url(threadId)}`;
+}
+
 export function resolveThreadWorkspaceCwd(input: {
   readonly thread: {
     readonly projectId: ProjectId;

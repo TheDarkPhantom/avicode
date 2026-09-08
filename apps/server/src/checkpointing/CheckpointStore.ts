@@ -13,12 +13,17 @@
  *
  * @module CheckpointStore
  */
-import { VcsUnsupportedOperationError, type CheckpointRef } from "@t3tools/contracts";
+import {
+  VcsUnsupportedOperationError,
+  type CheckpointRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import type { CheckpointStoreError } from "./Errors.ts";
+import { checkpointRefsPrefixForThread } from "./Utils.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -93,6 +98,17 @@ export class CheckpointStore extends Context.Service<
     readonly deleteCheckpointRefs: (
       input: DeleteCheckpointRefsInput,
     ) => Effect.Effect<void, CheckpointStoreError>;
+
+    /**
+     * Avi Code addition: delete every checkpoint ref for a thread.
+     *
+     * Enumerates `refs/t3/checkpoints/<threadId>/*` then deletes them. Used by
+     * worktree cleanup to reclaim the loose objects a dead thread leaves behind.
+     */
+    readonly deleteThreadCheckpointRefs: (input: {
+      readonly cwd: string;
+      readonly threadId: ThreadId;
+    }) => Effect.Effect<void, CheckpointStoreError>;
   }
 >()("t3/checkpointing/CheckpointStore") {}
 
@@ -157,6 +173,23 @@ export const make = Effect.gen(function* () {
     return yield* checkpoints.deleteCheckpointRefs(input);
   });
 
+  // Avi Code addition: delete every checkpoint ref for a thread.
+  const deleteThreadCheckpointRefs: CheckpointStore["Service"]["deleteThreadCheckpointRefs"] =
+    Effect.fn("deleteThreadCheckpointRefs")(function* (input) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.deleteThreadCheckpointRefs",
+        input.cwd,
+      );
+      const refs = yield* checkpoints.listCheckpointRefs({
+        cwd: input.cwd,
+        refPrefix: checkpointRefsPrefixForThread(input.threadId),
+      });
+      if (refs.length === 0) {
+        return;
+      }
+      yield* checkpoints.deleteCheckpointRefs({ cwd: input.cwd, checkpointRefs: refs });
+    });
+
   return CheckpointStore.of({
     isGitRepository,
     captureCheckpoint,
@@ -164,6 +197,7 @@ export const make = Effect.gen(function* () {
     restoreCheckpoint,
     diffCheckpoints,
     deleteCheckpointRefs,
+    deleteThreadCheckpointRefs,
   });
 });
 

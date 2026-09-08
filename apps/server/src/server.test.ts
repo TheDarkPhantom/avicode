@@ -112,6 +112,8 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+// Avi Code addition: worktree cleanup
+import * as WorktreeCleanup from "./git/WorktreeCleanup.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
@@ -530,6 +532,11 @@ const buildAppUnderTest = (options?: {
       Layer.provideMerge(gitVcsDriverLayer),
       Layer.provideMerge(gitManagerLayer),
     );
+    // Avi Code addition: worktree cleanup is resolved by the ws handler.
+    const worktreeCleanupLayer = Layer.mock(WorktreeCleanup.WorktreeCleanupService)({
+      scan: () => Effect.succeed({ candidates: [], totalBytes: 0 }),
+      execute: () => Effect.succeed({ results: [], reclaimedBytes: 0 }),
+    });
     const vcsProvisioningLayer = VcsProvisioningService.layer.pipe(
       Layer.provide(vcsDriverRegistryLayer),
     );
@@ -690,7 +697,7 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(gitManagerLayer),
       Layer.provide(gitVcsDriverLayer),
-      Layer.provide(gitWorkflowLayer),
+      Layer.provide(Layer.merge(gitWorkflowLayer, worktreeCleanupLayer)),
       Layer.provide(reviewLayer),
       Layer.provide(vcsProvisioningLayer),
       Layer.provide(

@@ -174,6 +174,71 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
 
+// Avi Code addition: worktree cleanup (scan dead/finished worktrees per repo, then delete)
+export const WorktreeCleanupReason = Schema.Literals([
+  "archived",
+  "settled",
+  "pr-merged",
+  "pr-closed",
+  "orphaned",
+]);
+export type WorktreeCleanupReason = typeof WorktreeCleanupReason.Type;
+
+export const WorktreeCleanupCandidate = Schema.Struct({
+  worktreePath: TrimmedNonEmptyStringSchema,
+  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  threadId: Schema.NullOr(ThreadId),
+  threadIds: Schema.Array(ThreadId),
+  reason: WorktreeCleanupReason,
+  diskBytes: NonNegativeInt,
+  // Excluded-by-default safety flags surfaced in the preview.
+  isDirty: Schema.Boolean,
+  isActive: Schema.Boolean,
+});
+export type WorktreeCleanupCandidate = typeof WorktreeCleanupCandidate.Type;
+
+export const VcsScanCleanupInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  projectId: TrimmedNonEmptyStringSchema,
+});
+export type VcsScanCleanupInput = typeof VcsScanCleanupInput.Type;
+
+export const VcsScanCleanupResult = Schema.Struct({
+  candidates: Schema.Array(WorktreeCleanupCandidate),
+  totalBytes: NonNegativeInt,
+});
+export type VcsScanCleanupResult = typeof VcsScanCleanupResult.Type;
+
+export const VcsExecuteCleanupCandidateInput = Schema.Struct({
+  worktreePath: TrimmedNonEmptyStringSchema,
+  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  threadIds: Schema.Array(ThreadId),
+  diskBytes: NonNegativeInt,
+});
+export type VcsExecuteCleanupCandidateInput = typeof VcsExecuteCleanupCandidateInput.Type;
+
+export const VcsExecuteCleanupInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  candidates: Schema.Array(VcsExecuteCleanupCandidateInput),
+  deleteBranches: Schema.Boolean,
+  pruneCheckpoints: Schema.Boolean,
+  runGc: Schema.Boolean,
+});
+export type VcsExecuteCleanupInput = typeof VcsExecuteCleanupInput.Type;
+
+export const VcsCleanupCandidateResult = Schema.Struct({
+  worktreePath: TrimmedNonEmptyStringSchema,
+  ok: Schema.Boolean,
+  error: Schema.NullOr(Schema.String),
+});
+export type VcsCleanupCandidateResult = typeof VcsCleanupCandidateResult.Type;
+
+export const VcsExecuteCleanupResult = Schema.Struct({
+  results: Schema.Array(VcsCleanupCandidateResult),
+  reclaimedBytes: NonNegativeInt,
+});
+export type VcsExecuteCleanupResult = typeof VcsExecuteCleanupResult.Type;
+
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,

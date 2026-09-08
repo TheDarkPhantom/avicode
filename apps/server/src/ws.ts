@@ -107,6 +107,8 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+// Avi Code addition: worktree cleanup
+import * as WorktreeCleanup from "./git/WorktreeCleanup.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -388,6 +390,8 @@ const makeWsRpcLayer = (
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const editorDiscovery = yield* EditorDiscovery.EditorDiscovery;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+      // Avi Code addition: worktree cleanup
+      const worktreeCleanup = yield* WorktreeCleanup.WorktreeCleanupService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -1978,6 +1982,17 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.vcsRemoveWorktree,
             gitWorkflow.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            { "rpc.aggregate": "vcs" },
+          ),
+        // Avi Code addition: worktree cleanup
+        [WS_METHODS.vcsScanCleanupCandidates]: (input) =>
+          observeRpcEffect(WS_METHODS.vcsScanCleanupCandidates, worktreeCleanup.scan(input), {
+            "rpc.aggregate": "vcs",
+          }),
+        [WS_METHODS.vcsExecuteCleanup]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.vcsExecuteCleanup,
+            worktreeCleanup.execute(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "vcs" },
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>

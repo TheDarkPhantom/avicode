@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  CheckpointRef,
   GitCommandError,
   VcsProcessExitError,
   type VcsSwitchRefInput,
@@ -134,6 +135,30 @@ export interface GitRenameBranchInput {
 
 export interface GitRenameBranchResult {
   branch: string;
+}
+
+// Avi Code addition: worktree cleanup driver ops
+export interface GitWorktreeEntry {
+  path: string;
+  branch: string | null;
+  isMain: boolean;
+  isBare: boolean;
+  isDetached: boolean;
+  isLocked: boolean;
+}
+
+export interface GitDeleteBranchInput {
+  cwd: string;
+  branch: string;
+  force?: boolean;
+}
+
+export interface GitPruneWorktreesInput {
+  cwd: string;
+}
+
+export interface GitGcInput {
+  cwd: string;
 }
 
 export interface GitFetchPullRequestBranchInput {
@@ -277,6 +302,15 @@ export class GitVcsDriver extends Context.Service<
     readonly renameBranch: (
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;
+    // Avi Code addition: worktree cleanup driver ops
+    readonly listWorktrees: (input: {
+      cwd: string;
+    }) => Effect.Effect<ReadonlyArray<GitWorktreeEntry>, GitCommandError>;
+    readonly deleteBranch: (input: GitDeleteBranchInput) => Effect.Effect<void, GitCommandError>;
+    readonly pruneWorktrees: (
+      input: GitPruneWorktreesInput,
+    ) => Effect.Effect<void, GitCommandError>;
+    readonly gc: (input: GitGcInput) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;
@@ -869,6 +903,24 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         );
       },
     ),
+
+    // Avi Code addition: enumerate checkpoint refs under a prefix for bulk cleanup.
+    listCheckpointRefs: Effect.fn("GitVcsDriver.checkpoints.listCheckpointRefs")(function* (input) {
+      const result = yield* execute({
+        operation: "GitVcsDriver.checkpoints.listCheckpointRefs",
+        cwd: input.cwd,
+        args: ["for-each-ref", "--format=%(refname)", input.refPrefix],
+        allowNonZeroExit: true,
+      });
+      if (result.exitCode !== 0) {
+        return [] as ReadonlyArray<CheckpointRef>;
+      }
+      return result.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => CheckpointRef.make(line));
+    }),
   };
 
   return {

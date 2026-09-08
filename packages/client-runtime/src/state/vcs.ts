@@ -316,6 +316,20 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    // Avi Code addition: worktree cleanup (scan is read-only; execute mutates).
+    scanCleanup: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:scan-cleanup",
+      tag: WS_METHODS.vcsScanCleanupCandidates,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+    }),
+    executeCleanup: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:execute-cleanup",
+      tag: WS_METHODS.vcsExecuteCleanup,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
     createRef: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-ref",
       tag: WS_METHODS.vcsCreateRef,

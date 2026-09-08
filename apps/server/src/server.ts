@@ -77,6 +77,8 @@ import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+// Avi Code addition: worktree cleanup
+import * as WorktreeCleanup from "./git/WorktreeCleanup.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -308,6 +310,16 @@ const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive))),
 );
 
+// Avi Code addition: worktree cleanup. Deps are provided into the layer here
+// (GitWorkflowService, CheckpointStore, ProjectionThreadRepository) so only
+// ServerConfig and NodeServices (FileSystem/Path) bubble up to the outer level,
+// exactly like GitWorkflowLayerLive.
+const WorktreeCleanupLayerLive = WorktreeCleanup.layer.pipe(
+  Layer.provide(GitWorkflowLayerLive),
+  Layer.provide(CheckpointingLayerLive),
+  Layer.provide(PersistenceLayerLive),
+);
+
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
 const TerminalLayerLive = TerminalManager.layer.pipe(
@@ -362,7 +374,11 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
-  Layer.provideMerge(VcsLayerLive),
+  // Avi Code addition: worktree cleanup merged with the VCS layer (its deps —
+  // CheckpointStore, ProjectionThreadRepository, ServerConfig, FileSystem, Path
+  // — resolve from the surrounding runtime-core merge chain). Merged here rather
+  // than as its own `provideMerge` step because `.pipe` caps at 20 arguments.
+  Layer.provideMerge(Layer.mergeAll(VcsLayerLive, WorktreeCleanupLayerLive)),
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),

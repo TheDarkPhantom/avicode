@@ -94,6 +94,19 @@ export class GitWorkflowService extends Context.Service<
       readonly oldBranch: string;
       readonly newBranch: string;
     }) => Effect.Effect<{ readonly branch: string }, GitManagerServiceError>;
+    // Avi Code addition: worktree cleanup ops
+    readonly listWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<ReadonlyArray<GitVcsDriver.GitWorktreeEntry>, GitCommandError>;
+    readonly deleteBranch: (input: {
+      readonly cwd: string;
+      readonly branch: string;
+      readonly force?: boolean;
+    }) => Effect.Effect<void, GitCommandError>;
+    readonly pruneWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<void, GitCommandError>;
+    readonly gc: (input: { readonly cwd: string }) => Effect.Effect<void, GitCommandError>;
   }
 >()("t3/git/GitWorkflowService") {}
 
@@ -364,6 +377,21 @@ export const make = Effect.gen(function* () {
       ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(
         Effect.andThen(git.renameBranch(input)),
       ),
+    // Avi Code addition: worktree cleanup ops
+    listWorktrees: (input) =>
+      ensureGitCommand("GitWorkflowService.listWorktrees", input.cwd).pipe(
+        Effect.andThen(git.listWorktrees(input)),
+      ),
+    deleteBranch: (input) =>
+      ensureGitCommand("GitWorkflowService.deleteBranch", input.cwd).pipe(
+        Effect.andThen(git.deleteBranch(input)),
+      ),
+    pruneWorktrees: (input) =>
+      ensureGitCommand("GitWorkflowService.pruneWorktrees", input.cwd).pipe(
+        Effect.andThen(git.pruneWorktrees(input)),
+      ),
+    gc: (input) =>
+      ensureGitCommand("GitWorkflowService.gc", input.cwd).pipe(Effect.andThen(git.gc(input))),
   });
 });
 
