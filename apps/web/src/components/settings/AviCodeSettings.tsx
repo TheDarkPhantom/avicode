@@ -75,10 +75,7 @@ import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
 import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
 import { ChipsSettings } from "./ChipsSettings";
 import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
-import {
-  WorktreeCleanupDialog,
-  type WorktreeCleanupTarget,
-} from "./WorktreeCleanupDialog";
+import { WorktreeCleanupDialog, type WorktreeCleanupTarget } from "./WorktreeCleanupDialog";
 import {
   SettingResetButton,
   SettingsPageContainer,

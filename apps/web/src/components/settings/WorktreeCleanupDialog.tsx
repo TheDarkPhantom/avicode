@@ -113,11 +113,7 @@ function describeError(value: unknown): string {
   return "Unknown error.";
 }
 
-export function WorktreeCleanupDialog({
-  open,
-  onOpenChange,
-  targets,
-}: WorktreeCleanupDialogProps) {
+export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeCleanupDialogProps) {
   const scanCleanup = useAtomCommand(vcsEnvironment.scanCleanup, { reportFailure: false });
   const executeCleanup = useAtomCommand(vcsEnvironment.executeCleanup, { reportFailure: false });
 
