@@ -72,6 +72,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
+  // Avi Code addition: the browser "reopen closed tab" chord (Ctrl+Shift+T,
+  // Cmd+Shift+T on macOS), restoring the most recently archived thread. Gated
+  // off a focused terminal so it does not shadow the shell.
+  { key: "mod+shift+t", command: "thread.reopenLastArchived", when: "!terminalFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,

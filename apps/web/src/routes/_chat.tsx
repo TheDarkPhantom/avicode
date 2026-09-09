@@ -13,6 +13,7 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { ThreadAttentionChime } from "../components/ThreadAttentionChime";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useReopenLastArchivedThread } from "../hooks/useReopenLastArchivedThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -30,6 +31,7 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const reopenLastArchivedThread = useReopenLastArchivedThread();
   const sidebarV2Enabled = useSidebarV2Enabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -93,6 +95,13 @@ function ChatRouteGlobalShortcuts() {
       if (event.key === "Escape" && selectedThreadKeysSize > 0) {
         event.preventDefault();
         clearSelection();
+        return;
+      }
+
+      if (command === "thread.reopenLastArchived") {
+        event.preventDefault();
+        event.stopPropagation();
+        void reopenLastArchivedThread();
         return;
       }
 
@@ -194,6 +203,7 @@ function ChatRouteGlobalShortcuts() {
     defaultProjectRef,
     previewOpen,
     projectGroupCount,
+    reopenLastArchivedThread,
     routeThreadRef,
     selectedThreadKeysSize,
     sidebarV2Enabled,
