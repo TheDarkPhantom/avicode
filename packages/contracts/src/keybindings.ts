@@ -41,6 +41,10 @@ export const THREAD_KEYBINDING_COMMANDS = [
   // `mod+w` to the Electron window-close role outside a focused terminal, which
   // quits the desktop app; here it archives the open thread instead.
   "thread.archive",
+  // Avi Code addition: the reopen-closed-tab analogue. Restores the most
+  // recently archived thread and jumps to it, so archiving is reversible from
+  // the keyboard rather than only through Settings → Archived.
+  "thread.reopenLastArchived",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number];
