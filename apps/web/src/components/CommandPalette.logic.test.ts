@@ -169,7 +169,7 @@ describe("buildThreadActionItems", () => {
     expect(groups[0]?.items.map((item) => item.value)).toEqual(["thread:project-context-only"]);
   });
 
-  it("filters archived threads out of thread search items", () => {
+  it("filters archived threads out of thread search items by default", () => {
     const items = buildThreadActionItems({
       threads: [
         makeThread({
@@ -192,6 +192,45 @@ describe("buildThreadActionItems", () => {
     });
 
     expect(items.map((item) => item.value)).toEqual(["thread:thread-active"]);
+  });
+
+  it("includes archived threads after active ones when includeArchived is set", () => {
+    const items = buildThreadActionItems({
+      threads: [
+        // Archived thread is the most recently updated, but must still rank below active threads.
+        makeThread({
+          id: ThreadId.make("thread-archived"),
+          title: "Archived thread",
+          archivedAt: "2026-03-24T00:00:00.000Z",
+          updatedAt: "2026-03-24T00:00:00.000Z",
+        }),
+        makeThread({
+          id: ThreadId.make("thread-active"),
+          title: "Active thread",
+          createdAt: "2026-03-02T00:00:00.000Z",
+          updatedAt: "2026-03-19T00:00:00.000Z",
+        }),
+      ],
+      projectTitleById: new Map([[PROJECT_ID, "Project"]]),
+      sortOrder: "updated_at",
+      icon: null,
+      includeArchived: true,
+      runThread: async (_thread) => undefined,
+    });
+
+    expect(items.map((item) => item.value)).toEqual([
+      "thread:thread-active",
+      "thread:thread-archived",
+    ]);
+
+    const archivedItem = items.find((item) => item.value === "thread:thread-archived");
+    // Archived results are marked in the description but not in searchTerms, so the query
+    // "archived" does not match every archived thread.
+    expect(archivedItem?.description).toContain("Archived");
+    expect(archivedItem?.searchTerms).not.toContain("Archived");
+
+    const activeItem = items.find((item) => item.value === "thread:thread-active");
+    expect(activeItem?.description).not.toContain("Archived");
   });
 });
 

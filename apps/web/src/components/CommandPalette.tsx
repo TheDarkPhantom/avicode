@@ -929,6 +929,29 @@ function OpenCommandPaletteDialog(props: {
     [activeThreadId, clientSettings.sidebarThreadSortOrder, navigate, projectTitleById, threads],
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
+  // Avi Code addition: search (unlike the Recent Threads list) also matches archived threads so old
+  // conversations can be found and reopened by title.
+  const searchThreadItems = useMemo(
+    () =>
+      buildThreadActionItems({
+        threads,
+        ...(activeThreadId ? { activeThreadId } : {}),
+        projectTitleById,
+        sortOrder: clientSettings.sidebarThreadSortOrder,
+        icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+        renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
+        renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
+        includeArchived: true,
+        runThread: async (thread) => {
+          acknowledgeThreadVisit(scopeThreadRef(thread.environmentId, thread.id));
+          await navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+          });
+        },
+      }),
+    [activeThreadId, clientSettings.sidebarThreadSortOrder, navigate, projectTitleById, threads],
+  );
 
   const pushPaletteView = useCallback(
     (view: CommandPaletteView): void => {
@@ -1378,7 +1401,7 @@ function OpenCommandPaletteDialog(props: {
     query: deferredQuery,
     isInSubmenu: currentView !== null,
     projectSearchItems: projectSearchItems,
-    threadSearchItems: allThreadItems,
+    threadSearchItems: searchThreadItems,
   });
 
   const handleAddProjectForEnvironment = useCallback(

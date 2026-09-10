@@ -116,11 +116,28 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   renderTrailingContent?: (thread: TThread) => ReactNode;
   runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
   limit?: number;
+  /**
+   * Avi Code addition: when true, archived threads are included (sorted after active threads so
+   * active matches always rank first). Defaults to false, keeping the active-only behavior used by
+   * the "Recent Threads" list.
+   */
+  includeArchived?: boolean;
 }): CommandPaletteActionItem[] {
-  const sortedThreads = sortThreads(
+  const activeThreads = sortThreads(
     input.threads.filter((thread) => thread.archivedAt === null),
     input.sortOrder,
   );
+  // Avi Code addition: append archived threads after active ones so title search can surface old
+  // conversations without letting them outrank active matches.
+  const sortedThreads = input.includeArchived
+    ? [
+        ...activeThreads,
+        ...sortThreads(
+          input.threads.filter((thread) => thread.archivedAt !== null),
+          input.sortOrder,
+        ),
+      ]
+    : activeThreads;
   const visibleThreads =
     input.limit === undefined ? sortedThreads : sortedThreads.slice(0, input.limit);
 
@@ -136,6 +153,11 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     }
     if (thread.id === input.activeThreadId) {
       descriptionParts.push("Current thread");
+    }
+    // Avi Code addition: mark archived results so they are distinguishable in search. Not added to
+    // searchTerms, so "archived" as a query does not match every archived thread.
+    if (thread.archivedAt !== null) {
+      descriptionParts.push("Archived");
     }
 
     const leadingContent = input.renderLeadingContent?.(thread);
