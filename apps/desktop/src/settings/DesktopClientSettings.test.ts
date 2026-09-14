@@ -226,6 +226,76 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("defaults only an invalid field and keeps the valid ones", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          `{ "glassOpacity": 200, "timestampFormat": "24-hour" }\n`,
+        );
+
+        const persisted = yield* settings.get;
+        assert.isTrue(Option.isSome(persisted));
+        if (Option.isSome(persisted)) {
+          assert.equal(persisted.value.glassOpacity, clientSettings.glassOpacity);
+          assert.equal(persisted.value.timestampFormat, "24-hour");
+        }
+      }),
+    ),
+  );
+
+  it.effect("salvages valid fields inside a legacy wrapper with an invalid field", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          `{ "settings": { "glassOpacity": 200, "timestampFormat": "12-hour" } }\n`,
+        );
+
+        const persisted = yield* settings.get;
+        assert.isTrue(Option.isSome(persisted));
+        if (Option.isSome(persisted)) {
+          assert.equal(persisted.value.glassOpacity, clientSettings.glassOpacity);
+          assert.equal(persisted.value.timestampFormat, "12-hour");
+        }
+      }),
+    ),
+  );
+
+  it.effect("defaults multiple invalid fields independently", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          `{ "glassOpacity": 200, "environmentIdentificationMode": "nonsense", "timestampFormat": "24-hour" }\n`,
+        );
+
+        const persisted = yield* settings.get;
+        assert.isTrue(Option.isSome(persisted));
+        if (Option.isSome(persisted)) {
+          assert.equal(persisted.value.glassOpacity, clientSettings.glassOpacity);
+          assert.equal(
+            persisted.value.environmentIdentificationMode,
+            clientSettings.environmentIdentificationMode,
+          );
+          assert.equal(persisted.value.timestampFormat, "24-hour");
+        }
+      }),
+    ),
+  );
+
   it.effect("treats malformed client settings documents as absent", () =>
     withClientSettings(
       Effect.gen(function* () {

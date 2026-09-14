@@ -226,6 +226,10 @@
     "./avicodeIdentity": {
       "types": "./src/avicodeIdentity.ts",
       "import": "./src/avicodeIdentity.ts"
+    },
+    "./resilientClientSettings": {
+      "types": "./src/resilientClientSettings.ts",
+      "import": "./src/resilientClientSettings.ts"
     }
   },
   "scripts": {

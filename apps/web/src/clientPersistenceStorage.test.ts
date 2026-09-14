@@ -52,7 +52,7 @@ describe("clientPersistenceStorage", () => {
     expect(readBrowserClientSettings()).toEqual(settings);
   });
 
-  it("reports structured decode failures while preserving the fallback", async () => {
+  it("reports unparseable blobs while preserving the fallback", async () => {
     const testWindow = getTestWindow();
     testWindow.localStorage.setItem("t3code:client-settings:v1", "not-json");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -60,12 +60,69 @@ describe("clientPersistenceStorage", () => {
 
     expect(readBrowserClientSettings()).toBeNull();
     expect(consoleError).toHaveBeenCalledWith(
-      "Could not read persisted client settings.",
+      "Could not parse persisted client settings.",
+      expect.anything(),
+    );
+  });
+
+  it("defaults only an invalid field and preserves the valid ones", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        glassOpacity: 200,
+        timestampFormat: "24-hour",
+      }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+    const settings = readBrowserClientSettings();
+
+    expect(settings).toEqual(
       expect.objectContaining({
-        _tag: "LocalStorageOperationError",
-        operation: "decode",
-        storageKey: "t3code:client-settings:v1",
-        cause: expect.anything(),
+        glassOpacity: DEFAULT_CLIENT_SETTINGS.glassOpacity,
+        timestampFormat: "24-hour",
+      }),
+    );
+  });
+
+  it("defaults multiple invalid fields independently", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        glassOpacity: 200,
+        environmentIdentificationMode: "nonsense",
+        timestampFormat: "24-hour",
+      }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+    const settings = readBrowserClientSettings();
+
+    expect(settings).toEqual(
+      expect.objectContaining({
+        glassOpacity: DEFAULT_CLIENT_SETTINGS.glassOpacity,
+        environmentIdentificationMode: DEFAULT_CLIENT_SETTINGS.environmentIdentificationMode,
+        timestampFormat: "24-hour",
+      }),
+    );
+  });
+
+  it("drops a record field that violates its constraint", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        aviCodeProviderBadgeLabels: { anthropic: "toolong" },
+        timestampFormat: "24-hour",
+      }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+    const settings = readBrowserClientSettings();
+
+    expect(settings).toEqual(
+      expect.objectContaining({
+        aviCodeProviderBadgeLabels: DEFAULT_CLIENT_SETTINGS.aviCodeProviderBadgeLabels,
+        timestampFormat: "24-hour",
       }),
     );
   });
