@@ -1,5 +1,6 @@
 import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { decodeClientSettingsResilient } from "@t3tools/shared/resilientClientSettings";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -12,22 +13,30 @@ import * as Ref from "effect/Ref";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
-const ClientSettingsDocumentSchema = Schema.Struct({
-  settings: ClientSettingsSchema,
-});
-
 const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
-const LegacyClientSettingsDocumentJson = fromLenientJson(ClientSettingsDocumentSchema);
-const decodeLegacyClientSettingsDocumentJson = Schema.decodeEffect(
-  LegacyClientSettingsDocumentJson,
-);
-const decodeClientSettingsJsonValue = Schema.decodeEffect(ClientSettingsJson);
+
+// Avi Code addition: parse the file to an unknown value, unwrap the legacy
+// `{ settings: {...} }` document, then decode field-by-field so one invalid
+// saved value defaults just that field instead of discarding the whole file.
+// Only a genuinely unparseable file fails with SchemaError (handled below by
+// treating it as absent).
+const ClientSettingsRawJson = fromLenientJson(Schema.Unknown);
+const decodeClientSettingsRawJson = Schema.decodeEffect(ClientSettingsRawJson);
+
+function unwrapLegacyClientSettingsDocument(value: unknown): unknown {
+  if (value !== null && typeof value === "object" && !Array.isArray(value) && "settings" in value) {
+    const settings = (value as { settings: unknown }).settings;
+    if (settings !== null && typeof settings === "object" && !Array.isArray(settings)) {
+      return settings;
+    }
+  }
+  return value;
+}
+
 const decodeClientSettingsJson = (raw: string): Effect.Effect<ClientSettings, Schema.SchemaError> =>
-  decodeLegacyClientSettingsDocumentJson(raw).pipe(
-    Effect.map((document) => document.settings),
-    Effect.catchTags({
-      SchemaError: () => decodeClientSettingsJsonValue(raw),
-    }),
+  decodeClientSettingsRawJson(raw).pipe(
+    Effect.map(unwrapLegacyClientSettingsDocument),
+    Effect.map(decodeClientSettingsResilient),
   );
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
 

@@ -44,6 +44,7 @@ Upstream: t3code 0.0.31
 
 - Reopen the most recently archived thread with Ctrl+Shift+T (#228)
 - Ctrl+K search now finds archived threads so you can reopen old conversations by name (#229)
+- Your settings survive a reload when one saved value is invalid (#230)
 
 ## 0.0.31-avicode.9.14 (2026-09-09)
 
