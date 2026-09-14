@@ -24,12 +24,7 @@ const ClientSettingsRawJson = fromLenientJson(Schema.Unknown);
 const decodeClientSettingsRawJson = Schema.decodeEffect(ClientSettingsRawJson);
 
 function unwrapLegacyClientSettingsDocument(value: unknown): unknown {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    "settings" in value
-  ) {
+  if (value !== null && typeof value === "object" && !Array.isArray(value) && "settings" in value) {
     const settings = (value as { settings: unknown }).settings;
     if (settings !== null && typeof settings === "object" && !Array.isArray(settings)) {
       return settings;

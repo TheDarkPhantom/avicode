@@ -9,7 +9,11 @@
 // This decodes field-by-field first: any field whose value fails validation is
 // dropped so the struct-level default refills it, while every other valid field
 // survives. Only a truly unusable blob falls all the way back to defaults.
-import { ClientSettingsSchema, DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "@t3tools/contracts";
+import {
+  ClientSettingsSchema,
+  DEFAULT_CLIENT_SETTINGS,
+  type ClientSettings,
+} from "@t3tools/contracts";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
