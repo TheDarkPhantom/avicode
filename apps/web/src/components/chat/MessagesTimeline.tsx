@@ -52,6 +52,7 @@ import {
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
+  BrainIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -189,6 +190,9 @@ interface TimelineRowSharedState {
    */
   expandedWorkEntryIds: ReadonlySet<string>;
   onToggleWorkEntry: (entryId: string) => void;
+  /** Open thinking traces, lifted here for the same virtualizer reason. */
+  expandedReasoningMessageIds: ReadonlySet<string>;
+  onToggleReasoning: (messageId: string) => void;
   /** Avi Code addition: brings an expanded plan's top into view. */
   onProposedPlanExpanded: (planElement: HTMLElement) => void;
   expandedPlanIds: ReadonlySet<string>;
@@ -204,6 +208,8 @@ interface TimelineRowActivityState {
   isForkingThread: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
+  /** The same value row derivation uses, so a thinking row and the fold agree. */
+  unsettledTurnId: TurnId | null;
 }
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
@@ -337,6 +343,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [expandedWorkEntryIds, setExpandedWorkEntryIds] = useState<ReadonlySet<string>>(new Set());
+  const [expandedReasoningMessageIds, setExpandedReasoningMessageIds] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const persistedPlanReadingState = useUiStateStore(
     (store) => store.threadPlanReadingStateById[routeThreadKey],
   );
@@ -379,6 +388,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         next.delete(entryId);
       } else {
         next.add(entryId);
+      }
+      return next;
+    });
+  }, []);
+  const onToggleReasoning = useCallback((messageId: string) => {
+    setExpandedReasoningMessageIds((existing) => {
+      const next = new Set(existing);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
       }
       return next;
     });
@@ -916,6 +936,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       expandedWorkEntryIds,
       onToggleWorkEntry,
+      expandedReasoningMessageIds,
+      onToggleReasoning,
       onProposedPlanExpanded,
       expandedPlanIds,
       onProposedPlanExpandedChange,
@@ -942,6 +964,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       expandedWorkEntryIds,
       onToggleWorkEntry,
+      expandedReasoningMessageIds,
+      onToggleReasoning,
       onProposedPlanExpanded,
       expandedPlanIds,
       onProposedPlanExpandedChange,
@@ -957,6 +981,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isForkingThread,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
+      unsettledTurnId: settleFreezeUnsettledTurnId,
     }),
     [
       activeTurnInProgress,
@@ -965,6 +990,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isRevertingCheckpoint,
       isWorking,
       latestTurn?.turnId,
+      settleFreezeUnsettledTurnId,
     ],
   );
 
@@ -1595,6 +1621,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         // Commentary (non-terminal assistant) rows carry no metadata row, so
         // they sit closer to the work that follows them.
         (row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta) ||
+          (row.kind === "message" && row.message.role === "reasoning") ||
           row.kind === "work" ||
           row.kind === "work-toggle"
           ? "pb-2"
@@ -1613,6 +1640,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
+      ) : null}
+      {row.kind === "message" && row.message.role === "reasoning" ? (
+        <ReasoningTimelineRow row={row} />
       ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
@@ -1986,6 +2016,56 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * A provider's thinking trace (upstream #11784). On Opus 5.5 this also carries
+ * the short notes the model writes between tool calls. Collapsed by default:
+ * it is context for the answer, not the answer.
+ */
+function ReasoningTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const { isWorking, unsettledTurnId } = use(TimelineRowActivityCtx);
+  const { message } = row;
+  // A block left open by a crashed provider never gets its completion. Only
+  // the live turn may claim to still be thinking.
+  const streaming =
+    Boolean(message.streaming) &&
+    isWorking &&
+    message.turnId !== null &&
+    message.turnId === unsettledTurnId;
+  const expanded = ctx.expandedReasoningMessageIds.has(message.id);
+  const Icon = expanded ? ChevronDownIcon : ChevronRightIcon;
+
+  if (message.text.trim().length === 0 && !streaming) {
+    return null;
+  }
+
+  return (
+    <div className="min-w-0 px-1 py-0.5">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => ctx.onToggleReasoning(message.id)}
+        className="flex cursor-pointer select-none items-center gap-1.5 rounded-md text-muted-foreground text-xs transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      >
+        <BrainIcon aria-hidden className="size-3.5 opacity-70" />
+        <span>{streaming ? "Thinking" : "Thought"}</span>
+        <Icon aria-hidden className="size-3.5" />
+      </button>
+      {expanded ? (
+        <div className="mt-1 ms-5 max-h-96 overflow-auto rounded-md bg-muted/40 px-3 py-2 text-muted-foreground select-text">
+          <ChatMarkdown
+            text={message.text}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={streaming}
+            skills={ctx.skills}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

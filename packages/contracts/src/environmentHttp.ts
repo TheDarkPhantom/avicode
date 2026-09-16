@@ -457,6 +457,12 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
   threadId: ThreadId,
 });
 
+// Query-string opt-ins for thread snapshots (GET payloads must encode to
+// strings). Omitting them keeps the default snapshot shape.
+const EnvironmentOrchestrationThreadSnapshotQuery = {
+  reasoningMessages: Schema.optional(Schema.Literal("true")),
+};
+
 export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
   .add(
     HttpApiEndpoint.get("snapshot", "/api/orchestration/snapshot", {
@@ -476,6 +482,7 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
     HttpApiEndpoint.get("threadSnapshot", "/api/orchestration/threads/:threadId", {
       headers: OptionalBearerHeaders,
       params: EnvironmentOrchestrationThreadSnapshotParams,
+      payload: EnvironmentOrchestrationThreadSnapshotQuery,
       success: OrchestrationThreadDetailSnapshot,
       error: EnvironmentOrchestrationThreadSnapshotErrors,
     }).middleware(EnvironmentAuthenticatedAuth),

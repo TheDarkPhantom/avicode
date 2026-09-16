@@ -130,7 +130,7 @@ const THREAD_TITLE_CONTEXT_TRUNCATION_MARKER = "[Earlier content truncated]\n\n"
 
 function formatThreadTitleContext(
   messages: ReadonlyArray<{
-    readonly role: "user" | "assistant" | "system";
+    readonly role: "user" | "assistant" | "system" | "reasoning";
     readonly text: string;
     readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   }>,
@@ -143,7 +143,9 @@ function formatThreadTitleContext(
   const retainedAttachments: Array<ChatAttachment> = [];
 
   for (const message of messages.toReversed()) {
-    if (message.role === "system") {
+    // Thinking traces are working notes, not what the thread is about, and they
+    // dwarf the answer they precede. Titling on them would be worse and costlier.
+    if (message.role === "system" || message.role === "reasoning") {
       continue;
     }
     const text = message.text.trim();
