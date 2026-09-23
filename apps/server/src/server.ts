@@ -79,6 +79,7 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 // Avi Code addition: worktree cleanup
 import * as WorktreeCleanup from "./git/WorktreeCleanup.ts";
+import * as WorktreeHealthMonitor from "./git/WorktreeHealthMonitor.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -312,12 +313,21 @@ const CheckpointingLayerLive = Layer.empty.pipe(
 
 // Avi Code addition: worktree cleanup. Deps are provided into the layer here
 // (GitWorkflowService, CheckpointStore, ProjectionThreadRepository) so only
-// ServerConfig and NodeServices (FileSystem/Path) bubble up to the outer level,
-// exactly like GitWorkflowLayerLive.
+// ServerConfig, ProviderSessionDirectory, and NodeServices (FileSystem/Path)
+// bubble up to the outer level, exactly like GitWorkflowLayerLive.
 const WorktreeCleanupLayerLive = WorktreeCleanup.layer.pipe(
   Layer.provide(GitWorkflowLayerLive),
   Layer.provide(CheckpointingLayerLive),
   Layer.provide(PersistenceLayerLive),
+);
+
+// Avi Code addition: background worktree health monitor. WorktreeCleanupService
+// is provided here (same layer reference as the merge below, so Effect memoizes
+// to one instance); its remaining deps (ProjectionProjectRepository,
+// ServerSettingsService, ServerConfig, BackgroundPolicy, ProviderSessionDirectory)
+// bubble up and resolve from the runtime-core merge chain.
+const WorktreeHealthMonitorLayerLive = WorktreeHealthMonitor.layer.pipe(
+  Layer.provide(WorktreeCleanupLayerLive),
 );
 
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
@@ -378,7 +388,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // CheckpointStore, ProjectionThreadRepository, ServerConfig, FileSystem, Path
   // — resolve from the surrounding runtime-core merge chain). Merged here rather
   // than as its own `provideMerge` step because `.pipe` caps at 20 arguments.
-  Layer.provideMerge(Layer.mergeAll(VcsLayerLive, WorktreeCleanupLayerLive)),
+  Layer.provideMerge(
+    Layer.mergeAll(VcsLayerLive, WorktreeCleanupLayerLive, WorktreeHealthMonitorLayerLive),
+  ),
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),

@@ -12,6 +12,15 @@
  * `computeCleanupCandidates` is a pure function (unit-tested without git) so the
  * classification and safety rules can be verified in isolation.
  *
+ * Removal deletes the worktree directory directly (Effect `FileSystem.remove`
+ * with a long-path-namespaced path) instead of `git worktree remove --force`.
+ * On Windows the git command fails with "Filename too long" on deep
+ * `node_modules` paths and is capped at a 15s timeout
+ * (`GitVcsDriverCore.ts` removeWorktree), so it reclaimed nothing on the exact
+ * worktrees this feature exists to clean. A single `git worktree prune` after
+ * the deletes clears git's now-stale bookkeeping. This matches the documented
+ * Windows runbook in `docs/reference/agent-recipes.md`.
+ *
  * @module WorktreeCleanup
  */
 import {
@@ -31,10 +40,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schedule from "effect/Schedule";
 
 import { CheckpointStore } from "../checkpointing/CheckpointStore.ts";
 import { ServerConfig } from "../config.ts";
 import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
 import { GitWorkflowService } from "./GitWorkflowService.ts";
 
 export type PrState = "open" | "closed" | "merged";
@@ -200,6 +211,15 @@ export class WorktreeCleanupService extends Context.Service<
     readonly scan: (
       input: VcsScanCleanupInput,
     ) => Effect.Effect<VcsScanCleanupResult, GitCommandError>;
+    /**
+     * Like `scan` but skips the recursive on-disk size walk. Used by the
+     * background health monitor, which only needs candidate counts across many
+     * projects and cannot afford to walk every worktree's `node_modules` on each
+     * sweep. Candidates carry `diskBytes: 0`.
+     */
+    readonly classify: (
+      input: VcsScanCleanupInput,
+    ) => Effect.Effect<ReadonlyArray<WorktreeCleanupCandidate>, GitCommandError>;
     readonly execute: (
       input: VcsExecuteCleanupInput,
     ) => Effect.Effect<VcsExecuteCleanupResult, GitCommandError>;
@@ -210,9 +230,26 @@ export const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService;
   const checkpointStore = yield* CheckpointStore;
   const threadRepository = yield* ProjectionThreadRepository;
+  const sessionDirectory = yield* ProviderSessionDirectory;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const { worktreesDir } = yield* ServerConfig;
+
+  // Threads with a live (non-stopped) provider session. A worktree they use is
+  // surfaced as `isActive` so both the manual dialog and the auto monitor leave
+  // it unchecked. Failure resolves to empty rather than aborting the scan.
+  const resolveActiveThreadIds = (): Effect.Effect<ReadonlySet<ThreadId>> =>
+    sessionDirectory.listBindings().pipe(
+      Effect.map(
+        (bindings) =>
+          new Set(
+            bindings
+              .filter((binding) => binding.status !== "stopped")
+              .map((binding) => binding.threadId),
+          ),
+      ),
+      Effect.orElseSucceed(() => new Set<ThreadId>()),
+    );
 
   // Recursive on-disk size of a worktree dir. `readDirectory` does not recurse
   // into symlinked directories, so there is no cycle risk; broken/denied stats
@@ -275,10 +312,19 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const scan: WorktreeCleanupService["Service"]["scan"] = Effect.fn("WorktreeCleanupService.scan")(
-    function* (input) {
-      const threads = yield* listThreads(input.projectId);
-      const worktrees = yield* gitWorkflow.listWorktrees({ cwd: input.cwd });
+  // Shared scan+classify core. `includeDiskBytes` toggles the recursive on-disk
+  // size walk; everything else (thread reconciliation, PR lookup, dirty check,
+  // active-session detection) is identical.
+  const classifyCandidates = (
+    input: VcsScanCleanupInput,
+    options: { readonly includeDiskBytes: boolean },
+  ): Effect.Effect<ReadonlyArray<WorktreeCleanupCandidate>, GitCommandError> =>
+    Effect.gen(function* () {
+      const [threads, worktrees, activeThreadIds] = yield* Effect.all([
+        listThreads(input.projectId),
+        gitWorkflow.listWorktrees({ cwd: input.cwd }),
+        resolveActiveThreadIds(),
+      ]);
 
       const eligible = worktrees.filter(
         (worktree) => !worktree.isMain && isUnderWorktreesDir(worktree.path, worktreesDir),
@@ -317,14 +363,16 @@ export const make = Effect.gen(function* () {
         prStateByPath,
         dirtyByPath: new Map(),
         diskBytesByPath: new Map(),
-        activeThreadIds: new Set(),
+        activeThreadIds,
       });
 
-      const candidates: ReadonlyArray<WorktreeCleanupCandidate> = yield* Effect.forEach(
+      return yield* Effect.forEach(
         preliminary,
         (candidate) =>
           Effect.all([
-            directorySizeBytes(candidate.worktreePath),
+            options.includeDiskBytes
+              ? directorySizeBytes(candidate.worktreePath)
+              : Effect.succeed(0),
             isDirtyFor(candidate.worktreePath),
           ]).pipe(
             Effect.map(([diskBytes, isDirty]) => ({
@@ -340,11 +388,21 @@ export const make = Effect.gen(function* () {
           ),
         { concurrency: 4 },
       );
+    });
 
+  const scan: WorktreeCleanupService["Service"]["scan"] = Effect.fn("WorktreeCleanupService.scan")(
+    function* (input) {
+      const candidates = yield* classifyCandidates(input, { includeDiskBytes: true });
       const totalBytes = candidates.reduce((sum, candidate) => sum + candidate.diskBytes, 0);
       return { candidates, totalBytes } satisfies VcsScanCleanupResult;
     },
   );
+
+  const classify: WorktreeCleanupService["Service"]["classify"] = Effect.fn(
+    "WorktreeCleanupService.classify",
+  )(function* (input) {
+    return yield* classifyCandidates(input, { includeDiskBytes: false });
+  });
 
   const execute: WorktreeCleanupService["Service"]["execute"] = Effect.fn(
     "WorktreeCleanupService.execute",
@@ -365,11 +423,16 @@ export const make = Effect.gen(function* () {
       }
 
       const outcome = yield* Effect.gen(function* () {
-        yield* gitWorkflow.removeWorktree({
-          cwd: input.cwd,
-          path: candidate.worktreePath,
-          force: true,
-        });
+        // Delete the directory directly rather than `git worktree remove`, which
+        // fails on Windows deep paths and times out. `toNamespacedPath` adds the
+        // `\\?\` long-path prefix on Windows (no-op elsewhere). Retry a few times
+        // to ride out transient EBUSY/EPERM from AV/indexers holding a handle.
+        yield* fileSystem
+          .remove(path.toNamespacedPath(candidate.worktreePath), {
+            recursive: true,
+            force: true,
+          })
+          .pipe(Effect.retry({ times: 3, schedule: Schedule.spaced("500 millis") }));
         if (input.deleteBranches && candidate.branch !== null) {
           yield* gitWorkflow
             .deleteBranch({ cwd: input.cwd, branch: candidate.branch, force: true })
@@ -406,7 +469,7 @@ export const make = Effect.gen(function* () {
     return { results, reclaimedBytes } satisfies VcsExecuteCleanupResult;
   });
 
-  return WorktreeCleanupService.of({ scan, execute });
+  return WorktreeCleanupService.of({ scan, classify, execute });
 });
 
 export const layer = Layer.effect(WorktreeCleanupService, make);

@@ -206,13 +206,19 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Persist an in-progress message-fork edit across app restarts and add an optional fork-family
   visualization if lineage banners alone become difficult to navigate.
 - Conflict-aware two-way T3/Avi conversation merging instead of snapshot replacement.
-- Worktree cleanup marks a candidate `isActive` only when a referencing thread is in a supplied
-  active-thread set, which the scan currently leaves empty, so active-session detection relies on
-  the archived/settled signal plus the dirty check rather than live runtime session state. The disk
-  estimate is the recursive size of each worktree directory (the real duplicated cost); space that
-  `git gc` reclaims from `.git` is additional and not shown in the pre-delete total. Cleanup lists
-  on-disk worktrees only, so a dead thread whose worktree is already gone leaves its lingering local
-  branch untouched.
+- Worktree cleanup now marks `isActive` from live provider-session bindings (non-stopped sessions),
+  so an active chat's worktree stays unchecked in both the manual dialog and the background monitor.
+  The disk estimate is still the recursive size of each worktree directory (the real duplicated
+  cost); space that `git gc` reclaims from `.git` is additional and not shown in the pre-delete
+  total. Cleanup lists on-disk worktrees only, so a dead thread whose worktree is already gone leaves
+  its lingering local branch untouched.
+- Worktree health monitor follow-ups: a "PR closed without merge" worktree is deliberately left for
+  manual cleanup (never auto-removed); worktrees with uncommitted changes are never auto-removed;
+  and a git-locked worktree survives `git worktree prune`, so its stale metadata lingers until
+  unlocked. A pool of N reusable worktree slots per repo (recycled by rebase when a 13th chat opens)
+  was considered as an alternative to threshold-based cleanup and deferred: it changes how every new
+  chat starts, needs rules for when all slots are busy, and an old chat reopened on a recycled slot
+  would see another chat's files. The threshold approach bounds disk using code that already ships.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
 

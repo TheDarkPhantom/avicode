@@ -30,6 +30,12 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("requires the operate scope to run the worktree health check", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.vcsRunWorktreeHealthCheck)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("allows relay status reads without granting relay installation access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
       AuthRelayReadScope,
