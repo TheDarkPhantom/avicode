@@ -30,6 +30,7 @@ import {
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowUpIcon,
+  ChartNoAxesColumnIcon,
   CornerLeftUpIcon,
   FolderIcon,
   FolderPlusIcon,
@@ -1371,6 +1372,20 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  // Avi Code addition: jump to the usage page from the palette (upstream #12211).
+  // Upstream also adds a pull-requests entry, but this fork has no /pull-requests
+  // route, so only the usage entry is ported.
+  actionItems.push({
+    kind: "action",
+    value: "action:usage",
+    searchTerms: ["usage", "use", "tokens", "cost", "spend", "limits", "stats", "analytics"],
+    title: "Open usage",
+    icon: <ChartNoAxesColumnIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/usage" });
+    },
+  });
 
   actionItems.push({
     kind: "action",
