@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { EditorId } from "@t3tools/contracts";
 
-import {
-  buildFileContextMenuItems,
-  resolveFileContextMenuAbsolutePath,
-} from "./fileContextMenu";
+import { buildFileContextMenuItems, resolveFileContextMenuAbsolutePath } from "./fileContextMenu";
 
 describe("resolveFileContextMenuAbsolutePath", () => {
   it("returns null for an empty path", () => {
@@ -59,7 +56,10 @@ describe("buildFileContextMenuItems", () => {
 
     expect(items.map((item) => item.id)).toEqual(["reveal-in-folder", "open-with"]);
     const openWith = items.find((item) => item.id === "open-with");
-    expect(openWith?.children?.map((child) => child.id)).toEqual(["editor:vscode", "editor:cursor"]);
+    expect(openWith?.children?.map((child) => child.id)).toEqual([
+      "editor:vscode",
+      "editor:cursor",
+    ]);
   });
 
   it("omits reveal when the file manager is unavailable", () => {

@@ -314,8 +314,7 @@ export default function FileBrowserPanel({
       : { x: anchorRect.left, y: anchorRect.bottom };
     // Avi Code addition: reveal / open-with actions, only for file entries.
     const fileTarget = { environmentId, filePath: relativePath, workspaceRoot: cwd };
-    const fileMenuItems =
-      item.kind === "file" ? fileContextMenu.buildItems(fileTarget) : [];
+    const fileMenuItems = item.kind === "file" ? fileContextMenu.buildItems(fileTarget) : [];
     try {
       const clicked = await api.contextMenu.show(
         [

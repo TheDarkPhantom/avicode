@@ -219,8 +219,14 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
 }) {
-  const { files, allDirectoriesExpanded, onOpenTurnDiff, onFileContextMenu, resolvedTheme, turnId } =
-    props;
+  const {
+    files,
+    allDirectoriesExpanded,
+    onOpenTurnDiff,
+    onFileContextMenu,
+    resolvedTheme,
+    turnId,
+  } = props;
   const treeNodes = useMemo(() => buildTurnDiffTree(files), [files]);
   const directoryPathsKey = useMemo(
     () => collectDirectoryPaths(treeNodes).join("\u0000"),

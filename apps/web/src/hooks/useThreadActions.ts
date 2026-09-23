@@ -226,12 +226,7 @@ export function useThreadActions() {
 
       return archiveResult;
     },
-    [
-      archiveThreadMutation,
-      getCurrentRouteThreadRef,
-      resolveThreadTarget,
-      unarchiveThreadMutation,
-    ],
+    [archiveThreadMutation, getCurrentRouteThreadRef, resolveThreadTarget, unarchiveThreadMutation],
   );
 
   const unarchiveThread = useCallback(
