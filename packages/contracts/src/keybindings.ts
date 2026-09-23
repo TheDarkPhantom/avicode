@@ -45,6 +45,8 @@ export const THREAD_KEYBINDING_COMMANDS = [
   // recently archived thread and jumps to it, so archiving is reversible from
   // the keyboard rather than only through Settings → Archived.
   "thread.reopenLastArchived",
+  // Avi Code addition: undo the last settle/snooze/archive (upstream #12848).
+  "thread.undo",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number];

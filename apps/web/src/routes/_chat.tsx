@@ -17,6 +17,9 @@ import { useReopenLastArchivedThread } from "../hooks/useReopenLastArchivedThrea
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
+// Avi Code addition: mod+z undo for the last settle/snooze/archive (upstream #12848).
+import { isEditableFocused } from "../lib/editableFocus";
+import { undoLatestThreadAction } from "../hooks/showUndoToast";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
@@ -68,6 +71,7 @@ function ChatRouteGlobalShortcuts() {
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
+          editableFocus: isEditableFocused(),
         },
       });
 
@@ -102,6 +106,16 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         void reopenLastArchivedThread();
+        return;
+      }
+
+      if (command === "thread.undo") {
+        // Only claim the chord when there is actually something to undo, so
+        // native undo still works when no undo toast is live.
+        if (undoLatestThreadAction()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
 

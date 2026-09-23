@@ -1,6 +1,7 @@
 import {
   parseScopedThreadKey,
   scopeProjectRef,
+  scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -33,6 +34,9 @@ import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
 import { useAtomCommand } from "../state/use-atom-command";
+// Avi Code addition: undo toasts for archive/snooze (upstream #12848).
+import * as ThreadUndo from "./threadUndo";
+import { showUndoToast } from "./showUndoToast";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedErrorClass<ThreadArchiveBlockedError>()(
   "ThreadArchiveBlockedError",
@@ -156,7 +160,10 @@ export function useThreadActions() {
   }, [router]);
 
   const archiveThread = useCallback(
-    async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
+    async (
+      target: ScopedThreadRef,
+      opts: { onArchived?: () => void; undoToast?: boolean } = {},
+    ) => {
       const resolved = resolveThreadTarget(target);
       if (!resolved) return AsyncResult.success(undefined);
       const { thread, threadRef } = resolved;
@@ -185,6 +192,28 @@ export function useThreadActions() {
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
       opts.onArchived?.();
 
+      // Avi Code addition: offer an Undo (also reachable via mod+z) that
+      // unarchives. A later archive of the same thread supersedes it.
+      if (opts.undoToast !== false) {
+        const claim = ThreadUndo.begin("archive", scopedThreadKey(threadRef));
+        showUndoToast({
+          title: "Thread archived",
+          description: thread.title ?? undefined,
+          claim,
+          failureTitle: "Failed to undo archive",
+          undo: async () => {
+            const undoResult = await unarchiveThreadMutation({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId },
+            });
+            if (undoResult._tag === "Success") {
+              refreshArchivedThreadsForEnvironment(threadRef.environmentId);
+            }
+            return undoResult;
+          },
+        });
+      }
+
       if (shouldNavigateToDraft) {
         const navigationResult = await settlePromise(() =>
           handleNewThreadRef.current(scopeProjectRef(thread.environmentId, thread.projectId)),
@@ -197,11 +226,18 @@ export function useThreadActions() {
 
       return archiveResult;
     },
-    [archiveThreadMutation, getCurrentRouteThreadRef, resolveThreadTarget],
+    [
+      archiveThreadMutation,
+      getCurrentRouteThreadRef,
+      resolveThreadTarget,
+      unarchiveThreadMutation,
+    ],
   );
 
   const unarchiveThread = useCallback(
     async (target: ScopedThreadRef) => {
+      // A manual unarchive expires any pending archive Undo for this thread.
+      ThreadUndo.invalidate("archive", scopedThreadKey(target));
       const result = await unarchiveThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId },
@@ -499,12 +535,29 @@ export function useThreadActions() {
           ),
         );
       }
-      return snoozeThreadMutation({
+      const result = await snoozeThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId, snoozedUntil },
       });
+      // Avi Code addition: offer an Undo (also reachable via mod+z) that
+      // unsnoozes. A later snooze of the same thread supersedes it.
+      if (result._tag === "Success") {
+        const claim = ThreadUndo.begin("snooze", scopedThreadKey(target));
+        showUndoToast({
+          title: "Thread snoozed",
+          description: resolved?.thread.title ?? undefined,
+          claim,
+          failureTitle: "Failed to undo snooze",
+          undo: () =>
+            unsnoozeThreadMutation({
+              environmentId: target.environmentId,
+              input: { threadId: target.threadId, reason: "user" },
+            }),
+        });
+      }
+      return result;
     },
-    [resolveThreadTarget, snoozeThreadMutation],
+    [resolveThreadTarget, snoozeThreadMutation, unsnoozeThreadMutation],
   );
 
   const unsnoozeThread = useCallback(
@@ -519,6 +572,8 @@ export function useThreadActions() {
           ),
         );
       }
+      // A manual unsnooze expires any pending snooze Undo for this thread.
+      ThreadUndo.invalidate("snooze", scopedThreadKey(target));
       return unsnoozeThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId, reason: "user" },
