@@ -21,6 +21,8 @@ const clientSettings: ClientSettings = {
     { id: "no-deploy", label: "no deploy", color: "orange", text: "pr merge dont deploy" },
   ],
   aviCodeCommunicationStyleId: "default",
+  aviCodeComposerShowInteractionModeLabel: true,
+  aviCodeComposerShowRuntimeModeLabel: true,
   aviCodeCommunicationStyles: [],
   aviCodeDictationDeviceId: "",
   aviCodeNewThreadsStartInPlanMode: false,

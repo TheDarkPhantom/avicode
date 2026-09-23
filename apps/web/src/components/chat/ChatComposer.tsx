@@ -334,6 +334,15 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
+  // Avi Code addition: either footer label can collapse to its icon alone. The
+  // text stays rendered but visually hidden so the button keeps its name for
+  // screen readers and the tooltip still explains the mode.
+  const showRuntimeModeLabel = useClientSettings(
+    (settings) => settings.aviCodeComposerShowRuntimeModeLabel,
+  );
+  const showInteractionModeLabel = useClientSettings(
+    (settings) => settings.aviCodeComposerShowInteractionModeLabel,
+  );
   const interactionModeTooltip = props.interactionModeLockedByPlan
     ? "Plan mode is locked while this plan awaits action. Implement the plan to enter Build mode."
     : (props.interactionMode === "plan"
@@ -371,7 +380,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           ) : (
             <ComposerControlIcon icon={BotIcon} opticalSize="large" />
           )}
-          <span className="sr-only sm:not-sr-only">
+          <span className={cn("sr-only", showInteractionModeLabel && "sm:not-sr-only")}>
             {props.interactionMode === "plan" ? "Plan" : "Build"}
           </span>
         </TooltipTrigger>
@@ -390,10 +399,17 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           onValueChange={(value) => props.onRuntimeModeChange(value!)}
         >
           <TooltipTrigger
-            render={<ComposerSelectControl className="font-medium" aria-label="Runtime mode" />}
+            render={
+              <ComposerSelectControl
+                className="font-medium"
+                aria-label={`Runtime mode: ${runtimeModeOption.label}`}
+              />
+            }
           >
             <ComposerControlIcon icon={RuntimeModeIcon} />
-            <SelectValue>{runtimeModeOption.label}</SelectValue>
+            <SelectValue className={showRuntimeModeLabel ? undefined : "sr-only"}>
+              {runtimeModeOption.label}
+            </SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
             {runtimeModeOptions.map((mode) => {

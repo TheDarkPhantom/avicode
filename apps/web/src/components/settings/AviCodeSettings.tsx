@@ -20,6 +20,7 @@ import {
   MicIcon,
   PaletteIcon,
   PanelLeftIcon,
+  PilcrowIcon,
   PlayIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
@@ -316,6 +317,52 @@ function ChatLayoutSettings() {
               updateSettings({ rightPanelFollowsThreads: Boolean(checked) })
             }
             aria-label="Keep the side panel open across chats"
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
+// Avi Code addition. The composer footer's access and mode buttons carry both
+// an icon and a word. Either word can be dropped for people who read the icons
+// fine or who never change that mode.
+function ComposerLayoutSettings() {
+  const showRuntimeModeLabel = useClientSettings(
+    (settings) => settings.aviCodeComposerShowRuntimeModeLabel,
+  );
+  const showInteractionModeLabel = useClientSettings(
+    (settings) => settings.aviCodeComposerShowInteractionModeLabel,
+  );
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsSection title="Composer" icon={<PilcrowIcon className="size-5" />}>
+      <SettingsRow
+        title="Show access mode label"
+        description="Spell out the access mode — Supervised, Auto-accept edits, Auto, Full access — next to its padlock in the composer footer. Turn this off to keep the icon alone, which frees room on narrow windows if you rarely change the setting."
+        status="The full name still appears on hover and in the dropdown."
+        control={
+          <Switch
+            checked={showRuntimeModeLabel}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeComposerShowRuntimeModeLabel: Boolean(checked) })
+            }
+            aria-label="Show access mode label in the composer"
+          />
+        }
+      />
+      <SettingsRow
+        title="Show Build/Plan label"
+        description="Spell out Build or Plan next to the mode button in the composer footer. Turn this off to keep the icon alone — the pencil-and-ruler means Plan, the robot means Build."
+        status="The mode still appears on hover, and Plan mode keeps its blue tint."
+        control={
+          <Switch
+            checked={showInteractionModeLabel}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeComposerShowInteractionModeLabel: Boolean(checked) })
+            }
+            aria-label="Show Build and Plan label in the composer"
           />
         }
       />
@@ -1057,6 +1104,8 @@ export function AviCodeSettings() {
           <CommunicationStyleSettings />
           <ChipsSettings />
           <ChatLayoutSettings />
+          {/* Avi Code addition */}
+          <ComposerLayoutSettings />
           <SidebarLayoutSettings />
           <NotificationSettings />
           <TimeLoggingSettings />
