@@ -21,6 +21,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
+// Avi Code addition: right-click reveal / open-with for files (upstream #11842).
+import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
@@ -125,6 +127,7 @@ export default function FileBrowserPanel({
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
+  const fileContextMenu = useFileContextMenu(environmentId);
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
@@ -309,9 +312,14 @@ export default function FileBrowserPanel({
     const position = pointerIsFresh
       ? { x: pointer.x, y: pointer.y }
       : { x: anchorRect.left, y: anchorRect.bottom };
+    // Avi Code addition: reveal / open-with actions, only for file entries.
+    const fileTarget = { environmentId, filePath: relativePath, workspaceRoot: cwd };
+    const fileMenuItems =
+      item.kind === "file" ? fileContextMenu.buildItems(fileTarget) : [];
     try {
       const clicked = await api.contextMenu.show(
         [
+          ...fileMenuItems,
           { id: "new-file", label: "New File" },
           { id: "new-folder", label: "New Folder" },
           { id: "rename", label: "Rename" },
@@ -321,6 +329,13 @@ export default function FileBrowserPanel({
         ],
         position,
       );
+      if (clicked === null) return;
+      // "Open with" submenu selections report the child id ("editor:<id>"),
+      // which is not present in the top-level item list.
+      if (fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:")) {
+        await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
+        return;
+      }
       if (clicked === "new-file" || clicked === "new-folder") {
         startCreateEntry(clicked === "new-folder" ? "directory" : "file", directoryPrefix);
         return;

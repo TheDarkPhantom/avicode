@@ -129,6 +129,8 @@ import { useUiStateStore } from "~/uiStateStore";
 import { useClientSettings } from "~/hooks/useSettings";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
+// Avi Code addition: right-click reveal / open-with on changed files (upstream #11842).
+import { useFileContextMenuHandler } from "../../fileContextMenu";
 
 import {
   buildInlineTerminalContextText,
@@ -2143,6 +2145,8 @@ function AssistantChangedFilesSectionInner({
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
 }) {
   const activity = use(TimelineRowActivityCtx);
+  const ctx = use(TimelineRowCtx);
+  const showFileContextMenu = useFileContextMenuHandler(ctx.activeThreadEnvironmentId);
   const isLatestTurn = activity.latestTurnId === turnSummary.turnId;
   const persistedExpanded = useUiStateStore(
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.turnId],
@@ -2167,6 +2171,16 @@ function AssistantChangedFilesSectionInner({
       }
       onToggleAllDirectories={() => setAllDirectoriesExpanded((current) => !current)}
       onOpenTurnDiff={onOpenTurnDiff}
+      onFileContextMenu={(filePath, event) =>
+        showFileContextMenu(
+          {
+            environmentId: ctx.activeThreadEnvironmentId,
+            filePath,
+            workspaceRoot: ctx.workspaceRoot,
+          },
+          event,
+        )
+      }
     />
   );
 }
