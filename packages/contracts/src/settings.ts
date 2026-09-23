@@ -327,6 +327,16 @@ export const ClientSettingsSchema = Schema.Struct({
   // Off by default: OCR is slow on long documents and runs entirely in the
   // renderer, so it is opt-in per the FUTURE_ENHANCEMENTS note.
   aviCodeOcrScannedPdfs: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Avi Code additions. The composer footer spells out the access mode and the
+  // Build/Plan mode beside their icons. Someone who never changes access mode,
+  // or who reads the icons fine, can drop either word and keep the icon. The
+  // labels stay in the accessible name and the tooltip either way.
+  aviCodeComposerShowRuntimeModeLabel: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  aviCodeComposerShowInteractionModeLabel: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -1012,6 +1022,8 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
   aviCodeOpenSettingsToAviCodePage: Schema.optionalKey(Schema.Boolean),
   aviCodeOcrScannedPdfs: Schema.optionalKey(Schema.Boolean),
+  aviCodeComposerShowRuntimeModeLabel: Schema.optionalKey(Schema.Boolean),
+  aviCodeComposerShowInteractionModeLabel: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
