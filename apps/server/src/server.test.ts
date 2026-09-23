@@ -540,9 +540,7 @@ const buildAppUnderTest = (options?: {
       execute: () => Effect.succeed({ results: [], reclaimedBytes: 0 }),
     });
     // Avi Code addition: worktree health monitor is resolved by the ws handler.
-    const worktreeHealthMonitorLayer = Layer.mock(
-      WorktreeHealthMonitor.WorktreeHealthMonitor,
-    )({
+    const worktreeHealthMonitorLayer = Layer.mock(WorktreeHealthMonitor.WorktreeHealthMonitor)({
       current: Effect.succeed(null),
       streamChanges: Stream.empty,
       runCheck: ({ trigger }) =>

@@ -2009,9 +2009,13 @@ const makeWsRpcLayer = (
             worktreeHealthMonitor.runCheck({ trigger: "manual" }).pipe(
               Effect.tap((snapshot) =>
                 snapshot.autoCleanup !== null
-                  ? Effect.forEach(snapshot.perProject, (project) => refreshGitStatus(project.cwd), {
-                      discard: true,
-                    })
+                  ? Effect.forEach(
+                      snapshot.perProject,
+                      (project) => refreshGitStatus(project.cwd),
+                      {
+                        discard: true,
+                      },
+                    )
                   : Effect.void,
               ),
             ),
