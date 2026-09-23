@@ -320,6 +320,30 @@ describe("ServerSettings worktree defaults", () => {
   });
 });
 
+describe("ServerSettings worktree health defaults", () => {
+  it("defaults the health thresholds for legacy configs", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.worktreeHealthDeadCountThreshold).toBe(80);
+    expect(settings.worktreeHealthLowDiskGb).toBe(20);
+    expect(settings.worktreeHealthAutoCleanup).toBe(true);
+  });
+
+  it("accepts worktree health threshold updates", () => {
+    const patch = decodeServerSettingsPatch({
+      worktreeHealthDeadCountThreshold: 120,
+      worktreeHealthLowDiskGb: 0,
+      worktreeHealthAutoCleanup: false,
+    });
+    expect(patch.worktreeHealthDeadCountThreshold).toBe(120);
+    expect(patch.worktreeHealthLowDiskGb).toBe(0);
+    expect(patch.worktreeHealthAutoCleanup).toBe(false);
+  });
+
+  it("rejects a dead-count threshold below the minimum", () => {
+    expect(() => decodeServerSettingsPatch({ worktreeHealthDeadCountThreshold: 0 })).toThrow();
+  });
+});
+
 describe("ServerSettings.sourceControlWritingStyle", () => {
   it("defaults all style settings for legacy configs", () => {
     const settings = decodeServerSettings({});

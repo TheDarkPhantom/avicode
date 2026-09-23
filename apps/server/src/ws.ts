@@ -109,6 +109,7 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 // Avi Code addition: worktree cleanup
 import * as WorktreeCleanup from "./git/WorktreeCleanup.ts";
+import * as WorktreeHealthMonitor from "./git/WorktreeHealthMonitor.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -392,6 +393,8 @@ const makeWsRpcLayer = (
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       // Avi Code addition: worktree cleanup
       const worktreeCleanup = yield* WorktreeCleanup.WorktreeCleanupService;
+      // Avi Code addition: background worktree health monitor
+      const worktreeHealthMonitor = yield* WorktreeHealthMonitor.WorktreeHealthMonitor;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -1059,6 +1062,9 @@ const makeWsRpcLayer = (
         // Never blocks: discovery runs in the background and reaches clients
         // over `availableEditorsUpdated` if it is still scanning right now.
         const editors = yield* editorDiscovery.current;
+        // Avi Code addition: latest worktree health snapshot, absent until the
+        // first background check runs (~2 min after start).
+        const worktreeHealth = yield* worktreeHealthMonitor.current;
 
         return {
           environment,
@@ -1081,6 +1087,7 @@ const makeWsRpcLayer = (
             otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
           },
           settings,
+          ...(worktreeHealth !== null ? { worktreeHealth } : {}),
           shellResumeCompletionMarker: true,
           threadResumeCompletionMarker: true,
         };
@@ -1995,6 +2002,21 @@ const makeWsRpcLayer = (
             worktreeCleanup.execute(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "vcs" },
           ),
+        // Avi Code addition: run the worktree health check on demand.
+        [WS_METHODS.vcsRunWorktreeHealthCheck]: () =>
+          observeRpcEffect(
+            WS_METHODS.vcsRunWorktreeHealthCheck,
+            worktreeHealthMonitor.runCheck({ trigger: "manual" }).pipe(
+              Effect.tap((snapshot) =>
+                snapshot.autoCleanup !== null
+                  ? Effect.forEach(snapshot.perProject, (project) => refreshGitStatus(project.cwd), {
+                      discard: true,
+                    })
+                  : Effect.void,
+              ),
+            ),
+            { "rpc.aggregate": "vcs" },
+          ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsCreateRef,
@@ -2190,6 +2212,15 @@ const makeWsRpcLayer = (
                 })),
               );
 
+              // Avi Code addition: push each completed worktree health check.
+              const worktreeHealthUpdates = worktreeHealthMonitor.streamChanges.pipe(
+                Stream.map((worktreeHealth) => ({
+                  version: 1 as const,
+                  type: "worktreeHealthUpdated" as const,
+                  payload: { worktreeHealth },
+                })),
+              );
+
               yield* providerRegistry
                 .refresh()
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
@@ -2198,7 +2229,10 @@ const makeWsRpcLayer = (
                 keybindingsUpdates,
                 Stream.merge(
                   providerStatuses,
-                  Stream.merge(settingsUpdates, availableEditorsUpdates),
+                  Stream.merge(
+                    settingsUpdates,
+                    Stream.merge(availableEditorsUpdates, worktreeHealthUpdates),
+                  ),
                 ),
               );
 

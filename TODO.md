@@ -38,6 +38,9 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [x] Opt-in opening of finished chats at the top of their last response instead of the live edge.
 - [x] Stuck provider questions remain dismissible and provider choices survive desktop restart.
 - [x] Durable recovery of answers submitted to questions whose provider session already ended.
+- [x] Background worktree health monitor: warn on dead-worktree pileup or low disk and auto-remove
+      clean dead worktrees, with the Windows delete fixed at the root (direct directory delete +
+      prune).
 
 ## Personal alpha verification
 

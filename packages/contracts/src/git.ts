@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
@@ -238,6 +244,57 @@ export const VcsExecuteCleanupResult = Schema.Struct({
   reclaimedBytes: NonNegativeInt,
 });
 export type VcsExecuteCleanupResult = typeof VcsExecuteCleanupResult.Type;
+
+// Avi Code addition: background worktree health monitor. A periodic snapshot of
+// dead-worktree pressure and free disk space, plus what an automatic cleanup did.
+export const WorktreeHealthTrigger = Schema.Literals(["startup", "interval", "manual"]);
+export type WorktreeHealthTrigger = typeof WorktreeHealthTrigger.Type;
+
+export const WorktreeHealthBreachReason = Schema.Literals(["dead-count", "low-disk"]);
+export type WorktreeHealthBreachReason = typeof WorktreeHealthBreachReason.Type;
+
+export const WorktreeHealthProjectSummary = Schema.Struct({
+  projectId: TrimmedNonEmptyStringSchema,
+  cwd: TrimmedNonEmptyStringSchema,
+  deadCleanCount: NonNegativeInt,
+  deadDirtyCount: NonNegativeInt,
+  // Non-null when this project could not be scanned; its counts are then 0.
+  error: Schema.NullOr(Schema.String),
+});
+export type WorktreeHealthProjectSummary = typeof WorktreeHealthProjectSummary.Type;
+
+export const WorktreeHealthAutoCleanupSummary = Schema.Struct({
+  removedCount: NonNegativeInt,
+  failedCount: NonNegativeInt,
+  freedBytes: NonNegativeInt,
+});
+export type WorktreeHealthAutoCleanupSummary = typeof WorktreeHealthAutoCleanupSummary.Type;
+
+export const WorktreeHealthThresholds = Schema.Struct({
+  deadCountThreshold: NonNegativeInt,
+  lowDiskGb: NonNegativeInt,
+});
+export type WorktreeHealthThresholds = typeof WorktreeHealthThresholds.Type;
+
+export const WorktreeHealthSnapshot = Schema.Struct({
+  checkedAt: IsoDateTime,
+  trigger: WorktreeHealthTrigger,
+  // Null when free space could not be read (e.g. statfs unsupported); the
+  // low-disk rule is then skipped.
+  freeBytes: Schema.NullOr(NonNegativeInt),
+  totalBytes: Schema.NullOr(NonNegativeInt),
+  // Dead worktrees overall, and split by whether they are safe to auto-remove.
+  deadCount: NonNegativeInt,
+  deadCleanCount: NonNegativeInt,
+  deadDirtyCount: NonNegativeInt,
+  perProject: Schema.Array(WorktreeHealthProjectSummary),
+  thresholds: WorktreeHealthThresholds,
+  breached: Schema.Boolean,
+  breachReasons: Schema.Array(WorktreeHealthBreachReason),
+  // Non-null when an automatic cleanup ran on this check.
+  autoCleanup: Schema.NullOr(WorktreeHealthAutoCleanupSummary),
+});
+export type WorktreeHealthSnapshot = typeof WorktreeHealthSnapshot.Type;
 
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,

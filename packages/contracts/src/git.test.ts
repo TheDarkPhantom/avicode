@@ -7,6 +7,7 @@ import {
   GitRunStackedActionResult,
   GitRunStackedActionInput,
   GitResolvePullRequestResult,
+  WorktreeHealthSnapshot,
 } from "./git.ts";
 
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInput);
@@ -124,5 +125,58 @@ describe("GitRunStackedActionResult", () => {
     if (parsed.toast.cta.kind === "run_action") {
       expect(parsed.toast.cta.action.kind).toBe("create_pr");
     }
+  });
+});
+
+describe("WorktreeHealthSnapshot", () => {
+  const decode = Schema.decodeUnknownSync(WorktreeHealthSnapshot);
+  const encode = Schema.encodeSync(WorktreeHealthSnapshot);
+
+  it("round-trips a breached snapshot with an auto-cleanup summary", () => {
+    const value = {
+      checkedAt: "2026-09-24T00:00:00.000Z",
+      trigger: "interval" as const,
+      freeBytes: 30 * 1024 * 1024 * 1024,
+      totalBytes: 500 * 1024 * 1024 * 1024,
+      deadCount: 90,
+      deadCleanCount: 0,
+      deadDirtyCount: 3,
+      perProject: [
+        {
+          projectId: "p1",
+          cwd: "/repo/one",
+          deadCleanCount: 0,
+          deadDirtyCount: 3,
+          error: null,
+        },
+      ],
+      thresholds: { deadCountThreshold: 80, lowDiskGb: 20 },
+      breached: true,
+      breachReasons: ["dead-count" as const, "low-disk" as const],
+      autoCleanup: { removedCount: 88, failedCount: 0, freedBytes: 20 * 1024 * 1024 * 1024 },
+    };
+    const parsed = decode(value);
+    expect(parsed.breachReasons).toEqual(["dead-count", "low-disk"]);
+    expect(parsed.autoCleanup?.removedCount).toBe(88);
+    expect(encode(parsed)).toEqual(value);
+  });
+
+  it("accepts null disk numbers and no auto-cleanup", () => {
+    const parsed = decode({
+      checkedAt: "2026-09-24T00:00:00.000Z",
+      trigger: "manual",
+      freeBytes: null,
+      totalBytes: null,
+      deadCount: 0,
+      deadCleanCount: 0,
+      deadDirtyCount: 0,
+      perProject: [],
+      thresholds: { deadCountThreshold: 80, lowDiskGb: 0 },
+      breached: false,
+      breachReasons: [],
+      autoCleanup: null,
+    });
+    expect(parsed.freeBytes).toBeNull();
+    expect(parsed.autoCleanup).toBeNull();
   });
 });

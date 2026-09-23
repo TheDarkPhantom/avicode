@@ -198,6 +198,37 @@ describe("server state projection", () => {
     expect(result.latestEvent.type).toBe("settingsUpdated");
   });
 
+  it("applies a worktree health update to the projected snapshot", () => {
+    const snapshot = applyServerConfigProjection(Option.none(), {
+      version: 1,
+      type: "snapshot",
+      config: CONFIG,
+    });
+    const worktreeHealth = {
+      checkedAt: "2026-09-24T00:00:00.000Z",
+      trigger: "manual" as const,
+      freeBytes: null,
+      totalBytes: null,
+      deadCount: 5,
+      deadCleanCount: 5,
+      deadDirtyCount: 0,
+      perProject: [],
+      thresholds: { deadCountThreshold: 80, lowDiskGb: 20 },
+      breached: false,
+      breachReasons: [],
+      autoCleanup: null,
+    };
+    const projected = applyServerConfigProjection(snapshot, {
+      version: 1,
+      type: "worktreeHealthUpdated",
+      payload: { worktreeHealth },
+    });
+
+    const result = Option.getOrThrow(projected);
+    expect(result.config.worktreeHealth).toBe(worktreeHealth);
+    expect(result.latestEvent.type).toBe("worktreeHealthUpdated");
+  });
+
   it("keeps cached providers through an empty startup snapshot until discovery reports", () => {
     const cachedConfig = { ...CONFIG, providers: [CONFIGURED_PROVIDER] };
     const cached = Option.some({
