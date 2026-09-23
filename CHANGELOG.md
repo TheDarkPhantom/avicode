@@ -48,6 +48,16 @@ Upstream: t3code 0.0.31
 - Your settings survive a reload when one saved value is invalid (#230)
 - Hide the access mode and Build/Plan words in the composer to leave just their icons (#233)
 
+### Upstream t3code
+
+- OpenCode keeps models whose names contain a slash in the picker (#5072 by Arham Amin)
+- Resuming a Codex thread with a missing session recovers instead of failing (#6671 by Rishet11)
+- Windows terminal processes fully stop when you close a terminal (#10771 by Dara Adedeji)
+- Reveal in File Explorer highlights the file when the path uses slashes (#9551 by Julius Marminge)
+- CLI versions printed with a leading v are detected (#11738 by NikodemNowak)
+- Command palette search matches thread IDs (#11185 by Alex Southwell)
+- Command palette jumps straight to the usage page (#12211 by oliver)
+
 ## 0.0.31-avicode.9.14 (2026-09-09)
 
 Upstream: t3code 0.0.31

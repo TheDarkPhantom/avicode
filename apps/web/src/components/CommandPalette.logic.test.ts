@@ -140,6 +140,41 @@ describe("buildThreadActionItems", () => {
     ]);
   });
 
+  it("surfaces threads when the query is their ID, without outranking title matches", () => {
+    const threadItems = buildThreadActionItems({
+      threads: [
+        makeThread({
+          id: ThreadId.make("thread-alpha-1234"),
+          title: "Unrelated work",
+          updatedAt: "2026-03-05T00:00:00.000Z",
+        }),
+        makeThread({
+          id: ThreadId.make("thread-other-9999"),
+          title: "Fix thread-alpha-1234 flakes",
+          updatedAt: "2026-03-04T00:00:00.000Z",
+        }),
+      ],
+      projectTitleById: new Map([[PROJECT_ID, "Project"]]),
+      sortOrder: "updated_at",
+      icon: null,
+      runThread: async (_thread) => undefined,
+    });
+
+    const groups = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "  THREAD-ALPHA-1234  ",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      threadSearchItems: threadItems,
+    });
+
+    // The title match ranks first; the pasted ID still surfaces its own thread.
+    expect(groups[0]?.items.map((item) => item.value)).toEqual([
+      "thread:thread-other-9999",
+      "thread:thread-alpha-1234",
+    ]);
+  });
+
   it("preserves thread project-name matches when there is no stronger title match", () => {
     const group: CommandPaletteGroup = {
       value: "threads-search",

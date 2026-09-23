@@ -167,7 +167,9 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
       {
         kind: "action" as const,
         value: `thread:${thread.id}`,
-        searchTerms: [thread.title, projectTitle ?? ``, thread.branch ?? ``],
+        // thread.id last so pasted IDs never outrank title matches for shared
+        // substrings (upstream #11185).
+        searchTerms: [thread.title, projectTitle ?? ``, thread.branch ?? ``, thread.id],
         title: thread.title,
         description: descriptionParts.join(` · `),
         timestamp: formatRelativeTimeLabel(
