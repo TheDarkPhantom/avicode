@@ -59,6 +59,7 @@ Upstream: t3code 0.0.31
 - Long branch names and paths truncate in the middle so the useful ends stay visible (#12805 by maria)
 - Turn folds reveal their timestamp on hover (#8641 by Alex Southwell)
 - Right-click a changed file or browser entry to reveal it or open it in your editor (#11842 by Alex Southwell)
+- Undo an archive or snooze from the toast or with Ctrl+Z (#12848 by Julius Marminge)
 
 ## 0.0.31-avicode.9.14 (2026-09-09)
 
