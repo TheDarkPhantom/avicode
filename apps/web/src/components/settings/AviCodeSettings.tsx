@@ -1,4 +1,8 @@
-import type { DesktopLegacyT3ImportResult, DesktopLegacyT3ImportStatus } from "@t3tools/contracts";
+import type {
+  DesktopLegacyT3ImportResult,
+  DesktopLegacyT3ImportStatus,
+  WorktreeHealthSnapshot,
+} from "@t3tools/contracts";
 import {
   type AviCodeChatContentWidth,
   type AviCodeSendWhileRunning,
@@ -56,7 +60,10 @@ import {
 } from "../../lib/windowTitleMetadata";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { readProject, useProjectRefs } from "../../state/entities";
-import { primaryServerProvidersAtom } from "../../state/server";
+import { usePrimaryEnvironment } from "../../state/environments";
+import { primaryServerProvidersAtom, primaryServerWorktreeHealthAtom } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { vcsEnvironment } from "../../state/vcs";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -76,7 +83,11 @@ import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
 import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
 import { ChipsSettings } from "./ChipsSettings";
 import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
-import { WorktreeCleanupDialog, type WorktreeCleanupTarget } from "./WorktreeCleanupDialog";
+import {
+  WorktreeCleanupDialog,
+  formatBytes,
+  type WorktreeCleanupTarget,
+} from "./WorktreeCleanupDialog";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -670,6 +681,17 @@ function WorktreeAutomationSettings() {
 function WorktreeCleanupSettings() {
   const projectRefs = useProjectRefs();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+
+  const worktreeHealth = useAtomValue(primaryServerWorktreeHealthAtom);
+  const deadCountThreshold = usePrimarySettings(
+    (settings) => settings.worktreeHealthDeadCountThreshold,
+  );
+  const lowDiskGb = usePrimarySettings((settings) => settings.worktreeHealthLowDiskGb);
+  const autoCleanup = usePrimarySettings((settings) => settings.worktreeHealthAutoCleanup);
+  const updateServerSettings = useUpdatePrimarySettings();
+  const primaryEnvironment = usePrimaryEnvironment();
+  const runHealthCheck = useAtomCommand(vcsEnvironment.runHealthCheck, { reportFailure: false });
 
   const targets: ReadonlyArray<WorktreeCleanupTarget> = projectRefs.flatMap((ref) => {
     const project = readProject(ref);
@@ -685,6 +707,42 @@ function WorktreeCleanupSettings() {
       },
     ];
   });
+
+  const handleDeadCountChange = useCallback(
+    (nextValue: number | null) => {
+      if (nextValue === null) return;
+      const clamped = Math.min(10_000, Math.max(1, Math.round(nextValue)));
+      if (clamped !== deadCountThreshold) {
+        updateServerSettings({ worktreeHealthDeadCountThreshold: clamped });
+      }
+    },
+    [deadCountThreshold, updateServerSettings],
+  );
+
+  const handleLowDiskChange = useCallback(
+    (nextValue: number | null) => {
+      if (nextValue === null) return;
+      const clamped = Math.min(100_000, Math.max(0, Math.round(nextValue)));
+      if (clamped !== lowDiskGb) {
+        updateServerSettings({ worktreeHealthLowDiskGb: clamped });
+      }
+    },
+    [lowDiskGb, updateServerSettings],
+  );
+
+  const handleCheckNow = useCallback(async () => {
+    if (!primaryEnvironment) return;
+    setIsChecking(true);
+    try {
+      await runHealthCheck({ environmentId: primaryEnvironment.environmentId, input: {} });
+    } finally {
+      setIsChecking(false);
+    }
+  }, [primaryEnvironment, runHealthCheck]);
+
+  const healthStatus = worktreeHealth
+    ? describeWorktreeHealthStatus(worktreeHealth)
+    : "No check has run yet. One runs automatically a couple of minutes after startup.";
 
   return (
     <SettingsSection title="Worktree cleanup" icon={<Trash2Icon className="size-5" />}>
@@ -708,9 +766,127 @@ function WorktreeCleanupSettings() {
           </Button>
         }
       />
+      <SettingsRow
+        title="Automatic health checks"
+        description="Avi Code checks in the background for piled-up dead worktrees and low disk space, then warns you (and, if enabled below, removes the clean ones)."
+        status={healthStatus}
+        control={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!primaryEnvironment || isChecking}
+            onClick={() => void handleCheckNow()}
+          >
+            {isChecking ? "Checking…" : "Check now"}
+          </Button>
+        }
+      />
+      <SettingsRow
+        title="Dead worktree threshold"
+        description="Warn once this many clean dead worktrees have piled up across your projects."
+        control={
+          <NumberField
+            aria-label="Dead worktree threshold"
+            className="w-28 gap-0"
+            min={1}
+            max={10_000}
+            onValueChange={handleDeadCountChange}
+            size="sm"
+            step={1}
+            value={deadCountThreshold}
+          >
+            <NumberFieldGroup className="h-8 rounded-md">
+              <NumberFieldDecrement
+                aria-label="Decrease dead worktree threshold"
+                className="px-2 [&_svg]:size-3.5"
+              />
+              <NumberFieldInput
+                aria-label="Dead worktree threshold"
+                className="h-8 w-12 grow-0 px-0 text-xs leading-8"
+                inputMode="numeric"
+              />
+              <NumberFieldIncrement
+                aria-label="Increase dead worktree threshold"
+                className="px-2 [&_svg]:size-3.5"
+              />
+            </NumberFieldGroup>
+          </NumberField>
+        }
+      />
+      <SettingsRow
+        title="Low disk warning (GB)"
+        description="Warn when free space on the drive holding your worktrees drops below this many gigabytes. Set to 0 to turn the disk check off."
+        control={
+          <NumberField
+            aria-label="Low disk warning in gigabytes"
+            className="w-28 gap-0"
+            min={0}
+            max={100_000}
+            onValueChange={handleLowDiskChange}
+            size="sm"
+            step={1}
+            value={lowDiskGb}
+          >
+            <NumberFieldGroup className="h-8 rounded-md">
+              <NumberFieldDecrement
+                aria-label="Decrease low disk warning"
+                className="px-2 [&_svg]:size-3.5"
+              />
+              <NumberFieldInput
+                aria-label="Low disk warning in gigabytes"
+                className="h-8 w-12 grow-0 px-0 text-xs leading-8"
+                inputMode="numeric"
+              />
+              <NumberFieldIncrement
+                aria-label="Increase low disk warning"
+                className="px-2 [&_svg]:size-3.5"
+              />
+            </NumberFieldGroup>
+          </NumberField>
+        }
+      />
+      <SettingsRow
+        title="Remove clean dead worktrees automatically"
+        description="When a check crosses a threshold, delete the clean dead worktree folders on the spot. Only folders are removed. Branches, checkpoints, and any worktree with uncommitted changes are always left for you to review."
+        control={
+          <Switch
+            checked={autoCleanup}
+            onCheckedChange={(checked) =>
+              updateServerSettings({ worktreeHealthAutoCleanup: Boolean(checked) })
+            }
+            aria-label="Remove clean dead worktrees automatically"
+          />
+        }
+      />
       <WorktreeCleanupDialog open={dialogOpen} onOpenChange={setDialogOpen} targets={targets} />
     </SettingsSection>
   );
+}
+
+// Avi Code addition. Human-readable summary of the latest worktree health check.
+function describeWorktreeHealthStatus(health: WorktreeHealthSnapshot): string {
+  const checkedAt = new Date(health.checkedAt);
+  const when = Number.isNaN(checkedAt.getTime())
+    ? "recently"
+    : checkedAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const parts: string[] = [`Last checked ${when}.`];
+  parts.push(
+    `${health.deadCleanCount} clean and ${health.deadDirtyCount} with uncommitted changes.`,
+  );
+  if (health.freeBytes !== null) {
+    parts.push(`${formatBytes(health.freeBytes)} free.`);
+  }
+  if (health.autoCleanup !== null && health.autoCleanup.removedCount > 0) {
+    parts.push(
+      `Auto-removed ${health.autoCleanup.removedCount}, freeing ${formatBytes(
+        health.autoCleanup.freedBytes,
+      )}.`,
+    );
+  }
+  if (health.breached) {
+    parts.push("Over a threshold now.");
+  }
+  return parts.join(" ");
 }
 
 function ChatListSettings() {

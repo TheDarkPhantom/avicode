@@ -330,6 +330,19 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    // Avi Code addition: run the background worktree health check on demand. The
+    // server refreshes git status for any project it auto-cleans, so there is no
+    // cwd here to invalidate refs against. Serial per environment (the payload
+    // has no cwd, so the shared vcsCommandConcurrency key does not apply).
+    runHealthCheck: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:run-worktree-health-check",
+      tag: WS_METHODS.vcsRunWorktreeHealthCheck,
+      scheduler: vcsCommandScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId }) => JSON.stringify([environmentId, "worktree-health"]),
+      },
+    }),
     createRef: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-ref",
       tag: WS_METHODS.vcsCreateRef,

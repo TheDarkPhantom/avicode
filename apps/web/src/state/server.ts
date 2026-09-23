@@ -85,6 +85,12 @@ export const primaryServerKeybindingsAtom = Atom.make(
     get(primaryServerConfigAtom)?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
 ).pipe(Atom.withLabel("web-primary-server-keybindings"));
 
+// Avi Code addition: latest background worktree health snapshot, or null.
+export const primaryServerWorktreeHealthAtom = Atom.make(
+  (get): NonNullable<ServerConfig["worktreeHealth"]> | null =>
+    get(primaryServerConfigAtom)?.worktreeHealth ?? null,
+).pipe(Atom.withLabel("web-primary-server-worktree-health"));
+
 export const primaryServerAvailableEditorsAtom = Atom.make(
   (get): ReadonlyArray<EditorId> =>
     get(primaryServerConfigAtom)?.availableEditors ?? EMPTY_AVAILABLE_EDITORS,

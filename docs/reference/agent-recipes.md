@@ -116,3 +116,8 @@ Copy `secrets` and `settings.json` only if the flow under test needs them.
 Remove-Item -LiteralPath "\\?\<absolute-path>" -Recurse -Force
 git worktree prune
 ```
+
+Avi Code now performs this same runbook itself: the worktree cleanup service deletes the directory
+directly (long-path namespaced) and then runs `git worktree prune`, and a background health monitor
+does it automatically once dead worktrees pile up or disk runs low. See
+`docs/user/worktree-cleanup.md`.

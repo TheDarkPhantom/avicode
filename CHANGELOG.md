@@ -42,6 +42,7 @@ Upstream: t3code 0.0.31
 
 ### Avi Code
 
+- Warns when dead worktrees pile up or disk runs low and removes clean ones automatically (#234)
 - Reopen the most recently archived thread with Ctrl+Shift+T (#228)
 - Ctrl+K search now finds archived threads so you can reopen old conversations by name (#229)
 - Your settings survive a reload when one saved value is invalid (#230)

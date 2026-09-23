@@ -232,6 +232,16 @@ export function applyServerConfigProjection(
         latestEvent: event,
         source: "live",
       }));
+    // Avi Code addition: latest worktree health snapshot.
+    case "worktreeHealthUpdated":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          worktreeHealth: event.payload.worktreeHealth,
+        },
+        latestEvent: event,
+        source: "live",
+      }));
   }
 }
 

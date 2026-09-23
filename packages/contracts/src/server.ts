@@ -17,6 +17,7 @@ import {
   ResolvedKeybindingsConfig,
 } from "./keybindings.ts";
 import { EditorDiscoveryStatus, EditorId } from "./editor.ts";
+import { WorktreeHealthSnapshot } from "./git.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ProviderQuotaSnapshot } from "./providerQuota.ts";
@@ -542,6 +543,9 @@ export const ServerConfig = Schema.Struct({
   editorDiscoveryStatus: Schema.optionalKey(EditorDiscoveryStatus),
   observability: ServerObservability,
   settings: ServerSettings,
+  // Avi Code addition. Latest background worktree health snapshot, absent until
+  // the first check runs (~2 min after start) and on servers predating this.
+  worktreeHealth: Schema.optionalKey(WorktreeHealthSnapshot),
   /** Whether shell subscriptions can emit an opt-in catch-up completion marker. */
   shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
   /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
@@ -645,12 +649,28 @@ export const ServerConfigStreamAvailableEditorsUpdatedEvent = Schema.Struct({
 export type ServerConfigStreamAvailableEditorsUpdatedEvent =
   typeof ServerConfigStreamAvailableEditorsUpdatedEvent.Type;
 
+// Avi Code addition. Pushed whenever the worktree health monitor completes a check.
+export const ServerConfigWorktreeHealthUpdatedPayload = Schema.Struct({
+  worktreeHealth: WorktreeHealthSnapshot,
+});
+export type ServerConfigWorktreeHealthUpdatedPayload =
+  typeof ServerConfigWorktreeHealthUpdatedPayload.Type;
+
+export const ServerConfigStreamWorktreeHealthUpdatedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("worktreeHealthUpdated"),
+  payload: ServerConfigWorktreeHealthUpdatedPayload,
+});
+export type ServerConfigStreamWorktreeHealthUpdatedEvent =
+  typeof ServerConfigStreamWorktreeHealthUpdatedEvent.Type;
+
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
   ServerConfigStreamProviderStatusesEvent,
   ServerConfigStreamSettingsUpdatedEvent,
   ServerConfigStreamAvailableEditorsUpdatedEvent,
+  ServerConfigStreamWorktreeHealthUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 

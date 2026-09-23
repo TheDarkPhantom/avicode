@@ -30,3 +30,29 @@ worktrees directory) are eligible.
 4. **Delete selected** removes the checked worktrees. Nothing is deleted until you confirm.
 
 The summary reports how much was reclaimed and lists any worktrees that could not be removed.
+
+## Automatic health checks
+
+You do not have to remember to scan. Avi Code checks on its own about two minutes after it starts
+and then once an hour. Each check counts the dead worktrees in every project and reads how much free
+space is left on the drive that holds them.
+
+A check "breaches" when either limit is crossed:
+
+- **Too many dead worktrees** — the count of clean dead worktrees reaches the threshold (80 by
+  default).
+- **Low disk** — free space drops below the low-disk mark (20 GB by default; set it to 0 to turn the
+  disk check off).
+
+On a breach you get a warning with a **Clean up** button that opens the same review dialog. The
+warning does not nag: once you dismiss it, it stays quiet for a day unless things get meaningfully
+worse (more dead worktrees, or a lot less free space).
+
+If **Remove clean dead worktrees automatically** is on (the default), a breached check also deletes
+the clean dead worktree folders on the spot and tells you what it freed. Automatic removal only ever
+deletes worktree directories. It never touches branches or checkpoints, never removes a worktree
+with uncommitted changes or a running session, and leaves "PR closed without merge" worktrees for
+you to remove by hand.
+
+All of this lives under **Settings -> Avi Code -> Worktree cleanup**: the last check result, a
+**Check now** button, the two thresholds, and the automatic-removal switch.

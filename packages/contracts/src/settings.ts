@@ -117,6 +117,23 @@ export const AviCodeChatContentWidth = Schema.Literals(["comfortable", "wide", "
 export type AviCodeChatContentWidth = typeof AviCodeChatContentWidth.Type;
 export const DEFAULT_AVICODE_CHAT_CONTENT_WIDTH: AviCodeChatContentWidth = "comfortable";
 
+// Avi Code addition. Bounds for the background worktree health monitor. When the
+// count of clean dead worktrees reaches the threshold, or free disk under the
+// managed worktrees directory drops below the low-disk mark, the monitor warns
+// and (if enabled) removes clean dead worktree directories. A low-disk mark of 0
+// disables the disk rule.
+export const WorktreeHealthDeadCountThreshold = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 10_000 }),
+);
+export type WorktreeHealthDeadCountThreshold = typeof WorktreeHealthDeadCountThreshold.Type;
+export const DEFAULT_WORKTREE_HEALTH_DEAD_COUNT_THRESHOLD: WorktreeHealthDeadCountThreshold = 80;
+
+export const WorktreeHealthLowDiskGb = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: 100_000 }),
+);
+export type WorktreeHealthLowDiskGb = typeof WorktreeHealthLowDiskGb.Type;
+export const DEFAULT_WORKTREE_HEALTH_LOW_DISK_GB: WorktreeHealthLowDiskGb = 20;
+
 // Avi Code addition. What a send does while the agent is still working.
 // "steer" is upstream's only behaviour: the message is injected into the
 // running turn immediately. "queue" holds it until the turn finishes and then
@@ -793,6 +810,15 @@ export const ServerSettings = Schema.Struct({
   autoStartDevServerForNewWorktrees: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  // Avi Code addition. Background worktree health monitor thresholds. See
+  // WorktreeHealthDeadCountThreshold / WorktreeHealthLowDiskGb above.
+  worktreeHealthDeadCountThreshold: WorktreeHealthDeadCountThreshold.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_HEALTH_DEAD_COUNT_THRESHOLD)),
+  ),
+  worktreeHealthLowDiskGb: WorktreeHealthLowDiskGb.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_HEALTH_LOW_DISK_GB)),
+  ),
+  worktreeHealthAutoCleanup: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
@@ -943,6 +969,10 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   autoStartDevServerForNewWorktrees: Schema.optionalKey(Schema.Boolean),
+  // Avi Code addition. Worktree health monitor thresholds.
+  worktreeHealthDeadCountThreshold: Schema.optionalKey(WorktreeHealthDeadCountThreshold),
+  worktreeHealthLowDiskGb: Schema.optionalKey(WorktreeHealthLowDiskGb),
+  worktreeHealthAutoCleanup: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   sourceControlWritingStyle: Schema.optionalKey(
