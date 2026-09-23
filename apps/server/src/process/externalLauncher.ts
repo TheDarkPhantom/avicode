@@ -284,7 +284,10 @@ export function fileManagerLaunchArgs(input: {
   if (input.isDirectory) return [input.path];
   switch (input.platform) {
     case "win32":
-      return [`/select,${input.path}`];
+      // Avi Code addition: normalize forward slashes for Explorer. `/select,`
+      // silently fails to highlight the file when the path uses `/` separators
+      // (upstream #9551), so mirror the backslash form Windows expects.
+      return [`/select,${input.path.replaceAll("/", "\\")}`];
     case "darwin":
       return ["-R", input.path];
     default:

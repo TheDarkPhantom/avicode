@@ -226,6 +226,17 @@ describe("fileManagerLaunchArgs", () => {
     );
   });
 
+  it("normalizes forward slashes so Windows Explorer highlights the file", () => {
+    assert.deepEqual(
+      ExternalLauncher.fileManagerLaunchArgs({
+        platform: "win32",
+        path: "C:/repo/src/index.ts",
+        isDirectory: false,
+      }),
+      ["/select,C:\\repo\\src\\index.ts"],
+    );
+  });
+
   it("reveals a file inside its folder on macOS", () => {
     assert.deepEqual(
       ExternalLauncher.fileManagerLaunchArgs({
