@@ -76,6 +76,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   // Cmd+Shift+T on macOS), restoring the most recently archived thread. Gated
   // off a focused terminal so it does not shadow the shell.
   { key: "mod+shift+t", command: "thread.reopenLastArchived", when: "!terminalFocus" },
+  // Avi Code addition: undo the last settle/snooze/archive (upstream #12848).
+  // Yields to native undo while a text field owns the keyboard. Coexists with
+  // the reopen-last-archived chord above, which walks archive history instead.
+  { key: "mod+z", command: "thread.undo", when: "!terminalFocus && !editableFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,
