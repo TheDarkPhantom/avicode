@@ -151,7 +151,17 @@ describe("model slug normalization", () => {
   it("preserves exact custom slugs instead of expanding provider aliases", () => {
     const claude = ProviderDriverKind.make("claudeAgent");
 
-    expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
+    expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+
+  it("resolves Claude Opus 5.5 aliases to the canonical slug", () => {
+    const claude = ProviderDriverKind.make("claudeAgent");
+
+    expect(normalizeModelSlug("opus-5.5", claude)).toBe("claude-opus-5-5");
+    expect(normalizeModelSlug("claude-opus-5.5", claude)).toBe("claude-opus-5-5");
+    expect(normalizeModelSlug("claude-opus-5-5", claude)).toBe("claude-opus-5-5");
+    // Opus 5 still resolves to its own slug.
+    expect(normalizeModelSlug("opus-5", claude)).toBe("claude-opus-5");
   });
 });

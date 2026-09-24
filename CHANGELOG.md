@@ -36,6 +36,14 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Pick Claude Opus 5.5 in the model picker, now carrying the New badge instead of Fable 5.1 (#232)
+
 ## 0.0.31-avicode.9.15 (2026-09-24)
 
 Upstream: t3code 0.0.31
