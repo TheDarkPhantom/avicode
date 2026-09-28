@@ -1995,8 +1995,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Transcribed text is written through `applyPromptReplacement`, replacing the
   // span this session already inserted. `dictationRangeRef` tracks where that
-  // span starts and how long it currently is.
-  const dictationRangeRef = useRef<{ start: number; length: number } | null>(null);
+  // span starts and the text dictation last wrote there.
+  const dictationRangeRef = useRef<{ start: number; text: string } | null>(null);
+  // Avi Code addition: lets the write guard below end the session it reports
+  // as stopped. Assigned once `useDictation` has run.
+  const releaseDictationRef = useRef<() => void>(() => {});
   const requestVoiceCredential = useVoiceCredential();
   const hasVoiceKey = usePrimarySettings(
     (settings) => settings.voice.deepgramApiKeyRedacted === true,
@@ -2006,7 +2009,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (text: string, isFinal: boolean) => {
       let range = dictationRangeRef.current;
       if (!range) {
-        range = { start: readComposerSnapshot().cursor, length: 0 };
+        range = { start: readComposerSnapshot().cursor, text: "" };
         dictationRangeRef.current = range;
       }
       // Separate dictation from text already in the composer so words don't
@@ -2015,18 +2018,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         range.start > 0 && /\S/.test(promptRef.current.charAt(range.start - 1));
       const replacement = text.length > 0 && needsLeadingSpace ? ` ${text}` : text;
 
-      const applied = applyPromptReplacement(range.start, range.start + range.length, replacement, {
-        // If the user edited this span mid-dictation the guard fails and we
-        // stop tracking rather than clobbering what they typed.
-        expectedText: promptRef.current.slice(range.start, range.start + range.length),
-        focusEditorAfterReplace: isFinal,
-      });
+      const applied = applyPromptReplacement(
+        range.start,
+        range.start + range.text.length,
+        replacement,
+        {
+          // If the user edited this span mid-dictation the guard fails and we
+          // stop tracking rather than clobbering what they typed. Avi Code
+          // change: compared against what dictation wrote, not against the
+          // composer's current text, which made the guard always pass.
+          expectedText: range.text,
+          focusEditorAfterReplace: isFinal,
+        },
+      );
 
       if (!applied) {
         // Avi Code addition: the guard above rejected the write, so the words
         // the user just spoke are gone. Say so instead of leaving the level
         // meter implying they were captured.
         dictationRangeRef.current = null;
+        // Actually stop, as the toast says. Left running, the next transcript
+        // would start a fresh span and insert the whole session again.
+        releaseDictationRef.current();
         toastManager.add({
           type: "error",
           title: "Dictation stopped",
@@ -2039,7 +2052,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         dictationRangeRef.current = null;
         return;
       }
-      dictationRangeRef.current = { start: range.start, length: replacement.length };
+      dictationRangeRef.current = { start: range.start, text: replacement };
     },
     [applyPromptReplacement, promptRef, readComposerSnapshot],
   );
@@ -2047,11 +2060,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const discardDictatedText = useCallback(() => {
     const range = dictationRangeRef.current;
     dictationRangeRef.current = null;
-    if (!range || range.length === 0) return;
-    applyPromptReplacement(range.start, range.start + range.length, "", {
-      expectedText: promptRef.current.slice(range.start, range.start + range.length),
+    if (!range || range.text.length === 0) return;
+    applyPromptReplacement(range.start, range.start + range.text.length, "", {
+      expectedText: range.text,
     });
-  }, [applyPromptReplacement, promptRef]);
+  }, [applyPromptReplacement]);
 
   // Avi Code addition: record from the microphone the user chose, not whatever
   // the system calls default.
@@ -2066,6 +2079,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // whether the microphone is actually hearing anything. Null while idle, which
   // tears the audio graph down.
   const dictationLevel = useAudioLevel(dictation.stream);
+  const releaseDictation = dictation.release;
+  releaseDictationRef.current = releaseDictation;
 
   // Avi Code addition: dictation used to fail in silence. The hook set an
   // error, nothing rendered it, and a rejected Deepgram token just made the
@@ -2352,6 +2367,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // click) is driving this send. `onSend` consults this to distinguish an
       // intentional plan implementation from a stray programmatic call.
       planImplementIntentRef.current = true;
+      // Avi Code addition: a send ends dictation. The words heard so far are
+      // already in the composer and go out with this message; left running,
+      // the next transcript would land in the emptied composer.
+      dictationRangeRef.current = null;
+      releaseDictation();
       onSend(event);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
@@ -2365,6 +2385,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       noProviderAvailable,
       onSend,
       planImplementIntentRef,
+      releaseDictation,
       shouldBlurMobileComposerOnSubmit,
     ],
   );

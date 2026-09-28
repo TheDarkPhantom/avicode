@@ -804,6 +804,47 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
   );
 }
 
+/** Avi Code addition: the parts of a draft the user wrote, as opposed to its settings. */
+function pickComposerContent(
+  draft: ComposerThreadDraftState,
+): Pick<
+  ComposerThreadDraftState,
+  | "prompt"
+  | "images"
+  | "nonPersistedImageIds"
+  | "persistedAttachments"
+  | "terminalContexts"
+  | "threadContextIds"
+  | "elementContexts"
+  | "previewAnnotations"
+  | "reviewComments"
+> {
+  return {
+    prompt: draft.prompt,
+    images: draft.images,
+    nonPersistedImageIds: draft.nonPersistedImageIds,
+    persistedAttachments: draft.persistedAttachments,
+    terminalContexts: draft.terminalContexts,
+    threadContextIds: draft.threadContextIds,
+    elementContexts: draft.elementContexts,
+    previewAnnotations: draft.previewAnnotations,
+    reviewComments: draft.reviewComments,
+  };
+}
+
+function hasComposerContent(draft: ComposerThreadDraftState): boolean {
+  return (
+    draft.prompt.trim().length > 0 ||
+    draft.images.length > 0 ||
+    draft.persistedAttachments.length > 0 ||
+    draft.terminalContexts.length > 0 ||
+    draft.threadContextIds.length > 0 ||
+    draft.elementContexts.length > 0 ||
+    draft.previewAnnotations.length > 0 ||
+    draft.reviewComments.length > 0
+  );
+}
+
 function normalizeProviderDriverKind(value: unknown): ProviderDriverKind | null {
   return isProviderDriverKind(value) ? value : null;
 }
@@ -2633,10 +2674,39 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           }
           set((state) => {
             const existing = state.draftThreadsByThreadKey[threadKey];
-            if (!isDraftThreadPromoting(existing)) {
+            if (!isDraftThreadPromoting(existing) || !existing?.promotedTo) {
               return state;
             }
-            return removeDraftThreadReferences(state, threadKey);
+            // Avi Code addition: whatever was typed after the first send lives
+            // under the draft's key, and the server thread's composer reads its
+            // own. Carry it across instead of deleting it with the draft.
+            const serverThreadKey = scopedThreadKey(existing.promotedTo);
+            const leftover = state.draftsByThreadKey[threadKey];
+            const serverDraft = state.draftsByThreadKey[serverThreadKey];
+            if (
+              !leftover ||
+              !hasComposerContent(leftover) ||
+              (serverDraft && hasComposerContent(serverDraft))
+            ) {
+              return removeDraftThreadReferences(state, threadKey);
+            }
+            // Dropped from the state first so the moved images keep their
+            // preview URLs rather than being revoked with the draft.
+            const { [threadKey]: _moved, ...otherDrafts } = state.draftsByThreadKey;
+            const removed = removeDraftThreadReferences(
+              { ...state, draftsByThreadKey: otherDrafts },
+              threadKey,
+            );
+            return {
+              ...removed,
+              draftsByThreadKey: {
+                ...removed.draftsByThreadKey,
+                [serverThreadKey]: {
+                  ...(serverDraft ?? createEmptyThreadDraft()),
+                  ...pickComposerContent(leftover),
+                },
+              },
+            };
           });
         },
         clearDraftThread: (threadRef) => {

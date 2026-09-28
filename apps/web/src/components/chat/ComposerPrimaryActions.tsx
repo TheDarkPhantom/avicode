@@ -113,6 +113,16 @@ export function planFollowUpPrimaryAction(input: {
   return input.hasLinkedPlanReview ? "review" : "implement";
 }
 
+/**
+ * Avi Code addition: while a turn runs, Send joins Stop only once there is
+ * something to send, so an idle composer still shows Stop alone.
+ */
+export function shouldOfferSendWhileRunning(input: {
+  readonly hasSendableContent: boolean;
+}): boolean {
+  return input.hasSendableContent;
+}
+
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
 };
@@ -200,8 +210,25 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  const sendButton = (
+    <SendButton
+      state={normalComposerPrimaryActionState({
+        isSendBusy,
+        isConnecting,
+        isEnvironmentUnavailable,
+        hasQueuedTurn,
+        hasSendableContent,
+        isPreparingWorktree,
+        sendDisabledReason,
+      })}
+      isWorking={isConnecting || isSendBusy}
+      stageBackdropVariant={stageBackdropVariant}
+      onPointerDown={pointerFocusProps?.onPointerDown}
+    />
+  );
+
   if (isRunning) {
-    return (
+    const stopButton = (
       <button
         type="button"
         className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none sm:h-8 sm:w-8"
@@ -213,6 +240,19 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
       </button>
+    );
+    // Avi Code addition: with something to send, Send sits beside Stop so a
+    // follow-up can be clicked out rather than only sent with Enter. It
+    // submits the form, so the send-while-running setting still decides
+    // whether it steers the running turn or waits for it.
+    if (!shouldOfferSendWhileRunning({ hasSendableContent })) {
+      return stopButton;
+    }
+    return (
+      <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
+        {stopButton}
+        {sendButton}
+      </div>
     );
   }
 
@@ -288,15 +328,24 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  const primaryActionState = normalComposerPrimaryActionState({
-    isSendBusy,
-    isConnecting,
-    isEnvironmentUnavailable,
-    hasQueuedTurn,
-    hasSendableContent,
-    isPreparingWorktree,
-    sendDisabledReason,
-  });
+  return sendButton;
+});
+
+/**
+ * Avi Code addition: the round send button, lifted out of
+ * `ComposerPrimaryActions` so the running state can show it beside Stop.
+ */
+function SendButton({
+  state,
+  isWorking,
+  stageBackdropVariant,
+  onPointerDown,
+}: {
+  state: ReturnType<typeof normalComposerPrimaryActionState>;
+  isWorking: boolean;
+  stageBackdropVariant: ReturnType<typeof useSidebarStageBackdropVariant>;
+  onPointerDown: PointerEventHandler<HTMLElement> | undefined;
+}) {
   return (
     <button
       type="submit"
@@ -306,16 +355,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           ? "bg-transparent enabled:shadow-black/24 enabled:hover:brightness-110"
           : "bg-primary/90 enabled:shadow-primary/24 hover:bg-primary",
       )}
-      {...pointerFocusProps}
-      disabled={primaryActionState.disabled}
-      aria-label={primaryActionState.label}
+      onPointerDown={onPointerDown}
+      disabled={state.disabled}
+      aria-label={state.label}
     >
       {stageBackdropVariant ? (
         <span className="absolute inset-0 -z-10" aria-hidden="true">
           <StageBackdropButtonArt variant={stageBackdropVariant} />
         </span>
       ) : null}
-      {isConnecting || isSendBusy ? (
+      {isWorking ? (
         <Spinner className="size-3.5" aria-hidden="true" />
       ) : (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -330,4 +379,4 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       )}
     </button>
   );
-});
+}
