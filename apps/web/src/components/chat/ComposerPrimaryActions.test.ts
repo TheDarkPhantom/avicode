@@ -5,6 +5,7 @@ import {
   formatPendingPrimaryActionLabel,
   normalComposerPrimaryActionState,
   planFollowUpPrimaryAction,
+  shouldOfferSendWhileRunning,
 } from "./ComposerPrimaryActions";
 
 describe("planFollowUpPrimaryAction", () => {
@@ -165,5 +166,15 @@ describe("canSubmitComposerProviderState", () => {
         environmentUnavailable: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldOfferSendWhileRunning", () => {
+  it("offers Send beside Stop once there is something to send", () => {
+    expect(shouldOfferSendWhileRunning({ hasSendableContent: true })).toBe(true);
+  });
+
+  it("leaves Stop alone while the composer is empty", () => {
+    expect(shouldOfferSendWhileRunning({ hasSendableContent: false })).toBe(false);
   });
 });

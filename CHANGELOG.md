@@ -36,6 +36,17 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Sending a message now turns voice dictation off (#241)
+- Text you type right after sending a new chat's first message is no longer wiped (#241)
+- Voice dictation no longer overwrites text you typed while it was listening (#241)
+- Click Send beside Stop to send a follow-up while a reply is still running (#241)
+
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
 Upstream: t3code 0.0.31

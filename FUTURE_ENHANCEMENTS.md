@@ -230,6 +230,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Five explicit thread references and 600,000 serialized context characters per turn.
 - No conversation or attachment contents in ALFRED exports or window titles.
 - No automated upstream merge or binary publication.
+- Sending while dictating sends what is already in the composer and releases the microphone at
+  once. Words still in flight to Deepgram at that moment are dropped rather than delaying the send.
+- Editing inside the dictated span while dictating ends the dictation session, with a toast.
 
 ## Shipped
 

@@ -46,6 +46,12 @@ export interface UseDictationResult {
   readonly start: () => void;
   readonly stop: () => void;
   readonly cancel: () => void;
+  /**
+   * Avi Code addition: ends the session and releases the microphone without
+   * calling `onTranscript` or `onCancel`, leaving the composer exactly as it
+   * is. Used on send, where the text already inserted is what goes out.
+   */
+  readonly release: () => void;
   readonly toggle: () => void;
   readonly dismissError: () => void;
 }
@@ -288,7 +294,12 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     const socket = socketRef.current;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "CloseStream" }));
-      window.setTimeout(() => finish(false), 250);
+      // Avi Code change: skip the flush if `release` ended the session while
+      // it was pending, so a send in that window gets no stray final write.
+      const session = sessionRef.current;
+      window.setTimeout(() => {
+        if (sessionRef.current === session) finish(false);
+      }, 250);
       return;
     }
     finish(false);
@@ -298,6 +309,16 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     if (!startingRef.current) return;
     finish(true);
   }, [finish]);
+
+  const release = useCallback(() => {
+    if (!startingRef.current) return;
+    sessionRef.current += 1;
+    stoppingRef.current = false;
+    teardown();
+    transcriptRef.current = emptyTranscript;
+    startingRef.current = false;
+    setStatus("idle");
+  }, [teardown]);
 
   const isActive = status === "starting" || status === "recording" || status === "stopping";
 
@@ -337,6 +358,7 @@ export function useDictation(options: UseDictationOptions): UseDictationResult {
     start: () => void start(),
     stop,
     cancel,
+    release,
     toggle,
     dismissError,
   };
