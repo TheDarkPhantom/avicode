@@ -61,6 +61,7 @@ Upstream: t3code 0.0.31
 - Selected text stays visible on a file line opened from a link (#13548 by Theo Browne)
 - When browser preview tools fail, agents are told what to try instead (#13559 by Theo Browne)
 - Browser preview snapshots stay small enough for agents to read in full (#13558 by Theo Browne)
+- Running threads keep syncing in the background, so opening one is instant (#13554 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
