@@ -47,7 +47,8 @@ See the full schema for more details: [`packages/contracts/src/keybindings.ts`](
   { "key": "mod+n", "command": "chat.new", "when": "!terminalFocus" },
   { "key": "mod+shift+o", "command": "chat.new", "when": "!terminalFocus" },
   { "key": "mod+shift+n", "command": "chat.newLocal", "when": "!terminalFocus" },
-  { "key": "mod+o", "command": "editor.openFavorite" }
+  { "key": "mod+o", "command": "editor.openFavorite" },
+  { "key": "mod+shift+e", "command": "thread.settle", "when": "!terminalFocus" }
 ]
 ```
 
@@ -78,6 +79,9 @@ Invalid rules are ignored. Invalid config files are ignored. Warnings are logged
 - `thread.archive`: close the open thread by archiving it, then land on a fresh draft in the same
   project (outside a focused terminal by default). Reversible from Settings → Archived. On desktop
   this takes over `mod+w` from the native Close Window item, which moves to `mod+shift+w`.
+- `thread.settle`: settle the open thread, or restore it when it is already settled (outside a
+  focused terminal by default). Settling shows an Undo, also reachable with `mod+z`. Upstream uses
+  `mod+shift+s`, which here toggles the preview split.
 - `preview.toggle`: open/close the in-app browser preview panel (desktop app only)
 - `preview.refresh`: reload the active preview tab (in focused preview context by default)
 - `preview.focusUrl`: focus the URL input of the preview panel (in focused preview context by default)

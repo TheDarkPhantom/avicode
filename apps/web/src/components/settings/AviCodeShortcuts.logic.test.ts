@@ -156,6 +156,7 @@ describe("AviCodeShortcuts.logic", () => {
       expect(rendered.has("Jump to chat by position")).toBe(true);
       expect(rendered.has("Pick model by position")).toBe(true);
       expect(rendered.has("Navigation: Back")).toBe(true);
+      expect(rendered.has("Thread: Settle")).toBe(true);
       expect(groups.every((group) => group.entries.length > 0)).toBe(true);
     });
 

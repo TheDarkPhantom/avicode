@@ -83,6 +83,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
+  // Avi Code change: upstream binds this to `mod+shift+s`, which the fork gives to
+  // `preview.toggleSplit`. `mod+shift+e` is unclaimed, and a Ctrl+Alt chord
+  // would collide with AltGr letters on European layouts.
+  { key: "mod+shift+e", command: "thread.settle", when: "!terminalFocus" },
   // Avi Code addition: the browser "reopen closed tab" chord (Ctrl+Shift+T,
   // Cmd+Shift+T on macOS), restoring the most recently archived thread. Gated
   // off a focused terminal so it does not shadow the shell.

@@ -6,7 +6,7 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { DEFAULT_KEYBINDINGS, DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   formatShortcutLabel,
   isAppZoomShortcut,
@@ -1073,5 +1073,75 @@ describe("navigation history shortcuts", () => {
         context: { terminalFocus: true },
       }),
     );
+  });
+});
+
+describe("settle thread shortcut", () => {
+  it("resolves mod+shift+e outside the terminal", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "e", metaKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+      "thread.settle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "E", code: "KeyE", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "thread.settle",
+    );
+  });
+
+  it("does not intercept the terminal", () => {
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "E", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32", context: { terminalFocus: true } },
+      ),
+    );
+  });
+
+  it("leaves upstream's mod+shift+s to the preview split", () => {
+    const chord = event({ key: "S", code: "KeyS", ctrlKey: true, shiftKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(chord, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { previewOpen: true },
+      }),
+      "preview.toggleSplit",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(chord, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Win32" }),
+      "thread.settle",
+    );
+  });
+});
+
+describe("new default chords", () => {
+  it("do not share a key with any other default rule", () => {
+    const newRules = DEFAULT_KEYBINDINGS.filter(
+      (rule) =>
+        rule.command === "navigation.back" ||
+        rule.command === "navigation.forward" ||
+        rule.command === "thread.settle",
+    );
+    assert.deepStrictEqual(newRules.map((rule) => rule.key).toSorted(), [
+      "alt+arrowleft",
+      "alt+arrowright",
+      "mod+[",
+      "mod+]",
+      "mod+shift+e",
+    ]);
+    for (const rule of newRules) {
+      const sharing = DEFAULT_KEYBINDINGS.filter(
+        (candidate) => candidate !== rule && candidate.key === rule.key,
+      );
+      assert.deepStrictEqual(sharing, [], `${rule.key} is also bound`);
+    }
   });
 });
