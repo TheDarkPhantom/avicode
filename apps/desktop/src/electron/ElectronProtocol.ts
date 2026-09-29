@@ -89,7 +89,9 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
+    // The file viewer frames HTML and PDF files from signed asset URLs on runtime
+    // environments. HTML frames keep their own sandbox; script-src is unchanged.
+    "frame-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");
 }
