@@ -311,6 +311,13 @@ export function toOpenCodeFileParts(input: {
   const parts: Array<FilePartInput> = [];
 
   for (const attachment of input.attachments ?? []) {
+    // Avi Code addition: a document's stored file is its extracted text, which
+    // is already inlined into the turn text. Sending it again as a file part
+    // would duplicate it under the original document's mime (e.g. a `.txt`
+    // labelled application/pdf).
+    if (attachment.type !== "image") {
+      continue;
+    }
     const attachmentPath = input.resolveAttachmentPath(attachment);
     if (!attachmentPath) {
       continue;

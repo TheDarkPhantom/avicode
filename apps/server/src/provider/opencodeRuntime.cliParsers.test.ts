@@ -2,7 +2,11 @@ import * as NodeAssert from "node:assert/strict";
 
 import { describe, it } from "vite-plus/test";
 
-import { parseModelsCliOutput, parseAgentListCliOutput } from "./opencodeRuntime.ts";
+import {
+  parseAgentListCliOutput,
+  parseModelsCliOutput,
+  toOpenCodeFileParts,
+} from "./opencodeRuntime.ts";
 
 describe("parseModelsCliOutput", () => {
   it("parses a single model from a single provider", () => {
@@ -250,5 +254,38 @@ describe("parseAgentListCliOutput", () => {
     const result = parseAgentListCliOutput(stdout);
     NodeAssert.equal(result[0]!.hidden, true);
     NodeAssert.equal(result[1]!.hidden, false);
+  });
+});
+
+// Avi Code addition: a document's stored file is its extracted `.txt`, already
+// inlined into the turn text. It must never ride as a file part labelled with
+// the original document's mime.
+describe("toOpenCodeFileParts", () => {
+  it("skips document attachments and keeps images", () => {
+    const parts = toOpenCodeFileParts({
+      attachments: [
+        {
+          type: "document",
+          id: "thread-1-00000000-0000-4000-8000-000000000001",
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 100,
+          extractedChars: 11,
+        },
+        {
+          type: "image",
+          id: "thread-1-00000000-0000-4000-8000-000000000002",
+          name: "shot.png",
+          mimeType: "image/png",
+          sizeBytes: 9,
+        },
+      ],
+      resolveAttachmentPath: (attachment) => `/tmp/${attachment.id}`,
+    });
+
+    NodeAssert.deepEqual(
+      parts.map((part) => [part.mime, part.filename]),
+      [["image/png", "shot.png"]],
+    );
   });
 });
