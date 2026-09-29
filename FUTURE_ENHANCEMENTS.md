@@ -16,6 +16,23 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
+- Upstream sync of 2026-09-29 (#242 to #245) reviewed `pingdotgg/t3code` through `d2c9281b8`; the
+  next review starts there. It left these out on purpose:
+  - Settling a thread (#13673) closes idle terminals only. Closing the setup-script shell needs the
+    fork's `ProjectSetupScriptRunner` to observe completion. Stopping the agent session on settle
+    needs an `onlyIfSettled` contracts field.
+  - The node-pty bump chain (#13748, #13927, #14179) goes in all together or not at all. Without it,
+    `vp run dev` on Windows restarts the server the first time a terminal opens, because node-pty's
+    files trip the watcher. This only affects dev, not packaged builds.
+  - Grok one-click updates (#13523): the fork's maintenance resolver is synchronous, so porting it
+    needs upstream's async resolver.
+  - Cached compiled JavaScript between launches (#13501) is a real startup speedup, but it changes
+    the packaged entry point, so it waits for a packaging review.
+  - Anything built on upstream-only systems (usage readers, reset credits, the model manifest,
+    provider compatibility ranges, PR reactors) and the Effect rc.115 upgrade.
+- Claude Sonnet 5.5 needs Claude Code 2.1.284 or newer. Older installs hide it and show the upgrade
+  message instead.
+
 - Sidebar project folders live in `t3code:ui-state:v1` (per device), so a folder made on one client
   is not visible on another. Server-synced folders would change that. While Manual project sort is
   active and folders exist, cross-folder drag reorder is disabled: the folder-section view renders
