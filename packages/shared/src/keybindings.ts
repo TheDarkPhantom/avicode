@@ -20,6 +20,17 @@ type WhenToken =
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+b", command: "sidebar.toggle" },
+  { key: "mod+[", command: "navigation.back", when: "!terminalFocus" },
+  { key: "mod+]", command: "navigation.forward", when: "!terminalFocus" },
+  // Avi Code addition: the Windows browser chords for back and forward. They
+  // yield to text fields, where Alt+Left/Right move by word on macOS, and to
+  // the terminal, where they are readline word motions.
+  { key: "alt+arrowleft", command: "navigation.back", when: "!terminalFocus && !editableFocus" },
+  {
+    key: "alt+arrowright",
+    command: "navigation.forward",
+    when: "!terminalFocus && !editableFocus",
+  },
   { key: "mod+j", command: "terminal.toggle" },
   { key: "mod+alt+b", command: "rightPanel.toggle" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
@@ -72,6 +83,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
+  // Avi Code change: upstream binds this to `mod+shift+s`, which the fork gives to
+  // `preview.toggleSplit`. `mod+shift+e` is unclaimed, and a Ctrl+Alt chord
+  // would collide with AltGr letters on European layouts.
+  { key: "mod+shift+e", command: "thread.settle", when: "!terminalFocus" },
   // Avi Code addition: the browser "reopen closed tab" chord (Ctrl+Shift+T,
   // Cmd+Shift+T on macOS), restoring the most recently archived thread. Gated
   // off a focused terminal so it does not shadow the shell.

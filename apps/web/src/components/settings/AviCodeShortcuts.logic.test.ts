@@ -142,6 +142,7 @@ describe("AviCodeShortcuts.logic", () => {
 
       expect(groups.map((group) => group.title)).toEqual([
         "Window & panels",
+        "Navigation",
         "Chat & composer",
         "Chats",
         "Terminal",
@@ -154,6 +155,8 @@ describe("AviCodeShortcuts.logic", () => {
       expect(rendered.has("Command Palette: Toggle")).toBe(true);
       expect(rendered.has("Jump to chat by position")).toBe(true);
       expect(rendered.has("Pick model by position")).toBe(true);
+      expect(rendered.has("Navigation: Back")).toBe(true);
+      expect(rendered.has("Thread: Settle")).toBe(true);
       expect(groups.every((group) => group.entries.length > 0)).toBe(true);
     });
 
@@ -171,6 +174,9 @@ describe("AviCodeShortcuts.logic", () => {
     it("phrases known when-clauses and passes through unknown ones", () => {
       expect(shortcutContextLabel("")).toBeNull();
       expect(shortcutContextLabel("!terminalFocus")).toBe("Outside the terminal");
+      expect(shortcutContextLabel("!terminalFocus && !editableFocus")).toBe(
+        "Outside text fields and the terminal",
+      );
       expect(shortcutContextLabel("previewFocus && previewOpen")).toBe("In the preview");
       expect(shortcutContextLabel("somethingCustom")).toBe("somethingCustom");
     });
