@@ -78,6 +78,8 @@ export type FindKeybindingCommand = (typeof FIND_KEYBINDING_COMMANDS)[number];
 
 const STATIC_KEYBINDING_COMMANDS = [
   "sidebar.toggle",
+  "navigation.back",
+  "navigation.forward",
   ...APP_ZOOM_KEYBINDING_COMMANDS,
   "terminal.toggle",
   "terminal.split",

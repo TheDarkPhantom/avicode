@@ -1009,3 +1009,69 @@ describe("plus key parsing", () => {
     );
   });
 });
+
+describe("navigation history shortcuts", () => {
+  it("navigates history with mod+[ and mod+] outside the terminal", () => {
+    const back = event({ key: "[", code: "BracketLeft", metaKey: true });
+    const forward = event({ key: "]", code: "BracketRight", ctrlKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel" }),
+      "navigation.back",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(forward, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Linux" }),
+      "navigation.forward",
+    );
+    assert.isNull(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("keeps mod+shift+[ and mod+shift+] on thread traversal", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "{", code: "BracketLeft", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "thread.previous",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "thread.next",
+    );
+  });
+
+  // Avi Code addition: the Windows browser chords.
+  it("navigates history with Alt+Left and Alt+Right outside text fields", () => {
+    const back = event({ key: "ArrowLeft", code: "ArrowLeft", altKey: true });
+    const forward = event({ key: "ArrowRight", code: "ArrowRight", altKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Win32" }),
+      "navigation.back",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(forward, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Win32" }),
+      "navigation.forward",
+    );
+    assert.isNull(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { editableFocus: true },
+      }),
+    );
+    assert.isNull(
+      resolveShortcutCommand(forward, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+});

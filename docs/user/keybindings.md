@@ -19,6 +19,18 @@ See the full schema for more details: [`packages/contracts/src/keybindings.ts`](
 
 ```json
 [
+  { "key": "mod+[", "command": "navigation.back", "when": "!terminalFocus" },
+  { "key": "mod+]", "command": "navigation.forward", "when": "!terminalFocus" },
+  {
+    "key": "alt+arrowleft",
+    "command": "navigation.back",
+    "when": "!terminalFocus && !editableFocus"
+  },
+  {
+    "key": "alt+arrowright",
+    "command": "navigation.forward",
+    "when": "!terminalFocus && !editableFocus"
+  },
   { "key": "mod+j", "command": "terminal.toggle" },
   { "key": "mod+d", "command": "terminal.split", "when": "terminalFocus" },
   { "key": "mod+n", "command": "terminal.new", "when": "terminalFocus" },
@@ -55,6 +67,10 @@ Invalid rules are ignored. Invalid config files are ignored. Warnings are logged
 
 ### Available Commands
 
+- `navigation.back` / `navigation.forward`: move through the pages you have visited, like a
+  browser's back and forward buttons. `mod+[` and `mod+]` work outside the terminal; `alt+left` and
+  `alt+right` also skip text fields. In the desktop app the mouse's back and forward buttons do the
+  same, unless Settings → Avi Code has them step through sidebar threads instead.
 - `terminal.toggle`: open/close terminal drawer
 - `terminal.split`: split terminal (in focused terminal context by default)
 - `terminal.new`: create new terminal (in focused terminal context by default)
@@ -101,6 +117,7 @@ Currently available context keys:
 - `terminalOpen`
 - `previewFocus`
 - `previewOpen`
+- `editableFocus` (a text field or the composer has focus)
 
 Supported operators:
 
