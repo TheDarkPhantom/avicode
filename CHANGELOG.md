@@ -61,6 +61,18 @@ Upstream: t3code 0.0.31
 - Selected text stays visible on a file line opened from a link (#13548 by Theo Browne)
 - When browser preview tools fail, agents are told what to try instead (#13559 by Theo Browne)
 - Browser preview snapshots stay small enough for agents to read in full (#13558 by Theo Browne)
+- Background git checks no longer fill your disk with failed repack files (#13812 by Theo Browne)
+- The database log file shrinks back after big writes (#13684 by Theo Browne)
+- A database query that failed once is retried right away (#10584 by Aditya Garud)
+- Streaming replies take less server work when you have many threads (#13720 by Theo Browne)
+- The thread list loads with less server work (#13693 by Theo Browne)
+- Quitting no longer rewrites every old agent session record (#13688 by Theo Browne)
+- Idle session cleanup skips sessions that already ended (#13774 by Theo Browne)
+- Git remotes on a custom SSH port link to the right site (#12537 by Anton Bezdenezhnykh)
+- Installed editors no longer vanish from the Open in menu on Windows (#13669 by Bob Fowler)
+- Settling a thread closes its idle terminals and keeps busy ones open (#13673 by Theo Browne)
+- Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
+- OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

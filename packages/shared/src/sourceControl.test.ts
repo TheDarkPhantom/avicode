@@ -75,4 +75,21 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
       baseUrl: "https://self-hosted.example.test:8443",
     });
   });
+
+  it("does not reuse SSH ports for HTTPS provider URLs", () => {
+    expect(
+      detectSourceControlProviderFromRemoteUrl("ssh://git@gitlab.example.test:24/group/repo.git"),
+    ).toEqual({
+      kind: "gitlab",
+      name: "GitLab Self-Hosted",
+      baseUrl: "https://gitlab.example.test",
+    });
+    expect(
+      detectSourceControlProviderFromRemoteUrl("ssh://git@code.example.test:24/team/project.git"),
+    ).toEqual({
+      kind: "unknown",
+      name: "code.example.test",
+      baseUrl: "https://code.example.test",
+    });
+  });
 });
