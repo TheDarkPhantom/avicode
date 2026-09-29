@@ -114,6 +114,43 @@ function redactVoiceSettings(voice: ServerSettings["voice"]): ServerSettings["vo
   };
 }
 
+/**
+ * Avi Code port of pingdotgg/t3code#14103: secret names for the Bitbucket
+ * tokens saved from Source Control settings. One of each per environment.
+ */
+export const BITBUCKET_SECRET_NAMES = {
+  accessToken: "bitbucket-access-token",
+  apiToken: "bitbucket-api-token",
+} as const;
+
+type BitbucketSecretField = keyof typeof BITBUCKET_SECRET_NAMES;
+type MutableBitbucketSettings = {
+  -readonly [K in keyof ServerSettings["bitbucket"]]: ServerSettings["bitbucket"][K];
+};
+const BITBUCKET_SECRET_FIELDS: ReadonlyArray<{
+  readonly field: BitbucketSecretField;
+  readonly redactedFlag: "accessTokenRedacted" | "apiTokenRedacted";
+}> = [
+  { field: "accessToken", redactedFlag: "accessTokenRedacted" },
+  { field: "apiToken", redactedFlag: "apiTokenRedacted" },
+];
+
+function redactBitbucketSettings(
+  bitbucket: ServerSettings["bitbucket"],
+): ServerSettings["bitbucket"] {
+  return {
+    ...bitbucket,
+    accessToken: "",
+    apiToken: "",
+    ...(bitbucket.accessToken.length > 0 || bitbucket.accessTokenRedacted
+      ? { accessTokenRedacted: true }
+      : {}),
+    ...(bitbucket.apiToken.length > 0 || bitbucket.apiTokenRedacted
+      ? { apiTokenRedacted: true }
+      : {}),
+  };
+}
+
 export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
   const providerInstances = Object.fromEntries(
     Object.entries(settings.providerInstances).map(([instanceId, instance]) => [
@@ -126,7 +163,12 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances, voice: redactVoiceSettings(settings.voice) };
+  return {
+    ...settings,
+    providerInstances,
+    voice: redactVoiceSettings(settings.voice),
+    bitbucket: redactBitbucketSettings(settings.bitbucket),
+  };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -559,16 +601,109 @@ const make = Effect.gen(function* () {
       return { ...next, voice: { deepgramApiKey: "" } };
     });
 
+  const materializeBitbucketSecrets = (
+    settings: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    Effect.gen(function* () {
+      if (!BITBUCKET_SECRET_FIELDS.some(({ redactedFlag }) => settings.bitbucket[redactedFlag])) {
+        return settings;
+      }
+      const bitbucket: MutableBitbucketSettings = { ...settings.bitbucket };
+      for (const { field, redactedFlag } of BITBUCKET_SECRET_FIELDS) {
+        if (!bitbucket[redactedFlag]) continue;
+        const secretName = BITBUCKET_SECRET_NAMES[field];
+        const secret = yield* secretStore.get(secretName).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ServerSettingsError({
+                settingsPath,
+                operation: "read-secret",
+                environmentVariable: secretName,
+                cause,
+              }),
+          ),
+        );
+        bitbucket[field] = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
+      }
+      return { ...settings, bitbucket };
+    });
+
+  /**
+   * Same handshake as the Deepgram key, per token. A redacted flag with no new
+   * value keeps the stored secret; a value replaces it; an empty value with the
+   * flag cleared removes it. A plaintext token hand-edited into settings.json
+   * moves into the store on the next write.
+   */
+  const persistBitbucketSecrets = (
+    current: ServerSettings,
+    next: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    Effect.gen(function* () {
+      const bitbucket: MutableBitbucketSettings = { ...next.bitbucket };
+      let changed = false;
+      for (const { field, redactedFlag } of BITBUCKET_SECRET_FIELDS) {
+        const value = bitbucket[field];
+        const secretName = BITBUCKET_SECRET_NAMES[field];
+        if (value.length === 0 && bitbucket[redactedFlag]) continue;
+        if (
+          value.length === 0 &&
+          bitbucket[redactedFlag] === undefined &&
+          !current.bitbucket[redactedFlag]
+        ) {
+          continue;
+        }
+        if (value.length > 0) {
+          yield* secretStore.set(secretName, textEncoder.encode(value)).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ServerSettingsError({
+                  settingsPath,
+                  operation: "write-secret",
+                  environmentVariable: secretName,
+                  cause,
+                }),
+            ),
+          );
+          bitbucket[field] = "";
+          bitbucket[redactedFlag] = true;
+          changed = true;
+          continue;
+        }
+        if (current.bitbucket[redactedFlag]) {
+          yield* secretStore.remove(secretName).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ServerSettingsError({
+                  settingsPath,
+                  operation: "remove-secret",
+                  environmentVariable: secretName,
+                  cause,
+                }),
+            ),
+          );
+        }
+        delete bitbucket[redactedFlag];
+        changed = true;
+      }
+      return changed ? { ...next, bitbucket } : next;
+    });
+
   const materializeSecrets = (
     settings: ServerSettings,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-    materializeProviderEnvironmentSecrets(settings).pipe(Effect.flatMap(materializeVoiceSecret));
+    materializeProviderEnvironmentSecrets(settings).pipe(
+      Effect.flatMap(materializeVoiceSecret),
+      Effect.flatMap(materializeBitbucketSecrets),
+    );
 
   const persistSecrets = (
     current: ServerSettings,
     next: ServerSettings,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-    persistProviderEnvironmentSecrets(current, next).pipe(Effect.flatMap(persistVoiceSecret));
+    persistProviderEnvironmentSecrets(current, next).pipe(
+      Effect.flatMap(persistVoiceSecret),
+      Effect.flatMap((persisted) => persistBitbucketSecrets(current, persisted)),
+    );
 
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
