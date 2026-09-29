@@ -64,6 +64,7 @@ Upstream: t3code 0.0.31
 - Running threads keep syncing in the background, so opening one is instant (#13554 by Theo Browne)
 - Run a one-line shell command from a reply in the thread's terminal (#13060 by Bilal Bakr)
 - Newer Codex models get Avi Code's instructions again, even after compaction (#13547 by Theo Browne)
+- Opening a running thread no longer flashes the sync status (#13551 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
