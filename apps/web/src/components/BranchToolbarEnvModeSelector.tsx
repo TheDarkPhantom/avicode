@@ -52,16 +52,13 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
     return (
       <span className="inline-flex shrink-0 items-center gap-1 border border-transparent px-[calc(--spacing(3)-1px)] text-sm font-medium text-muted-foreground/70 sm:text-xs">
         {activeWorktreePath ? (
-          <>
-            <FolderGitIcon className="size-3" />
-            {resolveLockedWorkspaceLabel(activeWorktreePath)}
-          </>
+          <FolderGitIcon className="size-3" />
+        ) : effectiveEnvMode === "worktree" ? (
+          <FolderGit2Icon className="size-3" />
         ) : (
-          <>
-            <FolderIcon className="size-3" />
-            {resolveLockedWorkspaceLabel(activeWorktreePath)}
-          </>
+          <FolderIcon className="size-3" />
         )}
+        {resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)}
       </span>
     );
   }

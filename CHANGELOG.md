@@ -66,6 +66,7 @@ Upstream: t3code 0.0.31
 - Newer Codex models get Avi Code's instructions again, even after compaction (#13547 by Theo Browne)
 - Opening a running thread no longer flashes the sync status (#13551 by Theo Browne)
 - Back and Escape from settings or usage return to the main app (#13516 by Theo Browne)
+- New worktree threads no longer say Local checkout during setup (#13590 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
