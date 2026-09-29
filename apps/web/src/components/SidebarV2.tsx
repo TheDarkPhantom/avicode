@@ -134,6 +134,7 @@ import {
   resolveThreadPr,
   settledPrHoverColorClass,
   terminalStatusFromRunningIds,
+  synchronizeTerminalPulse,
   type TerminalStatusIndicator,
 } from "./ThreadStatusIndicators";
 import {
@@ -884,7 +885,10 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
       data-testid={`sidebar-v2-terminal-status-${thread.id}`}
       className={cn("inline-flex shrink-0 items-center justify-center", terminalStatus.colorClass)}
     >
-      <TerminalIcon className={cn("size-3.5", terminalStatus.pulse && "animate-status-pulse")} />
+      <TerminalIcon
+        className={cn("size-3.5", terminalStatus.pulse && "motion-safe:animate-status-pulse")}
+        onAnimationStart={synchronizeTerminalPulse}
+      />
     </span>
   ) : null;
   // Avi Code addition: open or start this thread's dev server from the sidebar.

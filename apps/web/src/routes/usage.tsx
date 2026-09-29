@@ -1,6 +1,7 @@
-import { createFileRoute, redirect, useCanGoBack, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useEffect } from "react";
 
+import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { UsagePageContent } from "../components/usage/UsagePageContent";
 import { SidebarInset } from "../components/ui/sidebar";
 import { isElectron } from "../env";
@@ -13,15 +14,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
  * a single source of truth that does not go stale when revisiting old threads.
  */
 function UsageRouteLayout() {
-  const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
-  const navigateBackWithinApp = useCallback(() => {
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, navigate]);
+  const navigateToMainApp = useNavigateToMainApp();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -31,14 +24,14 @@ function UsageRouteLayout() {
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      navigateBackWithinApp();
+      void navigateToMainApp();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [navigateBackWithinApp]);
+  }, [navigateToMainApp]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">

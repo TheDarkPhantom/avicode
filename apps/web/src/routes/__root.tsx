@@ -21,6 +21,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
+import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { WorktreeHealthNotification } from "../components/WorktreeHealthNotification";
 import { OfflineTurnOutboxFlusher } from "../components/OfflineTurnOutboxFlusher";
@@ -33,6 +34,7 @@ import {
   toastManager,
 } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
+import { isElectron } from "../env";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -136,6 +138,7 @@ function RootRouteView() {
         <DocumentTitleSync />
         <GlassAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+        {isElectron ? <RunningThreadKeepAlive /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />

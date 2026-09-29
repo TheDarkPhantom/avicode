@@ -39,6 +39,10 @@
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
     },
+    "./delayed-status": {
+      "types": "./src/delayedStatus.ts",
+      "default": "./src/delayedStatus.ts"
+    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"

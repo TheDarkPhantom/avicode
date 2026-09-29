@@ -38,7 +38,10 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
-import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import {
+  buildCodexAdditionalContext,
+  buildCodexDeveloperInstructions,
+} from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -75,10 +78,13 @@ const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 const isCodexUserInputAnswerObject = Schema.is(CodexUserInputAnswerObject);
 
 // TODO: Verify `packages/effect-codex-app-server/scripts/generate.ts` so the generated
-// `V2TurnStartParams` schema includes `collaborationMode` directly.
+// `V2TurnStartParams` schema includes its experimental fields directly.
 const CodexTurnStartParamsWithCollaborationMode = EffectCodexSchema.V2TurnStartParams.pipe(
   Schema.fieldsAssign({
     collaborationMode: Schema.optionalKey(EffectCodexSchema.V2TurnStartParams__CollaborationMode),
+    additionalContext: Schema.optionalKey(
+      Schema.Record(Schema.String, EffectCodexSchema.V2TurnStartParams__AdditionalContextEntry),
+    ),
   }),
 );
 const decodeCodexTurnStartParamsWithCollaborationMode = Schema.decodeUnknownEffect(
@@ -367,27 +373,58 @@ function runtimeModeToTurnSandboxPolicy(
   }
 }
 
-function buildCodexCollaborationMode(input: {
+function buildCodexTurnInstructions(input: {
   readonly interactionMode?: ProviderInteractionMode;
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
-}): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
+}): Pick<CodexTurnStartParamsWithCollaborationMode, "collaborationMode" | "additionalContext"> {
   if (input.interactionMode === undefined) {
-    return undefined;
+    return {};
   }
   const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
   const reasoningEffort = input.effort ?? "medium";
   return {
-    mode: input.interactionMode,
-    settings: {
-      model,
-      reasoning_effort: reasoningEffort,
-      developer_instructions: buildCodexDeveloperInstructions(input.interactionMode, {
+    collaborationMode: {
+      mode: input.interactionMode,
+      settings: {
         model,
-        reasoningEffort,
-      }),
+        reasoning_effort: reasoningEffort,
+        developer_instructions: buildCodexDeveloperInstructions(input.interactionMode),
+      },
     },
+    additionalContext: buildCodexAdditionalContext({ model, reasoningEffort }),
   };
+}
+
+/**
+ * The `thread/inject_items` payload that puts `additionalContext` back into a
+ * thread's history, rendered the way Codex renders it on `turn/start`.
+ */
+export function buildAdditionalContextInjection(
+  threadId: string,
+  context: NonNullable<CodexTurnStartParamsWithCollaborationMode["additionalContext"]>,
+): CodexRpc.ClientRequestParamsByMethod["thread/inject_items"] {
+  return {
+    threadId,
+    items: Object.entries(context).map(([key, entry]) => ({
+      type: "message",
+      role: "developer",
+      content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+    })),
+  };
+}
+
+/** True for the root thread's own compaction; child agent threads keep their own history. */
+export function isRootContextCompaction(
+  notification: CodexServerNotification,
+  rootThreadId: string | undefined,
+): notification is Extract<CodexServerNotification, { readonly method: "item/completed" }> {
+  return (
+    rootThreadId !== undefined &&
+    notification.method === "item/completed" &&
+    notification.params.item.type === "contextCompaction" &&
+    notification.params.threadId === rootThreadId
+  );
 }
 
 export function buildTurnStartParams(input: {
@@ -418,7 +455,7 @@ export function buildTurnStartParams(input: {
   }
 
   const config = runtimeModeToThreadConfig(input.runtimeMode);
-  const collaborationMode = buildCodexCollaborationMode({
+  const turnInstructions = buildCodexTurnInstructions({
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -433,7 +470,7 @@ export function buildTurnStartParams(input: {
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    ...(collaborationMode ? { collaborationMode } : {}),
+    ...turnInstructions,
   }).pipe(
     Effect.mapError((cause) =>
       CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
@@ -867,6 +904,9 @@ export const makeCodexSessionRuntime = (
      * it belongs to and silence a real error later.
      */
     const interruptInFlightRef = yield* Ref.make(false);
+    /** The `additionalContext` of the latest `turn/start`, restored after compaction. */
+    const lastAdditionalContextRef =
+      yield* Ref.make<CodexTurnStartParamsWithCollaborationMode["additionalContext"]>(undefined);
 
     // `~` is not shell-expanded when env vars are set via
     // `child_process.spawn`; `expandHomePath` lets a configured
@@ -1003,6 +1043,32 @@ export const makeCodexSessionRuntime = (
         ),
       );
 
+    /**
+     * Ported from upstream #13547. Compaction rebuilds history from user
+     * messages and Codex's own context, which drops our `additionalContext`
+     * messages. Codex only resends an entry when its value changes, so without
+     * this Avi's context would stay lost until the model or effort changed.
+     * Awaited so the context is back before later notifications from the same
+     * turn are handled. Drop this if Codex enables its
+     * `retain_client_developer_messages` feature by default.
+     */
+    const restoreAdditionalContext = (threadId: string) =>
+      Effect.gen(function* () {
+        const context = yield* Ref.get(lastAdditionalContextRef);
+        if (!context) return;
+        yield* client.request(
+          "thread/inject_items",
+          buildAdditionalContextInjection(threadId, context),
+        );
+      }).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to restore Codex additional context after compaction.", {
+            cause,
+          }),
+        ),
+      );
+
     const handleRawNotification = (notification: CodexServerNotification) =>
       Effect.gen(function* () {
         // Avi Code addition: an error the interrupt itself provoked is not one
@@ -1028,6 +1094,12 @@ export const makeCodexSessionRuntime = (
         if (childParentTurnId && shouldSuppressChildConversationNotification(notification.method)) {
           yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
           return;
+        }
+
+        if (
+          isRootContextCompaction(notification, currentProviderThreadId(yield* Ref.get(sessionRef)))
+        ) {
+          yield* restoreAdditionalContext(notification.params.threadId);
         }
 
         let requestId: ApprovalRequestId | undefined;
@@ -1485,6 +1557,7 @@ export const makeCodexSessionRuntime = (
             ...(input.effort ? { effort: input.effort } : {}),
             ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
           });
+          yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
             Effect.mapError((error) =>

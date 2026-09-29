@@ -7,6 +7,7 @@ import {
   GlobeIcon,
   Maximize2Icon,
   Minimize2Icon,
+  PlayIcon,
   WrapTextIcon,
 } from "lucide-react";
 import type { ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
@@ -40,6 +41,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
+import { isClosedCodeFence, resolveRunnableShellCommand } from "./chat/runnableCodeBlock";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
@@ -125,6 +127,8 @@ interface ChatMarkdownProps {
   className?: string;
   /** Treat single newlines as hard breaks — chat-style user input. */
   lineBreaks?: boolean;
+  /** Runs a finished one-line shell block in the thread's terminal. */
+  onRunShellCommand?: ((command: string) => void) | undefined;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
@@ -585,12 +589,16 @@ function MarkdownCodeBlock({
   language,
   fenceTitle,
   theme,
+  runCommand,
+  onRunShellCommand,
   children,
 }: {
   code: string;
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";
+  runCommand: string | null;
+  onRunShellCommand: ((command: string) => void) | undefined;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -670,6 +678,25 @@ function MarkdownCodeBlock({
             </TooltipTrigger>
             <TooltipPopup side="top">{wrapLabel}</TooltipPopup>
           </Tooltip>
+          {runCommand !== null && onRunShellCommand ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="chat-markdown-chrome-action"
+                    onClick={() => onRunShellCommand(runCommand)}
+                    aria-label="Run in terminal"
+                  />
+                }
+              >
+                <PlayIcon className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Run in terminal</TooltipPopup>
+            </Tooltip>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1320,6 +1347,7 @@ function ChatMarkdown({
   skills = EMPTY_MARKDOWN_SKILLS,
   className,
   lineBreaks = false,
+  onRunShellCommand,
 }: ChatMarkdownProps) {
   // Avi Code addition: lets a file link pointing outside this thread's workspace
   // resolve a root of its own and open in the viewer. Read once per rendered
@@ -1636,12 +1664,25 @@ function ChatMarkdown({
 
         const language = extractFenceLanguage(codeBlock.className);
         const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
+        // Node offsets index the normalized source fed to ReactMarkdown.
+        const runCommand =
+          onRunShellCommand &&
+          !isStreaming &&
+          isClosedCodeFence(
+            normalizedMarkdown.text,
+            node?.position?.start.offset,
+            node?.position?.end.offset,
+          )
+            ? resolveRunnableShellCommand(codeBlock.code, language)
+            : null;
         return (
           <MarkdownCodeBlock
             code={codeBlock.code}
             language={language}
             fenceTitle={fenceTitle}
             theme={resolvedTheme}
+            runCommand={runCommand}
+            onRunShellCommand={onRunShellCommand}
           >
             <CodeHighlightErrorBoundary fallback={<pre {...props}>{children}</pre>}>
               <Suspense fallback={<pre {...props}>{children}</pre>}>
@@ -1664,6 +1705,7 @@ function ChatMarkdown({
     inlineCodeFileLinkMetaByText,
     isStreaming,
     markdownFileLinkMetaByHref,
+    onRunShellCommand,
     onTaskListChange,
     openInPreferredEditor,
     openExternalLinkInPreview,

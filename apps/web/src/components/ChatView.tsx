@@ -148,6 +148,7 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
   resolveActivePreviewSplit,
@@ -1232,6 +1233,10 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  // Opening a running thread resyncs for a few frames. Show the sync pill only
+  // when the sync lasts; logic that depends on the real phase keeps reading
+  // `threadSyncPhase`.
+  const shownThreadSyncPhase = useDelayedStatus(routeThreadKey, threadSyncPhase);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
@@ -3318,6 +3323,26 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // Ported from upstream #13060: the Run button on a one-line shell block in an
+  // assistant message types it into the thread's terminal. The ref keeps the
+  // callback stable so memoized markdown rows do not re-render.
+  const runProjectScriptRef = useRef(runProjectScript);
+  useLayoutEffect(() => {
+    runProjectScriptRef.current = runProjectScript;
+  }, [runProjectScript]);
+  const runShellCommand = useCallback((command: string) => {
+    void runProjectScriptRef.current(
+      {
+        id: "chat-code-block",
+        name: "Chat code block",
+        command,
+        icon: "play",
+        runOnWorktreeCreate: false,
+      },
+      { rememberAsLastInvoked: false },
+    );
+  }, []);
+
   // Avi Code addition: the preview panel starts the dev server itself when a
   // thread has none running, by running the project's primary action.
   const activePrimaryScript = useMemo(
@@ -4553,6 +4578,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeWorktreePath,
     hasServerThread: isServerThread,
     draftThreadEnvMode: isLocalDraftThread ? draftThread?.envMode : undefined,
+    preparingWorktree: isPreparingWorktree,
   });
   const canOverrideServerThreadEnvMode = Boolean(
     isServerThread &&
@@ -7877,6 +7903,7 @@ function ChatViewContent(props: ChatViewProps) {
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeWorkspaceRoot}
                 onRestoreProposedPlan={onRestoreProposedPlan}
+                {...(activeProject ? { onRunShellCommand: runShellCommand } : {})}
                 findQuery={findOpen ? findQuery : ""}
                 findActiveMatchIndex={findOpen ? findMatchIndex : -1}
                 onFindMatchesChange={onFindMatchesChange}
@@ -7960,8 +7987,8 @@ function ChatViewContent(props: ChatViewProps) {
                   ) : (
                     <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
                   )}
-                  {threadSyncPhase && !activeEnvironmentUnavailable ? (
-                    <ThreadSyncStatusPill phase={threadSyncPhase} />
+                  {shownThreadSyncPhase && !activeEnvironmentUnavailable ? (
+                    <ThreadSyncStatusPill phase={shownThreadSyncPhase} />
                   ) : null}
                   <div
                     className="relative"
@@ -8089,9 +8116,7 @@ function ChatViewContent(props: ChatViewProps) {
                                 onEnvModeChange={onEnvModeChange}
                                 startFromOrigin={startFromOrigin}
                                 onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
-                                  : {})}
+                                effectiveEnvModeOverride={envMode}
                                 {...(canOverrideServerThreadEnvMode
                                   ? {
                                       activeThreadBranchOverride: activeThreadBranch,
