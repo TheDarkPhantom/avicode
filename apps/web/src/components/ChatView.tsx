@@ -485,17 +485,18 @@ const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
   '[role="switch"]',
   '[role="tab"]',
 ].join(",");
+// Popups match only while open or closing: some stay mounted when closed.
 const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [
   // Avi Code addition: the find bar is a plain positioned element rather than a
   // popup, so without this every keystroke typed into it would be stolen by the
   // type-to-focus rule and land in the composer.
   '[data-thread-find-bar="true"]',
   '[data-slot="dialog"]',
-  '[data-slot="menu-popup"]',
-  '[data-slot="select-popup"]',
-  '[data-slot="popover-popup"]',
-  '[data-slot="combobox-popup"]',
-  '[data-slot="autocomplete-popup"]',
+  '[data-slot="menu-popup"]:is([data-open],[data-ending-style])',
+  '[data-slot="select-popup"]:is([data-open],[data-ending-style])',
+  '[data-slot="popover-popup"]:is([data-open],[data-ending-style])',
+  '[data-slot="combobox-popup"]:is([data-open],[data-ending-style])',
+  '[data-slot="autocomplete-popup"]:is([data-open],[data-ending-style])',
 ].join(",");
 
 type EnvironmentUnavailableState = {
@@ -705,7 +706,14 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
-  const serverThread = useThread(threadRef, { waitForShell: draftThread !== null });
+  // Hidden drawers stay mounted (see MAX_HIDDEN_MOUNTED_TERMINAL_THREADS), so they read only
+  // the shell: a detail subscription would keep each hidden thread's history in memory. The
+  // visible drawer shares ChatView's detail, which also covers archived threads (no shell).
+  const visibleServerThread = useThread(visible ? threadRef : null, {
+    waitForShell: draftThread !== null,
+  });
+  const serverThreadShell = useThreadShell(threadRef);
+  const serverThread = visibleServerThread ?? serverThreadShell;
   const projectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
