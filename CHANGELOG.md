@@ -62,6 +62,7 @@ Upstream: t3code 0.0.31
 - When browser preview tools fail, agents are told what to try instead (#13559 by Theo Browne)
 - Browser preview snapshots stay small enough for agents to read in full (#13558 by Theo Browne)
 - Running threads keep syncing in the background, so opening one is instant (#13554 by Theo Browne)
+- Run a one-line shell command from a reply in the thread's terminal (#13060 by Bilal Bakr)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

@@ -183,6 +183,7 @@ interface TimelineRowSharedState {
   expandedPlanIds: ReadonlySet<string>;
   onProposedPlanExpandedChange: (planId: string, expanded: boolean) => void;
   onRestoreProposedPlan: ((planId: string) => void) | undefined;
+  onRunShellCommand: ((command: string) => void) | undefined;
 }
 
 interface TimelineRowActivityState {
@@ -231,6 +232,8 @@ interface MessagesTimelineProps {
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
   onRestoreProposedPlan?: (planId: string) => void;
+  /** Runs a one-line shell block from an assistant message in the thread terminal. */
+  onRunShellCommand?: (command: string) => void;
   /** Avi Code addition: find in thread. Empty disables searching entirely. */
   findQuery?: string;
   findActiveMatchIndex?: number;
@@ -293,6 +296,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   timestampFormat,
   workspaceRoot,
   onRestoreProposedPlan,
+  onRunShellCommand,
   findQuery = "",
   findActiveMatchIndex = -1,
   onFindMatchesChange,
@@ -897,6 +901,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedPlanIds,
       onProposedPlanExpandedChange,
       onRestoreProposedPlan,
+      onRunShellCommand,
     }),
     [
       timestampFormat,
@@ -921,6 +926,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedPlanIds,
       onProposedPlanExpandedChange,
       onRestoreProposedPlan,
+      onRunShellCommand,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1888,6 +1894,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           threadRef={ctx.threadRef ?? undefined}
           isStreaming={Boolean(row.message.streaming)}
           skills={ctx.skills}
+          onRunShellCommand={ctx.onRunShellCommand}
         />
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}

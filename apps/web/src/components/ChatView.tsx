@@ -3318,6 +3318,26 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // Ported from upstream #13060: the Run button on a one-line shell block in an
+  // assistant message types it into the thread's terminal. The ref keeps the
+  // callback stable so memoized markdown rows do not re-render.
+  const runProjectScriptRef = useRef(runProjectScript);
+  useLayoutEffect(() => {
+    runProjectScriptRef.current = runProjectScript;
+  }, [runProjectScript]);
+  const runShellCommand = useCallback((command: string) => {
+    void runProjectScriptRef.current(
+      {
+        id: "chat-code-block",
+        name: "Chat code block",
+        command,
+        icon: "play",
+        runOnWorktreeCreate: false,
+      },
+      { rememberAsLastInvoked: false },
+    );
+  }, []);
+
   // Avi Code addition: the preview panel starts the dev server itself when a
   // thread has none running, by running the project's primary action.
   const activePrimaryScript = useMemo(
@@ -7877,6 +7897,7 @@ function ChatViewContent(props: ChatViewProps) {
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeWorkspaceRoot}
                 onRestoreProposedPlan={onRestoreProposedPlan}
+                {...(activeProject ? { onRunShellCommand: runShellCommand } : {})}
                 findQuery={findOpen ? findQuery : ""}
                 findActiveMatchIndex={findOpen ? findMatchIndex : -1}
                 onFindMatchesChange={onFindMatchesChange}
