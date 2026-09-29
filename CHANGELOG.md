@@ -80,6 +80,7 @@ Upstream: t3code 0.0.31
 - Settling a thread closes its idle terminals and keeps busy ones open (#13673 by Theo Browne)
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
+- Avi Code opens faster after the first launch (#13501 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
