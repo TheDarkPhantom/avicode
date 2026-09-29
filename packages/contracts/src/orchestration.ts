@@ -144,6 +144,20 @@ export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 600_000;
 export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 12;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES = [
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET = new Set<string>(
+  PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
+);
+
+/** Whether a pasted or picked image mime type can be sent on a provider turn. */
+export function isProviderSendTurnSupportedImageMimeType(mimeType: string): boolean {
+  return PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET.has(mimeType.toLowerCase());
+}
 export const PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 export const PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS = 500_000;
 const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS = 14_000_000;
@@ -833,7 +847,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
-    attachments: Schema.Array(UploadChatAttachment),
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -923,7 +937,7 @@ const ClientThreadForkCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
-    attachments: Schema.Array(UploadChatAttachment),
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])),
   }),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,

@@ -157,7 +157,8 @@ function queuedDisplayAttachments(
           name: attachment.name,
           mimeType: attachment.mimeType,
           sizeBytes: attachment.sizeBytes,
-          previewUrl: attachment.dataUrl,
+          // Uploaded attachments carry an id instead of inline bytes.
+          ...("dataUrl" in attachment ? { previewUrl: attachment.dataUrl } : {}),
         }
       : {
           type: "document",
@@ -165,7 +166,10 @@ function queuedDisplayAttachments(
           name: attachment.name,
           mimeType: attachment.mimeType,
           sizeBytes: attachment.sizeBytes,
-          extractedChars: attachment.extractedText.length,
+          extractedChars:
+            "extractedText" in attachment
+              ? attachment.extractedText.length
+              : attachment.extractedChars,
         },
   );
 }

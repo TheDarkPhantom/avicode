@@ -15,7 +15,13 @@ import {
 
 import { formatDocumentContext } from "@t3tools/shared/documentContext";
 
-import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
+import {
+  createAttachmentId,
+  planAttachmentClaim,
+  PENDING_ATTACHMENT_THREAD_SEGMENT,
+  parseThreadSegmentFromAttachmentId,
+  resolveAttachmentPath,
+} from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -58,6 +64,29 @@ export function attachmentOwnerThreadId(command: ClientOrchestrationCommand): Th
   }
   return null;
 }
+
+const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachmentPaths")(
+  function* (attachmentPaths: ReadonlyArray<string>) {
+    if (attachmentPaths.length === 0) {
+      return;
+    }
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* Effect.forEach(
+      attachmentPaths,
+      (attachmentPath) =>
+        fileSystem.remove(attachmentPath, { force: true }).pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning("Failed to remove an unclaimed attachment copy.", {
+              attachmentPath,
+              cause,
+            }),
+          ),
+          Effect.orElseSucceed(() => undefined),
+        ),
+      { concurrency: 1 },
+    );
+  },
+);
 
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
@@ -125,11 +154,20 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
         : canonicalCommand.threadId;
 
     const documentContexts: string[] = [];
+    const claimedAttachmentPaths: string[] = [];
     const normalizedAttachments = yield* Effect.forEach(
       canonicalCommand.message.attachments,
       (attachment) =>
         Effect.gen(function* () {
           if (attachment.type === "document") {
+            // Avi Code addition: the server only ever learns a document's text
+            // from the client, so the persisted shape (without the text) is not
+            // something a client may send.
+            if (!("extractedText" in attachment)) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Document attachment '${attachment.name}' is missing its extracted text.`,
+              });
+            }
             const text = attachment.extractedText.trim();
             if (
               attachment.sizeBytes <= 0 ||
@@ -175,6 +213,64 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
               }),
             );
             return persistedAttachment;
+          }
+
+          if (!("dataUrl" in attachment)) {
+            const claim = planAttachmentClaim({
+              attachmentsDir: serverConfig.attachmentsDir,
+              threadId: attachmentThreadId,
+              attachmentId: attachment.id,
+            });
+            if (!claim.ok) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: ${claim.reason}.`,
+              });
+            }
+
+            const info = yield* fileSystem.stat(claim.currentPath).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationDispatchCommandError({
+                    message: `Attachment '${attachment.name}' cannot be sent: attachment not found.`,
+                    cause,
+                  }),
+              ),
+            );
+            if (Number(info.size) !== attachment.sizeBytes) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: stored size does not match.`,
+              });
+            }
+
+            const normalizedAttachment = {
+              ...attachment,
+              id: claim.finalId,
+              mimeType: attachment.mimeType.toLowerCase(),
+            };
+            const expectedPath = resolveAttachmentPath({
+              attachmentsDir: serverConfig.attachmentsDir,
+              attachment: normalizedAttachment,
+            });
+            if (expectedPath !== claim.finalPath) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: image type does not match the upload.`,
+              });
+            }
+
+            // Keep the pending copy until the turn succeeds. A failed thread
+            // bootstrap can then retry with a fresh thread id.
+            yield* fileSystem.copyFile(claim.currentPath, claim.finalPath).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationDispatchCommandError({
+                    message: `Failed to claim attachment '${attachment.name}' for this thread.`,
+                    cause,
+                  }),
+              ),
+            );
+            claimedAttachmentPaths.push(claim.finalPath);
+
+            return normalizedAttachment;
           }
 
           const parsed = parseBase64DataUrl(attachment.dataUrl);
@@ -236,7 +332,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
           return persistedAttachment;
         }),
       { concurrency: 1 },
-    );
+    ).pipe(Effect.tapError(() => removeClaimedAttachmentPaths(claimedAttachmentPaths)));
 
     return {
       ...canonicalCommand,
@@ -250,3 +346,38 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       },
     } satisfies OrchestrationCommand;
   });
+
+export const cleanupFailedUploadedAttachments = Effect.fn(
+  "Normalizer.cleanupFailedUploadedAttachments",
+)(function* (command: ClientOrchestrationCommand, normalizedCommand: OrchestrationCommand) {
+  // Avi Code addition: thread.fork claims uploads for the new branch the same
+  // way thread.turn.start does, so both get the same cleanup.
+  if (
+    (command.type !== "thread.turn.start" && command.type !== "thread.fork") ||
+    normalizedCommand.type !== command.type
+  ) {
+    return;
+  }
+
+  const serverConfig = yield* ServerConfig;
+  const claimedPaths: string[] = [];
+  for (const [index, attachment] of normalizedCommand.message.attachments.entries()) {
+    const original = command.message.attachments[index];
+    if (
+      !original ||
+      !("id" in original) ||
+      parseThreadSegmentFromAttachmentId(original.id) !== PENDING_ATTACHMENT_THREAD_SEGMENT
+    ) {
+      continue;
+    }
+
+    const claimedPath = resolveAttachmentPath({
+      attachmentsDir: serverConfig.attachmentsDir,
+      attachment,
+    });
+    if (claimedPath) {
+      claimedPaths.push(claimedPath);
+    }
+  }
+  yield* removeClaimedAttachmentPaths(claimedPaths);
+});
