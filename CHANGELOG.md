@@ -82,6 +82,7 @@ Upstream: t3code 0.0.31
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
 - Avi Code opens faster after the first launch (#13501 by Theo Browne)
+- Turn auto-settle off for a single thread from its sidebar menu (#11846 by Theo Browne)
 - Go back and forward through visited pages with Ctrl+[ and Ctrl+] (#13212 by Julius Marminge)
 - Settle the open thread with Ctrl+Shift+E, or press it again to restore it (#8089 by Theo Browne)
 - The Files panel collapse-all button tracks folders you open by hand (#8889 by Utkarsh Patil)

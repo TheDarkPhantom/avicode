@@ -1223,6 +1223,9 @@ export default function SidebarV2() {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const setThreadAutoSettle = useAtomCommand(threadEnvironment.setAutoSettle, {
+    reportFailure: false,
+  });
   const deleteProject = useAtomCommand(projectEnvironment.delete, {
     reportFailure: false,
   });
@@ -2303,6 +2306,12 @@ export default function SidebarV2() {
           true;
         const supportsSnooze =
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
+        // The per-thread switch only means something where settling does.
+        const supportsAutoSettleOptOut =
+          supportsSettlement &&
+          serverConfigs.get(thread.environmentId)?.environment.capabilities
+            .threadAutoSettleOptOut === true;
+        const autoSettleEnabled = thread.autoSettleDisabledAt == null;
         const supportsTitleRegeneration =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
             .threadTitleRegeneration === true;
@@ -2334,6 +2343,16 @@ export default function SidebarV2() {
                     isSettled
                       ? { id: "unsettle", label: "Un-settle thread" }
                       : { id: "settle", label: "Settle thread" },
+                  ]
+                : []),
+              // Unlike Un-settle (cleared by the next activity), this holds
+              // until the user flips it back, so the label names the state
+              // it switches to.
+              ...(supportsAutoSettleOptOut
+                ? [
+                    autoSettleEnabled
+                      ? { id: "auto-settle:disable", label: "Never auto-settle" }
+                      : { id: "auto-settle:enable", label: "Allow auto-settle" },
                   ]
                 : []),
               ...(supportsSnooze
@@ -2414,6 +2433,38 @@ export default function SidebarV2() {
           case "unsnooze":
             attemptUnsnooze(threadRef);
             return;
+          case "auto-settle:disable":
+          case "auto-settle:enable": {
+            const enabled = clicked.value === "auto-settle:enable";
+            const result = await setThreadAutoSettle({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId, enabled },
+            });
+            if (result._tag === "Failure") {
+              if (!isAtomCommandInterrupted(result)) {
+                const error = squashAtomCommandFailure(result);
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    title: "Failed to change auto-settle",
+                    description: error instanceof Error ? error.message : "An error occurred.",
+                  }),
+                );
+              }
+              return;
+            }
+            toastManager.add(
+              stackedThreadToast({
+                type: "success",
+                title: enabled ? "Auto-settle back on" : "Auto-settle off for this thread",
+                description: enabled
+                  ? "It settles again after inactivity or when its PR merges or closes."
+                  : "Unlike Un-settle, new activity does not undo this. You can still settle it by hand.",
+                timeout: 5_000,
+              }),
+            );
+            return;
+          }
           case "rename":
             startThreadRename(threadRef, thread.title);
             return;
@@ -2502,6 +2553,7 @@ export default function SidebarV2() {
       markThreadUnread,
       projectCwdByKey,
       serverConfigs,
+      setThreadAutoSettle,
       setThreadPinned,
       startThreadRename,
       updateThreadMetadata,
