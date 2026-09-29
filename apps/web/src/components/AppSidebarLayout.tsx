@@ -17,6 +17,7 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useSidebarV2Enabled } from "../hooks/useSettings";
 import ThreadSidebar from "./Sidebar";
 import ThreadSidebarV2 from "./SidebarV2";
+import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
   resolveAppliedThreadSidebarWidth,
@@ -206,6 +207,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       </Sidebar>
       {children}
       <SidebarControl />
+      <MainAppLocationTracker />
     </SidebarProvider>
   );
 }

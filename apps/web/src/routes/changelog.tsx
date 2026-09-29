@@ -1,7 +1,8 @@
-import { createFileRoute, redirect, useCanGoBack, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { ChangelogPanel } from "../components/changelog/ChangelogPanel";
+import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { SidebarInset } from "../components/ui/sidebar";
 import { isElectron } from "../env";
 import { cn } from "~/lib/utils";
@@ -12,15 +13,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
  * reading material rather than a setting, and the sidebar links straight to it.
  */
 function ChangelogRouteLayout() {
-  const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
-  const navigateBackWithinApp = useCallback(() => {
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, navigate]);
+  const navigateToMainApp = useNavigateToMainApp();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -30,14 +23,14 @@ function ChangelogRouteLayout() {
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      navigateBackWithinApp();
+      void navigateToMainApp();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [navigateBackWithinApp]);
+  }, [navigateToMainApp]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">

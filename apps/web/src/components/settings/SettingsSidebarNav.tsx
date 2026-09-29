@@ -11,7 +11,9 @@ import {
   Settings2Icon,
   SparklesIcon,
 } from "lucide-react";
-import { useCanGoBack, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+
+import { useNavigateToMainApp } from "../sidebar/mainAppLocation";
 
 import {
   SidebarContent,
@@ -53,7 +55,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
+  const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleSectionClick = useCallback(
     (to: SettingsSectionPath) => {
@@ -68,12 +70,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     if (isMobile) {
       setOpenMobile(false);
     }
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, isMobile, navigate, setOpenMobile]);
+    void navigateToMainApp();
+  }, [isMobile, navigateToMainApp, setOpenMobile]);
 
   return (
     <>
