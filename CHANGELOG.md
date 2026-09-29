@@ -81,6 +81,7 @@ Upstream: t3code 0.0.31
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
 - The Files panel collapse-all button tracks folders you open by hand (#8889 by Utkarsh Patil)
+- Show a file tree beside the diff panel to jump to any changed file (#9330 by Julius Marminge)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
