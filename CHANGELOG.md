@@ -81,6 +81,7 @@ Upstream: t3code 0.0.31
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
 - Update Grok with one click when a new version is out (#13523 by Julius Marminge)
+- New agent sessions use the browser tab you can see (#13064 by Bilal Bakr)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
