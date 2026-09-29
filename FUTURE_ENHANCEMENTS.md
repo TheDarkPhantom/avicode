@@ -32,6 +32,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
     provider compatibility ranges, PR reactors) and the Effect rc.115 upgrade.
 - Claude Sonnet 5.5 needs Claude Code 2.1.284 or newer. Older installs hide it and show the upgrade
   message instead.
+- Context compaction (`/compact`, upstream #9293, #10112, #11107, #8144) is server-only so far. The
+  web still lacks upstream's compaction row in the timeline, the "Compact context" action on the
+  context meter, the auto-compact threshold marker, the resume banner, and draft preservation
+  (#11103, #9623, #9430). Claude's resume prompt shows through the generic question UI until then.
+  Codex may report one compaction twice (the deprecated `thread/compacted` plus the
+  `contextCompaction` item), which records two timeline rows.
 
 - Sidebar project folders live in `t3code:ui-state:v1` (per device), so a folder made on one client
   is not visible on another. Server-synced folders would change that. While Manual project sort is

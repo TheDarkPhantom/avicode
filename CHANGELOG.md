@@ -80,6 +80,10 @@ Upstream: t3code 0.0.31
 - Settling a thread closes its idle terminals and keeps busy ones open (#13673 by Theo Browne)
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
+- Type /compact to shrink a long thread's context on any agent (#9293 by maria)
+- Messages you send while a thread compacts wait and go out once it finishes (#11107 by maria)
+- Set when Claude compacts a long thread with the Auto-compact after setting (#8144 by Theo Browne)
+- Resuming an old Claude session asks whether to compact it first (#8144 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

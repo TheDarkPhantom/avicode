@@ -155,6 +155,7 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly compactThreadEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -237,6 +238,9 @@ describe("ProviderCommandReactor", () => {
         turnId: asTurnId("turn-1"),
       }),
     );
+    const compactThread = vi.fn<ProviderServiceShape["compactThread"]>(
+      () => input?.compactThreadEffect?.() ?? Effect.void,
+    );
     const interruptTurn = vi.fn((_: unknown) => Effect.void);
     const respondToRequest = vi.fn<ProviderServiceShape["respondToRequest"]>(() => Effect.void);
     const respondToUserInput = vi.fn<ProviderServiceShape["respondToUserInput"]>(() => Effect.void);
@@ -314,6 +318,7 @@ describe("ProviderCommandReactor", () => {
     const service: ProviderServiceShape = {
       startSession: startSession as ProviderServiceShape["startSession"],
       sendTurn: sendTurn as ProviderServiceShape["sendTurn"],
+      compactThread,
       interruptTurn: interruptTurn as ProviderServiceShape["interruptTurn"],
       askSideQuestion: () => Stream.empty,
       respondToRequest: respondToRequest as ProviderServiceShape["respondToRequest"],
@@ -530,6 +535,7 @@ describe("ProviderCommandReactor", () => {
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
       startSession,
       sendTurn,
+      compactThread,
       interruptTurn,
       respondToRequest,
       respondToUserInput,
@@ -718,6 +724,206 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.session?.lastError).toBeNull();
     }),
   );
+
+  // Avi Code addition: `/compact`, ported from upstream #9293 and #11107.
+  describe("context compaction", () => {
+    const threadId = ThreadId.make("thread-1");
+    const dispatchTurn = (harness: Harness, id: string, text: string, createdAt: string) =>
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(`cmd-${id}`),
+        threadId,
+        message: {
+          messageId: asMessageId(`user-message-${id}`),
+          role: "user",
+          text,
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt,
+      });
+    // The mocked sendTurn emits no runtime events, so the session is handed back by hand.
+    const markSessionReady = (harness: Harness, createdAt: string) =>
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make(`cmd-session-ready-${createdAt}`),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      });
+    const activitiesWithSummary = async (harness: Harness, summary: string) =>
+      ((await readThread(harness))?.activities ?? []).filter(
+        (activity) => activity.summary === summary,
+      );
+
+    effectIt.effect("routes /compact to compactThread instead of sending a turn", () =>
+      Effect.gen(function* () {
+        const releaseCompaction = yield* Deferred.make<void>();
+        const harness = yield* Effect.promise(() =>
+          createHarness({ compactThreadEffect: () => Deferred.await(releaseCompaction) }),
+        );
+        yield* dispatchTurn(harness, "hello", "hello", "2026-01-01T00:00:00.000Z");
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+        yield* markSessionReady(harness, "2026-01-01T00:00:00.500Z");
+
+        yield* dispatchTurn(harness, "compact", " /COMPACT ", "2026-01-01T00:00:01.000Z");
+        yield* Effect.promise(() => waitFor(() => harness.compactThread.mock.calls.length === 1));
+        expect(harness.compactThread.mock.calls[0]?.[0]).toBe(threadId);
+        expect(harness.compactThread.mock.calls[0]?.[2]).toBe("user-message-compact");
+        expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+        expect((yield* Effect.promise(() => readThread(harness)))?.session?.status).toBe(
+          "starting",
+        );
+
+        yield* Deferred.succeed(releaseCompaction, undefined);
+        yield* Effect.promise(() =>
+          waitFor(async () => (await readThread(harness))?.session?.status === "ready"),
+        );
+        expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      }),
+    );
+
+    effectIt.effect("rejects /compact without conversation context", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        yield* dispatchTurn(harness, "empty-compact", "/compact", "2026-01-01T00:00:00.000Z");
+        yield* Effect.promise(() => harness.drain());
+        expect(harness.compactThread).not.toHaveBeenCalled();
+        expect(harness.sendTurn).not.toHaveBeenCalled();
+        const failures = yield* Effect.promise(() =>
+          activitiesWithSummary(harness, "Context compaction failed"),
+        );
+        expect(failures).toEqual([
+          expect.objectContaining({
+            payload: {
+              detail: "Context compaction requires an existing conversation.",
+              requestId: "user-message-empty-compact",
+            },
+          }),
+        ]);
+      }),
+    );
+
+    effectIt.effect("queues messages sent during compaction and replays them in order", () =>
+      Effect.gen(function* () {
+        const releaseCompaction = yield* Deferred.make<void>();
+        const harness = yield* Effect.promise(() =>
+          createHarness({ compactThreadEffect: () => Deferred.await(releaseCompaction) }),
+        );
+        yield* dispatchTurn(harness, "hello", "hello", "2026-01-01T00:00:00.000Z");
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+        yield* markSessionReady(harness, "2026-01-01T00:00:00.500Z");
+        yield* dispatchTurn(harness, "compact", "/compact", "2026-01-01T00:00:01.000Z");
+        yield* Effect.promise(() => waitFor(() => harness.compactThread.mock.calls.length === 1));
+
+        yield* harness.engine.dispatch({
+          type: "thread.interaction-mode.set",
+          commandId: CommandId.make("cmd-queued-mode-plan"),
+          threadId,
+          interactionMode: "plan",
+          createdAt: "2026-01-01T00:00:01.500Z",
+        });
+        yield* dispatchTurn(harness, "queued-1", "first queued", "2026-01-01T00:00:02.000Z");
+        yield* harness.engine.dispatch({
+          type: "thread.interaction-mode.set",
+          commandId: CommandId.make("cmd-queued-mode-default"),
+          threadId,
+          interactionMode: "default",
+          createdAt: "2026-01-01T00:00:02.500Z",
+        });
+        yield* dispatchTurn(harness, "queued-2", "second queued", "2026-01-01T00:00:03.000Z");
+        yield* Effect.promise(() => harness.drain());
+        // Held back, not failed.
+        expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+        expect(
+          yield* Effect.promise(() => activitiesWithSummary(harness, "Provider turn start failed")),
+        ).toEqual([]);
+
+        yield* Deferred.succeed(releaseCompaction, undefined);
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 3));
+        expect(harness.sendTurn.mock.calls.slice(1).map(([request]) => request)).toEqual([
+          expect.objectContaining({ input: "first queued", interactionMode: "plan" }),
+          expect.objectContaining({ input: "second queued", interactionMode: "default" }),
+        ]);
+        // The replay reuses the message id, so each message still shows once.
+        const thread = yield* Effect.promise(() => readThread(harness));
+        expect(thread?.messages.filter((message) => message.text === "first queued")).toHaveLength(
+          1,
+        );
+        expect(thread?.messages.filter((message) => message.text === "second queued")).toHaveLength(
+          1,
+        );
+      }),
+    );
+
+    effectIt.effect("reports queued messages as not sent when compaction fails", () =>
+      Effect.gen(function* () {
+        const releaseCompaction = yield* Deferred.make<void>();
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            compactThreadEffect: () =>
+              Deferred.await(releaseCompaction).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new ProviderAdapterRequestError({
+                      provider: "codex",
+                      method: "thread/compact",
+                      detail: "compaction exploded",
+                    }),
+                  ),
+                ),
+              ),
+          }),
+        );
+        yield* dispatchTurn(harness, "hello", "hello", "2026-01-01T00:00:00.000Z");
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+        yield* markSessionReady(harness, "2026-01-01T00:00:00.500Z");
+        yield* dispatchTurn(harness, "compact", "/compact", "2026-01-01T00:00:01.000Z");
+        yield* Effect.promise(() => waitFor(() => harness.compactThread.mock.calls.length === 1));
+        yield* dispatchTurn(harness, "queued", "queued message", "2026-01-01T00:00:02.000Z");
+        yield* Effect.promise(() => harness.drain());
+
+        yield* Deferred.succeed(releaseCompaction, undefined);
+        yield* Effect.promise(() =>
+          waitFor(
+            async () =>
+              (await activitiesWithSummary(harness, "Queued message was not sent")).length === 1,
+          ),
+        );
+        expect(
+          yield* Effect.promise(() => activitiesWithSummary(harness, "Context compaction failed")),
+        ).toEqual([
+          expect.objectContaining({
+            payload: { detail: "compaction exploded", requestId: "user-message-compact" },
+          }),
+        ]);
+        expect(
+          yield* Effect.promise(() =>
+            activitiesWithSummary(harness, "Queued message was not sent"),
+          ),
+        ).toEqual([
+          expect.objectContaining({
+            payload: expect.objectContaining({ requestId: "user-message-queued" }),
+          }),
+        ]);
+        expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+        // The session was up when compaction failed, so it is handed back rather than errored.
+        yield* Effect.promise(() =>
+          waitFor(async () => (await readThread(harness))?.session?.status === "ready"),
+        );
+      }),
+    );
+  });
 
   it("retries thread title generation after a transient failure", async () => {
     const harness = await createHarness();

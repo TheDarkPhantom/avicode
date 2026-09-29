@@ -2640,6 +2640,121 @@ it.layer(makeProjectionPipelinePrefixedTestLayer("t3-pending-turn-terminal-test-
         assert.deepEqual(pendingRows, []);
       }),
     );
+
+    // Avi Code addition: `/compact`, ported from upstream #9293.
+    const appendTurnStartRequested = (threadId: ThreadId, messageId: string, createdAt: string) =>
+      Effect.gen(function* () {
+        const eventStore = yield* OrchestrationEventStore;
+        yield* eventStore.append({
+          type: "thread.turn-start-requested",
+          eventId: EventId.make(`evt-turn-start-${messageId}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make(`cmd-turn-start-${messageId}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-turn-start-${messageId}`),
+          metadata: {},
+          payload: {
+            threadId,
+            messageId: MessageId.make(messageId),
+            runtimeMode: "full-access",
+            createdAt,
+          },
+        });
+      });
+    const appendCompactionActivity = (threadId: ThreadId, requestId: string, createdAt: string) =>
+      Effect.gen(function* () {
+        const eventStore = yield* OrchestrationEventStore;
+        yield* eventStore.append({
+          type: "thread.activity-appended",
+          eventId: EventId.make(`evt-compaction-${requestId}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make(`cmd-compaction-${requestId}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-compaction-${requestId}`),
+          metadata: {},
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make(`activity-compaction-${requestId}`),
+              tone: "info",
+              kind: "context-compaction",
+              summary: "Context compacted",
+              payload: { requestId },
+              turnId: null,
+              createdAt,
+            },
+          },
+        });
+      });
+    const readPendingMessageIds = (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        return yield* sql<{ readonly messageId: string }>`
+          SELECT pending_message_id AS "messageId"
+          FROM projection_turns
+          WHERE thread_id = ${threadId}
+            AND turn_id IS NULL
+            AND state = 'pending'
+        `;
+      });
+
+    it.effect("only clears the compact request that produced the compaction activity", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const threadId = ThreadId.make("thread-compaction-correlation");
+        yield* appendTurnStartRequested(threadId, "compact-request", "2026-02-26T15:00:00.000Z");
+        yield* appendTurnStartRequested(threadId, "new-message", "2026-02-26T15:00:01.000Z");
+        yield* appendCompactionActivity(threadId, "compact-request", "2026-02-26T15:00:02.000Z");
+        yield* projectionPipeline.bootstrap;
+
+        assert.deepEqual(yield* readPendingMessageIds(threadId), [{ messageId: "new-message" }]);
+      }),
+    );
+
+    it.effect("keeps a /compact request pending while messages queue behind it", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const threadId = ThreadId.make("thread-compaction-queue");
+        const createdAt = "2026-02-26T16:00:00.000Z";
+        yield* eventStore.append({
+          type: "thread.message-sent",
+          eventId: EventId.make("evt-compact-message-sent"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-compact-message"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-compact-message"),
+          metadata: {},
+          payload: {
+            threadId,
+            messageId: MessageId.make("compact-message"),
+            role: "user",
+            text: "/compact",
+            attachments: [],
+            turnId: null,
+            streaming: false,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+        yield* appendTurnStartRequested(threadId, "compact-message", createdAt);
+        yield* appendTurnStartRequested(threadId, "queued-message", "2026-02-26T16:00:01.000Z");
+        yield* projectionPipeline.bootstrap;
+        assert.deepEqual(yield* readPendingMessageIds(threadId), [
+          { messageId: "compact-message" },
+        ]);
+
+        yield* appendCompactionActivity(threadId, "compact-message", "2026-02-26T16:00:02.000Z");
+        yield* projectionPipeline.bootstrap;
+        assert.deepEqual(yield* readPendingMessageIds(threadId), []);
+      }),
+    );
   },
 );
 
