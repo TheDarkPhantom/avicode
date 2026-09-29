@@ -85,6 +85,7 @@ Upstream: t3code 0.0.31
 - New agent sessions use the browser tab you can see (#13064 by Bilal Bakr)
 - Save Bitbucket credentials from Source Control settings (#14103 by Gabriel De Andrade)
 - Disabled buttons and menu items share one dimmed look (#11441 by Utkarsh Patil)
+- Turn auto-settle off for a single thread from its sidebar menu (#11846 by Theo Browne)
 - Go back and forward through visited pages with Ctrl+[ and Ctrl+] (#13212 by Julius Marminge)
 - Settle the open thread with Ctrl+Shift+E, or press it again to restore it (#8089 by Theo Browne)
 - The Files panel collapse-all button tracks folders you open by hand (#8889 by Utkarsh Patil)

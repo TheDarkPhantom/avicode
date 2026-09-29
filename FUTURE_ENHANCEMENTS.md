@@ -31,6 +31,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
     the packaged entry point, so it waits for a packaging review.
   - Anything built on upstream-only systems (usage readers, reset credits, the model manifest,
     provider compatibility ranges, PR reactors) and the Effect rc.115 upgrade.
+- The per-thread auto-settle switch (#11846) lives only in the SidebarV2 thread menu, whose label
+  shows the current state (v1 has no settling at all). There is no row badge or bulk action yet.
+  Upstream's checked submenu needs `checked` on context menu items, which the fork skipped.
 - Claude Sonnet 5.5 needs Claude Code 2.1.284 or newer. Older installs hide it and show the upgrade
   message instead.
 
