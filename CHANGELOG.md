@@ -83,6 +83,10 @@ Upstream: t3code 0.0.31
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
 - Go back and forward through visited pages with Ctrl+[ and Ctrl+] (#13212 by Julius Marminge)
 - Settle the open thread with Ctrl+Shift+E, or press it again to restore it (#8089 by Theo Browne)
+- The Files panel collapse-all button tracks folders you open by hand (#8889 by Utkarsh Patil)
+- Show a file tree beside the diff panel to jump to any changed file (#9330 by Julius Marminge)
+- Zoom and pan expanded images with the scroll wheel, a click, or the keyboard (#10869 by maria)
+- The file viewer shows HTML pages and PDFs rendered in place (#9143 by Julius Marminge)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
