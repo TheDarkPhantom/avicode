@@ -84,6 +84,10 @@ Upstream: t3code 0.0.31
 - New agent sessions use the browser tab you can see (#13064 by Bilal Bakr)
 - Save Bitbucket credentials from Source Control settings (#14103 by Gabriel De Andrade)
 - Disabled buttons and menu items share one dimmed look (#11441 by Utkarsh Patil)
+- The Files panel collapse-all button tracks folders you open by hand (#8889 by Utkarsh Patil)
+- Show a file tree beside the diff panel to jump to any changed file (#9330 by Julius Marminge)
+- Zoom and pan expanded images with the scroll wheel, a click, or the keyboard (#10869 by maria)
+- The file viewer shows HTML pages and PDFs rendered in place (#9143 by Julius Marminge)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
