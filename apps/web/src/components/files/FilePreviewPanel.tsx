@@ -102,8 +102,11 @@ const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
 const FILE_SAVE_DEBOUNCE_MS = 500;
 const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
 const FILE_LINK_REVEAL_UNSAFE_CSS = `
+  /* Tint through --diffs-line-bg, not background-color. The editor paints row
+     tints on a layer below its text selection; a background on the row itself
+     covers the selection and makes selected text on this line invisible. */
   [${FILE_LINK_REVEAL_ATTRIBUTE}][data-line] {
-    background-color: light-dark(
+    --diffs-line-bg: light-dark(
       color-mix(
         in lab,
         var(--diffs-computed-diff-line-bg) 82%,

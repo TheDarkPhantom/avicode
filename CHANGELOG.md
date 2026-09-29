@@ -51,6 +51,16 @@ Upstream: t3code 0.0.31
 ### Upstream t3code
 
 - Undoing turns in Codex threads keeps working on Codex 0.156 (#13481 by Julius Marminge)
+- Typing in the composer no longer lags on large sidebars (#13884 by Morgana Allen)
+- Saving the thread list for offline use no longer freezes the app (#13767 by Theo Browne)
+- Slow servers load the thread list once instead of twice (#13683 by Theo Browne)
+- Terminals kept open in the background use less memory (#13686 by Theo Browne)
+- The sidebar sorts projects and settled threads faster (#13759 by Theo Browne)
+- File links in the terminal no longer include a trailing colon (#13408 by ValeraZSD)
+- Copying nested task lists keeps each checkbox on the right item (#11477 by Dominic Roy)
+- Selected text stays visible on a file line opened from a link (#13548 by Theo Browne)
+- When browser preview tools fail, agents are told what to try instead (#13559 by Theo Browne)
+- Browser preview snapshots stay small enough for agents to read in full (#13558 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
