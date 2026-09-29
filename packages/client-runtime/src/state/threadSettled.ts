@@ -221,7 +221,8 @@ export function threadWokeAt(
  * override. Past the blockers, the explicit user override (thread.settle /
  * thread.unsettle commands, projected into settledOverride + settledAt)
  * wins in both directions; without one, a thread auto-settles on a
- * merged/closed PR immediately or on inactivity past the window. The server
+ * merged/closed PR immediately or on inactivity past the window, unless the
+ * user turned auto-settle off for it (autoSettleDisabledAt). The server
  * un-settles on real activity (user message, session start, approval/
  * user-input request), so an override never goes stale silently.
  */
@@ -256,6 +257,10 @@ export function effectiveSettled(
   // "active" is the explicit keep-active pin: it suppresses auto-settle
   // until real activity clears it server-side.
   if (shell.settledOverride === "active") return false;
+  // The per-thread auto-settle switch is the durable version of that pin:
+  // activity never clears it, and it blocks every automatic path (merged or
+  // closed PR included). A manual settle above still wins.
+  if (shell.autoSettleDisabledAt != null) return false;
   if (options.changeRequestState === "merged" || options.changeRequestState === "closed") {
     return true;
   }

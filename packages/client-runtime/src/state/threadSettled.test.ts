@@ -259,6 +259,45 @@ describe("effectiveSettled", () => {
     expect(effectiveSettled(boundary, { now: NOW, autoSettleAfterDays: 3 })).toBe(false);
     expect(effectiveSettled(stale, { now: NOW, autoSettleAfterDays: null })).toBe(false);
   });
+
+  describe("per-thread auto-settle switch", () => {
+    const DISABLED_AT = "2026-04-01T00:00:00.000Z";
+
+    it("blocks inactivity auto-settle while turned off", () => {
+      const shell = { ...makeShell({ activityAt: STALE }), autoSettleDisabledAt: DISABLED_AT };
+      expect(effectiveSettled(shell, { now: NOW, autoSettleAfterDays: 3 })).toBe(false);
+    });
+
+    it("blocks settle-on-merge and settle-on-close while turned off", () => {
+      const shell = { ...makeShell({ activityAt: FRESH }), autoSettleDisabledAt: DISABLED_AT };
+      for (const changeRequestState of ["merged", "closed"] as const) {
+        expect(
+          effectiveSettled(shell, { now: NOW, autoSettleAfterDays: 3, changeRequestState }),
+        ).toBe(false);
+      }
+    });
+
+    it("still honors an explicit manual settle", () => {
+      const shell = {
+        ...makeShell({ settledOverride: "settled", activityAt: FRESH }),
+        autoSettleDisabledAt: DISABLED_AT,
+      };
+      expect(effectiveSettled(shell, { now: NOW, autoSettleAfterDays: 3 })).toBe(true);
+    });
+
+    it("restores normal auto-settle once turned back on", () => {
+      const off = { ...makeShell({ activityAt: STALE }), autoSettleDisabledAt: DISABLED_AT };
+      const on = { ...off, autoSettleDisabledAt: null };
+      expect(effectiveSettled(off, { now: NOW, autoSettleAfterDays: 3 })).toBe(false);
+      expect(effectiveSettled(on, { now: NOW, autoSettleAfterDays: 3 })).toBe(true);
+      expect(
+        effectiveSettled(
+          { ...on, latestTurn: { ...on.latestTurn!, requestedAt: FRESH } },
+          { now: NOW, autoSettleAfterDays: 3, changeRequestState: "merged" },
+        ),
+      ).toBe(true);
+    });
+  });
 });
 
 describe("hasQueuedTurnStart", () => {
