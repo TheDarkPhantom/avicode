@@ -99,6 +99,7 @@ interface FilePreviewPanelProps {
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
+const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
 const FILE_SAVE_DEBOUNCE_MS = 500;
 const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
 const FILE_LINK_REVEAL_UNSAFE_CSS = `
@@ -213,6 +214,77 @@ function WorkspaceImagePreview(props: {
       <LoaderCircle className="size-5 animate-spin" />
     </div>
   );
+}
+
+const isPdfPreviewFile = (path: string): boolean => /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+
+/**
+ * Renders an HTML or PDF file in place from its signed asset URL. HTML runs in
+ * a sandboxed frame with an opaque origin, so a page cannot reach the app's
+ * session or storage, while relative sibling assets still load.
+ */
+function WorkspaceBrowserPreview(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly absolutePath: string;
+  /** Avi Code addition: set when the surface shows another repo's root. */
+  readonly workspaceRoot: string | null;
+  readonly title: string;
+  /**
+   * Avi Code addition: changes when the thread checkpoints, so a page the agent
+   * just rewrote reloads instead of serving the browser's cached copy.
+   */
+  readonly reloadSignal: string;
+}) {
+  const resource = useMemo<AssetResource>(
+    () => ({
+      _tag: "workspace-file",
+      threadId: props.threadRef.threadId,
+      path: props.absolutePath,
+      ...(props.workspaceRoot === null ? {} : { workspaceRoot: props.workspaceRoot }),
+    }),
+    [props.threadRef.threadId, props.absolutePath, props.workspaceRoot],
+  );
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+
+  if (assetUrl._tag === "Failure") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
+        Unable to load file preview.
+      </div>
+    );
+  }
+  if (assetUrl._tag !== "Success") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
+        <LoaderCircle className="size-5 animate-spin" />
+      </div>
+    );
+  }
+  const revisionSuffix =
+    props.reloadSignal === ""
+      ? ""
+      : `${assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.reloadSignal)}`;
+  const src = `${assetUrl.url}${revisionSuffix}`;
+  const className = "min-h-0 flex-1 border-0 bg-white";
+  // The built-in PDF viewer needs an unsandboxed frame; a PDF runs no scripts.
+  return isPdfPreviewFile(props.absolutePath) ? (
+    // oxlint-disable-next-line react/iframe-missing-sandbox
+    <iframe key={src} src={src} title={props.title} className={className} />
+  ) : (
+    <iframe
+      key={src}
+      src={src}
+      title={props.title}
+      className={className}
+      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+    />
+  );
+}
+
+function renderedToggleLabel(isMarkdown: boolean, rendered: boolean): string {
+  if (isMarkdown) return rendered ? "Show markdown source" : "Show rendered markdown";
+  return rendered ? "Show HTML source" : "Show rendered page";
 }
 
 function clampFileLine(contents: string, requestedLine: number): number {
@@ -745,12 +817,20 @@ export default function FilePreviewPanel({
     reportFailure: false,
   });
   const isImage = relativePath !== null && isWorkspaceImagePreviewPath(relativePath);
-  const file = useProjectFileQuery(environmentId, cwd, relativePath, !isImage);
+  // PDFs have no text to show; HTML has, and can toggle between page and source.
+  const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
+  const isHtml = relativePath !== null && !isPdf && isBrowserPreviewFile(relativePath);
+  const readsText = !isImage && !isPdf;
+  const file = useProjectFileQuery(environmentId, cwd, relativePath, readsText);
   // Avi Code addition: reads the same atom as `file` (no extra request), so a
   // preview of a file the agent is about to write reloads once it lands rather
   // than stranding on a read error.
-  const readFailure = useProjectFileQueryFailure(environmentId, cwd, isImage ? null : relativePath);
-  const fileMissing = !isImage && isProjectFileMissing(readFailure);
+  const readFailure = useProjectFileQueryFailure(
+    environmentId,
+    cwd,
+    readsText ? relativePath : null,
+  );
+  const fileMissing = readsText && isProjectFileMissing(readFailure);
   useMissingFileAutoReload({
     shouldReload: fileMissing,
     isThreadWorking,
@@ -765,6 +845,11 @@ export default function FilePreviewPanel({
     false,
     Schema.Boolean,
   );
+  const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
+    RENDER_BROWSER_FILE_STORAGE_KEY,
+    true,
+    Schema.Boolean,
+  );
   // Paired with the path on purpose: each file surface counts its reveals from
   // one, so a bare id would let a dismissed reveal on one file swallow the first
   // reveal on the next.
@@ -774,11 +859,16 @@ export default function FilePreviewPanel({
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
   // A reveal still wins over the preference: the line only exists in the source.
-  const renderMarkdown =
-    isMarkdown &&
-    renderMarkdownPreferred &&
-    (revealLine === null ||
-      (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId));
+  const revealHandled =
+    revealLine === null ||
+    (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
+  const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
+  const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
+  const canToggleRendered = isMarkdown || isHtml;
+  const rendered = isMarkdown ? renderMarkdown : renderBrowserFile;
+  const setRenderedPreferred = isMarkdown
+    ? setRenderMarkdownPreferred
+    : setRenderBrowserFilePreferred;
   const canOpenInBrowser =
     relativePath !== null && isPreviewSupportedInRuntime() && isBrowserPreviewFile(relativePath);
   const absolutePath = relativePath ? resolvePathLinkTarget(relativePath, cwd) : null;
@@ -899,32 +989,30 @@ export default function FilePreviewPanel({
               enableShortcut={false}
             />
           ) : null}
-          {isMarkdown ? (
+          {canToggleRendered ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Toggle
                     className="shrink-0"
-                    pressed={renderMarkdown}
+                    pressed={rendered}
                     onPressedChange={(pressed) => {
-                      setRenderMarkdownPreferred(pressed);
+                      setRenderedPreferred(pressed);
                       setHandledReveal(
                         pressed && relativePath !== null
                           ? { path: relativePath, requestId: revealRequestId }
                           : null,
                       );
                     }}
-                    aria-label={renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
+                    aria-label={renderedToggleLabel(isMarkdown, rendered)}
                     variant="ghost"
                     size="sm"
                   >
-                    {renderMarkdown ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
+                    {rendered ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
                   </Toggle>
                 }
               />
-              <TooltipPopup>
-                {renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
-              </TooltipPopup>
+              <TooltipPopup>{renderedToggleLabel(isMarkdown, rendered)}</TooltipPopup>
             </Tooltip>
           ) : null}
           {canOpenInBrowser ? (
@@ -967,7 +1055,7 @@ export default function FilePreviewPanel({
           </Tooltip>
         </div>
       ) : null}
-      {relativePath && file.data?.truncated ? (
+      {relativePath && !renderBrowserFile && file.data?.truncated ? (
         <div className="shrink-0 border-b border-amber-500/20 bg-amber-500/8 px-3 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
@@ -988,6 +1076,16 @@ export default function FilePreviewPanel({
               alt={relativePath}
               workspaceRoot={isExternalRoot ? cwd : null}
               isThreadWorking={isThreadWorking}
+              reloadSignal={reloadSignal}
+            />
+          ) : relativePath && renderBrowserFile && absolutePath ? (
+            <WorkspaceBrowserPreview
+              key={absolutePath}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              absolutePath={absolutePath}
+              workspaceRoot={isExternalRoot ? cwd : null}
+              title={relativePath}
               reloadSignal={reloadSignal}
             />
           ) : relativePath && file.error && file.data === null ? (
