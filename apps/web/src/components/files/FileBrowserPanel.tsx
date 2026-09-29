@@ -4,7 +4,7 @@ import type {
   FileTreeRenameEvent,
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
-import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
+import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -12,7 +12,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { ChevronsDownUp, ChevronsUpDown, FilePlus, FolderPlus, RotateCw } from "lucide-react";
-import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -30,6 +30,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { projectEnvironment } from "~/state/projects";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
+import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
 // Avi Code addition: helpers for the VSCode-like create/rename/delete flows.
@@ -137,6 +138,10 @@ export default function FileBrowserPanel({
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const treePathsRef = useRef<readonly string[]>(treePaths);
+  const directoryPaths = useMemo(
+    () => entries.filter((entry) => entry.kind === "directory").map(treePath),
+    [entries],
+  );
   const previousTreePathsRef = useRef<readonly string[]>([]);
 
   // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
@@ -156,7 +161,6 @@ export default function FileBrowserPanel({
   // a failed mutation removes/reverts the optimistic node it left behind.
   const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
   const pendingCreatesRef = useRef<Map<string, ProjectEntry["kind"]>>(new Map());
-  const [allCollapsed, setAllCollapsed] = useState(false);
   const createEntryCommand = useAtomCommand(projectEnvironment.createEntry);
   const renameEntryCommand = useAtomCommand(projectEnvironment.renameEntry);
   const deleteEntryCommand = useAtomCommand(projectEnvironment.deleteEntry);
@@ -277,20 +281,6 @@ export default function FileBrowserPanel({
       return;
     }
     reportEntryMutationFailure(result, "Couldn't delete");
-  };
-
-  const toggleCollapseAll = () => {
-    const model = treeModelRef.current;
-    if (!model) return;
-    const expand = allCollapsed;
-    for (const path of treePathsRef.current) {
-      if (!path.endsWith("/")) continue;
-      const item = model.getItem(path);
-      if (!item || !("expand" in item)) continue;
-      if (expand) item.expand();
-      else item.collapse();
-    }
-    setAllCollapsed(!allCollapsed);
   };
 
   const showEntryContextMenu = async (
@@ -468,6 +458,14 @@ export default function FileBrowserPanel({
     unsafeCSS: TREE_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
+  // Read from the tree itself so the control stays right after folders are
+  // opened or closed one at a time.
+  const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
+    areAllDirectoriesExpanded(currentModel, directoryPaths),
+  );
+  const toggleAllDirectories = () => {
+    setAllDirectoriesExpanded(model, directoryPaths, !allDirectoriesExpanded);
+  };
   const handleSearchValueChange = (value: string) => {
     if (value.trim().length === 0) {
       search.close();
@@ -549,22 +547,28 @@ export default function FileBrowserPanel({
           </TooltipTrigger>
           <TooltipPopup>New Folder</TooltipPopup>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={allCollapsed ? "Expand all folders" : "Collapse all folders"}
-                onClick={toggleCollapseAll}
-              />
-            }
-          >
-            {allCollapsed ? <ChevronsUpDown /> : <ChevronsDownUp />}
-          </TooltipTrigger>
-          <TooltipPopup>{allCollapsed ? "Expand all" : "Collapse all"}</TooltipPopup>
-        </Tooltip>
+        {directoryPaths.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={
+                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                  }
+                  onClick={toggleAllDirectories}
+                />
+              }
+            >
+              {allDirectoriesExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={entriesQuery.refresh} />
         <FileSearchField
           name="project-files-search"
