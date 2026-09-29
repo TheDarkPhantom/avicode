@@ -61,9 +61,6 @@ Upstream: t3code 0.0.31
 - Selected text stays visible on a file line opened from a link (#13548 by Theo Browne)
 - When browser preview tools fail, agents are told what to try instead (#13559 by Theo Browne)
 - Browser preview snapshots stay small enough for agents to read in full (#13558 by Theo Browne)
-
-### Upstream t3code
-
 - Background git checks no longer fill your disk with failed repack files (#13812 by Theo Browne)
 - The database log file shrinks back after big writes (#13684 by Theo Browne)
 - A database query that failed once is retried right away (#10584 by Aditya Garud)
