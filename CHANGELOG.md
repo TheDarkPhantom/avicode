@@ -46,6 +46,11 @@ Upstream: t3code 0.0.31
 - Text you type right after sending a new chat's first message is no longer wiped (#241)
 - Voice dictation no longer overwrites text you typed while it was listening (#241)
 - Click Send beside Stop to send a follow-up while a reply is still running (#241)
+- Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
+
+### Upstream t3code
+
+- Undoing turns in Codex threads keeps working on Codex 0.156 (#13481 by Julius Marminge)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

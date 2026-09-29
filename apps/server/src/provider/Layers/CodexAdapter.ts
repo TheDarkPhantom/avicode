@@ -72,6 +72,7 @@ import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogg
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
+const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
   CodexSessionRuntimeThreadIdMissingError,
 );
@@ -1919,7 +1920,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       Effect.mapError((cause) =>
         cause._tag === "ProviderAdapterSessionNotFoundError"
           ? cause
-          : mapCodexRuntimeError(threadId, "thread/rollback", cause),
+          : // Avi Code addition: rollback spans several Codex requests
+            // (thread/read, thread/turns/list, thread/revert or the legacy
+            // thread/rollback), so name the one that actually failed.
+            mapCodexRuntimeError(
+              threadId,
+              (isCodexAppServerRequestError(cause) ? cause.method : undefined) ?? "thread/revert",
+              cause,
+            ),
       ),
       Effect.map((snapshot) => ({
         threadId,

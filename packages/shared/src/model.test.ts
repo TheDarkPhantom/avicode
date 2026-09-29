@@ -164,4 +164,15 @@ describe("model slug normalization", () => {
     // Opus 5 still resolves to its own slug.
     expect(normalizeModelSlug("opus-5", claude)).toBe("claude-opus-5");
   });
+
+  it("resolves Claude Sonnet 5.5 aliases to the canonical slug", () => {
+    const claude = ProviderDriverKind.make("claudeAgent");
+
+    expect(normalizeModelSlug("sonnet-5.5", claude)).toBe("claude-sonnet-5-5");
+    expect(normalizeModelSlug("claude-sonnet-5.5", claude)).toBe("claude-sonnet-5-5");
+    expect(normalizeModelSlug("claude-sonnet-5-5", claude)).toBe("claude-sonnet-5-5");
+    // The bare "sonnet" shortcut stays on Sonnet 5.
+    expect(normalizeModelSlug("sonnet", claude)).toBe("claude-sonnet-5");
+    expect(normalizeModelSlug("sonnet-5", claude)).toBe("claude-sonnet-5");
+  });
 });

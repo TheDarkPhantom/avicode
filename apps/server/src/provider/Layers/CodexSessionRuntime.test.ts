@@ -19,8 +19,172 @@ import {
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   openCodexThread,
+  readCodexThread,
+  rollbackCodexThread,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
+
+describe("Codex thread history", () => {
+  for (const numTurns of [1, 2, 3, 5]) {
+    it.effect(`reverts ${numTurns} paginated turns at the durable boundary`, () =>
+      Effect.gen(function* () {
+        let retained = ["turn-1", "turn-2", "turn-3"];
+        const revertedBefore: Array<string> = [];
+        const client: Parameters<typeof rollbackCodexThread>[0] = {
+          request: () => Effect.die("Legacy history API must not be used for paginated threads"),
+          raw: {
+            request: (method, params) =>
+              Effect.sync(() => {
+                if (method === "thread/read") return { thread: { historyMode: "paginated" } };
+                if (method === "thread/turns/list") {
+                  const { cursor } = params as { cursor: string | null };
+                  const start = cursor === null ? 0 : Number(cursor);
+                  const ids = retained.slice(start, start + 2);
+                  return {
+                    data: ids.map((id) => ({ id, items: [], status: "completed" })),
+                    nextCursor: start + 2 < retained.length ? String(start + 2) : null,
+                  };
+                }
+                NodeAssert.equal(method, "thread/revert");
+                const { beforeTurnId } = params as { beforeTurnId: string };
+                revertedBefore.push(beforeTurnId);
+                retained = retained.slice(0, retained.indexOf(beforeTurnId));
+                return { thread: { id: "thread-1", turns: [] } };
+              }),
+          },
+        };
+        const result = yield* rollbackCodexThread(client, "thread-1", numTurns);
+        const expected = ["turn-1", "turn-2", "turn-3"].slice(0, Math.max(0, 3 - numTurns));
+        NodeAssert.deepEqual(revertedBefore, [
+          ["turn-1", "turn-2", "turn-3"][Math.max(0, 3 - numTurns)],
+        ]);
+        NodeAssert.deepEqual(
+          result.turns.map((turn) => turn.id),
+          expected,
+        );
+        NodeAssert.deepEqual(
+          (yield* readCodexThread(client, "thread-1")).turns.map((turn) => turn.id),
+          expected,
+        );
+      }),
+    );
+  }
+
+  it.effect("does not revert a paginated thread that has no turns", () =>
+    Effect.gen(function* () {
+      const client: Parameters<typeof rollbackCodexThread>[0] = {
+        request: () => Effect.die("Legacy history API must not be used for paginated threads"),
+        raw: {
+          request: (method) =>
+            Effect.sync(() => {
+              if (method === "thread/read") return { thread: { historyMode: "paginated" } };
+              NodeAssert.equal(method, "thread/turns/list");
+              return { data: [], nextCursor: null };
+            }),
+        },
+      };
+      NodeAssert.deepEqual(yield* rollbackCodexThread(client, "thread-1", 1), {
+        threadId: "thread-1",
+        turns: [],
+      });
+    }),
+  );
+
+  for (const cursors of [
+    ["next", "next"],
+    ["first", "second", "first"],
+  ]) {
+    it.effect(`rejects a pagination cursor cycle: ${cursors.join(", ")}`, () =>
+      Effect.gen(function* () {
+        let pageCount = 0;
+        const client: Parameters<typeof readCodexThread>[0] = {
+          request: () => Effect.die("Unexpected legacy request"),
+          raw: {
+            request: (method) =>
+              Effect.sync(() => {
+                if (method === "thread/read") return { thread: { historyMode: "paginated" } };
+                NodeAssert.ok(pageCount < cursors.length, "Repeated cursor was requested");
+                return { data: [], nextCursor: cursors[pageCount++] };
+              }),
+          },
+        };
+        const error = yield* Effect.flip(readCodexThread(client, "thread-1"));
+        NodeAssert.ok(isCodexAppServerRequestError(error));
+        NodeAssert.equal(pageCount, cursors.length);
+      }),
+    );
+  }
+
+  // Codex versions before paginated history report no historyMode and have no
+  // thread/revert, so legacy threads keep the count-based rollback.
+  for (const thread of [{}, { historyMode: "legacy" }]) {
+    it.effect(
+      `keeps the count-based rollback API for legacy threads: ${JSON.stringify(thread)}`,
+      () =>
+        Effect.gen(function* () {
+          const client: Parameters<typeof rollbackCodexThread>[0] = {
+            raw: {
+              request: (method) => {
+                NodeAssert.equal(method, "thread/read");
+                return Effect.succeed({ thread });
+              },
+            },
+            request: <M extends CodexRpc.ClientRequestMethod>(
+              method: M,
+              params: CodexRpc.ClientRequestParamsByMethod[M],
+            ) => {
+              NodeAssert.equal(method, "thread/rollback");
+              NodeAssert.deepEqual(params, { threadId: "legacy-thread", numTurns: 2 });
+              return Effect.succeed({
+                thread: { id: "legacy-thread", turns: [{ id: "turn-1", items: [] }] },
+              } as unknown as CodexRpc.ClientRequestResponsesByMethod[M]);
+            },
+          };
+          NodeAssert.deepEqual(yield* rollbackCodexThread(client, "legacy-thread", 2), {
+            threadId: "legacy-thread",
+            turns: [{ id: "turn-1", items: [] }],
+          });
+        }),
+    );
+  }
+
+  it.effect("surfaces Codex rejecting the legacy rollback", () =>
+    Effect.gen(function* () {
+      const rejection = CodexErrors.CodexAppServerRequestError.methodNotFound("thread/rollback");
+      const client: Parameters<typeof rollbackCodexThread>[0] = {
+        raw: { request: () => Effect.succeed({ thread: { historyMode: "legacy" } }) },
+        request: <M extends CodexRpc.ClientRequestMethod>(method: M) => {
+          NodeAssert.equal(method, "thread/rollback");
+          return Effect.fail(rejection);
+        },
+      };
+      const error = yield* Effect.flip(rollbackCodexThread(client, "legacy-thread", 1));
+      NodeAssert.strictEqual(error, rejection);
+    }),
+  );
+
+  it.effect("reads legacy threads with inline turns", () =>
+    Effect.gen(function* () {
+      const client: Parameters<typeof readCodexThread>[0] = {
+        raw: { request: () => Effect.succeed({ thread: {} }) },
+        request: <M extends CodexRpc.ClientRequestMethod>(
+          method: M,
+          params: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          NodeAssert.equal(method, "thread/read");
+          NodeAssert.deepEqual(params, { threadId: "legacy-thread", includeTurns: true });
+          return Effect.succeed({
+            thread: { id: "legacy-thread", turns: [{ id: "turn-1", items: [] }] },
+          } as unknown as CodexRpc.ClientRequestResponsesByMethod[M]);
+        },
+      };
+      NodeAssert.deepEqual(
+        (yield* readCodexThread(client, "legacy-thread")).turns.map((turn) => turn.id),
+        ["turn-1"],
+      );
+    }),
+  );
+});
 
 describe("CodexSessionRuntimeIdentifierGenerationError", () => {
   it("retains identifier purpose and the random source failure", () => {
