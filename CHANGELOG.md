@@ -47,6 +47,7 @@ Upstream: t3code 0.0.31
 - Voice dictation no longer overwrites text you typed while it was listening (#241)
 - Click Send beside Stop to send a follow-up while a reply is still running (#241)
 - Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
+- Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
 
 ### Upstream t3code
 
@@ -80,6 +81,8 @@ Upstream: t3code 0.0.31
 - Settling a thread closes its idle terminals and keeps busy ones open (#13673 by Theo Browne)
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
+- Go back and forward through visited pages with Ctrl+[ and Ctrl+] (#13212 by Julius Marminge)
+- Settle the open thread with Ctrl+Shift+E, or press it again to restore it (#8089 by Theo Browne)
 - The Files panel collapse-all button tracks folders you open by hand (#8889 by Utkarsh Patil)
 - Show a file tree beside the diff panel to jump to any changed file (#9330 by Julius Marminge)
 - Zoom and pan expanded images with the scroll wheel, a click, or the keyboard (#10869 by maria)

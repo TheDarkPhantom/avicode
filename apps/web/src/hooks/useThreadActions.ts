@@ -493,6 +493,9 @@ export function useThreadActions() {
           ),
         );
       }
+      // Avi Code addition: a manual un-settle expires any pending settle Undo
+      // from the `thread.settle` shortcut.
+      ThreadUndo.invalidate("settle", scopedThreadKey(target));
       // reason "user" pins the thread active: auto-settle (PR merged /
       // inactivity) stays suppressed until real activity clears the pin.
       return unsettleThreadMutation({
