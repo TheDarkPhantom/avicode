@@ -472,6 +472,10 @@ export const OrchestrationThread = Schema.Struct({
   // Optional so payloads from pre-snooze servers still decode.
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  // Set while the user has turned automatic settlement off for this thread.
+  // Survives manual settle, un-settle, and activity: only the user clears it.
+  // Optional so payloads from older servers still decode.
+  autoSettleDisabledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -530,6 +534,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   settledAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  autoSettleDisabledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
@@ -722,6 +727,14 @@ const ThreadUnsnoozeCommand = Schema.Struct({
   // wakes need no event at all — clients derive visibility from snoozedUntil,
   // so a passed wake time simply stops classifying as snoozed.
   reason: Schema.Literal("user"),
+});
+
+const ThreadAutoSettleSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.auto-settle.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  // false turns automatic settlement off for this thread, true turns it back on.
+  enabled: Schema.Boolean,
 });
 
 const ThreadMetaUpdateCommand = Schema.Struct({
@@ -948,6 +961,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUnsettleCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
+  ThreadAutoSettleSetCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -976,6 +990,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUnsettleCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
+  ThreadAutoSettleSetCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -1094,6 +1109,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.unsettled",
   "thread.snoozed",
   "thread.unsnoozed",
+  "thread.auto-settle-set",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -1200,6 +1216,13 @@ export const ThreadUnsnoozedPayload = Schema.Struct({
   // thread.unsettled's activity resets. Timer wakes emit no event: clients
   // derive them from snoozedUntil passing.
   reason: Schema.Literals(["user", "activity"]),
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadAutoSettleSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  // Null re-enables automatic settlement.
+  autoSettleDisabledAt: Schema.NullOr(IsoDateTime),
   updatedAt: IsoDateTime,
 });
 
@@ -1420,6 +1443,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.unsnoozed"),
     payload: ThreadUnsnoozedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.auto-settle-set"),
+    payload: ThreadAutoSettleSetPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

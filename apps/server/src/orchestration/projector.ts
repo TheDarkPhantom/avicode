@@ -28,6 +28,7 @@ import {
   ThreadUnarchivedPayload,
   ThreadUnsettledPayload,
   ThreadUnsnoozedPayload,
+  ThreadAutoSettleSetPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
@@ -309,6 +310,7 @@ export function projectEvent(
             settledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
+            autoSettleDisabledAt: null,
             deletedAt: null,
             messages: [],
             activities: [],
@@ -358,6 +360,7 @@ export function projectEvent(
             settledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
+            autoSettleDisabledAt: null,
             deletedAt: null,
             // The inherited prefix deliberately stays owned by the source
             // thread; only messages produced on this branch live here.
@@ -455,6 +458,17 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             snoozedUntil: null,
             snoozedAt: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.auto-settle-set":
+      return decodeForEvent(ThreadAutoSettleSetPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            autoSettleDisabledAt: payload.autoSettleDisabledAt,
             updatedAt: payload.updatedAt,
           }),
         })),
