@@ -228,8 +228,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
 
       assert.deepEqual(liveStatuses.toSorted(), ["error", "running", "starting"]);
       assert.deepEqual(allStatuses.toSorted(), ["error", "running", "starting", "stopped"]);
-    }),
-  );
+    }));
 
   it("resets adapterKey to the new provider when provider changes without an explicit adapter key", () =>
     Effect.gen(function* () {

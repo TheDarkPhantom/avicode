@@ -896,7 +896,8 @@ const handleSessionUpdate = ({
             shownToolCallIds.delete(shownToolCallIds.values().next().value!);
           }
           // A call still running is already on screen, even if it aged out.
-          if (previous === undefined) yield* closeActiveAssistantSegment({ queue, assistantSegmentRef });
+          if (previous === undefined)
+            yield* closeActiveAssistantSegment({ queue, assistantSegmentRef });
         }
         yield* Queue.offer(queue, {
           _tag: "ToolCallUpdated",
