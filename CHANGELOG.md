@@ -83,6 +83,7 @@ Upstream: t3code 0.0.31
 - Update Grok with one click when a new version is out (#13523 by Julius Marminge)
 - New agent sessions use the browser tab you can see (#13064 by Bilal Bakr)
 - Save Bitbucket credentials from Source Control settings (#14103 by Gabriel De Andrade)
+- Disabled buttons and menu items share one dimmed look (#11441 by Utkarsh Patil)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
