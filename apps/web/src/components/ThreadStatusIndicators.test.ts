@@ -1,11 +1,39 @@
 import type { VcsStatusResult } from "@t3tools/contracts";
+import type { AnimationEvent } from "react";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   prStatusIndicator,
   resolveThreadPr,
   settledPrHoverColorClass,
+  synchronizeTerminalPulse,
 } from "./ThreadStatusIndicators";
+
+describe("synchronizeTerminalPulse", () => {
+  it("pins only the status pulse to the document clock", () => {
+    const pulse = { animationName: "status-pulse", startTime: 975 } as CSSAnimation;
+    const otherCss = { animationName: "other-animation", startTime: 125 } as CSSAnimation;
+    const otherAnimation = { startTime: 250 } as Animation;
+
+    synchronizeTerminalPulse({
+      animationName: "status-pulse",
+      currentTarget: { getAnimations: () => [pulse, otherCss, otherAnimation] },
+    } as unknown as AnimationEvent<SVGSVGElement>);
+
+    expect([pulse.startTime, otherCss.startTime, otherAnimation.startTime]).toEqual([0, 125, 250]);
+  });
+
+  it("ignores other animations starting on the icon", () => {
+    const pulse = { animationName: "status-pulse", startTime: 975 } as CSSAnimation;
+
+    synchronizeTerminalPulse({
+      animationName: "fade-in",
+      currentTarget: { getAnimations: () => [pulse] },
+    } as unknown as AnimationEvent<SVGSVGElement>);
+
+    expect(pulse.startTime).toBe(975);
+  });
+});
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   return {

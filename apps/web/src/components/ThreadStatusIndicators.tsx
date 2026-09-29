@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, type AnimationEvent } from "react";
 import { useClientSettings } from "../hooks/useSettings";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject } from "../state/entities";
@@ -138,6 +138,21 @@ export function terminalStatusFromRunningIds(
     colorClass: "text-teal-600 dark:text-teal-300/90",
     pulse: true,
   };
+}
+
+/**
+ * Ported from upstream #12962. Pins a newly started terminal pulse to the
+ * document clock so every running-terminal icon shares one cycle, without a
+ * timer or frame loop.
+ */
+export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
+  if (event.animationName !== "status-pulse") return;
+
+  for (const animation of event.currentTarget.getAnimations()) {
+    if ("animationName" in animation && animation.animationName === "status-pulse") {
+      animation.startTime = 0;
+    }
+  }
 }
 
 export function ThreadWorktreeIndicator({
@@ -339,7 +354,8 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
             }
           >
             <TerminalIcon
-              className={`size-3 ${terminalStatus.pulse ? "animate-status-pulse" : ""}`}
+              className={`size-3 ${terminalStatus.pulse ? "motion-safe:animate-status-pulse" : ""}`}
+              onAnimationStart={synchronizeTerminalPulse}
             />
           </TooltipTrigger>
           <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>
