@@ -492,6 +492,7 @@ const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [
   // popup, so without this every keystroke typed into it would be stolen by the
   // type-to-focus rule and land in the composer.
   '[data-thread-find-bar="true"]',
+  '[role="dialog"][aria-modal="true"]',
   '[data-slot="dialog"]',
   '[data-slot="menu-popup"]:is([data-open],[data-ending-style])',
   '[data-slot="select-popup"]:is([data-open],[data-ending-style])',

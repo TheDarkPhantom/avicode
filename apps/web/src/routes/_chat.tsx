@@ -14,6 +14,7 @@ import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { ThreadAttentionChime } from "../components/ThreadAttentionChime";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useReopenLastArchivedThread } from "../hooks/useReopenLastArchivedThread";
+import { useToggleThreadSettled } from "../hooks/useToggleThreadSettled";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -35,6 +36,7 @@ function ChatRouteGlobalShortcuts() {
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const reopenLastArchivedThread = useReopenLastArchivedThread();
+  const toggleThreadSettled = useToggleThreadSettled();
   const sidebarV2Enabled = useSidebarV2Enabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -106,6 +108,14 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         void reopenLastArchivedThread();
+        return;
+      }
+
+      // Ported from upstream #8089: settle the open thread, or restore it.
+      if (command === "thread.settle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (routeThreadRef) void toggleThreadSettled(routeThreadRef);
         return;
       }
 
@@ -222,6 +232,7 @@ function ChatRouteGlobalShortcuts() {
     selectedThreadKeysSize,
     sidebarV2Enabled,
     terminalOpen,
+    toggleThreadSettled,
   ]);
 
   return null;
