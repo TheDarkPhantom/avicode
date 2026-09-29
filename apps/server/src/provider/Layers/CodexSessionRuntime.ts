@@ -739,6 +739,108 @@ function parseThreadSnapshot(
   };
 }
 
+// Avi Code addition: Codex thread history helpers, ported from upstream t3code
+// (#11338, #13481). The fork's generated protocol predates paginated history,
+// so `thread/turns/list` and `thread/revert` go through raw requests.
+const CodexThreadHistoryMetadata = Schema.Struct({
+  thread: Schema.Struct({
+    historyMode: Schema.optionalKey(Schema.Literals(["legacy", "paginated"])),
+  }),
+});
+const CodexTurnsPage = Schema.Struct({
+  data: Schema.Array(EffectCodexSchema.V2ThreadReadResponse__Turn),
+  nextCursor: Schema.NullOr(Schema.String),
+});
+const decodeCodexHistoryMetadata = Schema.decodeUnknownEffect(CodexThreadHistoryMetadata);
+const decodeCodexTurnsPage = Schema.decodeUnknownEffect(CodexTurnsPage);
+type CodexHistoryClient = {
+  readonly raw: Pick<CodexClient.CodexAppServerClient["Service"]["raw"], "request">;
+  readonly request: CodexClient.CodexAppServerClient["Service"]["request"];
+};
+
+/** Codex versions without paginated history omit `historyMode`; treat that as legacy. */
+const readCodexHistoryMode = Effect.fn("readCodexHistoryMode")(function* (
+  client: CodexHistoryClient,
+  threadId: string,
+) {
+  const response = yield* client.raw.request("thread/read", { threadId, includeTurns: false });
+  const metadata = yield* decodeCodexHistoryMetadata(response).pipe(
+    Effect.mapError((error) =>
+      CodexErrors.CodexAppServerRequestError.invalidPayload("thread/read", "decode-payload", error),
+    ),
+  );
+  return metadata.thread.historyMode;
+});
+
+/** Reads every turn of a Codex thread, paging through `thread/turns/list` for paginated history. */
+export const readCodexThread = Effect.fn("readCodexThread")(function* (
+  client: CodexHistoryClient,
+  threadId: string,
+): Effect.fn.Return<CodexThreadSnapshot, CodexErrors.CodexAppServerError> {
+  if ((yield* readCodexHistoryMode(client, threadId)) !== "paginated") {
+    return parseThreadSnapshot(
+      yield* client.request("thread/read", { threadId, includeTurns: true }),
+    );
+  }
+  const turns: Array<CodexThreadTurnSnapshot> = [];
+  const requestedCursors = new Set<string | null>();
+  let cursor: string | null = null;
+  do {
+    if (requestedCursors.has(cursor)) {
+      return yield* CodexErrors.CodexAppServerRequestError.internalError(
+        "Thread history pagination repeated a cursor.",
+        undefined,
+        { method: "thread/turns/list", operation: "decode-payload" },
+      );
+    }
+    requestedCursors.add(cursor);
+    const response: unknown = yield* client.raw.request("thread/turns/list", {
+      threadId,
+      cursor,
+      limit: 100,
+      sortDirection: "asc",
+      itemsView: "full",
+    });
+    const page = yield* decodeCodexTurnsPage(response).pipe(
+      Effect.mapError((error) =>
+        CodexErrors.CodexAppServerRequestError.invalidPayload(
+          "thread/turns/list",
+          "decode-payload",
+          error,
+        ),
+      ),
+    );
+    turns.push(...page.data.map((turn) => ({ id: TurnId.make(turn.id), items: turn.items })));
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return { threadId, turns };
+});
+
+/**
+ * Drops the last `numTurns` turns of a Codex thread and returns what remains.
+ *
+ * Paginated threads (the Codex 0.156 default, where `thread/rollback` no longer
+ * exists) revert at the first dropped turn via `thread/revert`. Legacy threads
+ * keep the count-based `thread/rollback`, which is all older Codex versions
+ * offer; Codex 0.156 rejects legacy threads either way.
+ */
+export const rollbackCodexThread = Effect.fn("rollbackCodexThread")(function* (
+  client: CodexHistoryClient,
+  threadId: string,
+  numTurns: number,
+): Effect.fn.Return<CodexThreadSnapshot, CodexErrors.CodexAppServerError> {
+  if ((yield* readCodexHistoryMode(client, threadId)) !== "paginated") {
+    return parseThreadSnapshot(yield* client.request("thread/rollback", { threadId, numTurns }));
+  }
+  const snapshot = yield* readCodexThread(client, threadId);
+  const retainedCount = Math.max(0, snapshot.turns.length - numTurns);
+  const firstRemoved = snapshot.turns[retainedCount];
+  if (firstRemoved) {
+    yield* client.raw.request("thread/revert", { threadId, beforeTurnId: firstRemoved.id });
+  }
+  return { threadId, turns: snapshot.turns.slice(0, retainedCount) };
+});
+
 export const makeCodexSessionRuntime = (
   options: CodexSessionRuntimeOptions,
 ): Effect.Effect<
@@ -1426,11 +1528,7 @@ export const makeCodexSessionRuntime = (
         }),
       readThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;
-        const response = yield* client.request("thread/read", {
-          threadId: providerThreadId,
-          includeTurns: true,
-        });
-        return parseThreadSnapshot(response);
+        return yield* readCodexThread(client, providerThreadId);
       }),
       // Avi Code addition: conversation branching.
       forkThread: (lastTurnId) =>
@@ -1447,15 +1545,12 @@ export const makeCodexSessionRuntime = (
       rollbackThread: (numTurns) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
-          const response = yield* client.request("thread/rollback", {
-            threadId: providerThreadId,
-            numTurns,
-          });
+          const snapshot = yield* rollbackCodexThread(client, providerThreadId, numTurns);
           yield* updateSession(sessionRef, {
             status: "ready",
             activeTurnId: undefined,
           });
-          return parseThreadSnapshot(response);
+          return snapshot;
         }),
       respondToRequest: (requestId, decision) =>
         Effect.gen(function* () {

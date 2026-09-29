@@ -195,6 +195,10 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "opus-4.6": "claude-opus-4-6",
     "claude-opus-4.6": "claude-opus-4-6",
     "claude-opus-4-6-20251117": "claude-opus-4-6",
+    // Avi Code addition: Claude Sonnet 5.5 aliases (bare "sonnet" stays on Sonnet 5, as upstream).
+    "sonnet-5.5": "claude-sonnet-5-5",
+    "claude-sonnet-5.5": "claude-sonnet-5-5",
+    "claude-sonnet-5-5": "claude-sonnet-5-5",
     sonnet: "claude-sonnet-5",
     "sonnet-5": "claude-sonnet-5",
     "claude-sonnet-5.0": "claude-sonnet-5",
