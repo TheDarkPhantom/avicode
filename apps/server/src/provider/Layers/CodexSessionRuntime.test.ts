@@ -9,14 +9,17 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 
 import {
+  buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
 } from "../CodexDeveloperInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
+  buildAdditionalContextInjection,
   buildTurnStartParams,
   hasConfiguredMcpServer,
+  isRootContextCompaction,
   isRecoverableThreadResumeError,
   openCodexThread,
   readCodexThread,
@@ -285,12 +288,13 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("plan", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
         },
       },
+      additionalContext: buildCodexAdditionalContext({
+        model: "gpt-5.3-codex",
+        reasoningEffort: "medium",
+      }),
     });
   });
 
@@ -334,16 +338,17 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("default", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
         },
       },
+      additionalContext: buildCodexAdditionalContext({
+        model: "gpt-5.3-codex",
+        reasoningEffort: "medium",
+      }),
     });
   });
 
-  it("reports the same fallback model and effort in settings and instructions", () => {
+  it("reports the same fallback model and effort in settings and runtime context", () => {
     const params = Effect.runSync(
       buildTurnStartParams({
         threadId: "provider-thread-1",
@@ -356,8 +361,38 @@ describe("buildTurnStartParams", () => {
     const settings = params.collaborationMode?.settings;
     NodeAssert.equal(settings?.model, DEFAULT_MODEL);
     NodeAssert.equal(settings?.reasoning_effort, "medium");
-    NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
+    NodeAssert.ok(
+      params.additionalContext?.avi_code_runtime?.value.includes(`as ${DEFAULT_MODEL} with medium`),
+    );
   });
+
+  // Newer models replace `developer_instructions` with the catalog's own mode
+  // text, so Avi's runtime and tool context must ride in `additionalContext`,
+  // which every model receives.
+  it.effect("keeps runtime and browser context out of the mode prompt", () =>
+    Effect.gen(function* () {
+      for (const interactionMode of ["default", "plan"] as const) {
+        const params = yield* buildTurnStartParams({
+          threadId: "provider-thread-1",
+          runtimeMode: "full-access",
+          prompt: "Go",
+          model: "gpt-5.4",
+          effort: "high",
+          interactionMode,
+        });
+        const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+        NodeAssert.doesNotMatch(instructions, /runtime_info|preview_status/);
+        NodeAssert.deepStrictEqual(Object.keys(params.additionalContext ?? {}), [
+          "avi_code_runtime",
+          "avi_code_tools",
+        ]);
+        NodeAssert.match(
+          params.additionalContext?.avi_code_runtime?.value ?? "",
+          /as gpt-5\.4 with high reasoning effort/,
+        );
+      }
+    }),
+  );
 
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
     Effect.gen(function* () {
@@ -411,64 +446,118 @@ describe("buildTurnStartParams", () => {
 });
 
 describe("buildCodexDeveloperInstructions", () => {
-  it("appends runtime info after the mode instructions", () => {
-    const instructions = buildCodexDeveloperInstructions("default", {
-      model: "gpt-5.3-codex",
-      reasoningEffort: "high",
-    });
-
-    NodeAssert.ok(instructions.startsWith(CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS));
-    NodeAssert.match(instructions, /Avi Code/);
-    NodeAssert.match(instructions, /Codex harness/);
-    NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
-  });
-
-  it("includes runtime info alongside plan mode instructions", () => {
-    const instructions = buildCodexDeveloperInstructions("plan", {
-      model: "gpt-5.3-codex",
-      reasoningEffort: "medium",
-    });
-
-    NodeAssert.ok(instructions.startsWith(CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS));
-    NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
-  });
-
-  it("varies with the model and effort of each turn", () => {
-    const first = buildCodexDeveloperInstructions("default", {
-      model: "gpt-5.3-codex",
-      reasoningEffort: "medium",
-    });
-    const second = buildCodexDeveloperInstructions("default", {
-      model: "gpt-5.4",
-      reasoningEffort: "high",
-    });
-
-    NodeAssert.notEqual(first, second);
-  });
-
-  it("flattens multiline metadata into single-line runtime info", () => {
-    const instructions = buildCodexDeveloperInstructions("default", {
-      model: "gpt\n5.3\ncodex",
-      reasoningEffort: " high\neffort ",
-    });
-
-    NodeAssert.match(instructions, /as gpt 5\.3 codex with high effort reasoning effort/);
-    NodeAssert.doesNotMatch(instructions, /<runtime_info>[^<]*\n/);
+  it("returns the mode prompt for each interaction mode", () => {
+    NodeAssert.equal(
+      buildCodexDeveloperInstructions("default"),
+      CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
+    );
+    NodeAssert.equal(
+      buildCodexDeveloperInstructions("plan"),
+      CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
+    );
   });
 });
 
-describe("T3 browser developer instructions", () => {
-  it("prefers the product-native preview tools in both collaboration modes", () => {
-    for (const instructions of [
-      CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
-      CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
-    ]) {
-      NodeAssert.match(instructions, /t3-code/);
-      NodeAssert.match(instructions, /preview_status/);
-      NodeAssert.match(instructions, /preview_open/);
-      NodeAssert.match(instructions, /Do not switch to global browser skills/);
-    }
+describe("buildCodexAdditionalContext", () => {
+  const runtimeText = (runtime: { model: string; reasoningEffort: string }) =>
+    buildCodexAdditionalContext(runtime).avi_code_runtime?.value ?? "";
+
+  it("describes the Avi Code runtime", () => {
+    const context = buildCodexAdditionalContext({
+      model: "gpt-5.3-codex",
+      reasoningEffort: "high",
+    });
+
+    NodeAssert.equal(context.avi_code_runtime?.kind, "application");
+    NodeAssert.match(context.avi_code_runtime?.value ?? "", /Avi Code/);
+    NodeAssert.match(context.avi_code_runtime?.value ?? "", /Codex harness/);
+    NodeAssert.match(
+      context.avi_code_runtime?.value ?? "",
+      /as gpt-5\.3-codex with high reasoning effort/,
+    );
   });
+
+  it("varies with the model and effort of each turn", () => {
+    NodeAssert.notEqual(
+      runtimeText({ model: "gpt-5.3-codex", reasoningEffort: "medium" }),
+      runtimeText({ model: "gpt-5.4", reasoningEffort: "high" }),
+    );
+  });
+
+  it("flattens multiline metadata into single-line runtime info", () => {
+    const text = runtimeText({ model: "gpt\n5.3\ncodex", reasoningEffort: " high\neffort " });
+
+    NodeAssert.match(text, /as gpt 5\.3 codex with high effort reasoning effort/);
+    NodeAssert.doesNotMatch(text, /<runtime_info>[^<]*\n/);
+  });
+
+  it("prefers the product-native preview tools", () => {
+    const tools =
+      buildCodexAdditionalContext({ model: "gpt-5.4", reasoningEffort: "medium" }).avi_code_tools
+        ?.value ?? "";
+    NodeAssert.match(tools, /t3-code/);
+    NodeAssert.match(tools, /preview_status/);
+    NodeAssert.match(tools, /preview_open/);
+    NodeAssert.match(tools, /Do not switch to global browser skills/);
+  });
+});
+
+describe("additional context after compaction", () => {
+  const compacted = (threadId: string) =>
+    ({
+      method: "item/completed",
+      params: {
+        threadId,
+        turnId: `${threadId}-turn`,
+        completedAtMs: 0,
+        item: { type: "contextCompaction", id: `compaction-${threadId}` },
+      },
+    }) as unknown as Parameters<typeof isRootContextCompaction>[0];
+
+  it("reacts only to the root thread's own compaction", () => {
+    NodeAssert.equal(isRootContextCompaction(compacted("root"), "root"), true);
+    // A child agent's compaction must not inject into the root thread.
+    NodeAssert.equal(isRootContextCompaction(compacted("child"), "root"), false);
+    NodeAssert.equal(isRootContextCompaction(compacted("root"), undefined), false);
+    const otherItem = {
+      method: "item/completed",
+      params: { threadId: "root", turnId: "t", item: { type: "agentMessage", id: "m" } },
+    } as unknown as Parameters<typeof isRootContextCompaction>[0];
+    NodeAssert.equal(isRootContextCompaction(otherItem, "root"), false);
+  });
+
+  it.effect("re-sends the last turn's context as developer messages", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "root",
+        runtimeMode: "full-access",
+        prompt: "Go",
+        model: "gpt-5.4",
+        interactionMode: "default",
+      });
+      NodeAssert.ok(params.additionalContext);
+      const injection = buildAdditionalContextInjection("root", params.additionalContext);
+
+      NodeAssert.equal(injection.threadId, "root");
+      const items = injection.items as ReadonlyArray<{
+        type: string;
+        role: string;
+        content: ReadonlyArray<{ type: string; text: string }>;
+      }>;
+      NodeAssert.deepStrictEqual(
+        items.map((item) => [item.type, item.role, item.content[0]?.type]),
+        [
+          ["message", "developer", "input_text"],
+          ["message", "developer", "input_text"],
+        ],
+      );
+      NodeAssert.match(
+        items[0]?.content[0]?.text ?? "",
+        /^<avi_code_runtime><runtime_info>.*as gpt-5\.4 with medium reasoning effort.*<\/avi_code_runtime>$/s,
+      );
+      NodeAssert.match(items[1]?.content[0]?.text ?? "", /^<avi_code_tools>## Avi Code/);
+    }),
+  );
 });
 
 describe("hasConfiguredMcpServer", () => {
