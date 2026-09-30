@@ -462,3 +462,61 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
+
+// Avi Code addition.
+describe("ServerSettings project overrides", () => {
+  it("defaults to no overrides for settings files written before they existed", () => {
+    expect(decodeServerSettings({ defaultThreadEnvMode: "worktree" })).toMatchObject({
+      defaultThreadEnvMode: "worktree",
+      aviCodeProjectSettingsOverrides: {},
+    });
+    expect(DEFAULT_SERVER_SETTINGS.aviCodeProjectSettingsOverrides).toEqual({});
+  });
+
+  it("round-trips a project's partial overrides, including a null writer model", () => {
+    const settings = decodeServerSettings({
+      aviCodeProjectSettingsOverrides: {
+        "project-1": {
+          defaultThreadEnvMode: "worktree",
+          sourceControlWriterModelSelection: null,
+          sourceControlWritingStyle: { mode: "custom", customInstructions: "Be brief." },
+        },
+      },
+    });
+    expect(settings.aviCodeProjectSettingsOverrides).toEqual({
+      "project-1": {
+        defaultThreadEnvMode: "worktree",
+        sourceControlWriterModelSelection: null,
+        sourceControlWritingStyle: {
+          mode: "custom",
+          customInstructions: "Be brief.",
+          followChangeRequestTemplates: true,
+        },
+      },
+    });
+    expect(decodeServerSettings(encodeServerSettings(settings))).toEqual(settings);
+  });
+
+  it("drops keys that are not project overridable", () => {
+    const settings = decodeServerSettings({
+      aviCodeProjectSettingsOverrides: { "project-1": { enableAssistantStreaming: true } },
+    });
+    expect(settings.aviCodeProjectSettingsOverrides).toEqual({ "project-1": {} });
+  });
+
+  it("accepts null in a patch to remove a project's overrides", () => {
+    expect(
+      decodeServerSettingsPatch({
+        aviCodeProjectSettingsOverrides: {
+          "project-1": null,
+          "project-2": { newWorktreesStartFromOrigin: false },
+        },
+      }),
+    ).toEqual({
+      aviCodeProjectSettingsOverrides: {
+        "project-1": null,
+        "project-2": { newWorktreesStartFromOrigin: false },
+      },
+    });
+  });
+});

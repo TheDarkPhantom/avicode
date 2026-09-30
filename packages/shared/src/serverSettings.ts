@@ -2,6 +2,7 @@ import {
   isProviderDriverKind,
   isProviderAvailable,
   type ModelSelection,
+  type ProjectId,
   type ProviderDriverKind,
   type ServerProvider,
   ServerSettings,
@@ -121,6 +122,27 @@ function mergeModelSelectionOptionsById(input: {
   return [...merged.entries()].map(([id, value]) => ({ id, value }));
 }
 
+/**
+ * Avi Code addition. Each patched project's entry replaces the stored one;
+ * `null` or an empty entry removes the project. Unpatched projects are kept.
+ */
+export function applyProjectSettingsOverridesPatch(
+  current: ServerSettings["aviCodeProjectSettingsOverrides"],
+  patch: NonNullable<ServerSettingsPatch["aviCodeProjectSettingsOverrides"]>,
+): ServerSettings["aviCodeProjectSettingsOverrides"] {
+  const next: Record<string, ServerSettings["aviCodeProjectSettingsOverrides"][ProjectId]> = {
+    ...current,
+  };
+  for (const [projectId, entry] of Object.entries(patch)) {
+    if (entry === null || Object.keys(entry).length === 0) {
+      delete next[projectId];
+    } else {
+      next[projectId] = entry;
+    }
+  }
+  return next;
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   patch: ServerSettingsPatch,
@@ -131,6 +153,7 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    aviCodeProjectSettingsOverrides,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -192,6 +215,16 @@ export function applyServerSettingsPatch(
       : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
+    // Avi Code addition. Entry replacement, never a deep merge: a deep merge
+    // could not drop a cleared key from a project's entry.
+    ...(aviCodeProjectSettingsOverrides !== undefined
+      ? {
+          aviCodeProjectSettingsOverrides: applyProjectSettingsOverridesPatch(
+            current.aviCodeProjectSettingsOverrides,
+            aviCodeProjectSettingsOverrides,
+          ),
+        }
+      : {}),
   };
   const normalizedBackgroundActivity = normalizeBackgroundActivitySettings(
     nextWithReplacementsBase.backgroundActivity,
