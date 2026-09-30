@@ -422,9 +422,40 @@ const messageWithAttachments = (attachments: ReadonlyArray<unknown>) => [
   },
 ];
 
-// ChatUnknownAttachment is not in ChatAttachment yet (see its doc comment), but
-// its discriminator guard is what the web follow-up relies on: unknown types
-// decode, known ones (including the fork's `document`) never slide through.
+// Attachments ride on persisted events and thread streams with no client
+// version negotiation. A type this build does not know must decode instead of
+// failing the whole message.
+it.effect("tolerates attachment types from newer builds when decoding messages", () =>
+  Effect.gen(function* () {
+    const futureAttachment = {
+      type: "somethingnew",
+      id: "thread-1-00000000-0000-4000-8000-000000000003-glb",
+      name: "scene.glb",
+      mimeType: "model/gltf-binary",
+      sizeBytes: 12,
+    };
+    const [message] = yield* decodeOrchestrationMessageForAttachments(
+      messageWithAttachments([futureAttachment]),
+    );
+    assert.strictEqual(message?.attachments?.[0]!.type, "somethingnew");
+
+    const payload = yield* decodeThreadMessageSentPayload({
+      threadId: "thread-1",
+      messageId: "message-1",
+      role: "user",
+      text: "look at this",
+      attachments: [futureAttachment],
+      turnId: null,
+      streaming: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(payload.attachments?.[0]!.type, "somethingnew");
+  }),
+);
+
+// Unknown types decode; known ones (including the fork's `document`) never
+// slide through the open member with their own constraints unchecked.
 it("ChatUnknownAttachment accepts only types this build does not know", () => {
   const isUnknownAttachment = Schema.is(ChatUnknownAttachment);
   const base = {

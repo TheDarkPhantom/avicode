@@ -320,7 +320,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       if (surfaceIndex < 0) return;
 
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
-      if (surface.kind === "file") {
+      if (surface.kind === "file" && surface.attachment === undefined) {
         items.push({ id: "copy-path", label: "Copy path" });
       }
       // Avi Code addition: offer "Unsplit" on a split preview surface.
@@ -349,7 +349,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
         case "copy-path":
-          if (surface.kind === "file") props.onCopyFilePath(surface.relativePath);
+          if (surface.kind === "file" && surface.attachment === undefined) {
+            props.onCopyFilePath(surface.relativePath);
+          }
           break;
         case "unsplit":
           props.onUnsplitPreview(surface.id);

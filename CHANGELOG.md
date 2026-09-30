@@ -109,6 +109,10 @@ Upstream: t3code 0.0.31
 - The context meter names the thread's model instead of its provider (#4772 by nqrwhal)
 - Press Up in an empty composer to bring back prompts you sent in this thread (#9173 by Theo Browne)
 - Ctrl+Enter in a new thread starts it in the background and opens a fresh draft (#7821 by Exotic)
+- Images upload as soon as you attach them, with progress and retry (#8048 by Theo Browne)
+- Attach PDFs, ZIPs and other files up to 50MB to a message (#8236 by Theo Browne)
+- Play video attachments right in the chat (#8688 by Bilal Bakr)
+- Open attached PDFs and HTML pages in the file viewer (#9292 by Julius Marminge)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

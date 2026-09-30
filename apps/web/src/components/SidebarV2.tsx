@@ -72,6 +72,7 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
+import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { readLocalApi } from "../localApi";
 import {
   deriveProjectGroupingOverrideKey,
@@ -1553,6 +1554,7 @@ export default function SidebarV2() {
 
         shouldNavigate ||= memberRemovalNeedsNavigation;
         if (projectDraftThread) {
+          releaseComposerDraftUploads(projectDraftThread.draftId);
           draftStore.clearDraftThread(projectDraftThread.draftId);
         }
         draftStore.clearProjectDraftThreadId(projectRef);

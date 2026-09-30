@@ -259,6 +259,12 @@ const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
   !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
+const isSafeInlineVideoMimeType = (mimeType: string): boolean =>
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && mimeType.toLowerCase().startsWith("video/");
+// An inline HTML attachment runs in its own opaque origin, like the viewer's
+// sandboxed frame: scripts and forms work, the app's session does not.
+const INLINE_HTML_CONTENT_SECURITY_POLICY =
+  "sandbox allow-scripts allow-forms allow-popups allow-modals";
 
 /** RFC 6266 disposition with an ASCII fallback name plus a UTF-8 `filename*`. */
 export function downloadContentDisposition(fileName?: string): string {
@@ -282,13 +288,15 @@ export function downloadContentDisposition(fileName?: string): string {
 /**
  * Headers for a served asset. Downloads (generic file attachments) get an
  * attachment disposition, a locked-down CSP, and only a safe caller-supplied
- * Content-Type; everything else keeps the inline defaults.
+ * Content-Type. Inline videos get their declared video type so the player
+ * can decode them; everything else keeps the inline defaults.
  */
 export function assetResponseHeaders(options?: {
   readonly download?: boolean;
   readonly fileName?: string;
   readonly mimeType?: string;
 }): Record<string, string> {
+  const inlineVideoMimeType = options?.mimeType?.split(";", 1)[0]?.trim();
   return {
     "Cache-Control": "private, max-age=3600",
     "X-Content-Type-Options": "nosniff",
@@ -301,7 +309,16 @@ export function assetResponseHeaders(options?: {
               ? options.mimeType
               : "application/octet-stream",
         }
-      : {}),
+      : inlineVideoMimeType !== undefined && isSafeInlineVideoMimeType(inlineVideoMimeType)
+        ? { "Content-Type": inlineVideoMimeType }
+        : inlineVideoMimeType?.toLowerCase() === "application/pdf"
+          ? { "Content-Type": "application/pdf" }
+          : inlineVideoMimeType?.toLowerCase() === "text/html"
+            ? {
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Security-Policy": INLINE_HTML_CONTENT_SECURITY_POLICY,
+              }
+            : {}),
   };
 }
 
@@ -331,9 +348,9 @@ export const assetRouteLayer = HttpRouter.add(
     return yield* HttpServerResponse.file(asset.path, {
       status: 200,
       headers: assetResponseHeaders(
-        asset.download
+        asset.download || asset.mimeType !== undefined
           ? {
-              download: true,
+              ...(asset.download ? { download: true } : {}),
               ...(asset.fileName !== undefined ? { fileName: asset.fileName } : {}),
               ...(asset.mimeType !== undefined ? { mimeType: asset.mimeType } : {}),
             }

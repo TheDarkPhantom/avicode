@@ -40,6 +40,29 @@ describe("assetResponseHeaders", () => {
     });
   });
 
+  it("serves inline videos with their declared mime type", () => {
+    expect(assetResponseHeaders({ mimeType: 'video/mp4; codecs="avc1.42E01E"' })).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "Content-Type": "video/mp4",
+      "X-Content-Type-Options": "nosniff",
+    });
+    // Anything else the claims name keeps the inline defaults.
+    expect(assetResponseHeaders({ mimeType: "application/zip" })).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    });
+  });
+
+  it("serves inline attachment documents with their declared mime type", () => {
+    expect(assetResponseHeaders({ mimeType: "application/pdf" })).toMatchObject({
+      "Content-Type": "application/pdf",
+    });
+    expect(assetResponseHeaders({ mimeType: "text/html" })).toMatchObject({
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-modals",
+    });
+  });
+
   it("downloads uploaded documents without executing their content", () => {
     expect(assetResponseHeaders({ download: true })).toMatchObject({
       "Content-Disposition": "attachment",

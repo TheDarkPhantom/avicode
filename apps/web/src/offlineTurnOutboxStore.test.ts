@@ -120,6 +120,68 @@ describe("offlineTurnOutboxStore", () => {
     });
   });
 
+  it("reconstructs inline, uploaded, and unknown attachments for display", () => {
+    const [startCommand] = queuedItem().commands;
+    if (startCommand?.type !== "thread.turn.start") throw new Error("expected a turn start");
+    const item = queuedItem({
+      commands: [
+        {
+          ...startCommand,
+          message: {
+            ...startCommand.message,
+            attachments: [
+              {
+                type: "document",
+                name: "brief.pdf",
+                mimeType: "application/pdf",
+                sizeBytes: 20,
+                extractedText: "hello",
+              },
+              {
+                type: "file",
+                id: "pending-00000000-0000-4000-8000-000000000001-zip",
+                name: "src.zip",
+                mimeType: "application/zip",
+                sizeBytes: 30,
+              },
+              {
+                type: "somethingnew",
+                id: "pending-00000000-0000-4000-8000-000000000002",
+                name: "scene.glb",
+                mimeType: "model/gltf-binary",
+                sizeBytes: 40,
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(queuedTurnChatMessage(item)?.attachments).toEqual([
+      {
+        type: "document",
+        id: `queued-${messageId}-0`,
+        name: "brief.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 20,
+        extractedChars: 5,
+      },
+      {
+        type: "file",
+        id: `queued-${messageId}-1`,
+        name: "src.zip",
+        mimeType: "application/zip",
+        sizeBytes: 30,
+      },
+      {
+        type: "somethingnew",
+        id: `queued-${messageId}-2`,
+        name: "scene.glb",
+        mimeType: "model/gltf-binary",
+        sizeBytes: 40,
+      },
+    ]);
+  });
+
   it("removes delivered items from memory and storage", () => {
     useOfflineTurnOutboxStore.getState().enqueue(queuedItem());
     useOfflineTurnOutboxStore.getState().remove(commandId);

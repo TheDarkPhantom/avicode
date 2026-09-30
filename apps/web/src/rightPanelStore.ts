@@ -8,7 +8,7 @@
  * workspace paths, and diff/plan/files remain singleton surfaces.
  */
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ChatFileAttachment, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -35,7 +35,7 @@ export type RightPanelSurface =
   | { id: "diff"; kind: "diff" }
   | { id: "files"; kind: "files" }
   | {
-      id: `file:${string}`;
+      id: `file:${string}` | `attachment:${string}`;
       kind: "file";
       relativePath: string;
       /**
@@ -46,6 +46,11 @@ export type RightPanelSurface =
       root?: string;
       revealLine: number | null;
       revealRequestId: number;
+      /**
+       * Present when the file lives in the thread's attachment store rather
+       * than at a workspace or host path (a sent PDF or HTML attachment).
+       */
+      attachment?: ChatFileAttachment;
     }
   | { id: "plan"; kind: "plan" };
 
@@ -211,6 +216,8 @@ interface RightPanelStoreState {
    */
   openBrowserBackground: (ref: ScopedThreadRef, tabId: string) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number, root?: string) => void;
+  /** Opens a sent attachment in the file viewer, one tab per attachment. */
+  openAttachment: (ref: ScopedThreadRef, attachment: ChatFileAttachment) => void;
   /**
    * Avi Code addition: moves an open file tab onto the repo that actually holds
    * it, in place, so a path that turned out to belong elsewhere corrects itself
@@ -296,6 +303,15 @@ const fileSurface = (
   ...(root ? { root } : {}),
   revealLine,
   revealRequestId,
+});
+
+const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface => ({
+  id: `attachment:${attachment.id}`,
+  kind: "file",
+  relativePath: attachment.name,
+  revealLine: null,
+  revealRequestId: 0,
+  attachment,
 });
 
 const terminalSurface = (terminalId: string): RightPanelSurface => ({
@@ -553,6 +569,18 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : [...withoutStandaloneExplorer, surface],
             };
           }),
+        ),
+      openAttachment: (ref, attachment) =>
+        set((state) =>
+          updateThreadAndRememberVisibility(state, ref, (current) =>
+            upsertSurface(
+              {
+                ...current,
+                surfaces: current.surfaces.filter((surface) => surface.kind !== "files"),
+              },
+              attachmentSurface(attachment),
+            ),
+          ),
         ),
       rerootFile: (ref, surfaceId, root, relativePath) =>
         set((state) => ({
@@ -879,9 +907,14 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             // Avi Code addition: a surface carrying its own root does not depend
             // on the thread's workspace, so losing that workspace must not close
             // a file the user opened from another repo.
+            // An attachment lives in the thread's attachment store, so it
+            // stays open without a workspace too.
             const surfaces = current.surfaces.filter(
               (surface) =>
-                surface.kind !== "files" && (surface.kind !== "file" || surface.root !== undefined),
+                surface.kind !== "files" &&
+                (surface.kind !== "file" ||
+                  surface.root !== undefined ||
+                  surface.attachment !== undefined),
             );
             if (surfaces.length === current.surfaces.length) return current;
             const activeStillExists = surfaces.some(

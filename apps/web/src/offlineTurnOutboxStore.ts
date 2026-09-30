@@ -4,13 +4,12 @@ import {
   EnvironmentId,
   MessageId,
   ThreadId,
-  type ChatAttachment,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
-import type { ChatMessage } from "./types";
+import type { ChatAttachment, ChatMessage } from "./types";
 
 export const OFFLINE_TURN_OUTBOX_STORAGE_KEY = "t3code:offline-turn-outbox:v1";
 const OFFLINE_TURN_OUTBOX_STORAGE_VERSION = 1;
@@ -151,32 +150,31 @@ function queuedDisplayAttachments(
 ): ChatAttachment[] {
   return attachments.map((attachment, index): ChatAttachment => {
     const id = `queued-${messageId}-${index}`;
-    switch (attachment.type) {
-      case "image":
-        return {
-          type: "image",
-          id,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          // Uploaded attachments carry an id instead of inline bytes.
-          ...("dataUrl" in attachment ? { previewUrl: attachment.dataUrl } : {}),
-        };
-      case "document":
-        return {
-          type: "document",
-          id,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          extractedChars:
-            "extractedText" in attachment
-              ? attachment.extractedText.length
-              : attachment.extractedChars,
-        };
-      case "file":
-        return { ...attachment, id };
+    // Inline shapes carry their bytes or text; everything else (uploaded
+    // images and files, and types this build does not know) already has the
+    // persisted shape. The open attachment member means `type` alone does
+    // not narrow, so the inline payload fields decide.
+    if ("dataUrl" in attachment) {
+      return {
+        type: "image",
+        id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        previewUrl: attachment.dataUrl,
+      };
     }
+    if ("extractedText" in attachment) {
+      return {
+        type: "document",
+        id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        extractedChars: attachment.extractedText.length,
+      };
+    }
+    return { ...attachment, id };
   });
 }
 

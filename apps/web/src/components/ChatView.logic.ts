@@ -11,7 +11,13 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
-import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
+import {
+  type ChatMessage,
+  isImageAttachment,
+  type SessionPhase,
+  type Thread,
+  type ThreadShell,
+} from "../types";
 // `ComposerAttachment` rather than upstream's `ComposerImageAttachment`: the
 // fork widened attachments to a union so PDF/TXT/Markdown documents ride the
 // same retry path as images.
@@ -305,7 +311,7 @@ export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
     return;
   }
   for (const attachment of message.attachments) {
-    if (attachment.type !== "image") {
+    if (!isImageAttachment(attachment)) {
       continue;
     }
     revokeBlobPreviewUrl(attachment.previewUrl);
@@ -318,7 +324,7 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
   }
   const previewUrls: string[] = [];
   for (const attachment of message.attachments) {
-    if (attachment.type !== "image") continue;
+    if (!isImageAttachment(attachment)) continue;
     if (!attachment.previewUrl || !attachment.previewUrl.startsWith("blob:")) continue;
     previewUrls.push(attachment.previewUrl);
   }
@@ -425,6 +431,7 @@ export function snapshotComposerThreadDraft(
   return {
     ...draft,
     images: draft.images.map(cloneComposerImageForRetry),
+    files: [...draft.files],
     nonPersistedImageIds: [...draft.nonPersistedImageIds],
     persistedAttachments: [...draft.persistedAttachments],
     terminalContexts: [...draft.terminalContexts],

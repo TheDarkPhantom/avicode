@@ -213,6 +213,18 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       canonicalCommand.message.attachments,
       (attachment) =>
         Effect.gen(function* () {
+          // Avi Code addition: `ChatAttachment` has an open member so newer
+          // attachment types still decode on read. A turn may only carry the
+          // types this build can claim and deliver.
+          if (
+            attachment.type !== "image" &&
+            attachment.type !== "file" &&
+            attachment.type !== "document"
+          ) {
+            return yield* new OrchestrationDispatchCommandError({
+              message: `Attachment '${attachment.name}' has an unsupported type.`,
+            });
+          }
           if (attachment.type === "document") {
             // Avi Code addition: the server only ever learns a document's text
             // from the client, so the persisted shape (without the text) is not
@@ -291,6 +303,11 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
           }
 
           if (!("dataUrl" in attachment)) {
+            if (attachment.id === undefined) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: missing upload id.`,
+              });
+            }
             const claim = planAttachmentClaim({
               attachmentsDir: serverConfig.attachmentsDir,
               threadId: attachmentThreadId,
