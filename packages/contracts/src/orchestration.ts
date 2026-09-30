@@ -144,6 +144,21 @@ export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 600_000;
 export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 12;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const PROVIDER_SEND_TURN_MAX_FILE_BYTES = 50 * 1024 * 1024;
+export const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES = [
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET = new Set<string>(
+  PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
+);
+
+/** Whether a pasted or picked image mime type can be sent on a provider turn. */
+export function isProviderSendTurnSupportedImageMimeType(mimeType: string): boolean {
+  return PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET.has(mimeType.toLowerCase());
+}
 export const PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 export const PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS = 500_000;
 const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS = 14_000_000;
@@ -167,6 +182,47 @@ export const ChatImageAttachment = Schema.Struct({
 });
 export type ChatImageAttachment = typeof ChatImageAttachment.Type;
 
+export const ChatFileAttachment = Schema.Struct({
+  type: Schema.Literal("file"),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
+  ),
+});
+export type ChatFileAttachment = typeof ChatFileAttachment.Type;
+
+/**
+ * Catch-all for attachment types this build does not know. Attachments ride on
+ * persisted events and thread streams, so a newer server or client must be able
+ * to introduce a type without making older readers fail to decode the whole
+ * message. Decoders keep the shared base fields; consumers skip these or render
+ * them as unsupported. Mirrors how `OrchestrationThreadActivity` keeps `kind`
+ * open. The known discriminators are excluded so a malformed image or file
+ * attachment fails its own schema instead of sliding through here with its
+ * size and mime constraints unchecked.
+ *
+ * Avi Code additions: `document` is a known discriminator too. This member is
+ * NOT in `ChatAttachment` yet: its open `type: string` stops literal checks
+ * like `attachment.type === "image"` from narrowing, and the web timeline and
+ * chat view still narrow that way. Adding it to the union lands together with
+ * the web port that switches those reads to type guards (upstream's
+ * `isImageAttachment`).
+ */
+export const ChatUnknownAttachment = Schema.Struct({
+  type: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(50),
+    Schema.isPattern(/^(?!(?:image|file|document)$)/),
+  ),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt,
+});
+export type ChatUnknownAttachment = typeof ChatUnknownAttachment.Type;
+
 const UploadChatImageAttachment = Schema.Struct({
   type: Schema.Literal("image"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
@@ -189,6 +245,14 @@ export const DOCUMENT_ATTACHMENT_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 
+/**
+ * A document the client extracted text from. The text is inlined into the turn
+ * and stored as `<id>.txt`. Avi Code addition: when the client also uploaded
+ * the original bytes, the persisted id carries the original's extension like a
+ * `ChatFileAttachment` id (`<thread>-<uuid>-pdf`) and the original is stored at
+ * `<id>.pdf`; an original `.txt` is its own extracted text. Documents persisted
+ * before this have a plain id and only the `.txt`.
+ */
 export const ChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   id: ChatAttachmentId,
@@ -205,6 +269,14 @@ export type ChatDocumentAttachment = typeof ChatDocumentAttachment.Type;
 
 const UploadChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
+  /**
+   * Avi Code addition: the pending upload holding the document's original
+   * bytes, from `attachments.createUploadUrl({ type: "file", ... })` with the
+   * same name and size. When present the server keeps the original next to the
+   * extracted text so agents can open the real file by path. Absent (older
+   * clients): only the extracted text is kept.
+   */
+  id: Schema.optionalKey(ChatAttachmentId),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: Schema.Literals(DOCUMENT_ATTACHMENT_MIME_TYPES),
   sizeBytes: NonNegativeInt.check(
@@ -217,7 +289,11 @@ const UploadChatDocumentAttachment = Schema.Struct({
 });
 export type UploadChatDocumentAttachment = typeof UploadChatDocumentAttachment.Type;
 
-export const ChatAttachment = Schema.Union([ChatImageAttachment, ChatDocumentAttachment]);
+export const ChatAttachment = Schema.Union([
+  ChatImageAttachment,
+  ChatDocumentAttachment,
+  ChatFileAttachment,
+]);
 export type ChatAttachment = typeof ChatAttachment.Type;
 const UploadChatAttachment = Schema.Union([
   UploadChatImageAttachment,
@@ -846,7 +922,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
-    attachments: Schema.Array(UploadChatAttachment),
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -936,7 +1012,7 @@ const ClientThreadForkCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
-    attachments: Schema.Array(UploadChatAttachment),
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])),
   }),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,

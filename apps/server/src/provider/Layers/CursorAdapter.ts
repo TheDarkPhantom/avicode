@@ -994,6 +994,12 @@ export function makeCursorAdapter(
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
+              // Cursor ingests images only. Generic files reach the agent
+              // through the path line ProviderService puts in the prompt. Avi
+              // Code addition: documents are already inlined as extracted text.
+              if (attachment.type !== "image") {
+                continue;
+              }
               const attachmentPath = resolveAttachmentPath({
                 attachmentsDir: serverConfig.attachmentsDir,
                 attachment,
