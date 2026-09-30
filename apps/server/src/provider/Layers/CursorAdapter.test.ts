@@ -482,6 +482,71 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  // Avi Code addition: a document's stored file is its extracted `.txt`, which
+  // the turn text already carries. Sending it as a base64 image was a bug.
+  it.effect("sends only image attachments to Cursor as image prompt parts", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const { attachmentsDir } = yield* ServerConfig;
+      const threadId = ThreadId.make("cursor-attachment-probe");
+      const imageId = "cursor-attachment-probe-00000000-0000-4000-8000-000000000001";
+      const documentId = "cursor-attachment-probe-00000000-0000-4000-8000-000000000002";
+      yield* Effect.promise(() =>
+        Promise.all([
+          NodeFSP.writeFile(NodePath.join(attachmentsDir, `${imageId}.png`), "png-bytes"),
+          NodeFSP.writeFile(NodePath.join(attachmentsDir, `${documentId}.txt`), "report text"),
+        ]),
+      );
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-acp-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const argvLogPath = NodePath.join(tempDir, "argv.txt");
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "composer-2" },
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "look at these",
+        attachments: [
+          { type: "image", id: imageId, name: "shot.png", mimeType: "image/png", sizeBytes: 9 },
+          {
+            type: "document",
+            id: documentId,
+            name: "report.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 100,
+            extractedChars: 11,
+          },
+        ],
+      });
+      yield* adapter.stopSession(threadId);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const promptRequest = requests.find((entry) => entry.method === "session/prompt");
+      const prompt = (promptRequest?.params as { prompt?: Array<Record<string, unknown>> })?.prompt;
+      assert.deepStrictEqual(
+        prompt?.map((part) => [part.type, part.mimeType ?? null]),
+        [
+          ["text", null],
+          ["image", "image/png"],
+        ],
+      );
+    }),
+  );
+
   it.effect(
     "applies initial model and mode configuration during startSession and skips repeating it on first send",
     () =>
