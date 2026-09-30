@@ -54,6 +54,20 @@ See the full schema for more details: [`packages/contracts/src/keybindings.ts`](
 
 For most up to date defaults, see [`DEFAULT_KEYBINDINGS` in `apps/server/src/keybindings.ts`](../../apps/server/src/keybindings.ts)
 
+## Composer keys
+
+These keys are built into the composer and are not configurable.
+
+- `ArrowUp` in an empty composer brings back the last prompt you sent in this thread. Press it
+  again to go further back, and `ArrowDown` to come forward. Moving forward past the newest prompt
+  clears the composer. Only the text you typed comes back: attachments, attached documents,
+  terminal and element context, review comments, and the ultrathink prefix are left out, and
+  app-composed sends such as plan implementation are skipped. A composer holding an attachment or
+  other context does not count as empty. With text in the composer the arrows move the caret as
+  usual; recall only takes over while the text is an unedited recalled prompt and the caret is on
+  its first visual line (`ArrowUp`) or last visual line (`ArrowDown`). Open menus, approvals, and
+  pending questions take the arrows first.
+
 ## Configuration
 
 ### Rule Shape
