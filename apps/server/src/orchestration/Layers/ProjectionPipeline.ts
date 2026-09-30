@@ -54,6 +54,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { isCompactCommandMessage } from "../compactCommand.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -1157,6 +1158,24 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
         case "thread.turn-start-requested": {
+          // Avi Code addition (upstream #9293): a message sent while `/compact`
+          // runs is queued by the reactor and replayed afterwards, so it must
+          // not displace the compaction's pending row in the meantime.
+          const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isSome(pendingTurnStart)) {
+            const pendingMessage = yield* projectionThreadMessageRepository.getByMessageId({
+              messageId: pendingTurnStart.value.messageId,
+            });
+            if (
+              Option.isSome(pendingMessage) &&
+              pendingMessage.value.messageId !== event.payload.messageId &&
+              isCompactCommandMessage(pendingMessage.value)
+            ) {
+              return;
+            }
+          }
           yield* projectionTurnRepository.replacePendingTurnStart({
             threadId: event.payload.threadId,
             messageId: event.payload.messageId,
@@ -1167,10 +1186,41 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        // Avi Code addition (upstream #9293): a request that ends without a
+        // turn clears its own pending row, and only its own: the activity's
+        // requestId is the message id of the request it answers.
+        case "thread.activity-appended": {
+          const activityKind = event.payload.activity.kind;
+          if (
+            activityKind !== "context-compaction" &&
+            activityKind !== "provider.turn.start.failed"
+          ) {
+            return;
+          }
+          const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
+            threadId: event.payload.threadId,
+          });
+          if (
+            Option.isNone(pendingTurnStart) ||
+            String(pendingTurnStart.value.messageId) !==
+              extractActivityRequestId(event.payload.activity.payload)
+          ) {
+            return;
+          }
+          yield* projectionTurnRepository.deletePendingTurnStartByThreadId({
+            threadId: event.payload.threadId,
+          });
+          return;
+        }
+
         case "thread.session-set": {
           const turnId = event.payload.session.activeTurnId;
           if (turnId === null || event.payload.session.status !== "running") {
             if (
+              // The reactor restoring a session to ready (after `/compact`)
+              // ends whatever it had pending.
+              (event.payload.session.status === "ready" &&
+                event.commandId?.startsWith("server:provider-session-set:") === true) ||
               event.payload.session.status === "error" ||
               event.payload.session.status === "stopped" ||
               event.payload.session.status === "interrupted"

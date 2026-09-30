@@ -41,12 +41,13 @@ import {
 import { createPortal } from "react-dom";
 import {
   clampCollapsedComposerCursor,
+  type ComposerSubmissionIntent,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
+  composerSubmissionIntentForEnter,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   replaceTextRange,
-  shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import { ComposerChipRow } from "./ComposerChipRow";
@@ -77,6 +78,7 @@ import {
   composerFileNeedsReattach,
   type DraftId,
   type PersistedComposerImageAttachment,
+  composerTargetKey,
   hydrateImagesFromPersisted,
   useComposerDraftStore,
   useComposerThreadDraft,
@@ -252,7 +254,12 @@ import {
 } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
-import { type SessionPhase, type Thread, videoMimeType } from "../../types";
+import { type ChatMessage, type SessionPhase, type Thread, videoMimeType } from "../../types";
+import {
+  buildComposerPromptHistoryEntries,
+  stepComposerPromptHistory,
+  type ComposerPromptHistoryPosition,
+} from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import {
@@ -670,6 +677,8 @@ export interface ChatComposerProps {
   activeThreadId: ThreadId | null;
   activeThreadEnvironmentId: EnvironmentId | undefined;
   activeThread: Thread | undefined;
+  /** Timeline messages including optimistic sends, for ArrowUp prompt recall. */
+  promptHistoryMessages: ReadonlyArray<ChatMessage>;
   threadContextCandidates: ReadonlyArray<{
     threadId: ThreadId;
     title: string;
@@ -752,7 +761,7 @@ export interface ChatComposerProps {
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
-  onSend: (e?: { preventDefault: () => void }) => void;
+  onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   /** Avi Code addition: set before form submission to signal that the user
    *  explicitly clicked the Implement button, so `onSend` can distinguish
    *  intentional plan implementation from stray form submissions. */
@@ -807,6 +816,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
+    promptHistoryMessages,
     threadContextCandidates,
     isServerThread: _isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
@@ -974,6 +984,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // Avi Code addition: gate local OCR of scanned PDFs on the opt-in setting.
   const ocrScannedPdfs = useClientSettings((settings) => settings.aviCodeOcrScannedPdfs);
+  // Avi Code addition: Ctrl/Cmd+Enter in a new-thread draft starts it in the
+  // background unless this is off.
+  const ctrlEnterStartsBackgroundThread = useClientSettings(
+    (settings) => settings.aviCodeCtrlEnterStartsBackgroundThread,
+  );
   // Avi Code addition: user-defined quick-send chips, shown while the input is empty.
   const composerChips = useClientSettings((settings) => settings.aviCodeChips);
   const customCommunicationStyles = useMemo(
@@ -1334,6 +1349,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     detectComposerTrigger(prompt, prompt.length),
   );
   const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
+  // Active ArrowUp recall. Cleared on edit and on thread switch.
+  const promptHistoryPositionRef = useRef<ComposerPromptHistoryPosition | null>(null);
   const [composerHighlightedSearchKey, setComposerHighlightedSearchKey] = useState<string | null>(
     null,
   );
@@ -2044,6 +2061,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       promptRef.current = nextPrompt;
       setPrompt(nextPrompt);
+      // Any edit ends browsing, even one later undone by hand: typing a
+      // character and deleting it leaves the text equal to the recall, and
+      // ArrowDown must move the caret then, not clear the composer.
+      if (promptHistoryPositionRef.current?.recalled !== nextPrompt) {
+        promptHistoryPositionRef.current = null;
+      }
       if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
         setComposerDraftTerminalContexts(
           composerDraftTarget,
@@ -2484,7 +2507,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const submitComposer = useCallback(
-    (event?: { preventDefault: () => void }) => {
+    (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
       // Upstream's `isSendDisabled`, plus the fork's rule that a disconnected
       // environment is not a block — the send is queued in the offline outbox
       // using the cached provider selection.
@@ -2520,7 +2543,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // the next transcript would land in the emptied composer.
       dictationRangeRef.current = null;
       releaseDictation();
-      onSend(event);
+      onSend(event, intent);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
@@ -2573,6 +2596,88 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, []);
 
   // ------------------------------------------------------------------
+  // Prompt history (ArrowUp / ArrowDown)
+  // ------------------------------------------------------------------
+  // Entries are built on the keypress, not per render: the timeline changes
+  // on every streamed delta and ArrowUp is rare.
+  const promptHistoryMessagesRef = useRef(promptHistoryMessages);
+  promptHistoryMessagesRef.current = promptHistoryMessages;
+
+  // The composer persists across threads. A recall from thread A must not
+  // be treated as active in thread B, where the text-match fallback could
+  // otherwise turn B's own draft into a browsing position.
+  const promptHistoryTargetKey = composerTargetKey(composerDraftTarget);
+  useEffect(() => {
+    promptHistoryPositionRef.current = null;
+  }, [promptHistoryTargetKey]);
+
+  const replacePromptFromHistory = useCallback(
+    (nextPrompt: string) => {
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
+      setComposerTrigger(null);
+      setComposerHighlightedItemId(null);
+    },
+    [composerDraftTarget, promptRef, setComposerDraftPrompt],
+  );
+
+  const navigatePromptHistory = useCallback(
+    (direction: "backward" | "forward", event: KeyboardEvent): boolean => {
+      if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) {
+        return false;
+      }
+      if (isComposerApprovalState || pendingUserInputs.length > 0 || isStashMenuOpen) {
+        return false;
+      }
+      // A composer holding an image, document, picked element, preview
+      // annotation, review comment, or thread context is not empty. Recalling
+      // text into it would send the old prompt with the new context, which is
+      // never what ArrowUp meant.
+      if (
+        composerImagesRef.current.length > 0 ||
+        composerElementContextsRef.current.length > 0 ||
+        composerPreviewAnnotations.length > 0 ||
+        composerReviewComments.length > 0 ||
+        composerThreadContextIds.length > 0
+      ) {
+        return false;
+      }
+      // A typed draft with no active recall can never step, so skip the
+      // layout read and the entry build for that common case.
+      if (promptHistoryPositionRef.current === null && promptRef.current.length > 0) {
+        return false;
+      }
+      const editor = composerEditorRef.current;
+      if (!editor?.isCaretOnVisualEdge(direction === "backward" ? "start" : "end")) {
+        return false;
+      }
+      const step = stepComposerPromptHistory({
+        direction,
+        entries: buildComposerPromptHistoryEntries(promptHistoryMessagesRef.current),
+        position: promptHistoryPositionRef.current,
+        currentPrompt: promptRef.current,
+      });
+      if (!step) return false;
+      promptHistoryPositionRef.current = step.position;
+      replacePromptFromHistory(step.prompt);
+      return true;
+    },
+    [
+      composerElementContextsRef,
+      composerImagesRef,
+      composerPreviewAnnotations.length,
+      composerReviewComments.length,
+      composerThreadContextIds.length,
+      isComposerApprovalState,
+      isStashMenuOpen,
+      pendingUserInputs.length,
+      promptRef,
+      replacePromptFromHistory,
+    ],
+  );
+
+  // ------------------------------------------------------------------
   // Callbacks: command key
   // ------------------------------------------------------------------
   const onComposerCommandKey = (
@@ -2601,11 +2706,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return true;
       }
     }
-    if (
-      key === "Enter" &&
-      shouldSubmitComposerOnEnter({ isMobileViewport, shiftKey: event.shiftKey })
-    ) {
-      submitComposer();
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      return navigatePromptHistory(key === "ArrowUp" ? "backward" : "forward", event);
+    }
+    const submissionIntent =
+      key === "Enter"
+        ? composerSubmissionIntentForEnter({
+            isMobileViewport,
+            shiftKey: event.shiftKey,
+            modifierKey: event.metaKey || event.ctrlKey,
+            isDraftThread: routeKind === "draft",
+            backgroundThreadEnabled: ctrlEnterStartsBackgroundThread,
+          })
+        : null;
+    if (submissionIntent) {
+      submitComposer(undefined, submissionIntent);
       return true;
     }
     return false;

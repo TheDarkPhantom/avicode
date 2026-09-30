@@ -58,6 +58,14 @@ import {
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import {
+  CLAUDE_RESUME_COMPACTION_COMPACT_ANSWER,
+  CLAUDE_RESUME_COMPACTION_HEADER,
+  CLAUDE_RESUME_COMPACTION_KEEP_ANSWER,
+  CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
+  formatClaudeResumeCompactionQuestion,
+  resolveClaudeResumeCompactionAction,
+} from "@t3tools/shared/claudeCompaction";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -482,6 +490,7 @@ function makeClaudeTokenUsageSnapshot(input: {
   readonly totalProcessedTokens?: number;
   readonly lastUsedTokens?: number;
   readonly compactsAutomatically?: boolean;
+  readonly autoCompactThreshold?: number;
 }): ThreadTokenUsageSnapshot | undefined {
   const activeTokens = finiteNonNegativeInteger(input.activeTokens);
   if (activeTokens === undefined || activeTokens <= 0) {
@@ -508,6 +517,9 @@ function makeClaudeTokenUsageSnapshot(input: {
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(input.compactsAutomatically !== undefined
       ? { compactsAutomatically: input.compactsAutomatically }
+      : {}),
+    ...(input.autoCompactThreshold !== undefined
+      ? { autoCompactThreshold: input.autoCompactThreshold }
       : {}),
   };
 }
@@ -543,11 +555,13 @@ function normalizeClaudeContextUsageApiSnapshot(
   value: SDKControlGetContextUsageResponse,
   totalProcessedTokens?: number,
 ): ThreadTokenUsageSnapshot | undefined {
+  const autoCompactThreshold = finitePositiveInteger(value.autoCompactThreshold);
   return makeClaudeTokenUsageSnapshot({
     activeTokens: value.totalTokens,
     contextWindow: value.maxTokens,
     ...(totalProcessedTokens !== undefined ? { totalProcessedTokens } : {}),
     compactsAutomatically: value.isAutoCompactEnabled,
+    ...(autoCompactThreshold !== undefined ? { autoCompactThreshold } : {}),
   });
 }
 
@@ -574,6 +588,15 @@ function compactBoundaryTokenUsageSnapshot(
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(totalProcessedTokens !== undefined ? { totalProcessedTokens } : {}),
   });
+}
+
+/** Context size Claude reported before a compaction, when its boundary carries one. */
+function compactBoundaryPreTokens(message: Record<string, unknown>): number | undefined {
+  const metadata = message.compact_metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return undefined;
+  }
+  return finiteNonNegativeInteger((metadata as Record<string, unknown>).pre_tokens);
 }
 
 function normalizeClaudeTaskProgressTokenUsage(
@@ -3046,28 +3069,31 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
-      case "compact_boundary":
-        yield* emitThreadTokenUsage(
-          context,
-          compactBoundaryTokenUsageSnapshot(
-            message as unknown as Record<string, unknown>,
-            context.lastKnownContextWindow,
-            context.lastKnownTotalProcessedTokens,
-          ),
-          {
-            rawMethod: "claude/system/compact_boundary",
-            rawPayload: message,
-          },
+      case "compact_boundary": {
+        const compactedUsage = compactBoundaryTokenUsageSnapshot(
+          message as unknown as Record<string, unknown>,
+          context.lastKnownContextWindow,
+          context.lastKnownTotalProcessedTokens,
         );
+        yield* emitThreadTokenUsage(context, compactedUsage, {
+          rawMethod: "claude/system/compact_boundary",
+          rawPayload: message,
+        });
+        const preTokens = compactBoundaryPreTokens(message as unknown as Record<string, unknown>);
         yield* offerRuntimeEvent({
           ...base,
           type: "thread.state.changed",
           payload: {
             state: "compacted",
+            ...(preTokens !== undefined ? { beforeTokens: preTokens } : {}),
+            ...(compactedUsage?.usedTokens !== undefined
+              ? { afterTokens: compactedUsage.usedTokens }
+              : {}),
             detail: message,
           },
         });
         return;
+      }
       case "hook_started":
         yield* offerRuntimeEvent({
           ...base,
@@ -3732,6 +3758,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         callbackOptions.signal.addEventListener("abort", onAbort, {
           once: true,
         });
+        // The signal may have aborted while the request event was being
+        // emitted, before the listener existed; settle now so the question
+        // cannot hang open.
+        if (callbackOptions.signal.aborted) {
+          onAbort();
+        }
 
         // Block until the user provides answers.
         const answers = yield* Deferred.await(answersDeferred);
@@ -3907,6 +3939,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         callbackOptions.signal.addEventListener("abort", onAbort, {
           once: true,
         });
+        // Same late-listener race as handleAskUserQuestion.
+        if (callbackOptions.signal.aborted) {
+          onAbort();
+        }
 
         const decision = yield* Deferred.await(decisionDeferred);
         pendingApprovals.delete(requestId);
@@ -3957,8 +3993,75 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         } satisfies PermissionResult;
       });
 
+      /**
+       * Claude asks this when an old, large session is resumed. It rides the
+       * AskUserQuestion path, so the existing pending user-input UI answers it
+       * and a dropped session closes it like any other open question.
+       */
+      const handleResumeDialog = Effect.fn("handleResumeDialog")(function* (
+        request: Parameters<NonNullable<ClaudeQueryOptions["onUserDialog"]>>[0],
+        callbackOptions: Parameters<NonNullable<ClaudeQueryOptions["onUserDialog"]>>[1],
+      ) {
+        if (request.dialogKind !== "resume_return") {
+          return { behavior: "cancelled" as const };
+        }
+        const context = yield* Ref.get(contextRef);
+        if (!context) {
+          return { behavior: "cancelled" as const };
+        }
+        const question = formatClaudeResumeCompactionQuestion({
+          ageMinutes: finiteNonNegativeInteger(request.payload.sessionAgeMinutes) ?? 0,
+          estimatedTokens: finiteNonNegativeInteger(request.payload.estimatedTokens) ?? 0,
+        });
+        const result = yield* handleAskUserQuestion(
+          context,
+          {
+            questions: [
+              {
+                header: CLAUDE_RESUME_COMPACTION_HEADER,
+                question,
+                options: [
+                  {
+                    label: CLAUDE_RESUME_COMPACTION_COMPACT_ANSWER,
+                    description: "Resume with a summary and use fewer tokens.",
+                  },
+                  {
+                    label: CLAUDE_RESUME_COMPACTION_KEEP_ANSWER,
+                    description: "Resume without changing the conversation.",
+                  },
+                  {
+                    label: CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
+                    description: "Keep full history and skip future resume prompts.",
+                  },
+                ],
+                multiSelect: false,
+              },
+            ],
+          },
+          {
+            signal: callbackOptions.signal,
+            ...(request.toolUseID ? { toolUseID: request.toolUseID } : {}),
+          },
+        );
+        if (result.behavior !== "allow") {
+          return { behavior: "cancelled" as const };
+        }
+        const answers = result.updatedInput.answers as Record<string, unknown>;
+        const selection = answers[question];
+        return {
+          behavior: "completed" as const,
+          result: resolveClaudeResumeCompactionAction(
+            Array.isArray(selection) ? selection[0] : selection,
+          ),
+        };
+      });
+
       const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
+      const onUserDialog: NonNullable<ClaudeQueryOptions["onUserDialog"]> = (
+        request,
+        callbackOptions,
+      ) => runPromise(handleResumeDialog(request, callbackOptions));
 
       const claudeBinaryPath = claudeSdkExecutablePath;
       const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
@@ -3994,6 +4097,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
         ...(fastMode ? { fastMode: true } : {}),
         ...(ultracode ? { ultracode: true } : {}),
+        ...(claudeSettings.autoCompactWindow
+          ? { autoCompactWindow: Number(claudeSettings.autoCompactWindow) }
+          : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       // The attachments dir grant lets the agent Read/copy pasted images at
@@ -4026,6 +4132,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
+        onUserDialog,
+        supportedDialogKinds: ["resume_return"],
         env: claudeEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
@@ -4546,6 +4654,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
     startSession,
     sendTurn,
+    compaction: { type: "slash-command", command: "/compact" },
     askSideQuestion,
     interruptTurn,
     readThread,

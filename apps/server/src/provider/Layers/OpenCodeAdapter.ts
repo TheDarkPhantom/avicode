@@ -4,6 +4,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderRuntimeEvent,
+  type ProviderSendTurnInput,
   type ProviderSession,
   RuntimeItemId,
   RuntimeRequestId,
@@ -1143,6 +1144,22 @@ export function makeOpenCodeAdapter(
           break;
         }
 
+        case "session.compacted": {
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              raw: event,
+            })),
+            type: "thread.state.changed",
+            payload: {
+              state: "compacted",
+              detail: event,
+            },
+          });
+          break;
+        }
+
         default:
           break;
       }
@@ -1567,6 +1584,65 @@ export function makeOpenCodeAdapter(
       };
     });
 
+    /**
+     * Native `/compact`: asks OpenCode to summarize the session in place. The
+     * summary lands as a `session.compacted` event, which ProviderService
+     * waits for before it reports the compaction done.
+     */
+    const compactThread = Effect.fn("compactThread")(function* (
+      threadId: ThreadId,
+      requestedModelSelection?: ProviderSendTurnInput["modelSelection"],
+    ) {
+      const context = yield* ensureSessionContext(sessions, threadId);
+      const modelSelection =
+        requestedModelSelection ??
+        (context.session.model
+          ? { instanceId: boundInstanceId, model: context.session.model }
+          : undefined);
+      if (modelSelection !== undefined && modelSelection.instanceId !== boundInstanceId) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "compactThread",
+          issue: `OpenCode model selection is bound to instance '${modelSelection.instanceId}', expected '${boundInstanceId}'.`,
+        });
+      }
+      const parsedModel = parseOpenCodeModelSlug(modelSelection?.model);
+      if (!parsedModel) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "compactThread",
+          issue: "OpenCode compaction requires an active 'provider/model' selection.",
+        });
+      }
+      if (context.activeTurnId !== undefined) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "compactThread",
+          issue: "OpenCode cannot compact while a turn is running.",
+        });
+      }
+      yield* runOpenCodeSdk("session.summarize", () =>
+        context.client.session.summarize({
+          sessionID: context.openCodeSessionId,
+          ...parsedModel,
+          auto: false,
+        }),
+      ).pipe(
+        Effect.mapError(toRequestError),
+        Effect.timeoutOrElse({
+          duration: "10 minutes",
+          orElse: () =>
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "session.summarize",
+                detail: "OpenCode session compaction did not complete within 10 minutes.",
+              }),
+            ),
+        }),
+      );
+    });
+
     const interruptTurn: OpenCodeAdapterShape["interruptTurn"] = Effect.fn("interruptTurn")(
       function* (threadId, turnId) {
         const context = yield* ensureSessionContext(sessions, threadId);
@@ -1768,6 +1844,7 @@ export function makeOpenCodeAdapter(
       },
       startSession,
       sendTurn,
+      compaction: { type: "native", start: compactThread },
       askSideQuestion,
       interruptTurn,
       respondToRequest,

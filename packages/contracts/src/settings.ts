@@ -354,6 +354,12 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeComposerShowInteractionModeLabel: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
+  // Avi Code addition. Ctrl/Cmd+Enter in a new-thread draft starts that thread
+  // in the background and leaves the user on a fresh draft (upstream #7821).
+  // On by default to match upstream; off makes Ctrl/Cmd+Enter a plain send.
+  aviCodeCtrlEnterStartsBackgroundThread: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -550,6 +556,12 @@ export const CodexSettings = makeProviderSettingsSchema(
 );
 export type CodexSettings = typeof CodexSettings.Type;
 
+// Empty, or an integer from 100,000 to 1,000,000 (Claude's auto-compaction
+// window). The patch rejects anything else so a typo fails the one update that
+// introduced it; the stored settings fall back to empty so a hand-edited file
+// never breaks the whole settings decode.
+const CLAUDE_AUTO_COMPACT_WINDOW_PATTERN = /^(?:|[1-9]\d{5}|1000000)$/;
+
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -587,9 +599,29 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    autoCompactWindow: TrimmedString.pipe(
+      Schema.decodeTo(
+        Schema.String,
+        SchemaTransformation.transformOrFail({
+          decode: (value) =>
+            Effect.succeed(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN.test(value) ? value : ""),
+          encode: (value) => Effect.succeed(value),
+        }),
+      ),
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Auto-compact after",
+        description:
+          "Compact after 100,000 to 1,000,000 tokens. Leave empty to use Claude's default.",
+        providerSettingsForm: {
+          placeholder: "e.g. 300000",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
   },
   {
-    order: ["binaryPath", "homePath", "launchArgs"],
+    order: ["binaryPath", "homePath", "autoCompactWindow", "launchArgs"],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
@@ -719,6 +751,21 @@ export const VoiceSettings = Schema.Struct({
   deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
+
+// Avi Code port of pingdotgg/t3code#14103. Bitbucket API credentials for this
+// environment, used before the `T3CODE_BITBUCKET_*` environment variables. The
+// tokens follow the Deepgram key's handshake: plaintext lives in the server
+// secret store, and clients only see `accessTokenRedacted` / `apiTokenRedacted`
+// set to true, meaning "a token is stored". The access token wins when both
+// kinds are configured.
+export const BitbucketSettings = Schema.Struct({
+  email: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  accessToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  accessTokenRedacted: Schema.optionalKey(Schema.Boolean),
+  apiToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  apiTokenRedacted: Schema.optionalKey(Schema.Boolean),
+});
+export type BitbucketSettings = typeof BitbucketSettings.Type;
 
 export const SourceControlWritingStyleMode = Schema.Literals([
   "repo_conventions",
@@ -858,6 +905,7 @@ export const ServerSettings = Schema.Struct({
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -928,6 +976,9 @@ const ClaudeSettingsPatch = Schema.Struct({
   homePath: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
   launchArgs: Schema.optionalKey(TrimmedString),
+  autoCompactWindow: Schema.optionalKey(
+    TrimmedString.check(Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN)),
+  ),
 });
 
 const CursorSettingsPatch = Schema.Struct({
@@ -999,6 +1050,17 @@ export const ServerSettingsPatch = Schema.Struct({
       deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
     }),
   ),
+  // Same handshake as `voice`: a token sent with its `...Redacted: false` flag
+  // replaces the stored secret (an empty one clears it); `true` keeps it.
+  bitbucket: Schema.optionalKey(
+    Schema.Struct({
+      email: Schema.optionalKey(TrimmedString),
+      accessToken: Schema.optionalKey(TrimmedString),
+      accessTokenRedacted: Schema.optionalKey(Schema.Boolean),
+      apiToken: Schema.optionalKey(TrimmedString),
+      apiTokenRedacted: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
@@ -1054,6 +1116,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeOcrScannedPdfs: Schema.optionalKey(Schema.Boolean),
   aviCodeComposerShowRuntimeModeLabel: Schema.optionalKey(Schema.Boolean),
   aviCodeComposerShowInteractionModeLabel: Schema.optionalKey(Schema.Boolean),
+  aviCodeCtrlEnterStartsBackgroundThread: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(

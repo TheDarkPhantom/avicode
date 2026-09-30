@@ -85,13 +85,17 @@ That's it—you can now clone, publish, and create pull requests.
 
 Bitbucket uses API tokens instead of a CLI tool:
 
-1. Create an API token in your Atlassian account with read/write access to pull requests and repositories
-2. Add these environment variables to the environment running T3 Code:
+1. Create an access token for a repository, project, or workspace, or an API token in your
+   Atlassian account with read/write access to pull requests and repositories
+2. Open **Settings → Source Control**, expand **Bitbucket**, pick the token type, and save it.
+   Tokens live in the server's secret store and are never sent back to clients. Changes apply
+   without a restart.
+3. Alternatively, set environment variables on the server. Saved credentials take precedence:
    ```bash
    export T3CODE_BITBUCKET_EMAIL="you@example.com"
    export T3CODE_BITBUCKET_API_TOKEN="your-token"
+   # or: export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
    ```
-3. Restart T3 Code and verify the connection in **Source Control settings**
 
 ### For Azure DevOps
 

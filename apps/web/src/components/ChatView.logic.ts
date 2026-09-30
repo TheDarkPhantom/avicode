@@ -35,6 +35,73 @@ import {
   type TerminalContextDraft,
 } from "../lib/terminalContext";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
+import type { ComposerSubmissionIntent } from "../composer-logic";
+
+/**
+ * Only a foreground send docks the new-thread hero composer. A background send
+ * leaves the user on a draft, so the hero stays put.
+ */
+export function shouldDockDraftHeroForSubmission(input: {
+  isDraftHeroState: boolean;
+  activeThreadKey: string | null;
+  submissionIntent: ComposerSubmissionIntent;
+}): boolean {
+  return (
+    input.submissionIntent === "foreground" &&
+    input.isDraftHeroState &&
+    input.activeThreadKey !== null
+  );
+}
+
+/** A background send keeps the hero layout until the fresh draft replaces it. */
+export function resolveDraftHeroState(input: {
+  isLocalDraftThread: boolean;
+  hasTimelineEntries: boolean;
+  isWorking: boolean;
+  draftHeroDockRequested: boolean;
+  backgroundSubmissionPending: boolean;
+}): boolean {
+  if (input.backgroundSubmissionPending) {
+    return true;
+  }
+  return (
+    input.isLocalDraftThread &&
+    !input.hasTimelineEntries &&
+    !input.isWorking &&
+    !input.draftHeroDockRequested
+  );
+}
+
+/**
+ * Where the draft route should follow its promoted server thread. A background
+ * send never follows: the user asked to stay on a new-thread draft.
+ */
+export function resolveDraftPromotionNavigationTarget(input: {
+  serverThreadRef: ScopedThreadRef | null;
+  serverThreadStarted: boolean;
+  backgroundSubmissionPending: boolean;
+}): ScopedThreadRef | null {
+  if (input.backgroundSubmissionPending) {
+    return null;
+  }
+  return input.serverThreadStarted ? input.serverThreadRef : null;
+}
+
+/**
+ * Background only from a new-thread draft whose send dispatches right away.
+ * Anywhere else the same keypress is a plain send: an existing thread has no
+ * draft to return to, and a send stored in the offline outbox has not started
+ * a thread to open later.
+ */
+export function resolveSubmissionIntent(input: {
+  requested: ComposerSubmissionIntent;
+  isLocalDraftThread: boolean;
+  isQueuedSend: boolean;
+}): ComposerSubmissionIntent {
+  return input.requested === "background" && input.isLocalDraftThread && !input.isQueuedSend
+    ? "background"
+    : "foreground";
+}
 
 export function canSubmitComposerSendContext(input: {
   readonly providerAvailable: boolean;
@@ -290,6 +357,29 @@ export function resolveSendEnvMode(input: {
   isGitRepo: boolean;
 }): DraftThreadEnvMode {
   return input.isGitRepo ? input.requestedEnvMode : "local";
+}
+
+/**
+ * Workspace options for the fresh draft opened after a background send. The
+ * mode and base branch carry over, but never the worktree the launched thread
+ * is creating: each background thread in New worktree mode gets its own.
+ */
+export function resolveBackgroundDraftWorkspaceOptions(input: {
+  envMode: DraftThreadEnvMode;
+  branch: string | null;
+  startFromOrigin: boolean;
+}): {
+  envMode: DraftThreadEnvMode;
+  branch: string | null;
+  worktreePath: null;
+  startFromOrigin: boolean;
+} {
+  return {
+    envMode: input.envMode,
+    branch: input.branch,
+    worktreePath: null,
+    startFromOrigin: input.envMode === "worktree" && input.startFromOrigin,
+  };
 }
 
 export function cloneComposerImageForRetry(image: ComposerAttachment): ComposerAttachment {
@@ -570,6 +660,7 @@ export async function waitForStartedServerThread(
 export interface LocalDispatchSnapshot {
   startedAt: string;
   preparingWorktree: boolean;
+  submissionIntent: ComposerSubmissionIntent;
   latestUserMessageId: ChatMessage["id"] | null;
   latestTurnTurnId: TurnId | null;
   latestTurnRequestedAt: string | null;
@@ -581,7 +672,10 @@ export interface LocalDispatchSnapshot {
 
 export function createLocalDispatchSnapshot(
   activeThread: Thread | undefined,
-  options?: { preparingWorktree?: boolean },
+  options?: {
+    preparingWorktree?: boolean;
+    submissionIntent?: ComposerSubmissionIntent;
+  },
 ): LocalDispatchSnapshot {
   const latestTurn = activeThread?.latestTurn ?? null;
   const session = activeThread?.session ?? null;
@@ -589,6 +683,7 @@ export function createLocalDispatchSnapshot(
   return {
     startedAt: new Date().toISOString(),
     preparingWorktree: Boolean(options?.preparingWorktree),
+    submissionIntent: options?.submissionIntent ?? "foreground",
     latestUserMessageId: latestUserMessage?.id ?? null,
     latestTurnTurnId: latestTurn?.turnId ?? null,
     latestTurnRequestedAt: latestTurn?.requestedAt ?? null,

@@ -49,6 +49,7 @@ Upstream: t3code 0.0.31
 - Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
 - Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
 - PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
+- Turn off Ctrl+Enter starting new threads in the background in Settings, Avi Code (#254)
 
 ### Upstream t3code
 
@@ -82,6 +83,10 @@ Upstream: t3code 0.0.31
 - Settling a thread closes its idle terminals and keeps busy ones open (#13673 by Theo Browne)
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
+- Update Grok with one click when a new version is out (#13523 by Julius Marminge)
+- New agent sessions use the browser tab you can see (#13064 by Bilal Bakr)
+- Save Bitbucket credentials from Source Control settings (#14103 by Gabriel De Andrade)
+- Disabled buttons and menu items share one dimmed look (#11441 by Utkarsh Patil)
 - Avi Code opens faster after the first launch (#13501 by Theo Browne)
 - Turn auto-settle off for a single thread from its sidebar menu (#11846 by Theo Browne)
 - Go back and forward through visited pages with Ctrl+[ and Ctrl+] (#13212 by Julius Marminge)
@@ -90,7 +95,13 @@ Upstream: t3code 0.0.31
 - Show a file tree beside the diff panel to jump to any changed file (#9330 by Julius Marminge)
 - Zoom and pan expanded images with the scroll wheel, a click, or the keyboard (#10869 by maria)
 - The file viewer shows HTML pages and PDFs rendered in place (#9143 by Julius Marminge)
+- Type /compact to shrink a long thread's context on any agent (#9293 by maria)
+- Messages you send while a thread compacts wait and go out once it finishes (#11107 by maria)
+- Set when Claude compacts a long thread with the Auto-compact after setting (#8144 by Theo Browne)
+- Resuming an old Claude session asks whether to compact it first (#8144 by Theo Browne)
 - Agents can open the images you attach by their saved file path (#5757 by Theo Browne)
+- Press Up in an empty composer to bring back prompts you sent in this thread (#9173 by Theo Browne)
+- Ctrl+Enter in a new thread starts it in the background and opens a fresh draft (#7821 by Exotic)
 - Images upload as soon as you attach them, with progress and retry (#8048 by Theo Browne)
 - Attach PDFs, ZIPs and other files up to 50MB to a message (#8236 by Theo Browne)
 - Play video attachments right in the chat (#8688 by Bilal Bakr)

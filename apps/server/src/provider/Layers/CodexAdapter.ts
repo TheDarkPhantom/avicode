@@ -1077,7 +1077,20 @@ function mapToRuntimeEvents(
       ];
     }
     const completed = mapItemLifecycle(event, canonicalThreadId, "item.completed");
-    return completed ? [completed] : [];
+    if (!completed || itemType !== "context_compaction") {
+      return completed ? [completed] : [];
+    }
+    // A finished `contextCompaction` item is how Codex reports compaction now;
+    // the `thread/compacted` notification above is deprecated.
+    return [
+      completed,
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        eventId: EventId.make(`${event.id}:thread-compacted`),
+        type: "thread.state.changed",
+        payload: { state: "compacted" },
+      },
+    ];
   }
 
   if (
@@ -1880,6 +1893,16 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       ),
     );
 
+  const compactThread = (threadId: ThreadId) =>
+    requireSession(threadId).pipe(
+      Effect.flatMap((session) => session.runtime.compactThread),
+      Effect.mapError((cause) =>
+        cause._tag === "ProviderAdapterSessionNotFoundError"
+          ? cause
+          : mapCodexRuntimeError(threadId, "thread/compact/start", cause),
+      ),
+    );
+
   const readThread: CodexAdapterShape["readThread"] = (threadId) =>
     requireSession(threadId).pipe(
       Effect.flatMap((session) => session.runtime.readThread),
@@ -2042,6 +2065,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     },
     startSession,
     sendTurn,
+    compaction: { type: "native", start: compactThread },
     askSideQuestion,
     interruptTurn,
     readThread,

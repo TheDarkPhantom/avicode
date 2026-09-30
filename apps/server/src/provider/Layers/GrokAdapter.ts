@@ -1512,6 +1512,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
       },
       startSession,
       sendTurn,
+      compaction: { type: "slash-command", command: "/compact" },
       askSideQuestion,
       interruptTurn,
       readThread,

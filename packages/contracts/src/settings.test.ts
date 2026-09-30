@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ClaudeSettings,
   ClientSettingsSchema,
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
@@ -15,6 +16,43 @@ const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+
+// Avi Code addition: ported from upstream #8144.
+describe("ClaudeSettings auto-compaction", () => {
+  it("uses Claude's default threshold when no override is configured", () => {
+    expect(decodeClaudeSettings({}).autoCompactWindow).toBe("");
+  });
+
+  it.each(["100000", "300000", "1000000", " 250000 "])(
+    "accepts a supported auto-compaction threshold: %s",
+    (value) => {
+      expect(decodeClaudeSettings({ autoCompactWindow: value }).autoCompactWindow).toBe(
+        value.trim(),
+      );
+    },
+  );
+
+  // A hand-edited settings file must not break the whole settings decode.
+  it.each(["99999", "1000001", "300k", "invalid"])(
+    "falls back to the default for an unsupported stored threshold: %s",
+    (value) => {
+      expect(decodeClaudeSettings({ autoCompactWindow: value }).autoCompactWindow).toBe("");
+    },
+  );
+
+  it("rejects an unsupported threshold at the settings patch boundary", () => {
+    expect(() =>
+      decodeServerSettingsPatch({ providers: { claudeAgent: { autoCompactWindow: "300k" } } }),
+    ).toThrow();
+    expect(
+      decodeServerSettingsPatch({ providers: { claudeAgent: { autoCompactWindow: "300000" } } }),
+    ).toBeDefined();
+    expect(
+      decodeServerSettingsPatch({ providers: { claudeAgent: { autoCompactWindow: "" } } }),
+    ).toBeDefined();
+  });
+});
 
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {

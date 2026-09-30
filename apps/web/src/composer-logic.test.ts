@@ -9,21 +9,52 @@ import {
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
   resolveSideQuestionSubmission,
-  shouldSubmitComposerOnEnter,
+  composerSubmissionIntentForEnter,
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
-describe("shouldSubmitComposerOnEnter", () => {
+describe("composerSubmissionIntentForEnter", () => {
+  const base = {
+    isMobileViewport: false,
+    shiftKey: false,
+    modifierKey: false,
+    isDraftThread: true,
+    backgroundThreadEnabled: true,
+  };
+
   it("submits plain Enter on desktop", () => {
-    expect(shouldSubmitComposerOnEnter({ isMobileViewport: false, shiftKey: false })).toBe(true);
+    expect(composerSubmissionIntentForEnter(base)).toBe("foreground");
   });
 
   it("inserts a newline for plain Enter on mobile", () => {
-    expect(shouldSubmitComposerOnEnter({ isMobileViewport: true, shiftKey: false })).toBe(false);
+    expect(composerSubmissionIntentForEnter({ ...base, isMobileViewport: true })).toBeNull();
   });
 
-  it("inserts a newline for Shift+Enter", () => {
-    expect(shouldSubmitComposerOnEnter({ isMobileViewport: false, shiftKey: true })).toBe(false);
+  it("inserts a newline for Shift+Enter, with or without Ctrl/Cmd", () => {
+    expect(composerSubmissionIntentForEnter({ ...base, shiftKey: true })).toBeNull();
+    expect(
+      composerSubmissionIntentForEnter({ ...base, shiftKey: true, modifierKey: true }),
+    ).toBeNull();
+  });
+
+  it("submits a new thread in the background with Ctrl/Cmd+Enter", () => {
+    expect(composerSubmissionIntentForEnter({ ...base, modifierKey: true })).toBe("background");
+  });
+
+  it("keeps Ctrl/Cmd+Enter a plain send in an existing thread", () => {
+    expect(
+      composerSubmissionIntentForEnter({ ...base, modifierKey: true, isDraftThread: false }),
+    ).toBe("foreground");
+  });
+
+  it("keeps Ctrl/Cmd+Enter a plain send when the setting is off", () => {
+    expect(
+      composerSubmissionIntentForEnter({
+        ...base,
+        modifierKey: true,
+        backgroundThreadEnabled: false,
+      }),
+    ).toBe("foreground");
   });
 });
 

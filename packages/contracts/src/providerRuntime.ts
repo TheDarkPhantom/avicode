@@ -295,6 +295,9 @@ export type ThreadStartedPayload = typeof ThreadStartedPayload.Type;
 
 const ThreadStateChangedPayload = Schema.Struct({
   state: RuntimeThreadState,
+  // Context size around a "compacted" state, when the provider reports it.
+  beforeTokens: Schema.optional(NonNegativeInt),
+  afterTokens: Schema.optional(NonNegativeInt),
   detail: Schema.optional(Schema.Unknown),
 });
 export type ThreadStateChangedPayload = typeof ThreadStateChangedPayload.Type;
@@ -321,6 +324,8 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
   toolUses: Schema.optional(NonNegativeInt),
   durationMs: Schema.optional(NonNegativeInt),
   compactsAutomatically: Schema.optional(Schema.Boolean),
+  // Token count at which the provider compacts on its own (Claude reports it).
+  autoCompactThreshold: Schema.optional(PositiveInt),
 });
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 

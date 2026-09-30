@@ -6,8 +6,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
+  DEFAULT_SERVER_SETTINGS,
   NonNegativeInt,
   TrimmedNonEmptyString,
+  type BitbucketSettings,
   type SourceControlProviderAuth,
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryVisibility,
@@ -23,6 +25,7 @@ import {
   type NormalizedBitbucketPullRequestRecord,
 } from "./bitbucketPullRequests.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -442,24 +445,69 @@ function repositoryOwnerName(repositoryName: string): string {
   return repositoryName.split("/")[0]?.trim() || "bitbucket";
 }
 
-function authFromConfig(
-  config: Config.Success<typeof BitbucketApiEnvConfig>,
-): SourceControlProviderAuth {
-  if (Option.isSome(config.accessToken)) {
+type BitbucketCredential =
+  | { readonly kind: "access-token"; readonly accessToken: string }
+  | { readonly kind: "api-token"; readonly email: string; readonly apiToken: string };
+
+/**
+ * Visible ASCII only. A value the HTTP stack rejects makes it throw an error quoting the whole
+ * header, and that error travels to clients as a cause, so an unusable token is treated as unset.
+ */
+const HEADER_SAFE = /^[!-~]+$/u;
+
+function credentialFrom(input: {
+  readonly accessToken: string;
+  readonly email: string;
+  readonly apiToken: string;
+}): BitbucketCredential | null {
+  if (HEADER_SAFE.test(input.accessToken)) {
+    return { kind: "access-token", accessToken: input.accessToken };
+  }
+  if (HEADER_SAFE.test(input.email) && HEADER_SAFE.test(input.apiToken)) {
+    return { kind: "api-token", email: input.email, apiToken: input.apiToken };
+  }
+  return null;
+}
+
+/**
+ * Avi Code port of pingdotgg/t3code#14103. Credentials saved in settings win over the
+ * `T3CODE_BITBUCKET_*` environment variables, which stay as a fallback. Within each source the
+ * access token wins.
+ */
+export function resolveBitbucketCredential(
+  settings: BitbucketSettings,
+  env: {
+    readonly accessToken: Option.Option<string>;
+    readonly email: Option.Option<string>;
+    readonly apiToken: Option.Option<string>;
+  },
+): BitbucketCredential | null {
+  return (
+    credentialFrom(settings) ??
+    credentialFrom({
+      accessToken: Option.getOrElse(env.accessToken, () => ""),
+      email: Option.getOrElse(env.email, () => ""),
+      apiToken: Option.getOrElse(env.apiToken, () => ""),
+    })
+  );
+}
+
+function authFromCredential(credential: BitbucketCredential | null): SourceControlProviderAuth {
+  if (credential?.kind === "access-token") {
     return {
       status: "unknown",
       account: Option.none(),
       host: Option.some("bitbucket.org"),
-      detail: Option.some("Bitbucket access token is configured."),
+      detail: Option.some("An access token is configured."),
     };
   }
 
-  if (Option.isSome(config.email) && Option.isSome(config.apiToken)) {
+  if (credential?.kind === "api-token") {
     return {
       status: "unknown",
-      account: config.email,
+      account: Option.some(credential.email),
       host: Option.some("bitbucket.org"),
-      detail: Option.some("Bitbucket API token is configured."),
+      detail: Option.some("An API token is configured."),
     };
   }
 
@@ -468,7 +516,7 @@ function authFromConfig(
     account: Option.none(),
     host: Option.some("bitbucket.org"),
     detail: Option.some(
-      "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
+      "Add a Bitbucket token in Settings > Source Control, or set the T3CODE_BITBUCKET_* environment variables on the server.",
     ),
   };
 }
@@ -500,6 +548,7 @@ function responseError(
 
 export const make = Effect.gen(function* () {
   const config = yield* BitbucketApiEnvConfig;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
   const fileSystem = yield* FileSystem.FileSystem;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -507,15 +556,27 @@ export const make = Effect.gen(function* () {
 
   const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
 
-  const withAuth = (request: HttpClientRequest.HttpClientRequest) => {
-    if (Option.isSome(config.accessToken)) {
-      return request.pipe(HttpClientRequest.bearerToken(config.accessToken.value));
-    }
-    if (Option.isSome(config.email) && Option.isSome(config.apiToken)) {
-      return request.pipe(HttpClientRequest.basicAuth(config.email.value, config.apiToken.value));
-    }
-    return request;
-  };
+  // Read on every request so credentials saved in settings apply without a restart.
+  const currentCredential = serverSettings.getSettings.pipe(
+    Effect.map((settings) => resolveBitbucketCredential(settings.bitbucket, config)),
+    Effect.catch((error) =>
+      // No cause: a settings decode error can quote a hand-edited token.
+      Effect.logWarning("failed to read Bitbucket credentials from settings", {
+        operation: error.operation,
+      }).pipe(Effect.as(resolveBitbucketCredential(DEFAULT_SERVER_SETTINGS.bitbucket, config))),
+    ),
+  );
+
+  const withAuth = (request: HttpClientRequest.HttpClientRequest) =>
+    currentCredential.pipe(
+      Effect.map((credential) =>
+        credential === null
+          ? request
+          : credential.kind === "access-token"
+            ? request.pipe(HttpClientRequest.bearerToken(credential.accessToken))
+            : request.pipe(HttpClientRequest.basicAuth(credential.email, credential.apiToken)),
+      ),
+    );
 
   const decodeResponse = <S extends Schema.Top>(
     operation: BitbucketApiOperation,
@@ -542,7 +603,8 @@ export const make = Effect.gen(function* () {
     request: HttpClientRequest.HttpClientRequest,
     schema: S,
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
-    httpClient.execute(withAuth(request.pipe(HttpClientRequest.acceptJson))).pipe(
+    withAuth(request.pipe(HttpClientRequest.acceptJson)).pipe(
+      Effect.flatMap(httpClient.execute),
       Effect.mapError(
         (cause) =>
           new BitbucketRequestError({
@@ -701,7 +763,7 @@ export const make = Effect.gen(function* () {
         host: Option.some("bitbucket.org"),
         detail: Option.none<string>(),
       })),
-      Effect.orElseSucceed(() => authFromConfig(config)),
+      Effect.catch(() => currentCredential.pipe(Effect.map(authFromCredential))),
     ),
     listPullRequests: (input) =>
       resolveRepository(input).pipe(
