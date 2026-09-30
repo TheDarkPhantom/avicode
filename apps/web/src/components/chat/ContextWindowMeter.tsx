@@ -4,13 +4,23 @@ import {
   formatContextWindowTokens,
   formatPercentage,
 } from "~/lib/contextWindow";
+import { Minimize2Icon } from "lucide-react";
+import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import {
+  formatContextWindowCompactionMessage,
+  resolveAutoCompactMarkerPercent,
+} from "./ContextWindowMeter.logic";
 
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
-  providerDisplayName?: string | null;
+  modelDisplayName?: string | null;
+  /** Sends `/compact` for the thread. Omitted when the provider cannot compact. */
+  onCompact?: (() => void) | undefined;
+  compactDisabled?: boolean | undefined;
+  compactDisabledReason?: string | null | undefined;
 }) {
-  const { usage, providerDisplayName } = props;
+  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -19,6 +29,10 @@ export function ContextWindowMeter(props: {
   const totalProcessedTokens = usage.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
+  const autoCompactMarkerPercent = resolveAutoCompactMarkerPercent(
+    usage.autoCompactThreshold,
+    usage.maxTokens,
+  );
   const usageColor = isOverloaded
     ? "var(--color-red-500)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
@@ -28,7 +42,8 @@ export function ContextWindowMeter(props: {
       <PopoverTrigger
         openOnHover
         delay={150}
-        closeDelay={0}
+        // Leave time to reach the compact button inside the popover.
+        closeDelay={onCompact ? 150 : 0}
         render={
           <button
             type="button"
@@ -99,18 +114,28 @@ export function ContextWindowMeter(props: {
             )}
           </div>
           {usage.maxTokens !== null ? (
-            <div
-              className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(normalizedPercentage)}
-              aria-label="Context window usage"
-            >
+            <div className="relative">
               <div
-                className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
-                style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
-              />
+                className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(normalizedPercentage)}
+                aria-label="Context window usage"
+              >
+                <div
+                  className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
+                  style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
+                />
+              </div>
+              {autoCompactMarkerPercent !== null ? (
+                <div
+                  data-testid="auto-compact-marker"
+                  aria-hidden="true"
+                  className="-top-0.5 absolute h-2.5 w-px bg-foreground/60"
+                  style={{ left: `${autoCompactMarkerPercent}%` }}
+                />
+              ) : null}
             </div>
           ) : null}
           {showTotalProcessed ? (
@@ -121,10 +146,29 @@ export function ContextWindowMeter(props: {
               </span>
             </div>
           ) : null}
-          {usage.compactsAutomatically ? (
+          {usage.compactsAutomatically || autoCompactMarkerPercent !== null ? (
             <div className="mt-1 text-pretty text-[11px] font-medium text-muted-foreground/70">
-              {providerDisplayName ?? "It"} automatically compacts its context when needed.
+              {formatContextWindowCompactionMessage(modelDisplayName, usage.autoCompactThreshold)}
             </div>
+          ) : null}
+          {onCompact ? (
+            <>
+              <Button
+                size="xs"
+                variant="outline"
+                className="mt-1 w-full justify-center"
+                disabled={compactDisabled}
+                onClick={onCompact}
+              >
+                <Minimize2Icon aria-hidden="true" />
+                Compact context
+              </Button>
+              {compactDisabled && compactDisabledReason ? (
+                <div className="text-pretty text-[11px] text-muted-foreground/70">
+                  {compactDisabledReason}
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
       </PopoverPopup>

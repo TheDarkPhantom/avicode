@@ -334,6 +334,13 @@ export type MessagesTimelineRow =
       expanded: boolean;
     }
   | {
+      // Avi Code addition (upstream #9293): a context compaction divider.
+      kind: "context-compaction";
+      id: string;
+      createdAt: string;
+      label: string;
+    }
+  | {
       kind: "message";
       id: string;
       createdAt: string;
@@ -503,6 +510,10 @@ export function isTimelineSettleFreezeCorrectionCurrent(
   );
 }
 
+function isContextCompactionEntry(entry: TimelineEntry): boolean {
+  return entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
+}
+
 /**
  * Settled turns fold their commentary and tool activity behind a
  * "Worked for ..." row anchored at the turn's first foldable entry; the
@@ -583,6 +594,15 @@ function deriveTurnFolds(input: {
       }
     }
     if (hiddenEntryIds.size === 0) {
+      continue;
+    }
+    // Avi Code addition (upstream #9623): a lone compaction row stays visible
+    // on its own; it only folds away as part of a turn that folds other work.
+    if (
+      group.entries.every(
+        (entry) => !hiddenEntryIds.has(entry.id) || isContextCompactionEntry(entry),
+      )
+    ) {
       continue;
     }
 
@@ -692,6 +712,19 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    if (
+      timelineEntry.kind === "work" &&
+      timelineEntry.entry.sourceActivityKind === "context-compaction"
+    ) {
+      nextRows.push({
+        kind: "context-compaction",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        label: timelineEntry.entry.label,
+      });
+      continue;
+    }
+
     if (timelineEntry.kind === "work") {
       const groupedEntries = [timelineEntry.entry];
       let cursor = index + 1;
@@ -700,6 +733,7 @@ export function deriveMessagesTimelineRows(input: {
         if (
           !nextEntry ||
           nextEntry.kind !== "work" ||
+          isContextCompactionEntry(nextEntry) ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)
         ) {
@@ -839,6 +873,11 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "turn-fold": {
       const bf = b as typeof a;
       return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
+    }
+
+    case "context-compaction": {
+      const bc = b as typeof a;
+      return a.createdAt === bc.createdAt && a.label === bc.label;
     }
 
     case "proposed-plan":

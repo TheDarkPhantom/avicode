@@ -133,6 +133,10 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
+import {
+  providerSupportsManualCompaction,
+  resolveContextWindowModelDisplayName,
+} from "./ContextWindowMeter.logic";
 import { ProviderQuotaMeter } from "./ProviderQuotaMeter";
 // Avi Code addition: per-thread token/cost total in the composer footer.
 import { ThreadUsageBadge } from "./ThreadUsageBadge";
@@ -217,7 +221,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
+import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -232,10 +236,7 @@ import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
-import {
-  deriveLatestContextWindowSnapshot,
-  formatProviderDisplayName,
-} from "../../lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import {
   selectProviderInstanceLabel,
   selectProviderQuota,
@@ -474,7 +475,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
-  activeThreadProviderDisplayName: string | null;
+  activeThreadModelDisplayName: string | null;
   // Avi Code addition: identify the thread whose usage the footer badge shows.
   threadUsageEnvironmentId: EnvironmentId;
   threadUsageThreadId: ThreadId | null;
@@ -507,13 +508,19 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onDiscardPlan: () => void;
   onReviewPlanWithCodex: () => void;
   onOpenLinkedPlanReview: () => void;
+  onCompactContext?: (() => void) | undefined;
+  compactDisabled: boolean;
+  compactDisabledReason: string | null;
 }) {
   return (
     <>
       {props.activeContextWindow ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}
-          providerDisplayName={props.activeThreadProviderDisplayName}
+          modelDisplayName={props.activeThreadModelDisplayName}
+          onCompact={props.onCompactContext}
+          compactDisabled={props.compactDisabled}
+          compactDisabledReason={props.compactDisabledReason}
         />
       ) : null}
       {props.threadUsageThreadId ? (
@@ -572,6 +579,8 @@ export interface ChatComposerHandle {
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
+  /** Avi Code addition (upstream #8144): run `/compact` when the thread allows it. */
+  compactContext: () => void;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -706,6 +715,11 @@ export interface ChatComposerProps {
 
   // Context window
   activeThreadActivities: Thread["activities"] | undefined;
+  /** Avi Code addition (upstream #9293): `/compact` cannot run on this thread now. */
+  compactThreadUnavailable: boolean;
+  compactDisabledReason: string | null;
+  /** Sends `/compact` without touching the draft (upstream #11103). */
+  onCompactContext: () => void;
 
   // Misc
   resolvedTheme: "light" | "dark";
@@ -812,6 +826,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
+    compactThreadUnavailable,
+    compactDisabledReason,
+    onCompactContext,
     resolvedTheme,
     settings,
     providerSelectionScopeKey,
@@ -1174,22 +1191,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => deriveLatestContextWindowSnapshot(activeThreadActivities ?? []),
     [activeThreadActivities],
   );
-  const activeThreadProviderDisplayName = useMemo(() => {
-    if (!activeThreadModelSelection) return null;
-    const entry = providerStatuses.find(
-      (p) => p.instanceId === activeThreadModelSelection.instanceId,
-    );
-    if (entry) {
-      return getProviderDisplayName(providerStatuses, entry.driver);
-    }
-    return formatProviderDisplayName(activeThreadModelSelection.instanceId);
-  }, [providerStatuses, activeThreadModelSelection]);
+  const activeThreadModelDisplayName = useMemo(
+    () => resolveContextWindowModelDisplayName(activeThreadModelSelection, modelOptionsByInstance),
+    [activeThreadModelSelection, modelOptionsByInstance],
+  );
+  const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
 
   // ------------------------------------------------------------------
   // Provider plan quota
   // ------------------------------------------------------------------
   // Keyed on `threadProvider` — the session's instance first — rather than on
-  // `activeThreadProviderDisplayName`, which resolves through the model
+  // the thread's model selection, which resolves through the model
   // selection and collapses to a per-driver name. Two instances of one driver
   // have separate allowances, so they must not share a reading.
   const activeProviderQuota = useMemo(
@@ -1344,6 +1356,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerThreadContextIds, isPathTrigger, pathTriggerQuery, threadContextCandidates],
   );
 
+  const compactSlashCommandAvailable =
+    composerTrigger?.kind === "slash-command" &&
+    !compactThreadUnavailable &&
+    prompt.slice(0, composerTrigger.rangeStart).trim() === "" &&
+    prompt.slice(composerTrigger.rangeEnd).trim() === "" &&
+    composerImages.length === 0 &&
+    composerTerminalContexts.length === 0 &&
+    composerElementContexts.length === 0 &&
+    composerPreviewAnnotations.length === 0 &&
+    composerReviewComments.length === 0;
+
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -1414,8 +1437,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description: command.description ?? command.input?.hint ?? "Run provider command",
         }),
       );
+      // Avi Code addition (upstream #9293): `/compact` is a standalone command,
+      // so offer it only as the whole message on a thread that can compact.
+      const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
+        (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
+      );
       const query = composerTrigger.query.trim().toLowerCase();
-      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
+      const slashCommandItems = [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems];
       if (!query) {
         return slashCommandItems;
       }
@@ -1438,6 +1466,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    compactSlashCommandAvailable,
     composerTrigger,
     selectedProvider,
     selectedProviderStatus,
@@ -3147,6 +3176,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, []);
 
+  const compactContextDisabled =
+    compactThreadUnavailable || noProviderAvailable || isSendBusy || isConnecting;
+  const compactThreadContext = useCallback(() => {
+    if (compactContextDisabled) return;
+    onCompactContext();
+  }, [compactContextDisabled, onCompactContext]);
+
   // ------------------------------------------------------------------
   // Imperative handle
   // ------------------------------------------------------------------
@@ -3167,6 +3203,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         setIsComposerModelPickerOpen((open) => !open);
       },
       isModelPickerOpen: () => isComposerModelPickerOpen,
+      compactContext: compactThreadContext,
       readSnapshot: () => {
         return readComposerSnapshot();
       },
@@ -3248,6 +3285,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }),
     [
       activeThread,
+      compactThreadContext,
       composerDraftTarget,
       composerCursor,
       composerTerminalContexts,
@@ -3969,7 +4007,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}
-                  activeThreadProviderDisplayName={activeThreadProviderDisplayName}
+                  activeThreadModelDisplayName={activeThreadModelDisplayName}
+                  compactDisabled={compactContextDisabled}
+                  compactDisabledReason={
+                    compactDisabledReason ??
+                    (noProviderAvailable ? "Compacting is unavailable right now" : null)
+                  }
+                  {...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {})}
                   threadUsageEnvironmentId={environmentId}
                   threadUsageThreadId={activeThreadId}
                   activeProviderQuota={activeProviderQuota}

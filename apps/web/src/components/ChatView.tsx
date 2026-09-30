@@ -214,7 +214,11 @@ import {
 import { useDevServerStartIntent } from "~/devServerStartIntent";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+} from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useArchiveThreadWithFeedback } from "../hooks/useArchiveThreadWithFeedback";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -299,6 +303,15 @@ import {
 } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { hasAvailableCompactionProvider } from "./chat/ContextWindowMeter.logic";
+import {
+  deriveCompactDisabledReason,
+  deriveIsCompacting,
+  isCompactCommandMessage,
+  latestTurnStartFailureId,
+} from "./chat/contextCompaction.logic";
+import { useResumeCompactionBanner } from "./chat/useResumeCompactionBanner";
+import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 // Avi Code addition: the plan-review return leg.
 import { usePlanReviewBannerItems } from "./chat/usePlanReviewBannerItems";
 import { shouldFlushHeldSend, shouldHoldSendWhileRunning } from "./chat/sendWhileRunning.logic";
@@ -584,6 +597,11 @@ function useLocalDispatchState(input: {
   const [localDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
   const latestUserMessageId =
     input.activeThread?.messages.findLast((message) => message.role === "user")?.id ?? null;
+  // Avi Code addition (upstream #9293): see `latestTurnStartFailureId`.
+  const currentTurnStartFailureId =
+    localDispatch === null
+      ? null
+      : latestTurnStartFailureId(input.activeThread, latestUserMessageId);
 
   const resetLocalDispatch = useCallback(() => {
     setLocalDispatch(null);
@@ -599,9 +617,11 @@ function useLocalDispatchState(input: {
         session: input.activeThread?.session ?? null,
         hasPendingApproval: input.activePendingApproval !== null,
         hasPendingUserInput: input.activePendingUserInput !== null,
+        latestTurnStartFailureId: currentTurnStartFailureId,
         threadError: input.threadError,
       }),
     [
+      currentTurnStartFailureId,
       input.activeLatestTurn,
       input.activePendingApproval,
       input.activePendingUserInput,
@@ -2500,7 +2520,16 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
   });
-  const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  // Avi Code addition (upstream #9293): a running `/compact` counts as work.
+  const isCompacting = deriveIsCompacting({
+    isSendBusy,
+    phase,
+    optimisticUserMessages,
+    activeThread,
+    latestTurn: activeLatestTurn,
+  });
+  const isWorking =
+    phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint || isCompacting;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -2846,6 +2875,32 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
+  // Avi Code addition (upstream #8144, #9293): whether `/compact` can run here.
+  const manualCompactionProviderAvailable = useMemo(
+    () =>
+      hasAvailableCompactionProvider({
+        providers: applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providerStatuses),
+          settings,
+        ),
+        driverKind: selectedProvider,
+        instanceId: activeProviderInstanceId,
+        lockedInstanceId: lockedProvider
+          ? (activeThread?.session?.providerInstanceId ??
+            activeThread?.modelSelection.instanceId ??
+            null)
+          : null,
+      }),
+    [
+      activeProviderInstanceId,
+      activeThread?.modelSelection.instanceId,
+      activeThread?.session?.providerInstanceId,
+      lockedProvider,
+      providerStatuses,
+      selectedProvider,
+      settings,
+    ],
+  );
   const activeProviderStatus = useMemo(() => {
     if (activeProviderInstanceId) {
       return (
@@ -4991,7 +5046,50 @@ function ChatViewContent(props: ChatViewProps) {
     threadShells: allThreadShells,
     scheduleComposerFocus,
   });
+  // Avi Code addition (upstream #8144, #9293, #11103): compaction controls.
+  // A draft never blocks compaction; `/compact` goes out on its own.
+  const activeThreadHasCompactableConversation =
+    activeThread?.messages.some(
+      (message) => message.role === "user" && !isCompactCommandMessage(message),
+    ) ?? false;
+  const compactThreadUnavailable =
+    !activeThread ||
+    !activeThreadHasCompactableConversation ||
+    !activeProject ||
+    !isServerThread ||
+    !manualCompactionProviderAvailable ||
+    isWorking ||
+    threadDetailLoading ||
+    isPreparingWorktree ||
+    activeEnvironmentUnavailable ||
+    pendingApprovals.length > 0 ||
+    pendingUserInputs.length > 0 ||
+    showPlanFollowUpPrompt;
+  const compactDisabledReason = deriveCompactDisabledReason({
+    unavailable: compactThreadUnavailable,
+    hasProject: Boolean(activeProject),
+    providerSupportsCompaction: manualCompactionProviderAvailable,
+    hasConversation: activeThreadHasCompactableConversation,
+  });
+  const activeContextWindow = useMemo(
+    () => deriveLatestContextWindowSnapshot(threadActivities),
+    [threadActivities],
+  );
+  const resumeCompactionBannerItem = useResumeCompactionBanner({
+    environmentId,
+    providerInstanceId: activeProviderInstanceId,
+    threadId: activeThread?.id ?? null,
+    provider: selectedProvider,
+    contextWindow: activeContextWindow,
+    activities: threadActivities,
+    blocked: pendingUserInputs.length > 0 || phase === "running",
+    compactDisabled: compactThreadUnavailable,
+    compactDisabledReason,
+    onCompact: () => composerRef.current?.compactContext(),
+  });
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
+    const resumeCompactionItems =
+      resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     const expiredAnswerItems: ComposerBannerStackItem[] = deferredExpiredUserInputRecovery
       ? [
@@ -5108,6 +5206,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...expiredAnswerItems,
         ...planReviewBannerItems,
         ...systemComposerBannerItems,
+        ...resumeCompactionItems,
         ...parkedThreadItems,
       ];
     }
@@ -5117,6 +5216,7 @@ function ChatViewContent(props: ChatViewProps) {
       ...expiredAnswerItems,
       ...planReviewBannerItems,
       ...systemComposerBannerItems,
+      ...resumeCompactionItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
         variant: "info",
@@ -5519,6 +5619,77 @@ function ChatViewContent(props: ChatViewProps) {
   // message. Holds the thread rather than a flag so switching threads mid-flight
   // cannot deliver one thread's screenshot into another.
   const pendingAnswerAttachmentFollowUpRef = useRef<ThreadId | null>(null);
+
+  // Avi Code addition (upstream #9293, #11103): send `/compact` as its own
+  // turn start. The draft and its attachments stay in the composer.
+  const onCompactContext = async () => {
+    if (compactThreadUnavailable || !activeThread || isSendBusy || sendInFlightRef.current) {
+      return;
+    }
+    const context = composerRef.current?.getSendContext();
+    if (!context?.providerAvailable) return;
+
+    const threadId = activeThread.id;
+    const messageId = newMessageId();
+    const createdAt = new Date().toISOString();
+    sendInFlightRef.current = true;
+    beginLocalDispatch();
+    setThreadError(threadId, null);
+    setOptimisticUserMessages((messages) => [
+      ...messages,
+      {
+        id: messageId,
+        role: "user",
+        text: "/compact",
+        turnId: null,
+        createdAt,
+        updatedAt: createdAt,
+        streaming: false,
+      },
+    ]);
+    scrollToEnd();
+    try {
+      const settingsResult = await persistThreadSettingsForNextTurn({
+        threadId,
+        createdAt,
+        modelSelection: context.selectedModelSelection,
+        ...(localCheckoutBranchMismatch
+          ? { branch: localCheckoutBranchMismatch.currentBranch }
+          : {}),
+        runtimeMode,
+        interactionMode,
+      });
+      const result =
+        settingsResult._tag === "Failure"
+          ? settingsResult
+          : await startThreadTurn({
+              environmentId,
+              input: {
+                threadId,
+                message: { messageId, role: "user", text: "/compact", attachments: [] },
+                modelSelection: context.selectedModelSelection,
+                runtimeMode,
+                interactionMode,
+                createdAt,
+              },
+            });
+      if (result._tag === "Failure") {
+        setOptimisticUserMessages((messages) =>
+          messages.filter((message) => message.id !== messageId),
+        );
+        resetLocalDispatch();
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            threadId,
+            error instanceof Error ? error.message : "Failed to compact context.",
+          );
+        }
+      }
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  };
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
@@ -7869,6 +8040,7 @@ function ChatViewContent(props: ChatViewProps) {
                 </div>
               ) : null}
               <MessagesTimeline
+                isCompacting={isCompacting}
                 key={activeThread.id}
                 isWorking={isWorking}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
@@ -8056,6 +8228,9 @@ function ChatViewContent(props: ChatViewProps) {
                             }
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeThreadActivities={activeThread?.activities}
+                            compactThreadUnavailable={compactThreadUnavailable}
+                            compactDisabledReason={compactDisabledReason}
+                            onCompactContext={onCompactContext}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             providerSelectionScopeKey={

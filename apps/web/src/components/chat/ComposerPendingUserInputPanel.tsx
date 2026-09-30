@@ -7,6 +7,8 @@ import {
 } from "../../pendingUserInput";
 import { CheckIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
+import { ClaudeResumeCompactionPrompt } from "./ClaudeResumeCompactionPrompt";
+import { findClaudeResumeCompactionQuestion } from "./ContextWindowMeter.logic";
 
 const COMPOSER_FORM_SELECTOR = "[data-chat-composer-form='true']";
 
@@ -42,6 +44,18 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
   if (pendingUserInputs.length === 0) return null;
   const activePrompt = pendingUserInputs[0];
   if (!activePrompt) return null;
+  // Avi Code addition (upstream #8144): Claude's resume dialog gets its own prompt.
+  const resumeCompactionQuestion = findClaudeResumeCompactionQuestion(activePrompt);
+  if (resumeCompactionQuestion) {
+    return (
+      <ClaudeResumeCompactionPrompt
+        key={activePrompt.requestId}
+        question={resumeCompactionQuestion}
+        isResponding={isResponding}
+        onAnswer={onToggleOption}
+      />
+    );
+  }
 
   return (
     <ComposerPendingUserInputCard

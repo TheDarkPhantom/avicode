@@ -95,6 +95,12 @@ Upstream: t3code 0.0.31
 - Set when Claude compacts a long thread with the Auto-compact after setting (#8144 by Theo Browne)
 - Resuming an old Claude session asks whether to compact it first (#8144 by Theo Browne)
 - Agents can open the images you attach by their saved file path (#5757 by Theo Browne)
+- Compact a long thread from the context meter to free up its context (#9293 by maria)
+- Claude offers to compact old threads before resuming them (#8144 by Theo Browne)
+- The context meter marks the point where Claude compacts on its own (#8144 by Theo Browne)
+- Compacting a thread keeps your unsent draft in the composer (#11103 by maria)
+- A compaction folds away with the rest of a finished turn's work (#9623 by maria)
+- The context meter names the thread's model instead of its provider (#4772 by nqrwhal)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
