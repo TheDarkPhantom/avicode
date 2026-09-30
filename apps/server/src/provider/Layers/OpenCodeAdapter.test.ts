@@ -64,6 +64,7 @@ const runtimeMock = {
     closeCalls: [] as string[],
     revertCalls: [] as Array<{ sessionID: string; messageID?: string }>,
     promptCalls: [] as Array<unknown>,
+    summarizeCalls: [] as Array<Record<string, unknown>>,
     promptAsyncError: null as Error | null,
     closeError: null as Error | null,
     messages: [] as MessageEntry[],
@@ -84,6 +85,7 @@ const runtimeMock = {
     this.state.closeCalls.length = 0;
     this.state.revertCalls.length = 0;
     this.state.promptCalls.length = 0;
+    this.state.summarizeCalls.length = 0;
     this.state.promptAsyncError = null;
     this.state.closeError = null;
     this.state.messages = [];
@@ -182,6 +184,10 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
           if (runtimeMock.state.promptAsyncError) {
             throw runtimeMock.state.promptAsyncError;
           }
+        },
+        summarize: async (input: Record<string, unknown>) => {
+          runtimeMock.state.summarizeCalls.push(input);
+          return { data: true };
         },
         messages: async () => ({ data: runtimeMock.state.messages }),
         revert: async ({ sessionID, messageID }: { sessionID: string; messageID?: string }) => {
@@ -384,6 +390,66 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         sessionId: "ses_persisted",
       });
 
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  // Avi Code addition: `/compact`, ported from upstream #9293.
+  it.effect("compacts through the native OpenCode session API", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compact");
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "session.compacted",
+          properties: { sessionID: "http://127.0.0.1:9999/session" },
+        },
+      ];
+      const compactedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) => event.threadId === threadId && event.type === "thread.state.changed",
+        ),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      NodeAssert.ok(adapter.compaction.type === "native");
+      yield* adapter.compaction.start(
+        threadId,
+        createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+      );
+      NodeAssert.deepEqual(runtimeMock.state.summarizeCalls, [
+        {
+          sessionID: "http://127.0.0.1:9999/session",
+          providerID: "openai",
+          modelID: "gpt-5",
+          auto: false,
+        },
+      ]);
+      const compacted = Option.getOrThrow(yield* Fiber.join(compactedFiber));
+      NodeAssert.ok(compacted.type === "thread.state.changed");
+      NodeAssert.equal(compacted.payload.state, "compacted");
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("refuses to compact without a provider/model selection", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compact-no-model");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      NodeAssert.ok(adapter.compaction.type === "native");
+      const failure = yield* adapter.compaction.start(threadId).pipe(Effect.flip);
+      NodeAssert.equal(failure._tag, "ProviderAdapterValidationError");
+      NodeAssert.deepEqual(runtimeMock.state.summarizeCalls, []);
       yield* adapter.stopSession(threadId);
     }),
   );

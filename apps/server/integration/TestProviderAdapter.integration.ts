@@ -513,6 +513,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       },
       startSession,
       sendTurn,
+      compaction: { type: "unsupported" },
       askSideQuestion: () => Stream.empty,
       interruptTurn,
       respondToRequest,

@@ -31,6 +31,7 @@ import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts
 import {
   AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -607,6 +608,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    slashCommands: [COMPACT_SLASH_COMMAND],
     ...(snapshot.quota ? { quota: snapshot.quota } : {}),
     probe: {
       installed: true,
