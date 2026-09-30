@@ -110,13 +110,46 @@ export function attachmentRelativePath(attachment: ChatAttachment): string | nul
       });
       return `${attachment.id}${extension}`;
     }
-    case "document":
-      return `${attachment.id}.txt`;
+    case "document": {
+      // Avi Code addition: the original, when stored, is what the attachment
+      // points at; the extracted text is a sidecar (see attachmentRelativePaths).
+      const originalExtension = parseAttachmentFileExtension(attachment.id);
+      return originalExtension
+        ? `${attachment.id}.${originalExtension}`
+        : documentExtractedTextRelativePath(attachment);
+    }
     case "file":
       return `${attachment.id}${attachmentFileExtension(attachment.name)}`;
     default:
       return null;
   }
+}
+
+/** Avi Code addition: where a document's extracted text lives. */
+export function documentExtractedTextRelativePath(attachment: { readonly id: string }): string {
+  return `${attachment.id}.txt`;
+}
+
+/** Avi Code addition: whether a document's original bytes were stored too. */
+export function documentHasOriginal(attachment: { readonly id: string }): boolean {
+  return parseAttachmentFileExtension(attachment.id) !== null;
+}
+
+/**
+ * Every file an attachment owns on disk, for pruning and cleanup. Avi Code
+ * addition: a document with a stored original owns both the original and its
+ * extracted-text sidecar (one file when the original is itself a `.txt`).
+ */
+export function attachmentRelativePaths(attachment: ChatAttachment): ReadonlyArray<string> {
+  const primary = attachmentRelativePath(attachment);
+  if (!primary) {
+    return [];
+  }
+  if (attachment.type !== "document") {
+    return [primary];
+  }
+  const extractedText = documentExtractedTextRelativePath(attachment);
+  return primary === extractedText ? [primary] : [primary, extractedText];
 }
 
 export function resolveAttachmentPath(input: {

@@ -8,8 +8,10 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   attachmentFileExtension,
   attachmentRelativePath,
+  attachmentRelativePaths,
   createAttachmentId,
   createPendingAttachmentId,
+  documentHasOriginal,
   parseAttachmentUuid,
   parseAttachmentFileExtension,
   planAttachmentClaim,
@@ -31,6 +33,30 @@ describe("attachmentStore", () => {
       }),
     ).toMatch(/\.txt$/);
   });
+
+  // Avi Code addition: a document with a stored original points at the
+  // original and also owns its extracted-text sidecar.
+  it("points documents with a stored original at the original file", () => {
+    const document = {
+      type: "document" as const,
+      id: "thread-1-00000000-0000-4000-8000-000000000001-pdf",
+      name: "brief.pdf",
+      mimeType: "application/pdf" as const,
+      sizeBytes: 1024,
+      extractedChars: 42,
+    };
+    expect(documentHasOriginal(document)).toBe(true);
+    expect(attachmentRelativePath(document)).toBe(`${document.id}.pdf`);
+    expect(attachmentRelativePaths(document)).toEqual([`${document.id}.pdf`, `${document.id}.txt`]);
+
+    const textDocument = { ...document, id: `${document.id.slice(0, -4)}-txt`, name: "notes.txt" };
+    expect(attachmentRelativePaths(textDocument)).toEqual([`${textDocument.id}.txt`]);
+
+    const legacy = { ...document, id: "thread-1-00000000-0000-4000-8000-000000000002" };
+    expect(documentHasOriginal(legacy)).toBe(false);
+    expect(attachmentRelativePaths(legacy)).toEqual([`${legacy.id}.txt`]);
+  });
+
   it("sanitizes thread ids when creating attachment ids", () => {
     const attachmentId = createAttachmentId("thread.folder/unsafe space");
     expect(attachmentId).toBeTruthy();

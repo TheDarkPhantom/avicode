@@ -38,7 +38,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
 
-import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { documentHasOriginal, resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
 import {
   increment,
@@ -215,12 +215,12 @@ const correlateRuntimeEventWithInstance = (
 
 /**
  * The prompt line that tells the agent where an attachment lives on disk.
- * Avi Code addition: a document's stored file is its extracted text (the
- * original bytes were not kept), so its line says so instead of implying the
- * agent can open the original PDF or DOCX at that path.
+ * Avi Code addition: a document sent before originals were kept has only its
+ * extracted text on disk, so its line says so instead of implying the agent
+ * can open the original PDF or DOCX at that path.
  */
 function formatAttachmentPathLine(attachment: ChatAttachment, attachmentPath: string): string {
-  return attachment.type === "document"
+  return attachment.type === "document" && !documentHasOriginal(attachment)
     ? `[Text extracted from attached document "${attachment.name}" is saved at: ${attachmentPath}]`
     : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`;
 }

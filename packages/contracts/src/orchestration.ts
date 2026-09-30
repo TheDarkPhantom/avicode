@@ -245,6 +245,14 @@ export const DOCUMENT_ATTACHMENT_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 
+/**
+ * A document the client extracted text from. The text is inlined into the turn
+ * and stored as `<id>.txt`. Avi Code addition: when the client also uploaded
+ * the original bytes, the persisted id carries the original's extension like a
+ * `ChatFileAttachment` id (`<thread>-<uuid>-pdf`) and the original is stored at
+ * `<id>.pdf`; an original `.txt` is its own extracted text. Documents persisted
+ * before this have a plain id and only the `.txt`.
+ */
 export const ChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   id: ChatAttachmentId,
@@ -261,6 +269,14 @@ export type ChatDocumentAttachment = typeof ChatDocumentAttachment.Type;
 
 const UploadChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
+  /**
+   * Avi Code addition: the pending upload holding the document's original
+   * bytes, from `attachments.createUploadUrl({ type: "file", ... })` with the
+   * same name and size. When present the server keeps the original next to the
+   * extracted text so agents can open the real file by path. Absent (older
+   * clients): only the extracted text is kept.
+   */
+  id: Schema.optionalKey(ChatAttachmentId),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: Schema.Literals(DOCUMENT_ATTACHMENT_MIME_TYPES),
   sizeBytes: NonNegativeInt.check(

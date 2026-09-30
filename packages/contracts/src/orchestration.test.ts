@@ -105,6 +105,44 @@ it.effect("accepts CSV document attachments in stored and upload shapes", () =>
   }),
 );
 
+it.effect("accepts documents that reference an uploaded original", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeClientOrchestrationCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-doc-original",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-doc-original",
+        role: "user",
+        text: "Read this",
+        attachments: [
+          {
+            type: "document",
+            id: "pending-00000000-0000-4000-8000-000000000005-pdf",
+            name: "brief.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 42,
+            extractedText: "brief text",
+          },
+        ],
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    if (command.type !== "thread.turn.start") {
+      assert.fail(`Expected thread.turn.start, got ${command.type}`);
+    }
+    const attachment = command.message.attachments[0];
+    assert.strictEqual(attachment?.type, "document");
+    assert.strictEqual(attachment && "extractedText" in attachment, true);
+    assert.strictEqual(
+      attachment && "id" in attachment ? attachment.id : undefined,
+      "pending-00000000-0000-4000-8000-000000000005-pdf",
+    );
+  }),
+);
+
 it.effect("rejects unknown document MIME types", () =>
   Effect.gen(function* () {
     const result = yield* Effect.exit(

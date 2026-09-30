@@ -47,7 +47,9 @@ attachment to the provider adapter. Each adapter decides what its provider inges
   with their real mime type. Everything else (ZIP and other binaries, image formats model APIs
   reject, oversized files) falls back to the file path in the turn text, like the other providers.
 - Documents (the fork's PDF/TXT/Markdown/CSV/JSON/DOCX attachments) are never sent natively by any
-  adapter. Their extracted text is already inlined into the turn text by the Normalizer.
+  adapter. Their extracted text is already inlined into the turn text by the Normalizer. When the
+  client uploaded the original too, the document id carries its extension like a file id and the
+  path line points at the original; older documents point at their extracted `.txt` and say so.
 
 Claude receives the attachment directory as an allowed additional directory. Codex keeps its
 configured sandbox policy, so access depends on that policy and the selected runtime mode. OpenCode

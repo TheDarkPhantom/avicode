@@ -15,8 +15,13 @@ import {
 
 import { formatDocumentContext } from "@t3tools/shared/documentContext";
 
+import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import {
+  attachmentFileExtension,
+  attachmentRelativePaths,
   createAttachmentId,
+  documentExtractedTextRelativePath,
+  parseAttachmentFileExtension,
   planAttachmentClaim,
   PENDING_ATTACHMENT_THREAD_SEGMENT,
   parseThreadSegmentFromAttachmentId,
@@ -87,6 +92,55 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
     );
   },
 );
+
+/**
+ * Avi Code addition: claims the uploaded original of a document for its
+ * thread, the same way a pending file upload is claimed. The upload must be a
+ * generic file upload (its id carries an extension) whose size and extension
+ * match the document. The pending copy stays until the turn succeeds.
+ */
+const claimDocumentOriginal = Effect.fn("Normalizer.claimDocumentOriginal")(function* (input: {
+  readonly attachmentsDir: string;
+  readonly threadId: string;
+  readonly attachment: { readonly id: string; readonly name: string; readonly sizeBytes: number };
+}) {
+  const { attachment } = input;
+  const fail = (reason: string) =>
+    new OrchestrationDispatchCommandError({
+      message: `Document attachment '${attachment.name}' cannot be sent: ${reason}.`,
+    });
+  if (parseAttachmentFileExtension(attachment.id) === null) {
+    return yield* fail("its original must be uploaded as a file");
+  }
+  const claim = planAttachmentClaim({
+    attachmentsDir: input.attachmentsDir,
+    threadId: input.threadId,
+    attachmentId: attachment.id,
+  });
+  if (!claim.ok) {
+    return yield* fail(claim.reason);
+  }
+
+  const fileSystem = yield* FileSystem.FileSystem;
+  const info = yield* fileSystem
+    .stat(claim.currentPath)
+    .pipe(Effect.mapError(() => fail("attachment not found")));
+  if (Number(info.size) !== attachment.sizeBytes) {
+    return yield* fail("stored size does not match");
+  }
+  const expectedPath = resolveAttachmentRelativePath({
+    attachmentsDir: input.attachmentsDir,
+    relativePath: `${claim.finalId}${attachmentFileExtension(attachment.name)}`,
+  });
+  if (expectedPath !== claim.finalPath) {
+    return yield* fail("attachment type does not match the upload");
+  }
+
+  yield* fileSystem
+    .copyFile(claim.currentPath, claim.finalPath)
+    .pipe(Effect.mapError(() => fail("failed to claim the original for this thread")));
+  return { finalId: claim.finalId, finalPath: claim.finalPath };
+});
 
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
@@ -180,11 +234,24 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
               });
             }
 
-            const attachmentId = createAttachmentId(attachmentThreadId);
+            // With an upload id, the original bytes are claimed like a file
+            // attachment and the persisted id keeps the original's extension.
+            const original =
+              attachment.id === undefined
+                ? null
+                : yield* claimDocumentOriginal({
+                    attachmentsDir: serverConfig.attachmentsDir,
+                    threadId: attachmentThreadId,
+                    attachment: { ...attachment, id: attachment.id },
+                  });
+            const attachmentId = original?.finalId ?? createAttachmentId(attachmentThreadId);
             if (!attachmentId) {
               return yield* new OrchestrationDispatchCommandError({
                 message: "Failed to create a safe attachment id.",
               });
+            }
+            if (original) {
+              claimedAttachmentPaths.push(original.finalPath);
             }
             const persistedAttachment = {
               type: "document" as const,
@@ -194,17 +261,25 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
               sizeBytes: attachment.sizeBytes,
               extractedChars: text.length,
             };
-            const attachmentPath = resolveAttachmentPath({
+            const extractedTextPath = resolveAttachmentRelativePath({
               attachmentsDir: serverConfig.attachmentsDir,
-              attachment: persistedAttachment,
+              relativePath: documentExtractedTextRelativePath(persistedAttachment),
             });
-            if (!attachmentPath) {
+            if (!extractedTextPath) {
               return yield* new OrchestrationDispatchCommandError({
                 message: `Failed to resolve persisted path for '${attachment.name}'.`,
               });
             }
-            yield* fileSystem.makeDirectory(path.dirname(attachmentPath), { recursive: true });
-            yield* fileSystem.writeFileString(attachmentPath, text);
+            // An original `.txt` already is the extracted text; keep it as is.
+            if (extractedTextPath !== original?.finalPath) {
+              yield* fileSystem.makeDirectory(path.dirname(extractedTextPath), {
+                recursive: true,
+              });
+              yield* fileSystem.writeFileString(extractedTextPath, text);
+              if (original) {
+                claimedAttachmentPaths.push(extractedTextPath);
+              }
+            }
             documentContexts.push(
               formatDocumentContext({
                 name: attachment.name,
@@ -373,12 +448,15 @@ export const cleanupFailedUploadedAttachments = Effect.fn(
       continue;
     }
 
-    const claimedPath = resolveAttachmentPath({
-      attachmentsDir: serverConfig.attachmentsDir,
-      attachment,
-    });
-    if (claimedPath) {
-      claimedPaths.push(claimedPath);
+    // Avi Code addition: a document owns its original and its extracted text.
+    for (const relativePath of attachmentRelativePaths(attachment)) {
+      const claimedPath = resolveAttachmentRelativePath({
+        attachmentsDir: serverConfig.attachmentsDir,
+        relativePath,
+      });
+      if (claimedPath) {
+        claimedPaths.push(claimedPath);
+      }
     }
   }
   yield* removeClaimedAttachmentPaths(claimedPaths);

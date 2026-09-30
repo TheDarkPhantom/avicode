@@ -357,3 +357,159 @@ describe("normalizeDispatchCommand attachments", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 });
+
+// Avi Code addition: documents keep their inlined extracted text, and when the
+// client uploaded the original bytes first, the original is claimed too.
+function documentTurnCommand(document: {
+  readonly id?: string;
+  readonly name: string;
+  readonly mimeType: "application/pdf" | "text/plain";
+  readonly sizeBytes: number;
+}): ClientOrchestrationCommand {
+  return {
+    type: "thread.turn.start",
+    commandId: CommandId.make("command-doc"),
+    threadId: ThreadId.make("thread-1"),
+    message: {
+      messageId: MessageId.make("message-doc"),
+      role: "user",
+      text: "summarize this",
+      attachments: [{ type: "document", ...document, extractedText: "extracted report text" }],
+    },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    createdAt: "2026-08-01T00:00:00.000Z",
+  };
+}
+
+describe("normalizeDispatchCommand document attachments", () => {
+  it.effect("keeps legacy documents as extracted text only", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const normalized = yield* normalizeDispatchCommand(
+        documentTurnCommand({ name: "report.pdf", mimeType: "application/pdf", sizeBytes: 10 }),
+      );
+      if (normalized.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+
+      const attachment = normalized.message.attachments[0]!;
+      expect(attachment).toMatchObject({ type: "document", extractedChars: 21 });
+      expect(attachment.id).toMatch(/^thread-1-[0-9a-f-]{36}$/);
+      expect(normalized.message.text).toContain("extracted report text");
+      expect(
+        NodeFS.readFileSync(NodePath.join(config.attachmentsDir, `${attachment.id}.txt`), "utf8"),
+      ).toBe("extracted report text");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("claims an uploaded original next to the extracted text", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const pendingId = `pending-${attachmentUuid}-pdf`;
+      const pendingPath = NodePath.join(config.attachmentsDir, `${pendingId}.pdf`);
+      NodeFS.writeFileSync(pendingPath, Buffer.from("%PDF-bytes"));
+
+      const command = documentTurnCommand({
+        id: pendingId,
+        name: "report.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 10,
+      });
+      const normalized = yield* normalizeDispatchCommand(command);
+      if (normalized.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+
+      const attachment = normalized.message.attachments[0]!;
+      expect(attachment.type).toBe("document");
+      expect(attachment.id).toMatch(/^thread-1-.*-pdf$/);
+      const originalPath = NodePath.join(config.attachmentsDir, `${attachment.id}.pdf`);
+      const textPath = NodePath.join(config.attachmentsDir, `${attachment.id}.txt`);
+      expect(NodeFS.readFileSync(originalPath)).toEqual(Buffer.from("%PDF-bytes"));
+      expect(NodeFS.readFileSync(textPath, "utf8")).toBe("extracted report text");
+      expect(normalized.message.text).toContain("extracted report text");
+      // The pending upload stays until the turn succeeds, so a retry works.
+      expect(NodeFS.existsSync(pendingPath)).toBe(true);
+
+      // A failed dispatch removes both claimed files but not the pending upload.
+      yield* cleanupFailedUploadedAttachments(command, normalized);
+      expect(NodeFS.existsSync(originalPath)).toBe(false);
+      expect(NodeFS.existsSync(textPath)).toBe(false);
+      expect(NodeFS.existsSync(pendingPath)).toBe(true);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("stores a text original once, as its own extracted text", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const pendingId = `pending-${attachmentUuid}-txt`;
+      NodeFS.writeFileSync(
+        NodePath.join(config.attachmentsDir, `${pendingId}.txt`),
+        Buffer.from("original text bytes"),
+      );
+
+      const normalized = yield* normalizeDispatchCommand(
+        documentTurnCommand({
+          id: pendingId,
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 19,
+        }),
+      );
+      if (normalized.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+
+      const attachment = normalized.message.attachments[0]!;
+      expect(attachment.id).toMatch(/-txt$/);
+      expect(
+        NodeFS.readFileSync(NodePath.join(config.attachmentsDir, `${attachment.id}.txt`), "utf8"),
+      ).toBe("original text bytes");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects document originals that are not matching file uploads", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      NodeFS.writeFileSync(
+        NodePath.join(config.attachmentsDir, `pending-${attachmentUuid}.png`),
+        Buffer.from("pixels"),
+      );
+      NodeFS.writeFileSync(
+        NodePath.join(config.attachmentsDir, `pending-${attachmentUuid}-pdf.pdf`),
+        Buffer.from("%PDF-bytes"),
+      );
+
+      const imageUpload = yield* normalizeDispatchCommand(
+        documentTurnCommand({
+          id: `pending-${attachmentUuid}`,
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 6,
+        }),
+      ).pipe(Effect.flip);
+      expect(imageUpload.message).toContain("uploaded as a file");
+
+      const wrongSize = yield* normalizeDispatchCommand(
+        documentTurnCommand({
+          id: `pending-${attachmentUuid}-pdf`,
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 999,
+        }),
+      ).pipe(Effect.flip);
+      expect(wrongSize.message).toContain("size");
+
+      const wrongExtension = yield* normalizeDispatchCommand(
+        documentTurnCommand({
+          id: `pending-${attachmentUuid}-pdf`,
+          name: "report.txt",
+          mimeType: "text/plain",
+          sizeBytes: 10,
+        }),
+      ).pipe(Effect.flip);
+      expect(wrongExtension.message).toContain("attachment type");
+    }).pipe(Effect.provide(testLayer)),
+  );
+});

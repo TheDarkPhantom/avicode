@@ -1146,6 +1146,19 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.include(turnText, '[Text extracted from attached document "report.pdf" is saved at: ');
       assert.equal(turnText.endsWith(`${document.id}.txt]`), true);
 
+      // A document whose original was stored points the agent at the original.
+      const documentWithOriginal = { ...document, id: `${document.id}-pdf` };
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "summarize this",
+        attachments: [documentWithOriginal],
+      });
+      const originalText =
+        (routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput).input ?? "";
+      assert.include(originalText, '[Attached document "report.pdf" is saved at: ');
+      assert.equal(originalText.endsWith(`${documentWithOriginal.id}.pdf]`), true);
+
       yield* provider.stopSession({ threadId: session.threadId });
     }),
   );
