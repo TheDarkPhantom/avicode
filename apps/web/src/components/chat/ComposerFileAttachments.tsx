@@ -1,5 +1,5 @@
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { FileIcon, PaperclipIcon, RotateCcwIcon, XIcon } from "lucide-react";
+import { FileIcon, PaperclipIcon, PlayIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { useRef } from "react";
 
 import { composerFileNeedsReattach, type ComposerFileAttachment } from "../../composerDraftStore";
@@ -7,6 +7,7 @@ import {
   formatAttachmentUploadProgress,
   type AttachmentUploadState,
 } from "../../lib/attachmentUploadState";
+import { isVideoAttachment } from "../../types";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -21,6 +22,8 @@ export function ComposerFileAttachmentRows(props: {
   readonly fileStagingLimit: number | null;
   readonly onRetry: (file: ComposerFileAttachment) => void;
   readonly onRemove: (fileId: string) => void;
+  /** Plays a video that still has its local bytes. */
+  readonly onPlayVideo: (file: ComposerFileAttachment & { readonly file: File }) => void;
 }) {
   if (props.files.length === 0) {
     return null;
@@ -37,7 +40,20 @@ export function ComposerFileAttachmentRows(props: {
             key={file.id}
             className="flex min-w-0 items-center gap-2 py-1 text-sm text-foreground"
           >
-            <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+            {file.file !== null && isVideoAttachment(file) ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => {
+                  if (file.file !== null) props.onPlayVideo({ ...file, file: file.file });
+                }}
+                aria-label={`Play ${file.name}`}
+              >
+                <PlayIcon />
+              </Button>
+            ) : (
+              <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+            )}
             <span className="min-w-0 flex-1 truncate">{file.name}</span>
             <span className="shrink-0 text-xs text-muted-foreground">
               {needsReattach

@@ -1672,7 +1672,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         )}
-        <UserMessageFileAttachments files={userFiles} unknownAttachments={unknownAttachments} />
+        <UserMessageFileAttachments
+          files={userFiles}
+          unknownAttachments={unknownAttachments}
+          onExpand={ctx.onImageExpand}
+        />
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {regularImages.map((image) => (

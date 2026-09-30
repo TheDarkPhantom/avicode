@@ -32,6 +32,26 @@ describe("UserMessageFileAttachments", () => {
     expect(markup).toContain("scene.glb");
   });
 
+  it("renders videos as play tiles when a preview can open", () => {
+    const video = {
+      ...base,
+      id: "v",
+      name: "demo.mov",
+      mimeType: "application/octet-stream",
+      previewUrl: "http://env.test/api/assets/v",
+    };
+    const withPlayer = renderToStaticMarkup(
+      <UserMessageFileAttachments files={[video]} unknownAttachments={[]} onExpand={() => {}} />,
+    );
+    expect(withPlayer).toContain('aria-label="Play demo.mov"');
+    expect(withPlayer).not.toContain('aria-label="Download demo.mov"');
+
+    const withoutPlayer = renderToStaticMarkup(
+      <UserMessageFileAttachments files={[video]} unknownAttachments={[]} />,
+    );
+    expect(withoutPlayer).toContain('aria-label="Download demo.mov"');
+  });
+
   it("renders nothing without files", () => {
     expect(
       renderToStaticMarkup(<UserMessageFileAttachments files={[]} unknownAttachments={[]} />),

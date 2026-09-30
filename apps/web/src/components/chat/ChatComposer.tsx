@@ -252,7 +252,7 @@ import {
 } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
-import type { SessionPhase, Thread } from "../../types";
+import { type SessionPhase, type Thread, videoMimeType } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import {
@@ -3050,6 +3050,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const acceptedFiles: File[] = [];
     const acceptedGenericFiles: ComposerFileAttachment[] = [];
     let error: string | null = null;
+    // Browsers often hand videos over as octet-stream; the extension names
+    // the real type so the upload and the player agree on it.
+    const genericFileMimeType = (file: File) =>
+      videoMimeType({ name: file.name, mimeType: file.type }) ??
+      (file.type || "application/octet-stream");
     const stageGenericFile = (file: File): string | null => {
       if (fileStagingLimit === null) {
         return `'${file.name}' is not an image or document, and this server does not accept other files.`;
@@ -3060,13 +3065,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (file.size > fileStagingLimit) {
         return fileAttachmentTooLargeMessage(file.name, fileStagingLimit);
       }
+      const mimeType = genericFileMimeType(file);
       acceptedGenericFiles.push({
         type: "file",
         id: randomUUID(),
         name: file.name || "file",
-        mimeType: file.type || "application/octet-stream",
+        mimeType,
         sizeBytes: file.size,
-        file,
+        file:
+          file.type === mimeType
+            ? file
+            : new File([file], file.name, { type: mimeType, lastModified: file.lastModified }),
       });
       return null;
     };
@@ -3081,7 +3090,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const replacesReattachMarker =
         kind === "file" &&
         reattachKeys.delete(
-          `${file.type || "application/octet-stream"}\u0000${file.size}\u0000${file.name || "file"}`,
+          `${genericFileMimeType(file)}\u0000${file.size}\u0000${file.name || "file"}`,
         );
       if (!replacesReattachMarker && reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
         error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
@@ -3966,6 +3975,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 fileStagingLimit={fileStagingLimit}
                 onRetry={(file) => retryAttachmentUpload({ environmentId, attachment: file })}
                 onRemove={removeComposerFileFromDraft}
+                onPlayVideo={(file) =>
+                  // The dialog owner revokes this blob URL when the preview closes.
+                  onExpandImage({
+                    images: [
+                      { src: URL.createObjectURL(file.file), name: file.name, type: "video" },
+                    ],
+                    index: 0,
+                  })
+                }
               />
             ) : null}
 

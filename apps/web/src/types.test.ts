@@ -5,6 +5,7 @@ import {
   isDocumentAttachment,
   isFileAttachment,
   isImageAttachment,
+  videoMimeType,
 } from "./types";
 
 const base = { name: "a", mimeType: "application/octet-stream", sizeBytes: 1 };
@@ -33,5 +34,21 @@ describe("attachment type guards", () => {
           !isFileAttachment(attachment),
       ),
     ).toEqual([unknown]);
+  });
+});
+
+describe("videoMimeType", () => {
+  it("reads the mime, or the extension when the browser gave a generic type", () => {
+    expect(videoMimeType({ name: "a.bin", mimeType: 'video/mp4; codecs="avc1"' })).toBe(
+      "video/mp4",
+    );
+    for (const [name, expected] of [
+      ["clip.mov", "video/quicktime"],
+      ["clip.webm", "video/webm"],
+      ["clip.MKV", "video/x-matroska"],
+    ] as const) {
+      expect(videoMimeType({ name, mimeType: "application/octet-stream" })).toBe(expected);
+    }
+    expect(videoMimeType({ name: "src.zip", mimeType: "application/zip" })).toBeNull();
   });
 });

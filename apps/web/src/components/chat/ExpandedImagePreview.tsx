@@ -1,6 +1,8 @@
 export interface ExpandedImageItem {
   src: string;
   name: string;
+  /** Videos play with native controls instead of the zoomable image. */
+  type?: "video";
 }
 
 export interface ExpandedImagePreview {

@@ -140,7 +140,9 @@ import {
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
   type ChatAttachment,
+  isFileAttachment,
   isImageAttachment,
+  videoMimeType,
   type SessionPhase,
   type Thread,
   type TurnDiffSummary,
@@ -1389,6 +1391,13 @@ function ChatViewContent(props: ChatViewProps) {
   const [timelineLiveFollowEnabled, setTimelineLiveFollowEnabled] = useState(true);
   const [timelineScrollMode, setTimelineScrollMode] = useState<TimelineScrollMode>("following-end");
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
+  // A video preview plays from a blob URL made just for it; release the bytes
+  // once the dialog moves on.
+  useEffect(() => {
+    const item = expandedImage?.images[expandedImage.index];
+    if (item?.type !== "video" || !item.src.startsWith("blob:")) return;
+    return () => revokeBlobPreviewUrl(item.src);
+  }, [expandedImage]);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
@@ -2601,7 +2610,13 @@ function ChatViewContent(props: ChatViewProps) {
           attachmentId: attachment.id,
           ...(isImageAttachment(attachment)
             ? {}
-            : { fileName: attachment.name, mimeType: attachment.mimeType }),
+            : {
+                fileName: attachment.name,
+                // A video mints as its video type so it streams inline.
+                mimeType:
+                  (isFileAttachment(attachment) ? videoMimeType(attachment) : null) ??
+                  attachment.mimeType,
+              }),
         });
       }
     }
