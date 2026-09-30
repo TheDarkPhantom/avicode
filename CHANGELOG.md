@@ -48,7 +48,7 @@ Upstream: t3code 0.0.31
 - Click Send beside Stop to send a follow-up while a reply is still running (#241)
 - Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
 - Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
-- PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text
+- PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
 
 ### Upstream t3code
 
