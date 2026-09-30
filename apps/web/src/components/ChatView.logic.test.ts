@@ -28,13 +28,134 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveBackgroundDraftWorkspaceOptions,
+  resolveDraftHeroState,
+  resolveDraftPromotionNavigationTarget,
   resolveInteractionModeChange,
+  resolveSubmissionIntent,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
+  shouldDockDraftHeroForSubmission,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+
+describe("background submission from a new-thread draft", () => {
+  const environmentId = EnvironmentId.make("environment-local");
+  const threadId = ThreadId.make("thread-1");
+
+  it("goes to the background only from a draft whose send dispatches now", () => {
+    expect(
+      resolveSubmissionIntent({
+        requested: "background",
+        isLocalDraftThread: true,
+        isQueuedSend: false,
+      }),
+    ).toBe("background");
+    expect(
+      resolveSubmissionIntent({
+        requested: "background",
+        isLocalDraftThread: false,
+        isQueuedSend: false,
+      }),
+    ).toBe("foreground");
+    expect(
+      resolveSubmissionIntent({
+        requested: "background",
+        isLocalDraftThread: true,
+        isQueuedSend: true,
+      }),
+    ).toBe("foreground");
+    expect(
+      resolveSubmissionIntent({
+        requested: "foreground",
+        isLocalDraftThread: true,
+        isQueuedSend: false,
+      }),
+    ).toBe("foreground");
+  });
+
+  it("does not dock the composer before a background submission", () => {
+    expect(
+      shouldDockDraftHeroForSubmission({
+        isDraftHeroState: true,
+        activeThreadKey: "environment-local:thread-1",
+        submissionIntent: "background",
+      }),
+    ).toBe(false);
+    expect(
+      shouldDockDraftHeroForSubmission({
+        isDraftHeroState: true,
+        activeThreadKey: "environment-local:thread-1",
+        submissionIntent: "foreground",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the hero layout while a background submission is pending", () => {
+    expect(
+      resolveDraftHeroState({
+        isLocalDraftThread: false,
+        hasTimelineEntries: true,
+        isWorking: true,
+        draftHeroDockRequested: false,
+        backgroundSubmissionPending: true,
+      }),
+    ).toBe(true);
+    expect(
+      resolveDraftHeroState({
+        isLocalDraftThread: true,
+        hasTimelineEntries: true,
+        isWorking: false,
+        draftHeroDockRequested: false,
+        backgroundSubmissionPending: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not follow a background thread once the server starts it", () => {
+    const serverThreadRef = { environmentId, threadId };
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef,
+        serverThreadStarted: true,
+        backgroundSubmissionPending: true,
+      }),
+    ).toBeNull();
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef,
+        serverThreadStarted: true,
+        backgroundSubmissionPending: false,
+      }),
+    ).toBe(serverThreadRef);
+  });
+
+  it("keeps New worktree selected without reusing the launched worktree", () => {
+    expect(
+      resolveBackgroundDraftWorkspaceOptions({
+        envMode: "worktree",
+        branch: "main",
+        startFromOrigin: true,
+      }),
+    ).toEqual({ envMode: "worktree", branch: "main", worktreePath: null, startFromOrigin: true });
+    expect(
+      resolveBackgroundDraftWorkspaceOptions({
+        envMode: "local",
+        branch: "main",
+        startFromOrigin: true,
+      }).startFromOrigin,
+    ).toBe(false);
+  });
+
+  it("records the intent on the local dispatch snapshot", () => {
+    expect(createLocalDispatchSnapshot(undefined).submissionIntent).toBe("foreground");
+    expect(
+      createLocalDispatchSnapshot(undefined, { submissionIntent: "background" }).submissionIntent,
+    ).toBe("background");
+  });
+});
 
 describe("shouldMarkCompletionSeen", () => {
   const completedAt = "2026-08-22T00:00:00.000Z";

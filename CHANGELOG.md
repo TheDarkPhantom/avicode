@@ -50,6 +50,7 @@ Upstream: t3code 0.0.31
 - Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
 - PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
 - Override worktree, git writing and model defaults for a single project (#255)
+- Turn off Ctrl+Enter starting new threads in the background in Settings, Avi Code (#254)
 
 ### Upstream t3code
 
@@ -83,6 +84,10 @@ Upstream: t3code 0.0.31
 - Settling a thread closes its idle terminals and keeps busy ones open (#13673 by Theo Browne)
 - Cursor and Grok replies stay one message when a tool reports progress (#13386 by Julius Marminge)
 - OpenCode starts with newer versions that print a different ready line (#13651 by Shirish Pothi)
+- Update Grok with one click when a new version is out (#13523 by Julius Marminge)
+- New agent sessions use the browser tab you can see (#13064 by Bilal Bakr)
+- Save Bitbucket credentials from Source Control settings (#14103 by Gabriel De Andrade)
+- Disabled buttons and menu items share one dimmed look (#11441 by Utkarsh Patil)
 - Avi Code opens faster after the first launch (#13501 by Theo Browne)
 - Turn auto-settle off for a single thread from its sidebar menu (#11846 by Theo Browne)
 - Go back and forward through visited pages with Ctrl+[ and Ctrl+] (#13212 by Julius Marminge)
@@ -96,6 +101,8 @@ Upstream: t3code 0.0.31
 - Set when Claude compacts a long thread with the Auto-compact after setting (#8144 by Theo Browne)
 - Resuming an old Claude session asks whether to compact it first (#8144 by Theo Browne)
 - Agents can open the images you attach by their saved file path (#5757 by Theo Browne)
+- Press Up in an empty composer to bring back prompts you sent in this thread (#9173 by Theo Browne)
+- Ctrl+Enter in a new thread starts it in the background and opens a fresh draft (#7821 by Exotic)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

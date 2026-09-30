@@ -24,8 +24,9 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - The node-pty bump chain (#13748, #13927, #14179) goes in all together or not at all. Without it,
     `vp run dev` on Windows restarts the server the first time a terminal opens, because node-pty's
     files trip the watcher. This only affects dev, not packaged builds.
-  - Grok one-click updates (#13523): the fork's maintenance resolver is synchronous, so porting it
-    needs upstream's async resolver.
+  - Grok one-click updates (#13523) landed without upstream's per-instance environment: `grok
+update` runs with the server's environment, so an instance with its own `GROK_HOME` updates
+    the default install instead. Fixing it needs an `env` field on the fork's update action.
   - Cached compiled JavaScript between launches (#13501) is a real startup speedup, but it changes
     the packaged entry point, so it waits for a packaging review.
   - Anything built on upstream-only systems (usage readers, reset credits, the model manifest,

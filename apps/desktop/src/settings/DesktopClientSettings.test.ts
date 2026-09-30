@@ -23,6 +23,7 @@ const clientSettings: ClientSettings = {
   aviCodeCommunicationStyleId: "default",
   aviCodeComposerShowInteractionModeLabel: true,
   aviCodeComposerShowRuntimeModeLabel: true,
+  aviCodeCtrlEnterStartsBackgroundThread: true,
   aviCodeCommunicationStyles: [],
   aviCodeDictationDeviceId: "",
   aviCodeNewThreadsStartInPlanMode: false,

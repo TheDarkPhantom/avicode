@@ -29,7 +29,8 @@ import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
+  makeProviderMaintenanceCapabilities,
+  type ProviderMaintenanceCapabilitiesResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
@@ -40,12 +41,27 @@ import {
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("grok");
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// npm's `latest` tracks Grok's stable channel, the one `grok update` installs
+// by default, so the registry stays the source for "latest".
+const GROK_NPM_PACKAGE = "@xai-official/grok";
+// `grok update` finds the installer that owns the binary itself, so the
+// resolved executable is its own updater. No executable means nothing to
+// update, not "whatever is on PATH".
+const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
+  resolve: (options) =>
+    options?.resolvedCommandPath
+      ? makeProviderMaintenanceCapabilities({
+          provider: DRIVER_KIND,
+          packageName: GROK_NPM_PACKAGE,
+          updateExecutable: options.resolvedCommandPath,
+          updateArgs: ["update"],
+          updateLockKey: "grok",
+        })
+      : makeManualOnlyProviderMaintenanceCapabilities({
+          provider: DRIVER_KIND,
+          packageName: GROK_NPM_PACKAGE,
+        }),
+};
 
 export type GrokDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
