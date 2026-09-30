@@ -746,6 +746,21 @@ export const VoiceSettings = Schema.Struct({
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
+// Avi Code port of pingdotgg/t3code#14103. Bitbucket API credentials for this
+// environment, used before the `T3CODE_BITBUCKET_*` environment variables. The
+// tokens follow the Deepgram key's handshake: plaintext lives in the server
+// secret store, and clients only see `accessTokenRedacted` / `apiTokenRedacted`
+// set to true, meaning "a token is stored". The access token wins when both
+// kinds are configured.
+export const BitbucketSettings = Schema.Struct({
+  email: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  accessToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  accessTokenRedacted: Schema.optionalKey(Schema.Boolean),
+  apiToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  apiTokenRedacted: Schema.optionalKey(Schema.Boolean),
+});
+export type BitbucketSettings = typeof BitbucketSettings.Type;
+
 export const SourceControlWritingStyleMode = Schema.Literals([
   "repo_conventions",
   "conventional_commits",
@@ -884,6 +899,7 @@ export const ServerSettings = Schema.Struct({
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1026,6 +1042,17 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       deepgramApiKey: Schema.optionalKey(TrimmedString),
       deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  // Same handshake as `voice`: a token sent with its `...Redacted: false` flag
+  // replaces the stored secret (an empty one clears it); `true` keeps it.
+  bitbucket: Schema.optionalKey(
+    Schema.Struct({
+      email: Schema.optionalKey(TrimmedString),
+      accessToken: Schema.optionalKey(TrimmedString),
+      accessTokenRedacted: Schema.optionalKey(Schema.Boolean),
+      apiToken: Schema.optionalKey(TrimmedString),
+      apiTokenRedacted: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   providers: Schema.optionalKey(
