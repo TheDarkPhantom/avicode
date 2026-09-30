@@ -288,4 +288,37 @@ describe("toOpenCodeFileParts", () => {
       [["image/png", "shot.png"]],
     );
   });
+
+  const fileAttachment = (mimeType: string, sizeBytes = 12) => ({
+    type: "file" as const,
+    id: "thread-1-00000000-0000-4000-8000-000000000001-bin",
+    name: "attachment",
+    mimeType,
+    sizeBytes,
+  });
+
+  it("sends supported images, text, and PDFs natively and skips what models reject", () => {
+    const parts = toOpenCodeFileParts({
+      attachments: [
+        fileAttachment("application/pdf"),
+        fileAttachment("text/markdown"),
+        fileAttachment("image/png"),
+        // A ZIP file part makes OpenCode's Anthropic path throw before the
+        // turn starts; it must ride only as the prompt's file path line.
+        fileAttachment("application/zip"),
+        fileAttachment("application/octet-stream"),
+        // Image formats the model APIs reject stay on the fallback path too.
+        fileAttachment("image/bmp"),
+        fileAttachment("image/svg+xml"),
+        // Over the direct-attachment limit: path fallback even for a PDF.
+        fileAttachment("application/pdf", 21 * 1024 * 1024),
+      ],
+      resolveAttachmentPath: () => "/tmp/attachment",
+    });
+
+    NodeAssert.deepEqual(
+      parts.map((part) => part.mime),
+      ["application/pdf", "text/markdown", "image/png"],
+    );
+  });
 });

@@ -1,4 +1,5 @@
 import type {
+  ChatFileAttachment as ContractChatFileAttachment,
   ChatImageAttachment as ContractChatImageAttachment,
   ChatDocumentAttachment as ContractChatDocumentAttachment,
   OrchestrationCheckpointFile,
@@ -37,7 +38,10 @@ export interface ChatImageAttachment extends ContractChatImageAttachment {
 }
 
 export type ChatDocumentAttachment = ContractChatDocumentAttachment;
-export type ChatAttachment = ChatImageAttachment | ChatDocumentAttachment;
+// Generic files pass through with the contract shape. The web UI renders them
+// once it grows file support; until then they only need to typecheck.
+export type ChatFileAttachment = ContractChatFileAttachment;
+export type ChatAttachment = ChatImageAttachment | ChatDocumentAttachment | ChatFileAttachment;
 
 export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;

@@ -149,20 +149,23 @@ function queuedDisplayAttachments(
     { readonly type: "thread.turn.start" }
   >["message"]["attachments"],
 ): ChatAttachment[] {
-  return attachments.map((attachment, index) =>
-    attachment.type === "image"
-      ? {
+  return attachments.map((attachment, index): ChatAttachment => {
+    const id = `queued-${messageId}-${index}`;
+    switch (attachment.type) {
+      case "image":
+        return {
           type: "image",
-          id: `queued-${messageId}-${index}`,
+          id,
           name: attachment.name,
           mimeType: attachment.mimeType,
           sizeBytes: attachment.sizeBytes,
           // Uploaded attachments carry an id instead of inline bytes.
           ...("dataUrl" in attachment ? { previewUrl: attachment.dataUrl } : {}),
-        }
-      : {
+        };
+      case "document":
+        return {
           type: "document",
-          id: `queued-${messageId}-${index}`,
+          id,
           name: attachment.name,
           mimeType: attachment.mimeType,
           sizeBytes: attachment.sizeBytes,
@@ -170,8 +173,11 @@ function queuedDisplayAttachments(
             "extractedText" in attachment
               ? attachment.extractedText.length
               : attachment.extractedChars,
-        },
-  );
+        };
+      case "file":
+        return { ...attachment, id };
+    }
+  });
 }
 
 export function queuedTurnChatMessage(item: QueuedTurnOutboxItem): ChatMessage | null {

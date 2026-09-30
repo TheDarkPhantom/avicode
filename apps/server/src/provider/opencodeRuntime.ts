@@ -304,6 +304,31 @@ export function openCodeQuestionId(
   return header.length > 0 ? `question-${index}-${header}` : `question-${index}`;
 }
 
+/**
+ * Attachments OpenCode can hand to a model as a native file part. Anything
+ * else (ZIP, binaries, image formats like BMP/AVIF/SVG that model APIs
+ * reject, or files over the direct-attachment size limit) would make the turn
+ * fail before it starts, so those ride only as the file path ProviderService
+ * puts in the prompt.
+ */
+const OPENCODE_NATIVE_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const OPENCODE_NATIVE_FILE_PART_MAX_BYTES = 20 * 1024 * 1024;
+
+export function isOpenCodeNativeFilePart(input: {
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+}): boolean {
+  if (input.sizeBytes > OPENCODE_NATIVE_FILE_PART_MAX_BYTES) {
+    return false;
+  }
+  const normalized = input.mimeType.trim().toLowerCase();
+  return (
+    OPENCODE_NATIVE_IMAGE_MIMES.has(normalized) ||
+    normalized.startsWith("text/") ||
+    normalized === "application/pdf"
+  );
+}
+
 export function toOpenCodeFileParts(input: {
   readonly attachments: ReadonlyArray<ChatAttachment> | undefined;
   readonly resolveAttachmentPath: (attachment: ChatAttachment) => string | null;
@@ -311,11 +336,11 @@ export function toOpenCodeFileParts(input: {
   const parts: Array<FilePartInput> = [];
 
   for (const attachment of input.attachments ?? []) {
-    // Avi Code addition: a document's stored file is its extracted text, which
-    // is already inlined into the turn text. Sending it again as a file part
-    // would duplicate it under the original document's mime (e.g. a `.txt`
-    // labelled application/pdf).
-    if (attachment.type !== "image") {
+    // Avi Code addition: a document's text is already inlined into the turn
+    // text. Sending its stored file as a part too would duplicate it, and a
+    // legacy document's stored file is the extracted `.txt`, which would ride
+    // labelled with the original document's mime (e.g. application/pdf).
+    if (attachment.type === "document" || !isOpenCodeNativeFilePart(attachment)) {
       continue;
     }
     const attachmentPath = input.resolveAttachmentPath(attachment);
