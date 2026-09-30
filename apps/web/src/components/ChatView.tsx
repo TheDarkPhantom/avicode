@@ -139,6 +139,8 @@ import {
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
   type ChatAttachment,
+  isDocumentAttachment,
+  isImageAttachment,
   type SessionPhase,
   type Thread,
   type TurnDiffSummary,
@@ -2635,7 +2637,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
 
       const serverPreviewUrls = serverMessage.attachments.flatMap((attachment) =>
-        attachment.type === "image" && attachment.previewUrl ? [attachment.previewUrl] : [],
+        isImageAttachment(attachment) && attachment.previewUrl ? [attachment.previewUrl] : [],
       );
       if (
         serverPreviewUrls.length === 0 ||
@@ -2718,7 +2720,7 @@ function ChatViewContent(props: ChatViewProps) {
             let changed = false;
             let imageIndex = 0;
             const attachments = message.attachments.map((attachment) => {
-              if (attachment.type !== "image") {
+              if (!isImageAttachment(attachment)) {
                 return attachment;
               }
               const handoffPreviewUrl = handoffPreviewUrls[imageIndex];
@@ -5651,7 +5653,7 @@ function ChatViewContent(props: ChatViewProps) {
             if (!response.ok) {
               throw new Error(`Could not reload '${attachment.name}'.`);
             }
-            if (attachment.type === "document") {
+            if (isDocumentAttachment(attachment)) {
               return {
                 type: "document" as const,
                 name: attachment.name,
@@ -5659,6 +5661,9 @@ function ChatViewContent(props: ChatViewProps) {
                 sizeBytes: attachment.sizeBytes,
                 extractedText: await response.text(),
               };
+            }
+            if (!isImageAttachment(attachment)) {
+              throw new Error(`'${attachment.name}' cannot be sent again.`);
             }
             const blob = await response.blob();
             return {
@@ -6912,7 +6917,7 @@ function ChatViewContent(props: ChatViewProps) {
             if (!response.ok) {
               throw new Error(`Could not reload '${attachment.name}'.`);
             }
-            if (attachment.type === "document") {
+            if (isDocumentAttachment(attachment)) {
               return {
                 type: "document" as const,
                 name: attachment.name,
@@ -6920,6 +6925,9 @@ function ChatViewContent(props: ChatViewProps) {
                 sizeBytes: attachment.sizeBytes,
                 extractedText: await response.text(),
               };
+            }
+            if (!isImageAttachment(attachment)) {
+              throw new Error(`'${attachment.name}' cannot be sent again.`);
             }
             const blob = await response.blob();
             return {

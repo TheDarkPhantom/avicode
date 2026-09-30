@@ -356,6 +356,35 @@ describe("normalizeDispatchCommand attachments", () => {
       expect(mismatchedType.message).toContain("attachment type");
     }).pipe(Effect.provide(testLayer)),
   );
+
+  // Avi Code addition: the open attachment member lets newer types decode on
+  // read, but a turn may not carry one.
+  it.effect("rejects attachment types this build does not know", () =>
+    Effect.gen(function* () {
+      const command = turnStartCommand({
+        attachments: [{ id: `pending-${attachmentUuid}`, sizeBytes: 6 }],
+      });
+      if (command.type !== "thread.turn.start") {
+        throw new Error("Expected a thread.turn.start command.");
+      }
+      const error = yield* normalizeDispatchCommand({
+        ...command,
+        message: {
+          ...command.message,
+          attachments: [
+            {
+              type: "somethingnew",
+              id: `pending-${attachmentUuid}`,
+              name: "scene.glb",
+              mimeType: "model/gltf-binary",
+              sizeBytes: 6,
+            },
+          ],
+        },
+      }).pipe(Effect.flip);
+      expect(error.message).toContain("unsupported type");
+    }).pipe(Effect.provide(testLayer)),
+  );
 });
 
 // Avi Code addition: documents keep their inlined extracted text, and when the

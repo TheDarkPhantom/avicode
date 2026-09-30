@@ -2,6 +2,7 @@ import type {
   ChatFileAttachment as ContractChatFileAttachment,
   ChatImageAttachment as ContractChatImageAttachment,
   ChatDocumentAttachment as ContractChatDocumentAttachment,
+  ChatUnknownAttachment as ContractChatUnknownAttachment,
   OrchestrationCheckpointFile,
   OrchestrationCheckpointSummary,
   OrchestrationLatestTurn,
@@ -41,7 +42,34 @@ export type ChatDocumentAttachment = ContractChatDocumentAttachment;
 // Generic files pass through with the contract shape. The web UI renders them
 // once it grows file support; until then they only need to typecheck.
 export type ChatFileAttachment = ContractChatFileAttachment;
-export type ChatAttachment = ChatImageAttachment | ChatDocumentAttachment | ChatFileAttachment;
+
+// Attachment types this build does not know pass through with the contract
+// shape. The UI renders them as inert rows so a newer server cannot crash an
+// older client.
+export type ChatUnknownAttachment = ContractChatUnknownAttachment;
+
+export type ChatAttachment =
+  | ChatImageAttachment
+  | ChatDocumentAttachment
+  | ChatFileAttachment
+  | ChatUnknownAttachment;
+
+// The union has an open member (`type: string`), so a literal comparison does
+// not narrow. Use these guards wherever type-specific fields are read.
+export function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {
+  return attachment.type === "image";
+}
+
+/** Avi Code addition: the fork's extracted-text documents. */
+export function isDocumentAttachment(
+  attachment: ChatAttachment,
+): attachment is ChatDocumentAttachment {
+  return attachment.type === "document";
+}
+
+export function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAttachment {
+  return attachment.type === "file";
+}
 
 export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;

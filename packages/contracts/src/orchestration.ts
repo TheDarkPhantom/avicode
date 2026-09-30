@@ -204,12 +204,9 @@ export type ChatFileAttachment = typeof ChatFileAttachment.Type;
  * attachment fails its own schema instead of sliding through here with its
  * size and mime constraints unchecked.
  *
- * Avi Code additions: `document` is a known discriminator too. This member is
- * NOT in `ChatAttachment` yet: its open `type: string` stops literal checks
- * like `attachment.type === "image"` from narrowing, and the web timeline and
- * chat view still narrow that way. Adding it to the union lands together with
- * the web port that switches those reads to type guards (upstream's
- * `isImageAttachment`).
+ * Avi Code addition: `document` is a known discriminator too. The open
+ * `type: string` stops literal checks like `attachment.type === "image"` from
+ * narrowing, so readers use type guards (the web's `isImageAttachment`).
  */
 export const ChatUnknownAttachment = Schema.Struct({
   type: TrimmedNonEmptyString.check(
@@ -293,6 +290,7 @@ export const ChatAttachment = Schema.Union([
   ChatImageAttachment,
   ChatDocumentAttachment,
   ChatFileAttachment,
+  ChatUnknownAttachment,
 ]);
 export type ChatAttachment = typeof ChatAttachment.Type;
 const UploadChatAttachment = Schema.Union([

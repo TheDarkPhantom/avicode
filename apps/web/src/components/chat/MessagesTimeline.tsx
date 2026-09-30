@@ -34,7 +34,7 @@ import {
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { getLegendListScrollNode } from "../../legendListScrollNode";
-import { type TurnDiffSummary } from "../../types";
+import { isDocumentAttachment, isImageAttachment, type TurnDiffSummary } from "../../types";
 import {
   getRenderablePatch,
   resolveDiffThemeName,
@@ -1594,15 +1594,10 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const userAttachments = row.message.attachments ?? [];
-  const userImages = userAttachments.filter(
-    (
-      attachment,
-    ): attachment is Extract<
-      NonNullable<TimelineMessage["attachments"]>[number],
-      { type: "image" }
-    > => attachment.type === "image",
-  );
-  const userDocuments = userAttachments.filter((attachment) => attachment.type === "document");
+  // The attachment union has an open member, so guards (not literal type
+  // comparisons) split it.
+  const userImages = userAttachments.filter(isImageAttachment);
+  const userDocuments = userAttachments.filter(isDocumentAttachment);
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
   const terminalContexts = displayedUserMessage.contexts;
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
