@@ -52,6 +52,7 @@ import {
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
+  Minimize2Icon,
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
@@ -188,6 +189,7 @@ interface TimelineRowSharedState {
 
 interface TimelineRowActivityState {
   isWorking: boolean;
+  isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   isForkingThread: boolean;
   activeTurnInProgress: boolean;
@@ -208,6 +210,8 @@ const NOOP_MESSAGE_ACTION = (_messageId: MessageId) => {};
 
 interface MessagesTimelineProps {
   isWorking: boolean;
+  /** Avi Code addition (upstream #9293): a `/compact` request is running. */
+  isCompacting?: boolean;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
@@ -272,6 +276,7 @@ interface MessagesTimelineProps {
 
 export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
+  isCompacting = false,
   activeTurnInProgress,
   activeTurnStartedAt,
   listRef,
@@ -932,12 +937,20 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const activityState = useMemo<TimelineRowActivityState>(
     () => ({
       isWorking,
+      isCompacting,
       isRevertingCheckpoint,
       isForkingThread,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
     }),
-    [activeTurnInProgress, isForkingThread, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
+    [
+      activeTurnInProgress,
+      isCompacting,
+      isForkingThread,
+      isRevertingCheckpoint,
+      isWorking,
+      latestTurn?.turnId,
+    ],
   );
 
   const pinnedMessageItem =
@@ -1581,6 +1594,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+      {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
@@ -1966,7 +1980,53 @@ function ProposedPlanTimelineRow({
   );
 }
 
+/**
+ * Avi Code addition (upstream #9293): a compaction marker. A static divider
+ * rather than a work row, since it changes what the provider remembers.
+ */
+function ContextCompactionTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "context-compaction" }>;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={row.label}
+      className="flex w-full items-center gap-3 py-1 text-muted-foreground/70 text-xs"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
+        <Minimize2Icon aria-hidden="true" className="size-3" />
+        {row.label}
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
+
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
+  const { isCompacting } = use(TimelineRowActivityCtx);
+  // Compaction shows a static icon: it can run for minutes, and the pulsing
+  // dots would repaint the whole time.
+  if (isCompacting) {
+    return (
+      <div className="py-0.5 pl-1.5">
+        <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground/70 tabular-nums">
+          <Minimize2Icon aria-hidden="true" className="size-3" />
+          <span>
+            Compacting context
+            {row.createdAt ? (
+              <>
+                {" "}
+                for <WorkingTimer createdAt={row.createdAt} />
+              </>
+            ) : null}
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="py-0.5 pl-1.5">
       <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground/70 tabular-nums">

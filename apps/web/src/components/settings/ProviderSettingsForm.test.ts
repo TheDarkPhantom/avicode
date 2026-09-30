@@ -22,6 +22,18 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
+  it("shows the auto-compaction threshold for Claude providers", () => {
+    const claude = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("claudeAgent")];
+    expect(claude).toBeDefined();
+
+    expect(deriveProviderSettingsFields(claude!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "homePath",
+      "autoCompactWindow",
+      "launchArgs",
+    ]);
+  });
+
   it("sources labels and descriptions from schema annotations", () => {
     const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
     expect(opencode).toBeDefined();

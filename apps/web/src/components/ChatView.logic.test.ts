@@ -964,4 +964,35 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
   });
+
+  // Avi Code addition (upstream #9293): a failed `/compact` changes no session state.
+  it("acknowledges only a new turn-start failure", () => {
+    const localDispatch = {
+      ...createLocalDispatchSnapshot(makeThread()),
+      latestTurnStartFailureId: "turn-start-failure-old",
+    };
+    const common = {
+      localDispatch,
+      phase: "ready" as const,
+      latestTurn: null,
+      latestUserMessageId: localDispatch.latestUserMessageId,
+      session: null,
+      hasPendingApproval: false,
+      hasPendingUserInput: false,
+      threadError: null,
+    };
+
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        ...common,
+        latestTurnStartFailureId: "turn-start-failure-old",
+      }),
+    ).toBe(false);
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        ...common,
+        latestTurnStartFailureId: "turn-start-failure-new",
+      }),
+    ).toBe(true);
+  });
 });

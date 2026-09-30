@@ -1439,3 +1439,104 @@ describe("deriveMessagesTimelineRows settle transition", () => {
     ).toBe(false);
   });
 });
+
+// Avi Code addition (upstream #9293, #9623): compaction dividers.
+describe("deriveMessagesTimelineRows context compaction", () => {
+  const baseInput = {
+    isWorking: false,
+    activeTurnStartedAt: null,
+    turnDiffSummaryByAssistantMessageId: new Map(),
+    revertTurnCountByUserMessageId: new Map(),
+  };
+  function compactionEntry(turnId: string | null) {
+    return {
+      id: "compaction-entry",
+      kind: "work" as const,
+      createdAt: "2026-01-01T00:00:05Z",
+      entry: {
+        id: "compaction",
+        createdAt: "2026-01-01T00:00:05Z",
+        label: "Compacted context 899K → 19K tokens",
+        tone: "info" as const,
+        sourceActivityKind: "context-compaction" as const,
+        ...(turnId ? { turnId: turnId as never } : {}),
+      },
+    };
+  }
+
+  it("renders a compaction as its own row outside work groups", () => {
+    const [first, second] = workEntries();
+    const rows = deriveMessagesTimelineRows({
+      ...baseInput,
+      timelineEntries: [first!, compactionEntry(null), second!],
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["work", "context-compaction", "work"]);
+    expect(rows[1]).toEqual({
+      kind: "context-compaction",
+      id: "compaction-entry",
+      createdAt: "2026-01-01T00:00:05Z",
+      label: "Compacted context 899K → 19K tokens",
+    });
+  });
+
+  it("keeps a lone compaction in a settled turn visible", () => {
+    const rows = deriveMessagesTimelineRows({
+      ...baseInput,
+      timelineEntries: [compactionEntry("turn-1")],
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["context-compaction"]);
+  });
+
+  it("folds a compaction with the rest of a settled turn", () => {
+    const [first] = workEntries();
+    const rows = deriveMessagesTimelineRows({
+      ...baseInput,
+      timelineEntries: [
+        { ...first!, entry: { ...first!.entry, turnId: "turn-1" as never } },
+        compactionEntry("turn-1"),
+        {
+          id: "assistant-final-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:20Z",
+          message: {
+            id: "assistant-final" as never,
+            role: "assistant",
+            text: "Done.",
+            turnId: "turn-1" as never,
+            createdAt: "2026-01-01T00:00:20Z",
+            updatedAt: "2026-01-01T00:00:30Z",
+            streaming: false,
+          },
+        },
+      ],
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["turn-fold", "message"]);
+  });
+
+  it("keeps a failed compaction visible as an error work row", () => {
+    const rows = deriveMessagesTimelineRows({
+      ...baseInput,
+      timelineEntries: [
+        {
+          id: "failure-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:05Z",
+          entry: {
+            id: "failure",
+            createdAt: "2026-01-01T00:00:05Z",
+            label: "Context compaction failed",
+            detail: "The provider session is not running.",
+            tone: "error",
+            sourceActivityKind: "provider.turn.start.failed",
+          },
+        },
+      ],
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe("work");
+  });
+});
