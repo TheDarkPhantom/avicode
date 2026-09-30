@@ -27,8 +27,6 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - Grok one-click updates (#13523) landed without upstream's per-instance environment: `grok
 update` runs with the server's environment, so an instance with its own `GROK_HOME` updates
     the default install instead. Fixing it needs an `env` field on the fork's update action.
-  - Cached compiled JavaScript between launches (#13501) is a real startup speedup, but it changes
-    the packaged entry point, so it waits for a packaging review.
   - Anything built on upstream-only systems (usage readers, reset credits, the model manifest,
     provider compatibility ranges, PR reactors) and the Effect rc.115 upgrade.
 - The per-thread auto-settle switch (#11846) lives only in the SidebarV2 thread menu, whose label
@@ -40,10 +38,8 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
   and pruning overrides left behind by deleted projects (they are inert, but stay in settings.json).
 - Claude Sonnet 5.5 needs Claude Code 2.1.284 or newer. Older installs hide it and show the upgrade
   message instead.
-- Context compaction (`/compact`, upstream #9293, #10112, #11107, #8144) is server-only so far. The
-  web still lacks upstream's compaction row in the timeline, the "Compact context" action on the
-  context meter, the auto-compact threshold marker, the resume banner, and draft preservation
-  (#11103, #9623, #9430). Claude's resume prompt shows through the generic question UI until then.
+- Context compaction (`/compact`, upstream #9293, #10112, #11107, #8144) ships with the meter's
+  "Compact context" action, the timeline row, the auto-compact marker and Claude's resume banner.
   Codex may report one compaction twice (the deprecated `thread/compacted` plus the
   `contextCompaction` item), which records two timeline rows.
 
