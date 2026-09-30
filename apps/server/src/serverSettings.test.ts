@@ -760,6 +760,85 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect(
+    "keeps Bitbucket tokens in the secret store and tells clients only that one is set",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+
+        const saved = yield* serverSettings.updateSettings({
+          bitbucket: {
+            email: "me@example.com",
+            accessToken: "bb-access",
+            accessTokenRedacted: false,
+            apiToken: "bb-api",
+            apiTokenRedacted: false,
+          },
+        });
+        assert.equal(saved.bitbucket.email, "me@example.com");
+        assert.equal(saved.bitbucket.accessToken, "bb-access");
+        assert.equal(saved.bitbucket.apiToken, "bb-api");
+
+        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        assert.notInclude(raw, "bb-access");
+        assert.notInclude(raw, "bb-api");
+        assert.include(raw, "me@example.com");
+
+        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).bitbucket;
+        assert.deepEqual(forClient, {
+          email: "me@example.com",
+          accessToken: "",
+          accessTokenRedacted: true,
+          apiToken: "",
+          apiTokenRedacted: true,
+        });
+
+        // Echoing the redacted form back, or an unrelated write, keeps the saved tokens.
+        yield* serverSettings.updateSettings({ bitbucket: forClient });
+        yield* serverSettings.updateSettings({ bitbucket: { email: "other@example.com" } });
+        yield* serverSettings.updateSettings({ addProjectBaseDirectory: "/tmp/projects" });
+        const kept = (yield* serverSettings.getSettings).bitbucket;
+        assert.equal(kept.email, "other@example.com");
+        assert.equal(kept.accessToken, "bb-access");
+        assert.equal(kept.apiToken, "bb-api");
+
+        const cleared = yield* serverSettings.updateSettings({
+          bitbucket: { accessToken: "", accessTokenRedacted: false },
+        });
+        assert.equal(cleared.bitbucket.accessToken, "");
+        assert.isNotTrue(cleared.bitbucket.accessTokenRedacted);
+        assert.equal(cleared.bitbucket.apiToken, "bb-api");
+        const clearedForClient = ServerSettingsModule.redactServerSettingsForClient(cleared);
+        assert.isNotTrue(clearedForClient.bitbucket.accessTokenRedacted);
+        assert.isTrue(clearedForClient.bitbucket.apiTokenRedacted);
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("moves a hand-edited Bitbucket token into the secret store on the next write", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"bitbucket":{"accessToken":"hand-edited-token"}}',
+      );
+
+      assert.equal((yield* serverSettings.getSettings).bitbucket.accessToken, "hand-edited-token");
+
+      const updated = yield* serverSettings.updateSettings({
+        addProjectBaseDirectory: "/tmp/projects",
+      });
+      assert.equal(updated.bitbucket.accessToken, "hand-edited-token");
+      assert.notInclude(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+        "hand-edited-token",
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("defaults to no configured Deepgram key", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
