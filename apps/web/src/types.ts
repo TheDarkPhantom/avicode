@@ -39,9 +39,13 @@ export interface ChatImageAttachment extends ContractChatImageAttachment {
 }
 
 export type ChatDocumentAttachment = ContractChatDocumentAttachment;
-// Generic files pass through with the contract shape. The web UI renders them
-// once it grows file support; until then they only need to typecheck.
-export type ChatFileAttachment = ContractChatFileAttachment;
+// Generic files render as download rows. `previewUrl` is a resolved asset URL
+// when the timeline has one; `downloadable: false` marks an optimistic copy
+// whose bytes the server has not claimed yet.
+export interface ChatFileAttachment extends ContractChatFileAttachment {
+  readonly previewUrl?: string;
+  readonly downloadable?: boolean;
+}
 
 // Attachment types this build does not know pass through with the contract
 // shape. The UI renders them as inert rows so a newer server cannot crash an

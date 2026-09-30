@@ -72,7 +72,9 @@ import {
 } from "./composerMentionDrag";
 import {
   type ComposerAttachment,
+  type ComposerFileAttachment,
   type ComposerImageAttachment,
+  composerFileNeedsReattach,
   type DraftId,
   type PersistedComposerImageAttachment,
   hydrateImagesFromPersisted,
@@ -89,15 +91,25 @@ import {
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
-import { extractDocument, resolveDocumentMimeType } from "../../lib/documentAttachments";
+import { extractDocument } from "../../lib/documentAttachments";
 import {
   releaseAttachmentUpload,
+  releaseDraftAttachment,
   retryAttachmentUpload,
   startAttachmentUpload,
   useAttachmentUploadStore,
 } from "../../lib/attachmentUploadQueue";
 import { attachmentUploadBlockReason } from "../../lib/attachmentUploadState";
 import { uploadableComposerAttachments } from "../../lib/composerTurnAttachments";
+import { fileAttachmentTooLargeMessage } from "@t3tools/client-runtime/state/attachments";
+import {
+  attachmentsToReleaseOnUploadCapabilityLoss,
+  classifyComposerAttachmentFile,
+  fileAttachmentCapabilityBlockReason,
+  fileAttachmentStagingLimit,
+  normalizeComposerImageFileMimeType,
+  shouldHandleComposerAttachmentPaste,
+} from "./composerAttachmentFiles";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { resolveShortcutCommand } from "../../keybindings";
@@ -114,6 +126,7 @@ import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
 import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
 import { ComposerAttachmentUploadStatus } from "./ComposerAttachmentUploadStatus";
+import { ComposerAttachFilesButton, ComposerFileAttachmentRows } from "./ComposerFileAttachments";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -600,6 +613,7 @@ export interface ChatComposerHandle {
   getSendContext: () => {
     prompt: string;
     images: ComposerAttachment[];
+    files: ComposerFileAttachment[];
     terminalContexts: TerminalContextDraft[];
     elementContexts: ElementContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
@@ -646,6 +660,8 @@ export interface ChatComposerProps {
   environmentId: EnvironmentId;
   attachmentUploadsCapabilityKnown: boolean;
   supportsAttachmentUploads: boolean;
+  /** The server's clamped per-file upload limit; null when it takes no generic files. */
+  maxFileAttachmentBytes: number | null;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
@@ -730,6 +746,7 @@ export interface ChatComposerProps {
   // Refs the parent needs kept in sync
   promptRef: React.RefObject<string>;
   composerImagesRef: React.RefObject<ComposerAttachment[]>;
+  composerFilesRef: React.RefObject<ComposerFileAttachment[]>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
@@ -783,6 +800,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentId,
     attachmentUploadsCapabilityKnown,
     supportsAttachmentUploads,
+    maxFileAttachmentBytes,
     routeKind,
     routeThreadRef,
     draftId,
@@ -835,6 +853,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptRef,
     composerRef,
     composerImagesRef,
+    composerFilesRef,
     composerTerminalContextsRef,
     composerElementContextsRef,
     onSend,
@@ -867,21 +886,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
+  const composerFiles = composerDraft.files;
   // Upload-first attachments: an offline send stays inline, so only a
   // connected server that takes uploads gates the send on them.
   const attachmentUploadsActive = supportsAttachmentUploads && !environmentUnavailable;
   const uploadsByAttachmentId = useAttachmentUploadStore((state) => state.uploadsByAttachmentId);
-  const uploadableComposerImages = useMemo(
-    () => uploadableComposerAttachments(composerImages),
-    [composerImages],
+  const uploadableAttachments = useMemo(
+    () =>
+      uploadableComposerAttachments([...composerImages, ...composerFiles], maxFileAttachmentBytes),
+    [composerFiles, composerImages, maxFileAttachmentBytes],
   );
-  const attachmentBlockReason = attachmentUploadsActive
-    ? attachmentUploadBlockReason({
-        attachmentIds: uploadableComposerImages.map((attachment) => attachment.id),
-        uploadsByAttachmentId,
-        environmentId,
-      })
-    : null;
+  const fileCapabilityState = {
+    attachmentUploadsCapabilityKnown,
+    supportsAttachmentUploads,
+    maxFileAttachmentBytes,
+  };
+  const fileStagingLimit = fileAttachmentStagingLimit(fileCapabilityState);
+  const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
+  const attachmentBlockReason =
+    fileAttachmentCapabilityBlockReason({ ...fileCapabilityState, files: composerFiles }) ??
+    (attachmentUploadsActive
+      ? needsReattachFileCount > 0
+        ? needsReattachFileCount === 1
+          ? "Attach the interrupted file again or remove it"
+          : "Attach the interrupted files again or remove them"
+        : attachmentUploadBlockReason({
+            attachmentIds: uploadableAttachments.map((attachment) => attachment.id),
+            uploadsByAttachmentId,
+            environmentId,
+          })
+      : composerFiles.length > 0 && environmentUnavailable
+        ? "File attachments send once the server reconnects"
+        : null);
   const sendDisabledReason =
     externalSendDisabledReason ?? (activePendingProgress ? null : attachmentBlockReason);
   const isSendDisabled = sendDisabledReason !== null;
@@ -891,7 +927,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     if (!supportsAttachmentUploads) {
-      for (const attachment of uploadableComposerImages) {
+      // The capability can flap on reconnect or version skew. Deleting a
+      // persisted hydrated upload here would make the next send fail
+      // verification while the file still sits in the draft.
+      for (const attachment of attachmentsToReleaseOnUploadCapabilityLoss(uploadableAttachments)) {
         releaseAttachmentUpload(attachment.id);
       }
       return;
@@ -899,7 +938,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (environmentUnavailable) {
       return;
     }
-    for (const attachment of uploadableComposerImages) {
+    for (const attachment of uploadableAttachments) {
       startAttachmentUpload({ environmentId, attachment });
     }
   }, [
@@ -907,7 +946,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentId,
     environmentUnavailable,
     supportsAttachmentUploads,
-    uploadableComposerImages,
+    uploadableAttachments,
   ]);
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerElementContexts = composerDraft.elementContexts;
@@ -956,6 +995,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
+  const addComposerDraftFiles = useComposerDraftStore((store) => store.addFiles);
+  const removeComposerDraftFile = useComposerDraftStore((store) => store.removeFile);
+  const setComposerDraftFileUpload = useComposerDraftStore((store) => store.setFileUpload);
+
+  // Keep finished file uploads on the draft so they survive a reload; the
+  // queue stamps background completions the same way.
+  useEffect(() => {
+    if (!attachmentUploadsActive) {
+      return;
+    }
+    for (const file of composerFiles) {
+      const upload = uploadsByAttachmentId[file.id];
+      if (upload?.status === "ready" && upload.environmentId === environmentId) {
+        setComposerDraftFileUpload(
+          composerDraftTarget,
+          file.id,
+          environmentId,
+          upload.attachmentId,
+        );
+      }
+    }
+  }, [
+    attachmentUploadsActive,
+    composerDraftTarget,
+    composerFiles,
+    environmentId,
+    setComposerDraftFileUpload,
+    uploadsByAttachmentId,
+  ]);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
     (store) => store.insertTerminalContext,
   );
@@ -1358,7 +1426,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () =>
       deriveComposerSendState({
         prompt,
-        imageCount: composerImages.length,
+        imageCount: composerImages.length + composerFiles.length,
         terminalContexts: composerTerminalContexts,
         elementContextCount:
           composerElementContexts.length +
@@ -1367,6 +1435,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }),
     [
       composerElementContexts.length,
+      composerFiles.length,
       composerImages.length,
       composerPreviewAnnotations.length,
       composerReviewComments.length,
@@ -1678,6 +1747,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, removeComposerDraftImage],
   );
 
+  const addComposerFilesToDraft = useCallback(
+    (files: ComposerFileAttachment[]) => {
+      addComposerDraftFiles(composerDraftTarget, files);
+    },
+    [addComposerDraftFiles, composerDraftTarget],
+  );
+
+  const removeComposerFileFromDraft = useCallback(
+    (fileId: string) => {
+      // Release by the draft attachment, not the bare queue key: a hydrated
+      // file's upload lives server-side under its persisted attachment id.
+      releaseDraftAttachment(
+        composerFilesRef.current.find((candidate) => candidate.id === fileId) ?? { id: fileId },
+      );
+      removeComposerDraftFile(composerDraftTarget, fileId);
+    },
+    [composerDraftTarget, composerFilesRef, removeComposerDraftFile],
+  );
+
   const removeComposerTerminalContextFromDraft = useCallback(
     (contextId: string) => {
       const contextIndex = composerTerminalContexts.findIndex(
@@ -1712,6 +1800,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     composerImagesRef.current = composerImages;
   }, [composerImages, composerImagesRef]);
+
+  useEffect(() => {
+    composerFilesRef.current = composerFiles;
+  }, [composerFiles, composerFilesRef]);
 
   useEffect(() => {
     composerTerminalContextsRef.current = composerTerminalContexts;
@@ -2945,24 +3037,79 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // accepted files reserve their attachment slots (via the pending counter)
     // before the first await, keeping the total under the limit.
     const pendingCount = pendingImageCompressionsRef.current.get(threadId) ?? 0;
-    let reservedCount = composerImagesRef.current.length + pendingCount;
+    let reservedCount =
+      composerImagesRef.current.length + composerFilesRef.current.length + pendingCount;
+    // A pick that matches a needs-reattach marker replaces it in the draft, so
+    // it must not consume a slot; a draft full of markers would otherwise hit
+    // the capacity error before the replacement path could run.
+    const reattachKeys = new Set(
+      composerFilesRef.current
+        .filter(composerFileNeedsReattach)
+        .map((file) => `${file.mimeType}\u0000${file.sizeBytes}\u0000${file.name}`),
+    );
     const acceptedFiles: File[] = [];
+    const acceptedGenericFiles: ComposerFileAttachment[] = [];
     let error: string | null = null;
+    const stageGenericFile = (file: File): string | null => {
+      if (fileStagingLimit === null) {
+        return `'${file.name}' is not an image or document, and this server does not accept other files.`;
+      }
+      if (file.size <= 0) {
+        return `'${file.name}' is empty or could not be read.`;
+      }
+      if (file.size > fileStagingLimit) {
+        return fileAttachmentTooLargeMessage(file.name, fileStagingLimit);
+      }
+      acceptedGenericFiles.push({
+        type: "file",
+        id: randomUUID(),
+        name: file.name || "file",
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        file,
+      });
+      return null;
+    };
     for (const file of files) {
-      // Avi Code change: the fork also accepts PDF/TXT/Markdown/CSV, extracted to
-      // text in the async pass below. Upstream accepts images only.
-      if (!file.type.startsWith("image/") && !resolveDocumentMimeType(file)) {
-        error = `Unsupported file type for '${file.name}'. Attach PDF, TXT, Markdown, CSV, or an image.`;
+      // Avi Code change: images compress and documents (PDF, DOCX, TXT,
+      // Markdown, CSV, JSON) extract to text in the async pass below; any
+      // other file attaches as-is when the server takes file uploads.
+      let kind = classifyComposerAttachmentFile(file);
+      if (kind === "unsupported-image" && fileStagingLimit !== null) {
+        kind = "file";
+      }
+      const replacesReattachMarker =
+        kind === "file" &&
+        reattachKeys.delete(
+          `${file.type || "application/octet-stream"}\u0000${file.size}\u0000${file.name || "file"}`,
+        );
+      if (!replacesReattachMarker && reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
+        // Keep scanning: a later file in this batch can still replace a
+        // needs-reattach marker without needing a free slot.
         continue;
       }
-      if (reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
-        break;
+      if (kind === "unsupported-image") {
+        error = `'${file.name}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
+        continue;
       }
-      acceptedFiles.push(file);
-      reservedCount += 1;
+      if (kind === "file") {
+        const stageError = stageGenericFile(file);
+        if (stageError !== null) {
+          error = stageError;
+          continue;
+        }
+      } else {
+        acceptedFiles.push(kind === "image" ? normalizeComposerImageFileMimeType(file) : file);
+      }
+      if (!replacesReattachMarker) {
+        reservedCount += 1;
+      }
     }
     setThreadError(threadId, error);
+    if (acceptedGenericFiles.length > 0) {
+      addComposerFilesToDraft(acceptedGenericFiles);
+    }
     if (acceptedFiles.length === 0) return;
 
     pendingImageCompressionsRef.current.set(threadId, pendingCount + acceptedFiles.length);
@@ -2991,8 +3138,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               compressionError = `'${file.name}' was truncated to ${PROVIDER_SEND_TURN_MAX_DOCUMENT_CHARS.toLocaleString()} characters.`;
             }
           } catch (cause) {
-            compressionError =
+            const reason =
               cause instanceof Error ? cause.message : `Could not read '${file.name}'.`;
+            // Avi Code addition: a document whose text cannot be read (too
+            // large, scanned, too many pages) still reaches the agent as the
+            // original file when the server takes file uploads.
+            if (fileStagingLimit !== null && stageGenericFile(file) === null) {
+              const fallback = acceptedGenericFiles.pop();
+              if (fallback) {
+                addComposerFilesToDraft([fallback]);
+                compressionError = `${reason} It was attached as a file instead.`;
+                continue;
+              }
+            }
+            compressionError = reason;
           }
           continue;
         }
@@ -3050,13 +3209,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) return;
-    const supportedFiles = files.filter(
-      (file) => file.type.startsWith("image/") || resolveDocumentMimeType(file),
-    );
-    if (supportedFiles.length === 0) return;
+    if (
+      files.length === 0 ||
+      !shouldHandleComposerAttachmentPaste({
+        files,
+        plainText: event.clipboardData.getData("text/plain"),
+      })
+    ) {
+      return;
+    }
     event.preventDefault();
-    void addComposerImages(supportedFiles);
+    void addComposerImages(files);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -3286,6 +3449,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       getSendContext: () => ({
         prompt: promptRef.current,
         images: composerImagesRef.current,
+        files: composerFilesRef.current,
         terminalContexts: composerTerminalContextsRef.current,
         elementContexts: composerElementContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
@@ -3314,6 +3478,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       insertComposerDraftTerminalContext,
       promptRef,
       composerImagesRef,
+      composerFilesRef,
       composerTerminalContextsRef,
       composerElementContextsRef,
       composerPreviewAnnotations,
@@ -3771,11 +3936,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             attachmentUploadsActive ? uploadsByAttachmentId[image.id] : undefined
                           }
                           name={image.name}
-                          onRetry={() => {
-                            if (image.type === "image") {
-                              retryAttachmentUpload({ environmentId, attachment: image });
-                            }
-                          }}
+                          onRetry={() =>
+                            retryAttachmentUpload({ environmentId, attachment: image })
+                          }
                         />
                         <Button
                           variant="ghost"
@@ -3795,6 +3958,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   )}
                 </div>
               )}
+
+            {!isComposerCollapsedMobile && !isComposerApprovalState ? (
+              <ComposerFileAttachmentRows
+                files={composerFiles}
+                uploadsByAttachmentId={attachmentUploadsActive ? uploadsByAttachmentId : null}
+                fileStagingLimit={fileStagingLimit}
+                onRetry={(file) => retryAttachmentUpload({ environmentId, attachment: file })}
+                onRemove={removeComposerFileFromDraft}
+              />
+            ) : null}
 
             <div className="relative">
               {/* Avi Code addition: while the composer is empty, offer a larger
@@ -4031,6 +4204,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     button keeps its position as the rightmost control. The
                     meter appears only while dictating, so it costs no layout
                     the rest of the time. */}
+                {!isComposerApprovalState ? (
+                  <ComposerAttachFilesButton
+                    disabled={isConnecting || projectSelectionRequired}
+                    onFiles={(files) => {
+                      void addComposerImages(files);
+                      focusComposer();
+                    }}
+                  />
+                ) : null}
                 {dictation.isActive ? (
                   <DictationLevelMeter
                     levels={dictationLevel.levels}

@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  type AssetResource,
   type ClientOrchestrationCommand,
   type CommandId,
   DEFAULT_MODEL,
@@ -139,7 +140,6 @@ import {
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
   type ChatAttachment,
-  isDocumentAttachment,
   isImageAttachment,
   type SessionPhase,
   type Thread,
@@ -230,6 +230,7 @@ import {
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerAttachment,
+  type ComposerFileAttachment,
   type ComposerThreadDraftState,
   createEmptyThreadDraft,
   type DraftThreadEnvMode,
@@ -336,7 +337,6 @@ import {
   PullRequestDialogState,
   cloneComposerImageForRetry,
   deriveLockedProvider,
-  readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
   resolveInteractionModeChange,
@@ -379,12 +379,15 @@ import {
   serverUpdateGuidance,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
-import { forgetAttachmentUploads, releaseAttachmentUploads } from "../lib/attachmentUploadQueue";
+import { forgetAttachmentUploads, releaseDraftAttachments } from "../lib/attachmentUploadQueue";
 import {
   buildComposerTurnAttachments,
   optimisticComposerAttachments,
+  reloadSentAttachment,
   settleComposerAttachmentUploads,
+  type ComposerSendAttachment,
 } from "../lib/composerTurnAttachments";
+import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { queuedTurnChatMessage, useOfflineTurnOutboxStore } from "../offlineTurnOutboxStore";
 import { findHeldTurnForThread, useHeldTurnStore, type HeldTurnItem } from "../heldTurnStore";
 import { dispatchQueuedTurnCommands } from "./OfflineTurnOutboxFlusher";
@@ -1347,6 +1350,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
+  const addComposerDraftFiles = useComposerDraftStore((store) => store.addFiles);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
     (store) => store.setTerminalContexts,
   );
@@ -1376,6 +1380,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const promptRef = useRef("");
   const composerImagesRef = useRef<ComposerAttachment[]>([]);
+  const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
@@ -2138,6 +2143,12 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
   const supportsAttachmentUploads =
     attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
+  const advertisedFileAttachmentBytes =
+    attachmentEnvironmentConfig?.environment.capabilities.fileAttachments?.maxUploadBytes ?? null;
+  const maxFileAttachmentBytes =
+    advertisedFileAttachmentBytes === null
+      ? null
+      : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -2579,22 +2590,30 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, []);
   const serverMessages = activeThread?.messages;
-  const serverAttachmentIds = useMemo(() => {
-    const attachmentIds = new Set<string>();
+  const serverAttachmentResourceById = useMemo(() => {
+    const resources = new Map<string, Extract<AssetResource, { _tag: "attachment" }>>();
     for (const message of serverMessages ?? []) {
       for (const attachment of message.attachments ?? []) {
-        attachmentIds.add(attachment.id);
+        // Downloads (files, document originals) carry the real filename and
+        // Content-Type in the signed claims; images render inline either way.
+        resources.set(attachment.id, {
+          _tag: "attachment",
+          attachmentId: attachment.id,
+          ...(isImageAttachment(attachment)
+            ? {}
+            : { fileName: attachment.name, mimeType: attachment.mimeType }),
+        });
       }
     }
-    return [...attachmentIds];
+    return resources;
   }, [serverMessages]);
+  const serverAttachmentIds = useMemo(
+    () => [...serverAttachmentResourceById.keys()],
+    [serverAttachmentResourceById],
+  );
   const serverAttachmentResources = useMemo(
-    () =>
-      serverAttachmentIds.map((attachmentId) => ({
-        _tag: "attachment" as const,
-        attachmentId,
-      })),
-    [serverAttachmentIds],
+    () => [...serverAttachmentResourceById.values()],
+    [serverAttachmentResourceById],
   );
   const serverAttachmentUrls = useAssetUrls(environmentId, serverAttachmentResources);
   const serverAttachmentUrlById = useMemo(
@@ -4695,6 +4714,7 @@ function ChatViewContent(props: ChatViewProps) {
       draft &&
       (draft.prompt.trim().length > 0 ||
         draft.images.length > 0 ||
+        draft.files.length > 0 ||
         draft.terminalContexts.length > 0 ||
         draft.elementContexts.length > 0 ||
         draft.previewAnnotations.length > 0 ||
@@ -4825,10 +4845,12 @@ function ChatViewContent(props: ChatViewProps) {
       clearComposerDraftContent(composerDraftTarget);
       promptRef.current = draft.prompt;
       composerImagesRef.current = [...draft.images];
+      composerFilesRef.current = [...draft.files];
       composerTerminalContextsRef.current = [...draft.terminalContexts];
       composerElementContextsRef.current = [...draft.elementContexts];
       setComposerDraftPrompt(composerDraftTarget, draft.prompt);
       addComposerDraftImages(composerDraftTarget, [...draft.images]);
+      addComposerDraftFiles(composerDraftTarget, [...draft.files]);
       setComposerDraftTerminalContexts(composerDraftTarget, draft.terminalContexts);
       setComposerDraftElementContexts(composerDraftTarget, draft.elementContexts);
       setComposerDraftPreviewAnnotations(composerDraftTarget, draft.previewAnnotations);
@@ -4841,6 +4863,7 @@ function ChatViewContent(props: ChatViewProps) {
       });
     },
     [
+      addComposerDraftFiles,
       addComposerDraftImages,
       clearComposerDraftContent,
       composerDraftTarget,
@@ -5559,7 +5582,9 @@ function ChatViewContent(props: ChatViewProps) {
         shouldFollowUpWithAttachments({
           isLastQuestion: activePendingProgress.isLastQuestion,
           hasResolvedAnswers: activePendingResolvedAnswers !== null,
-          attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
+          attachmentCount:
+            (composerRef.current?.getSendContext().images.length ?? 0) +
+            (composerRef.current?.getSendContext().files.length ?? 0),
         })
       ) {
         pendingAnswerAttachmentFollowUpRef.current = activeThread.id;
@@ -5578,6 +5603,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     const {
       images: composerImages,
+      files: composerFiles,
       terminalContexts: composerTerminalContexts,
       elementContexts: composerElementContexts,
       previewAnnotations: composerPreviewAnnotations,
@@ -5598,7 +5624,7 @@ function ChatViewContent(props: ChatViewProps) {
       hasSendableContent,
     } = deriveComposerSendState({
       prompt: promptForSend,
-      imageCount: composerImages.length,
+      imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
         composerElementContexts.length +
@@ -5655,42 +5681,19 @@ function ChatViewContent(props: ChatViewProps) {
       });
       const attachmentResult = await settlePromise(async () => {
         const retainedUploads = await Promise.all(
-          forkEditState.retainedAttachments.map(async (attachment) => {
-            if (!attachment.previewUrl) {
-              throw new Error(`The original attachment '${attachment.name}' is unavailable.`);
-            }
-            const response = await fetch(attachment.previewUrl);
-            if (!response.ok) {
-              throw new Error(`Could not reload '${attachment.name}'.`);
-            }
-            if (isDocumentAttachment(attachment)) {
-              return {
-                type: "document" as const,
-                name: attachment.name,
-                mimeType: attachment.mimeType,
-                sizeBytes: attachment.sizeBytes,
-                extractedText: await response.text(),
-              };
-            }
-            if (!isImageAttachment(attachment)) {
-              throw new Error(`'${attachment.name}' cannot be sent again.`);
-            }
-            const blob = await response.blob();
-            return {
-              type: "image" as const,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              dataUrl: await readFileAsDataUrl(
-                new File([blob], attachment.name, { type: attachment.mimeType }),
-              ),
-            };
-          }),
+          forkEditState.retainedAttachments.map((attachment) =>
+            reloadSentAttachment(attachment, {
+              environmentId,
+              useUploads: supportsAttachmentUploads,
+            }),
+          ),
         );
+        const forkAttachments: ComposerSendAttachment[] = [...composerImages, ...composerFiles];
         if (supportsAttachmentUploads) {
           const uploadError = await settleComposerAttachmentUploads({
             environmentId,
-            attachments: composerImages,
+            attachments: forkAttachments,
+            fileUploadLimit: maxFileAttachmentBytes,
           });
           if (uploadError !== null) {
             throw new Error(uploadError);
@@ -5698,8 +5701,9 @@ function ChatViewContent(props: ChatViewProps) {
         }
         const newUploads = await buildComposerTurnAttachments({
           environmentId,
-          attachments: composerImages,
+          attachments: forkAttachments,
           useUploads: supportsAttachmentUploads,
+          fileUploadLimit: maxFileAttachmentBytes,
         });
         return [...retainedUploads, ...newUploads];
       });
@@ -5751,7 +5755,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
 
       if (supportsAttachmentUploads) {
-        releaseAttachmentUploads(composerImages.map((attachment) => attachment.id));
+        releaseDraftAttachments([...composerImages, ...composerFiles]);
       }
       restoreComposerDraft(forkEditState.savedDraft);
       setForkEditState(null);
@@ -5783,7 +5787,7 @@ function ChatViewContent(props: ChatViewProps) {
       // follow-up (Refine/Implement) carries them, matching the normal send
       // path. The draft is cleared inside onSubmitPlanFollowUp after the
       // optimistic message is set, so blob preview URLs survive until render.
-      const followUpImages = [...composerImages];
+      const followUpImages: ComposerSendAttachment[] = [...composerImages, ...composerFiles];
       promptRef.current = "";
       composerRef.current?.resetCursorState();
       await onSubmitPlanFollowUp({
@@ -5795,6 +5799,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const standaloneSlashCommand =
       composerImages.length === 0 &&
+      composerFiles.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
@@ -5909,10 +5914,21 @@ function ChatViewContent(props: ChatViewProps) {
     // attachment's bytes must land before the turn references them. An
     // offline send keeps the inline payload the outbox can store.
     const turnUsesAttachmentUploads = supportsAttachmentUploads && !activeEnvironmentUnavailable;
+    if (composerFiles.length > 0 && !turnUsesAttachmentUploads) {
+      sendInFlightRef.current = false;
+      setThreadError(
+        threadIdForSend,
+        activeEnvironmentUnavailable
+          ? "File attachments send once the server reconnects."
+          : "This server does not accept file attachments. Remove the files to send.",
+      );
+      return;
+    }
     if (turnUsesAttachmentUploads) {
       const uploadError = await settleComposerAttachmentUploads({
         environmentId,
-        attachments: composerImages,
+        attachments: [...composerImages, ...composerFiles],
+        fileUploadLimit: maxFileAttachmentBytes,
       });
       if (uploadError !== null) {
         sendInFlightRef.current = false;
@@ -5938,6 +5954,11 @@ function ChatViewContent(props: ChatViewProps) {
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
+    const composerFilesSnapshot = [...composerFiles];
+    const composerAttachmentsSnapshot: ComposerSendAttachment[] = [
+      ...composerImagesSnapshot,
+      ...composerFilesSnapshot,
+    ];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
@@ -5973,11 +5994,11 @@ function ChatViewContent(props: ChatViewProps) {
     });
     const turnAttachmentsPromise = buildComposerTurnAttachments({
       environmentId,
-      attachments: composerImagesSnapshot,
+      attachments: composerAttachmentsSnapshot,
       useUploads: turnUsesAttachmentUploads,
+      fileUploadLimit: maxFileAttachmentBytes,
     });
-    const composerAttachmentIdsSnapshot = composerImagesSnapshot.map((attachment) => attachment.id);
-    const optimisticAttachments = optimisticComposerAttachments(composerImagesSnapshot);
+    const optimisticAttachments = optimisticComposerAttachments(composerAttachmentsSnapshot);
     // Sending always returns to the live edge. The new row becomes the
     // anchored end-space target so it lands near the top while the response
     // streams into the reserved space below it.
@@ -6050,6 +6071,8 @@ function ChatViewContent(props: ChatViewProps) {
     if (!titleSeed) {
       if (firstComposerImageName) {
         titleSeed = `Image: ${firstComposerImageName}`;
+      } else if (composerFilesSnapshot[0]) {
+        titleSeed = `File: ${composerFilesSnapshot[0].name}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
@@ -6223,7 +6246,7 @@ function ChatViewContent(props: ChatViewProps) {
       // The stored turn now references the pending uploads; forget them
       // locally without deleting what it will claim when it dispatches.
       if (turnUsesAttachmentUploads) {
-        forgetAttachmentUploads(composerAttachmentIdsSnapshot);
+        forgetAttachmentUploads(composerAttachmentsSnapshot.map((attachment) => attachment.id));
       }
       // The held turn now owns the pending row, so the optimistic copy would
       // only be a second source of truth for the same message.
@@ -6348,7 +6371,7 @@ function ChatViewContent(props: ChatViewProps) {
         turnStartSucceeded = true;
         // The server claimed its own copies; the pending uploads are done.
         if (turnUsesAttachmentUploads) {
-          releaseAttachmentUploads(composerAttachmentIdsSnapshot);
+          releaseDraftAttachments(composerAttachmentsSnapshot);
         }
       }
     }
@@ -6357,6 +6380,7 @@ function ChatViewContent(props: ChatViewProps) {
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
+        composerFilesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
         composerElementContextsRef.current.length === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
@@ -6377,10 +6401,12 @@ function ChatViewContent(props: ChatViewProps) {
         promptRef.current = promptForSend;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;
+        composerFilesRef.current = composerFilesSnapshot;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
         composerElementContextsRef.current = composerElementContextsSnapshot;
         setComposerDraftPrompt(composerDraftTarget, promptForSend);
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
+        addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftElementContexts(composerDraftTarget, composerElementContextsSnapshot);
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
@@ -6531,7 +6557,9 @@ function ChatViewContent(props: ChatViewProps) {
         shouldFollowUpWithAttachments({
           isLastQuestion: true,
           hasResolvedAnswers: true,
-          attachmentCount: composerRef.current?.getSendContext().images.length ?? 0,
+          attachmentCount:
+            (composerRef.current?.getSendContext().images.length ?? 0) +
+            (composerRef.current?.getSendContext().files.length ?? 0),
         })
       ) {
         pendingAnswerAttachmentFollowUpRef.current = activeThreadId;
@@ -6672,7 +6700,7 @@ function ChatViewContent(props: ChatViewProps) {
     }: {
       text: string;
       interactionMode: "default" | "plan";
-      attachmentImages: ComposerAttachment[];
+      attachmentImages: ComposerSendAttachment[];
     }) => {
       if (
         !activeThread ||
@@ -6731,6 +6759,7 @@ function ChatViewContent(props: ChatViewProps) {
         const uploadError = await settleComposerAttachmentUploads({
           environmentId,
           attachments: attachmentImages,
+          fileUploadLimit: maxFileAttachmentBytes,
         });
         if (uploadError !== null) {
           setThreadError(threadIdForSend, uploadError);
@@ -6743,6 +6772,7 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId,
         attachments: attachmentImages,
         useUploads: useAttachmentUploads,
+        fileUploadLimit: maxFileAttachmentBytes,
       });
       const optimisticAttachments = optimisticComposerAttachments(attachmentImages);
 
@@ -6830,7 +6860,7 @@ function ChatViewContent(props: ChatViewProps) {
 
       if (failure === null) {
         if (useAttachmentUploads) {
-          releaseAttachmentUploads(attachmentImages.map((attachment) => attachment.id));
+          releaseDraftAttachments(attachmentImages);
         }
         // Optimistically open the plan sidebar when implementing (not refining).
         // "default" mode here means the agent is executing the plan, which produces
@@ -6878,6 +6908,7 @@ function ChatViewContent(props: ChatViewProps) {
       clearComposerDraftContent,
       composerDraftTarget,
       markThreadVisited,
+      maxFileAttachmentBytes,
       supportsAttachmentUploads,
     ],
   );
@@ -6917,37 +6948,12 @@ function ChatViewContent(props: ChatViewProps) {
 
       const attachmentResult = await settlePromise(() =>
         Promise.all(
-          messageAttachments.map(async (attachment) => {
-            if (!attachment.previewUrl) {
-              throw new Error(`The original attachment '${attachment.name}' is unavailable.`);
-            }
-            const response = await fetch(attachment.previewUrl);
-            if (!response.ok) {
-              throw new Error(`Could not reload '${attachment.name}'.`);
-            }
-            if (isDocumentAttachment(attachment)) {
-              return {
-                type: "document" as const,
-                name: attachment.name,
-                mimeType: attachment.mimeType,
-                sizeBytes: attachment.sizeBytes,
-                extractedText: await response.text(),
-              };
-            }
-            if (!isImageAttachment(attachment)) {
-              throw new Error(`'${attachment.name}' cannot be sent again.`);
-            }
-            const blob = await response.blob();
-            return {
-              type: "image" as const,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              dataUrl: await readFileAsDataUrl(
-                new File([blob], attachment.name, { type: attachment.mimeType }),
-              ),
-            };
-          }),
+          messageAttachments.map((attachment) =>
+            reloadSentAttachment(attachment, {
+              environmentId,
+              useUploads: supportsAttachmentUploads,
+            }),
+          ),
         ),
       );
       if (attachmentResult._tag === "Failure") {
@@ -8029,6 +8035,7 @@ function ChatViewContent(props: ChatViewProps) {
                             environmentId={environmentId}
                             attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
                             supportsAttachmentUploads={supportsAttachmentUploads}
+                            maxFileAttachmentBytes={maxFileAttachmentBytes}
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}
@@ -8088,6 +8095,7 @@ function ChatViewContent(props: ChatViewProps) {
                             gitCwd={gitCwd}
                             promptRef={promptRef}
                             composerImagesRef={composerImagesRef}
+                            composerFilesRef={composerFilesRef}
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
                             onSend={onSend}

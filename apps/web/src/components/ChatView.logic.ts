@@ -340,6 +340,7 @@ export function snapshotComposerThreadDraft(
   return {
     ...draft,
     images: draft.images.map(cloneComposerImageForRetry),
+    files: [...draft.files],
     nonPersistedImageIds: [...draft.nonPersistedImageIds],
     persistedAttachments: [...draft.persistedAttachments],
     terminalContexts: [...draft.terminalContexts],

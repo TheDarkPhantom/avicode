@@ -66,6 +66,8 @@ import {
   markPromotedDraftThreads,
   markPromotedDraftThreadsByRef,
   hydrateImagesFromPersisted,
+  composerFileNeedsReattach,
+  type ComposerFileAttachment,
   type ComposerImageAttachment,
   useComposerDraftStore,
   DraftId,
@@ -1932,5 +1934,157 @@ describe("composerDraftStore thread context references", () => {
     expect(
       useComposerDraftStore.getState().getComposerDraft(targetRef)?.threadContextIds ?? [],
     ).toEqual([]);
+  });
+});
+
+describe("composerDraftStore files", () => {
+  const threadId = ThreadId.make("thread-files");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  type PersistApi = {
+    getOptions: () => {
+      partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+      merge: (
+        persistedState: unknown,
+        currentState: ReturnType<typeof useComposerDraftStore.getState>,
+      ) => ReturnType<typeof useComposerDraftStore.getState>;
+    };
+  };
+  const persistApi = () => useComposerDraftStore.persist as unknown as PersistApi;
+
+  function makeFile(id: string, overrides: Partial<ComposerFileAttachment> = {}) {
+    return {
+      type: "file" as const,
+      id,
+      name: `${id}.zip`,
+      mimeType: "application/zip",
+      sizeBytes: 3,
+      file: new File([new Uint8Array([1, 2, 3])], `${id}.zip`, { type: "application/zip" }),
+      ...overrides,
+    } satisfies ComposerFileAttachment;
+  }
+
+  function persistedDraft() {
+    const persisted = persistApi().getOptions().partialize(useComposerDraftStore.getState()) as {
+      draftsByThreadKey: Record<string, { files?: unknown[] }>;
+    };
+    return persisted.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)];
+  }
+
+  beforeEach(() => {
+    useComposerDraftStore.setState({
+      draftsByThreadKey: {},
+      draftThreadsByThreadKey: {},
+      logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+      stickyModelSelectionByProvider: {},
+      stickyActiveProvider: null,
+    });
+  });
+
+  it("persists a file's finished upload but never its bytes", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(threadRef, [makeFile("zip-a"), makeFile("zip-b")]);
+    store.setFileUpload(threadRef, "zip-a", TEST_ENVIRONMENT_ID, "pending-a");
+
+    expect(persistedDraft()?.files).toEqual([
+      {
+        id: "zip-a",
+        name: "zip-a.zip",
+        mimeType: "application/zip",
+        sizeBytes: 3,
+        attachmentId: "pending-a",
+        environmentId: TEST_ENVIRONMENT_ID,
+      },
+      // An unfinished upload persists as a metadata-only marker.
+      { id: "zip-b", name: "zip-b.zip", mimeType: "application/zip", sizeBytes: 3 },
+    ]);
+  });
+
+  it("hydrates uploaded files and needs-reattach markers without bytes", () => {
+    const merged = persistApi()
+      .getOptions()
+      .merge(
+        {
+          draftsByThreadKey: {
+            [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+              prompt: "",
+              attachments: [],
+              files: [
+                {
+                  id: "zip-a",
+                  name: "zip-a.zip",
+                  mimeType: "application/zip",
+                  sizeBytes: 3,
+                  attachmentId: "pending-a",
+                  environmentId: TEST_ENVIRONMENT_ID,
+                },
+                { id: "zip-b", name: "zip-b.zip", mimeType: "application/zip", sizeBytes: 3 },
+                { id: "bad" },
+              ],
+            },
+          },
+          draftThreadsByThreadKey: {},
+          logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+        },
+        useComposerDraftStore.getInitialState(),
+      );
+
+    const files = merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.files;
+    expect(files?.map((file) => [file.id, file.file, file.uploadedAttachmentId])).toEqual([
+      ["zip-a", null, "pending-a"],
+      ["zip-b", null, undefined],
+    ]);
+    expect(files?.map(composerFileNeedsReattach)).toEqual([false, true]);
+  });
+
+  it("replaces a needs-reattach marker when the same file is picked again", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(threadRef, [makeFile("marker", { file: null })]);
+    store.addFiles(threadRef, [makeFile("repick", { name: "marker.zip" })]);
+
+    const files = draftFor(threadId, TEST_ENVIRONMENT_ID)?.files ?? [];
+    expect(files.map((file) => file.id)).toEqual(["repick"]);
+    expect(files[0]?.file).not.toBeNull();
+  });
+
+  it("drops an expired upload so the file asks to be attached again", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(threadRef, [
+      makeFile("zip-a", {
+        file: null,
+        uploadedAttachmentId: "pending-a",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      }),
+    ]);
+
+    expect(store.markFileUploadMissing(threadRef, "zip-a", TEST_ENVIRONMENT_ID, "other")).toBe(
+      false,
+    );
+    expect(store.markFileUploadMissing(threadRef, "zip-a", TEST_ENVIRONMENT_ID, "pending-a")).toBe(
+      true,
+    );
+    const file = draftFor(threadId, TEST_ENVIRONMENT_ID)?.files[0];
+    expect(file && composerFileNeedsReattach(file)).toBe(true);
+  });
+
+  it("caps images and files together at the attachment limit", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(
+      threadRef,
+      Array.from({ length: 14 }, (_, index) => makeFile(`zip-${index}`)),
+    );
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.files).toHaveLength(12);
+  });
+
+  it("keeps files when the stash clears prompt and images", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "hello");
+    store.addFiles(threadRef, [makeFile("zip-a")]);
+    store.clearComposerPromptAndImages(threadRef);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.files.map((file) => file.id)).toEqual([
+      "zip-a",
+    ]);
+    store.removeFile(threadRef, "zip-a");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 });

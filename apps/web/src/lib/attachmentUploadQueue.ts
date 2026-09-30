@@ -2,18 +2,28 @@ import {
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
   type EnvironmentId,
 } from "@t3tools/contracts";
+import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import {
   deletePendingAttachmentUpload,
   runAttachmentUploadCycle,
+  verifyPersistedAttachmentUpload,
 } from "@t3tools/client-runtime/state/attachments";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { create } from "zustand";
 
-import type { ComposerImageAttachment } from "../composerDraftStore";
+import {
+  DraftId,
+  useComposerDraftStore,
+  type ComposerDocumentAttachment,
+  type ComposerFileAttachment,
+  type ComposerImageAttachment,
+  type ComposerThreadTarget,
+} from "../composerDraftStore";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { assetEnvironment } from "../state/assets";
 import { attachmentEnvironment } from "../state/attachments";
 import { readPreparedConnection } from "../state/session";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
@@ -23,9 +33,16 @@ import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentU
  * `capabilities.attachmentUploads`, the composer streams each attachment's
  * bytes to a pending upload as soon as it is attached, and the send only
  * references the pending id. Keyed by the composer attachment id; the state
- * lives in memory only, the draft persists what it needs on its own.
+ * lives in memory only. Generic files also record the finished id on their
+ * draft (`uploadedAttachmentId`) because their bytes cannot persist.
+ *
+ * Avi Code addition: documents upload their original bytes as a `file` next
+ * to the extracted text the fork already sends.
  */
-export type UploadableComposerAttachment = ComposerImageAttachment;
+export type UploadableComposerAttachment =
+  | ComposerImageAttachment
+  | ComposerDocumentAttachment
+  | ComposerFileAttachment;
 
 const MAX_UPLOADS_PER_ENVIRONMENT = 3;
 const UPLOAD_TIMEOUT_MS = 5 * 60_000;
@@ -42,6 +59,12 @@ interface UploadJob {
   readonly attachment: UploadableComposerAttachment;
   readonly environmentId: EnvironmentId;
   readonly previous?: ReadyAttachmentUpload;
+  /**
+   * The draft's persisted server-side upload, to verify instead of re-upload.
+   * The draft owns this id; the queue never deletes it on cancel or retry.
+   * Deleting it goes through `releasePersistedAttachmentUpload` only.
+   */
+  readonly persistedAttachmentId?: string;
   readonly settled: Promise<void>;
   resolveSettled: () => void;
   /** Only ids this queue minted itself. Cancel and retry may delete these. */
@@ -75,6 +98,45 @@ function clearUploadState(id: string): void {
 
 export function readAttachmentUpload(id: string): AttachmentUploadState | undefined {
   return useAttachmentUploadStore.getState().uploadsByAttachmentId[id];
+}
+
+/** Finds the drafts holding this file in the job's environment, after any move. */
+function currentFileDraftTargets(job: UploadJob): ComposerThreadTarget[] {
+  if (job.attachment.type !== "file") {
+    return [];
+  }
+  const store = useComposerDraftStore.getState();
+  const targets: ComposerThreadTarget[] = [];
+  for (const [key, draft] of Object.entries(store.draftsByThreadKey)) {
+    if (!draft.files.some((file) => file.id === job.attachment.id)) {
+      continue;
+    }
+    const draftSession = store.draftThreadsByThreadKey[key];
+    if (draftSession !== undefined) {
+      if (draftSession.environmentId === job.environmentId) {
+        targets.push(DraftId.make(key));
+      }
+      continue;
+    }
+    const threadRef = parseScopedThreadKey(key);
+    if (threadRef?.environmentId === job.environmentId) {
+      targets.push(threadRef);
+    }
+  }
+  return targets;
+}
+
+/**
+ * Persists a finished file upload onto the draft that owns the file. The
+ * mounted composer performs the same write for live updates, but a
+ * background completion (user navigated away, upload finished, reload) must
+ * not depend on a mounted composer to survive.
+ */
+function stampDraftFileUpload(job: UploadJob, attachmentId: string): void {
+  const store = useComposerDraftStore.getState();
+  for (const target of currentFileDraftTargets(job)) {
+    store.setFileUpload(target, job.attachment.id, job.environmentId, attachmentId);
+  }
 }
 
 function deletePendingUpload(environmentId: EnvironmentId, attachmentId: string): void {
@@ -128,23 +190,109 @@ function failedState(job: UploadJob, reason: string, attachmentId?: string | nul
   };
 }
 
+/** A hydrated file's persisted upload: reuse it, or explain why it is gone. */
+async function verifyPersistedUpload(
+  job: UploadJob,
+  persistedAttachmentId: string,
+): Promise<"done" | "reupload"> {
+  const verification = await verifyPersistedAttachmentUpload({
+    registry: appAtomRegistry,
+    createAssetUrl: assetEnvironment.createUrl,
+    environmentId: job.environmentId,
+    attachmentId: persistedAttachmentId,
+  });
+  if (job.cancelled) {
+    return "done";
+  }
+  if (verification.status === "verified") {
+    setUploadState(job.attachment.id, {
+      status: "ready",
+      environmentId: job.environmentId,
+      attachmentId: persistedAttachmentId,
+    });
+    return "done";
+  }
+  if (verification.status === "missing" && !job.attachment.file) {
+    // No bytes to upload again: the draft row becomes "attach again".
+    const store = useComposerDraftStore.getState();
+    let marked = false;
+    for (const target of currentFileDraftTargets(job)) {
+      marked =
+        store.markFileUploadMissing(
+          target,
+          job.attachment.id,
+          job.environmentId,
+          persistedAttachmentId,
+        ) || marked;
+    }
+    if (marked) {
+      clearUploadState(job.attachment.id);
+      return "done";
+    }
+  }
+  if (verification.status === "failed" || !job.attachment.file) {
+    // No `attachmentId` here: a failed state's id marks a pending upload this
+    // queue minted, which retry and release then delete. The persisted id is
+    // the only server copy of a hydrated file, so a transient verification
+    // failure must leave it in place for the next retry.
+    setUploadState(
+      job.attachment.id,
+      failedState(
+        job,
+        verification.status === "missing"
+          ? "Uploaded file expired. Remove it and attach it again."
+          : "Uploaded file could not be verified. Retry when the server reconnects.",
+      ),
+    );
+    return "done";
+  }
+  return "reupload";
+}
+
+/** What `attachments.createUploadUrl` gets for this attachment, or why it cannot upload. */
+function uploadMimeType(attachment: UploadableComposerAttachment): string | null {
+  if (attachment.type === "image") {
+    return (
+      PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES.find(
+        (supportedMimeType) => supportedMimeType === attachment.mimeType.toLowerCase(),
+      ) ?? null
+    );
+  }
+  return attachment.mimeType.toLowerCase() || "application/octet-stream";
+}
+
 async function runUpload(job: UploadJob): Promise<void> {
-  const mimeType = PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES.find(
-    (supportedMimeType) => supportedMimeType === job.attachment.mimeType.toLowerCase(),
-  );
+  if (job.persistedAttachmentId) {
+    if ((await verifyPersistedUpload(job, job.persistedAttachmentId)) === "done") {
+      return;
+    }
+  }
+
+  const mimeType = uploadMimeType(job.attachment);
   if (!mimeType) {
     setUploadState(job.attachment.id, failedState(job, "Unsupported image type"));
     return;
   }
-
   const file = job.attachment.file;
+  if (!file) {
+    setUploadState(job.attachment.id, failedState(job, "Original file is no longer available"));
+    return;
+  }
+
   let lastStep = -1;
   const result = await runAttachmentUploadCycle({
     registry: appAtomRegistry,
     createUploadUrl: attachmentEnvironment.createUploadUrl,
     remove: attachmentEnvironment.remove,
     environmentId: job.environmentId,
-    upload: { name: job.attachment.name, mimeType, sizeBytes: file.size },
+    upload: {
+      // Documents and generic files both upload as `file`; only images use
+      // the image route with its type and size checks.
+      ...(job.attachment.type === "image" ? {} : { type: "file" as const }),
+      name: job.attachment.name,
+      mimeType,
+      sizeBytes: file.size,
+    },
     resolveUploadUrl: (relativeUrl) => {
       const connection = readPreparedConnection(job.environmentId);
       return connection ? resolveAssetUrl(connection.httpBaseUrl, relativeUrl) : null;
@@ -191,6 +339,7 @@ async function runUpload(job: UploadJob): Promise<void> {
       environmentId: job.environmentId,
       attachmentId: result.attachmentId,
     });
+    stampDraftFileUpload(job, result.attachmentId);
     if (job.previous) {
       deletePendingUpload(job.previous.environmentId, job.previous.attachmentId);
     }
@@ -324,6 +473,11 @@ export function startAttachmentUpload(input: {
     attachment,
     environmentId,
     ...(previous ? { previous } : {}),
+    ...(attachment.type === "file" &&
+    attachment.uploadEnvironmentId === environmentId &&
+    attachment.uploadedAttachmentId
+      ? { persistedAttachmentId: attachment.uploadedAttachmentId }
+      : {}),
     settled,
     resolveSettled,
     attachmentId: null,
@@ -344,7 +498,11 @@ export function startAttachmentUpload(input: {
   pumpUploads();
 }
 
-/** Stops the job and deletes only the pending upload it minted itself. */
+/**
+ * Stops the job and deletes only the pending upload it minted itself. A
+ * persisted draft upload survives cancellation (an environment switch cancels
+ * the old job, and the draft still references that server copy).
+ */
 function cancelAttachmentUpload(id: string): void {
   const job = jobsById.get(id);
   if (!job) {
@@ -384,6 +542,51 @@ export function releaseAttachmentUpload(id: string): void {
 export function releaseAttachmentUploads(ids: ReadonlyArray<string>): void {
   for (const id of ids) {
     releaseAttachmentUpload(id);
+  }
+}
+
+/** Deletes a draft file's persisted upload, and anything the queue holds for it. */
+export function releasePersistedAttachmentUpload(input: {
+  readonly id: string;
+  readonly environmentId: EnvironmentId;
+  readonly attachmentId: string;
+}): void {
+  // The queue only deletes ids it minted, so the persisted id needs its own
+  // delete. The server treats a repeated delete as a no-op.
+  releaseAttachmentUpload(input.id);
+  deletePendingUpload(input.environmentId, input.attachmentId);
+}
+
+/**
+ * The one owner for discarding a draft attachment's server-side upload. The
+ * queue-keyed release only sees in-memory state, so after a reload it finds
+ * nothing for a hydrated file and the pending upload would leak until the
+ * server sweep. Every draft discard path funnels through here.
+ */
+export function releaseDraftAttachment(
+  attachment: UploadableComposerAttachment | { id: string },
+): void {
+  if (
+    "type" in attachment &&
+    attachment.type === "file" &&
+    attachment.uploadedAttachmentId !== undefined &&
+    attachment.uploadEnvironmentId !== undefined
+  ) {
+    releasePersistedAttachmentUpload({
+      id: attachment.id,
+      environmentId: attachment.uploadEnvironmentId,
+      attachmentId: attachment.uploadedAttachmentId,
+    });
+    return;
+  }
+  releaseAttachmentUpload(attachment.id);
+}
+
+export function releaseDraftAttachments(
+  attachments: ReadonlyArray<UploadableComposerAttachment | { id: string }>,
+): void {
+  for (const attachment of attachments) {
+    releaseDraftAttachment(attachment);
   }
 }
 

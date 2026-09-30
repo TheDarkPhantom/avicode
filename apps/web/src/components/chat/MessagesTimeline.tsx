@@ -34,7 +34,13 @@ import {
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { getLegendListScrollNode } from "../../legendListScrollNode";
-import { isDocumentAttachment, isImageAttachment, type TurnDiffSummary } from "../../types";
+import {
+  isDocumentAttachment,
+  isFileAttachment,
+  isImageAttachment,
+  type TurnDiffSummary,
+} from "../../types";
+import { UserMessageFileAttachments } from "./UserMessageFileAttachments";
 import {
   getRenderablePatch,
   resolveDiffThemeName,
@@ -1598,6 +1604,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   // comparisons) split it.
   const userImages = userAttachments.filter(isImageAttachment);
   const userDocuments = userAttachments.filter(isDocumentAttachment);
+  const userFiles = userAttachments.filter(isFileAttachment);
+  const unknownAttachments = userAttachments.filter(
+    (attachment) =>
+      !isImageAttachment(attachment) &&
+      !isDocumentAttachment(attachment) &&
+      !isFileAttachment(attachment),
+  );
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
   const terminalContexts = displayedUserMessage.contexts;
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
@@ -1659,6 +1672,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         )}
+        <UserMessageFileAttachments files={userFiles} unknownAttachments={unknownAttachments} />
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {regularImages.map((image) => (

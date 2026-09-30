@@ -1,12 +1,20 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { Atom, AsyncResult } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 
-import type { ComposerImageAttachment } from "../composerDraftStore";
+import {
+  useComposerDraftStore,
+  type ComposerDocumentAttachment,
+  type ComposerFileAttachment,
+  type ComposerImageAttachment,
+} from "../composerDraftStore";
 
 const mocks = vi.hoisted(() => ({
   connectionStateAtom: vi.fn(),
+  createAssetUrl: vi.fn(),
+  executeAtomQuery: vi.fn(),
   createUploadUrl: Symbol("create-upload-url"),
   removeUpload: Symbol("remove-upload"),
   runAtomCommand: vi.fn(),
@@ -14,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+  executeAtomQuery: mocks.executeAtomQuery,
   runAtomCommand: mocks.runAtomCommand,
   squashAtomCommandFailure: (result: { readonly error: unknown }) => result.error,
 }));
@@ -25,6 +34,10 @@ vi.mock("../rpc/atomRegistry", async () => {
 
 vi.mock("../connection/catalog", () => ({
   environmentCatalog: { stateAtom: mocks.connectionStateAtom },
+}));
+
+vi.mock("../state/assets", () => ({
+  assetEnvironment: { createUrl: mocks.createAssetUrl },
 }));
 
 vi.mock("../state/attachments", () => ({
@@ -44,6 +57,7 @@ import {
   readAttachmentUpload,
   readUploadedAttachmentId,
   releaseAttachmentUpload,
+  releaseDraftAttachment,
   retryAttachmentUpload,
   startAttachmentUpload,
   useAttachmentUploadStore,
@@ -121,6 +135,53 @@ function makeImage(id: string): ComposerImageAttachment {
   };
 }
 
+function makeFile(id: string): ComposerFileAttachment {
+  const file = new File([new Uint8Array([1, 2, 3])], `${id}.zip`, { type: "application/zip" });
+  return {
+    type: "file",
+    id,
+    name: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    file,
+  };
+}
+
+function makeDocument(id: string): ComposerDocumentAttachment {
+  const file = new File([new Uint8Array([1, 2, 3])], `${id}.pdf`, { type: "application/pdf" });
+  return {
+    type: "document",
+    id,
+    name: file.name,
+    mimeType: "application/pdf",
+    sizeBytes: file.size,
+    extractedChars: 5,
+    extractedText: "hello",
+    previewUrl: "",
+    file,
+  };
+}
+
+const draftThread = scopeThreadRef(firstEnvironment, ThreadId.make("thread-uploads"));
+
+function putDraftFiles(files: ComposerFileAttachment[]) {
+  useComposerDraftStore.getState().clearComposerContent(draftThread);
+  useComposerDraftStore.getState().addFiles(draftThread, files);
+}
+
+function draftFile(id: string): ComposerFileAttachment | undefined {
+  return useComposerDraftStore
+    .getState()
+    .getComposerDraft(draftThread)
+    ?.files.find((file) => file.id === id);
+}
+
+function mintInputs(): unknown[] {
+  return mocks.runAtomCommand.mock.calls
+    .filter(([, command]) => command === mocks.createUploadUrl)
+    .map(([, , target]) => (target as { input: unknown }).input);
+}
+
 const connectionStates = Atom.family((_environmentId: EnvironmentId) =>
   Atom.make(AsyncResult.success({ phase: "connected" })),
 );
@@ -145,6 +206,10 @@ describe("attachmentUploadQueue", () => {
     setConnected(secondEnvironment, true);
     TestXmlHttpRequest.requests = [];
     mocks.runAtomCommand.mockReset();
+    mocks.createAssetUrl.mockReset();
+    mocks.createAssetUrl.mockImplementation((target: unknown) => target);
+    mocks.executeAtomQuery.mockReset();
+    mocks.executeAtomQuery.mockResolvedValue({ _tag: "Success", value: {} });
     mocks.readPreparedConnection.mockReset();
     mocks.readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://environment.test/" });
     mocks.runAtomCommand.mockImplementation(
@@ -383,5 +448,83 @@ describe("attachmentUploadQueue", () => {
     await Promise.resolve();
     expect(TestXmlHttpRequest.requests).toHaveLength(1);
     expect(readAttachmentUpload(image.id)).toBeUndefined();
+  });
+
+  it("uploads documents and generic files as type file", async () => {
+    const document = makeDocument("doc-1");
+    const file = makeFile("zip-1");
+    startAttachmentUpload({ environmentId: firstEnvironment, attachment: document });
+    startAttachmentUpload({ environmentId: firstEnvironment, attachment: file });
+    await Promise.resolve();
+
+    expect(mintInputs()).toEqual([
+      { type: "file", name: "doc-1.pdf", mimeType: "application/pdf", sizeBytes: 3 },
+      { type: "file", name: "zip-1.zip", mimeType: "application/zip", sizeBytes: 3 },
+    ]);
+    const settled = awaitAttachmentUploads([document.id, file.id]);
+    for (const request of TestXmlHttpRequest.requests) request.complete();
+    await settled;
+    expect(readUploadedAttachmentId(firstEnvironment, document.id)).toBe(
+      "pending-environment-1-doc-1.pdf",
+    );
+  });
+
+  it("records a finished file upload on the draft that owns the file", async () => {
+    const file = makeFile("zip-stamp");
+    putDraftFiles([file]);
+    startAttachmentUpload({ environmentId: firstEnvironment, attachment: file });
+    await Promise.resolve();
+    const settled = awaitAttachmentUploads([file.id]);
+    TestXmlHttpRequest.requests[0]!.complete();
+    await settled;
+
+    expect(draftFile(file.id)).toMatchObject({
+      uploadedAttachmentId: "pending-environment-1-zip-stamp.zip",
+      uploadEnvironmentId: firstEnvironment,
+    });
+  });
+
+  it("verifies a hydrated file's persisted upload instead of uploading again", async () => {
+    const hydrated: ComposerFileAttachment = {
+      ...makeFile("zip-hydrated"),
+      file: null,
+      uploadedAttachmentId: "pending-persisted",
+      uploadEnvironmentId: firstEnvironment,
+    };
+    startAttachmentUpload({ environmentId: firstEnvironment, attachment: hydrated });
+    await awaitAttachmentUploads([hydrated.id]);
+
+    expect(TestXmlHttpRequest.requests).toEqual([]);
+    expect(readUploadedAttachmentId(firstEnvironment, hydrated.id)).toBe("pending-persisted");
+  });
+
+  it("turns an expired hydrated file into a needs-reattach row", async () => {
+    const hydrated: ComposerFileAttachment = {
+      ...makeFile("zip-expired"),
+      file: null,
+      uploadedAttachmentId: "pending-expired",
+      uploadEnvironmentId: firstEnvironment,
+    };
+    putDraftFiles([hydrated]);
+    mocks.executeAtomQuery.mockResolvedValue({
+      _tag: "Failure",
+      error: { _tag: "AssetAttachmentNotFoundError" },
+    });
+    startAttachmentUpload({ environmentId: firstEnvironment, attachment: hydrated });
+    await awaitAttachmentUploads([hydrated.id]);
+
+    expect(readAttachmentUpload(hydrated.id)).toBeUndefined();
+    expect(draftFile(hydrated.id)?.uploadedAttachmentId).toBeUndefined();
+    expect(removeCalls()).toEqual([]);
+  });
+
+  it("deletes a hydrated file's persisted upload when it is removed", () => {
+    releaseDraftAttachment({
+      ...makeFile("zip-removed"),
+      file: null,
+      uploadedAttachmentId: "pending-removed",
+      uploadEnvironmentId: firstEnvironment,
+    });
+    expect(removeCalls()).toEqual(["pending-removed"]);
   });
 });

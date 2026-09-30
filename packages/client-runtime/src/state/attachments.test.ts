@@ -1,14 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type AttachmentCreateUploadUrlInput,
   type AttachmentCreateUploadUrlResult,
   type AttachmentDeleteInput,
 } from "@t3tools/contracts";
-import { AsyncResult, type AtomRegistry } from "effect/unstable/reactivity";
+import * as Effect from "effect/Effect";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import type { AtomCommand } from "./runtime.ts";
-import { runAttachmentUploadCycle } from "./attachments.ts";
+import {
+  clampFileAttachmentUploadBytes,
+  fileAttachmentTooLargeMessage,
+  formatAttachmentSize,
+  runAttachmentUploadCycle,
+  verifyPersistedAttachmentUpload,
+} from "./attachments.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 // The cycle threads the registry through to the commands untouched, so the
@@ -134,5 +142,79 @@ describe("runAttachmentUploadCycle", () => {
       step: "resolve-url",
       attachmentId: "pending-offline",
     });
+  });
+});
+
+describe("verifyPersistedAttachmentUpload", () => {
+  it("hits the server on every verification instead of reusing a cached failure", async () => {
+    // Mirrors the app's asset URL query atom: SWR-cached with a long stale
+    // window and kept alive across calls. Without a forced refresh, the
+    // second verification would read the cached failure and never retry.
+    let lookups = 0;
+    const assetUrlAtom = Atom.make(
+      // Async like the real RPC, so the first read is still in flight when
+      // the query decides whether a refresh is needed.
+      Effect.promise(() => Promise.resolve()).pipe(
+        Effect.flatMap(() => {
+          lookups += 1;
+          return lookups === 1
+            ? Effect.fail({ _tag: "TransportError" } as const)
+            : Effect.succeed({ url: "/api/assets/pending-1" });
+        }),
+      ),
+    ).pipe(Atom.swr({ staleTime: 60_000 }), Atom.keepAlive);
+    const liveRegistry = AtomRegistry.make();
+
+    const verify = () =>
+      verifyPersistedAttachmentUpload({
+        registry: liveRegistry,
+        createAssetUrl: () => assetUrlAtom,
+        environmentId,
+        attachmentId: "pending-1",
+      });
+
+    const first = await verify();
+    expect(first).toMatchObject({ status: "failed" });
+
+    const second = await verify();
+    expect(second).toEqual({ status: "verified" });
+    expect(lookups).toBe(2);
+  });
+
+  it("reports an expired upload as missing", async () => {
+    const assetUrlAtom = Atom.make(Effect.fail({ _tag: "AssetAttachmentNotFoundError" } as const));
+    const result = await verifyPersistedAttachmentUpload({
+      registry: AtomRegistry.make(),
+      createAssetUrl: () => assetUrlAtom,
+      environmentId,
+      attachmentId: "pending-expired",
+    });
+    expect(result).toEqual({ status: "missing" });
+  });
+});
+
+describe("file attachment limits", () => {
+  it("clamps the advertised limit to the turn contract cap", () => {
+    expect(clampFileAttachmentUploadBytes(1024)).toBe(1024);
+    expect(clampFileAttachmentUploadBytes(PROVIDER_SEND_TURN_MAX_FILE_BYTES * 2)).toBe(
+      PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+    );
+  });
+
+  it("formats attachment row sizes", () => {
+    expect(formatAttachmentSize(3 * 1024 * 1024)).toBe("3.0 MB");
+    expect(formatAttachmentSize(1)).toBe("1 KB");
+  });
+
+  it("formats upload limits without rounding them to zero MB", () => {
+    expect(fileAttachmentTooLargeMessage("tiny.txt", 1)).toBe(
+      "'tiny.txt' exceeds the 1 byte attachment limit.",
+    );
+    expect(fileAttachmentTooLargeMessage("medium.zip", 512 * 1024)).toBe(
+      "'medium.zip' exceeds the 512 KB attachment limit.",
+    );
+    expect(fileAttachmentTooLargeMessage("big.zip", 50 * 1024 * 1024)).toBe(
+      "'big.zip' exceeds the 50 MB attachment limit.",
+    );
   });
 });
