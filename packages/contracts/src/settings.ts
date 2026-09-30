@@ -354,6 +354,12 @@ export const ClientSettingsSchema = Schema.Struct({
   aviCodeComposerShowInteractionModeLabel: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
+  // Avi Code addition. Ctrl/Cmd+Enter in a new-thread draft starts that thread
+  // in the background and leaves the user on a fresh draft (upstream #7821).
+  // On by default to match upstream; off makes Ctrl/Cmd+Enter a plain send.
+  aviCodeCtrlEnterStartsBackgroundThread: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   // Avi Code addition. Provider instances can represent separate client
   // credentials, so carrying the last-picked instance across unrelated
   // projects can cross an account boundary. Keep the upstream/global sticky
@@ -1054,6 +1060,7 @@ export const ClientSettingsPatch = Schema.Struct({
   aviCodeOcrScannedPdfs: Schema.optionalKey(Schema.Boolean),
   aviCodeComposerShowRuntimeModeLabel: Schema.optionalKey(Schema.Boolean),
   aviCodeComposerShowInteractionModeLabel: Schema.optionalKey(Schema.Boolean),
+  aviCodeCtrlEnterStartsBackgroundThread: Schema.optionalKey(Schema.Boolean),
   projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(

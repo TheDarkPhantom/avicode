@@ -48,11 +48,27 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
-export function shouldSubmitComposerOnEnter(input: {
+export type ComposerSubmissionIntent = "foreground" | "background";
+
+/**
+ * What Enter does in the composer: null inserts a newline, otherwise it
+ * submits. Ctrl/Cmd+Enter on a new-thread draft starts that thread in the
+ * background, unless the Avi Code setting turned it off; everywhere else it
+ * is a plain send.
+ */
+export function composerSubmissionIntentForEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;
-}): boolean {
-  return !input.isMobileViewport && !input.shiftKey;
+  modifierKey: boolean;
+  isDraftThread: boolean;
+  backgroundThreadEnabled: boolean;
+}): ComposerSubmissionIntent | null {
+  if (input.isMobileViewport || input.shiftKey) {
+    return null;
+  }
+  return input.modifierKey && input.isDraftThread && input.backgroundThreadEnabled
+    ? "background"
+    : "foreground";
 }
 
 const isInlineTokenSegment = (

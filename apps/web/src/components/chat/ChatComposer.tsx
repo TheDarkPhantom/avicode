@@ -41,12 +41,13 @@ import {
 import { createPortal } from "react-dom";
 import {
   clampCollapsedComposerCursor,
+  type ComposerSubmissionIntent,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
+  composerSubmissionIntentForEnter,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   replaceTextRange,
-  shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import { ComposerChipRow } from "./ComposerChipRow";
@@ -731,7 +732,7 @@ export interface ChatComposerProps {
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
-  onSend: (e?: { preventDefault: () => void }) => void;
+  onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   /** Avi Code addition: set before form submission to signal that the user
    *  explicitly clicked the Implement button, so `onSend` can distinguish
    *  intentional plan implementation from stray form submissions. */
@@ -889,6 +890,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // Avi Code addition: gate local OCR of scanned PDFs on the opt-in setting.
   const ocrScannedPdfs = useClientSettings((settings) => settings.aviCodeOcrScannedPdfs);
+  // Avi Code addition: Ctrl/Cmd+Enter in a new-thread draft starts it in the
+  // background unless this is off.
+  const ctrlEnterStartsBackgroundThread = useClientSettings(
+    (settings) => settings.aviCodeCtrlEnterStartsBackgroundThread,
+  );
   // Avi Code addition: user-defined quick-send chips, shown while the input is empty.
   const composerChips = useClientSettings((settings) => settings.aviCodeChips);
   const customCommunicationStyles = useMemo(
@@ -2353,7 +2359,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const submitComposer = useCallback(
-    (event?: { preventDefault: () => void }) => {
+    (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
       // Upstream's `isSendDisabled`, plus the fork's rule that a disconnected
       // environment is not a block — the send is queued in the offline outbox
       // using the cached provider selection.
@@ -2389,7 +2395,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // the next transcript would land in the emptied composer.
       dictationRangeRef.current = null;
       releaseDictation();
-      onSend(event);
+      onSend(event, intent);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
@@ -2555,11 +2561,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (key === "ArrowUp" || key === "ArrowDown") {
       return navigatePromptHistory(key === "ArrowUp" ? "backward" : "forward", event);
     }
-    if (
-      key === "Enter" &&
-      shouldSubmitComposerOnEnter({ isMobileViewport, shiftKey: event.shiftKey })
-    ) {
-      submitComposer();
+    const submissionIntent =
+      key === "Enter"
+        ? composerSubmissionIntentForEnter({
+            isMobileViewport,
+            shiftKey: event.shiftKey,
+            modifierKey: event.metaKey || event.ctrlKey,
+            isDraftThread: routeKind === "draft",
+            backgroundThreadEnabled: ctrlEnterStartsBackgroundThread,
+          })
+        : null;
+    if (submissionIntent) {
+      submitComposer(undefined, submissionIntent);
       return true;
     }
     return false;

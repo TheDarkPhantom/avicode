@@ -13,6 +13,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
   type ResolvedKeybindingsConfig,
+  type ScopedProjectRef,
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
@@ -78,6 +79,7 @@ import {
   collapseExpandedComposerCursor,
   parseComposerSideQuestionCommand,
   parseStandaloneComposerSlashCommand,
+  type ComposerSubmissionIntent,
   resolveSideQuestionSubmission,
 } from "../composer-logic";
 import {
@@ -225,12 +227,16 @@ import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { buildDraftThreadRouteParams } from "../threadRoutes";
+import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
+  beginBackgroundDraftSubmissionByRef,
+  clearBackgroundDraftSubmissionByRef,
   type ComposerAttachment,
   type ComposerThreadDraftState,
   createEmptyThreadDraft,
   type DraftThreadEnvMode,
+  finalizePromotedDraftThreadByRef,
+  markPromotedDraftThreadByRef,
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
@@ -328,6 +334,10 @@ import {
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
+  shouldDockDraftHeroForSubmission,
+  resolveBackgroundDraftWorkspaceOptions,
+  resolveDraftHeroState,
+  resolveSubmissionIntent,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -613,14 +623,16 @@ function useLocalDispatchState(input: {
   );
   const activeLocalDispatch = serverAcknowledgedLocalDispatch ? null : localDispatch;
   const beginLocalDispatch = useCallback(
-    (options?: { preparingWorktree?: boolean }) => {
+    (options?: { preparingWorktree?: boolean; submissionIntent?: ComposerSubmissionIntent }) => {
       const preparingWorktree = Boolean(options?.preparingWorktree);
       setLocalDispatch((current) => {
         const active = serverAcknowledgedLocalDispatch ? null : current;
         if (active) {
-          return active.preparingWorktree === preparingWorktree
+          const submissionIntent = options?.submissionIntent ?? active.submissionIntent;
+          return active.preparingWorktree === preparingWorktree &&
+            active.submissionIntent === submissionIntent
             ? active
-            : { ...active, preparingWorktree };
+            : { ...active, preparingWorktree, submissionIntent };
         }
         return createLocalDispatchSnapshot(input.activeThread, options);
       });
@@ -634,6 +646,7 @@ function useLocalDispatchState(input: {
     localDispatchStartedAt: activeLocalDispatch?.startedAt ?? null,
     isPreparingWorktree: activeLocalDispatch?.preparingWorktree ?? false,
     isSendBusy: activeLocalDispatch !== null,
+    backgroundSubmissionPending: localDispatch?.submissionIntent === "background",
   };
 }
 
@@ -2491,6 +2504,7 @@ function ChatViewContent(props: ChatViewProps) {
     localDispatchStartedAt,
     isPreparingWorktree,
     isSendBusy,
+    backgroundSubmissionPending,
   } = useLocalDispatchState({
     activeThread,
     activeLatestTurn,
@@ -2764,8 +2778,13 @@ function ChatViewContent(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
-  const isDraftHeroState =
-    isLocalDraftThread && timelineEntries.length === 0 && !isWorking && !draftHeroDockRequested;
+  const isDraftHeroState = resolveDraftHeroState({
+    isLocalDraftThread,
+    hasTimelineEntries: timelineEntries.length > 0,
+    isWorking,
+    draftHeroDockRequested,
+    backgroundSubmissionPending,
+  });
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -5519,7 +5538,59 @@ function ChatViewContent(props: ChatViewProps) {
   // cannot deliver one thread's screenshot into another.
   const pendingAnswerAttachmentFollowUpRef = useRef<ThreadId | null>(null);
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  // After a Ctrl/Cmd+Enter send from a new-thread draft has been accepted:
+  // retire the sent draft, land on a fresh one with the same workspace mode,
+  // and offer the started thread in a toast.
+  const openFreshDraftAfterBackgroundSend = async (
+    backgroundThreadRef: ScopedThreadRef,
+    target: {
+      projectRef: ScopedProjectRef;
+      workspace: ReturnType<typeof resolveBackgroundDraftWorkspaceOptions>;
+    },
+  ) => {
+    // Promoting first keeps the new-thread handler from reusing this draft,
+    // whose server thread may not have reached the client yet.
+    markPromotedDraftThreadByRef(backgroundThreadRef);
+    try {
+      await handleNewThread(target.projectRef, target.workspace);
+    } catch (error) {
+      clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
+      resetLocalDispatch();
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Thread started in the background",
+          description:
+            error instanceof Error
+              ? `Could not open a fresh draft: ${error.message}`
+              : "Could not open a fresh draft.",
+        }),
+      );
+      return;
+    }
+    finalizePromotedDraftThreadByRef(backgroundThreadRef);
+    toastManager.add(
+      stackedThreadToast({
+        type: "success",
+        title: "Thread started in the background",
+        timeout: 5_000,
+        actionProps: {
+          children: "Open",
+          onClick: () => {
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(backgroundThreadRef),
+            });
+          },
+        },
+      }),
+    );
+  };
+
+  const onSend = async (
+    e?: { preventDefault: () => void },
+    submissionIntent: ComposerSubmissionIntent = "foreground",
+  ) => {
     e?.preventDefault();
     // Avi Code addition: consume the intent signal early so it never leaks
     // across sends. The plan follow-up branch reads the snapshot below.
@@ -5890,8 +5961,20 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
+    const resolvedSubmissionIntent = resolveSubmissionIntent({
+      requested: submissionIntent,
+      isLocalDraftThread,
+      isQueuedSend: activeEnvironmentUnavailable || holdUntilTurnFinishes,
+    });
     sendInFlightRef.current = true;
-    if (isDraftHeroState && activeThreadKey) {
+    if (
+      shouldDockDraftHeroForSubmission({
+        isDraftHeroState,
+        activeThreadKey,
+        submissionIntent: resolvedSubmissionIntent,
+      }) &&
+      activeThreadKey
+    ) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
         resolveDockStarted = resolve;
@@ -5906,7 +5989,10 @@ function ChatViewContent(props: ChatViewProps) {
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
+    beginLocalDispatch({
+      preparingWorktree: Boolean(baseBranchForWorktree),
+      submissionIntent: resolvedSubmissionIntent,
+    });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -6304,6 +6390,15 @@ function ChatViewContent(props: ChatViewProps) {
             }
           : undefined;
       beginLocalDispatch({ preparingWorktree: false });
+      // Ctrl/Cmd+Enter from a new-thread draft: the draft route must not
+      // follow the thread once the server creates it.
+      const backgroundThreadRef =
+        resolvedSubmissionIntent === "background"
+          ? scopeThreadRef(activeThread.environmentId, threadIdForSend)
+          : null;
+      if (backgroundThreadRef) {
+        beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
+      }
       const startResult = await startThreadTurn({
         environmentId,
         input: {
@@ -6329,9 +6424,22 @@ function ChatViewContent(props: ChatViewProps) {
         },
       });
       if (startResult._tag === "Failure") {
+        if (backgroundThreadRef) {
+          clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
+        }
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (backgroundThreadRef) {
+          await openFreshDraftAfterBackgroundSend(backgroundThreadRef, {
+            projectRef: scopeProjectRef(activeProject.environmentId, activeProject.id),
+            workspace: resolveBackgroundDraftWorkspaceOptions({
+              envMode: sendEnvMode,
+              branch: activeThreadBranch,
+              startFromOrigin,
+            }),
+          });
+        }
       }
     }
 

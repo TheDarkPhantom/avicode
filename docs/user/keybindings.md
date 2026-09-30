@@ -58,6 +58,12 @@ For most up to date defaults, see [`DEFAULT_KEYBINDINGS` in `apps/server/src/key
 
 These keys are built into the composer and are not configurable.
 
+- `mod+enter` in a new thread sends the first message and starts that thread in the background.
+  You land on a fresh new-thread draft with the same workspace mode and base branch, and a toast
+  offers **Open** for the thread that started. **New worktree** stays selected, but the fresh draft
+  does not reuse the worktree created for the thread that just started. In a thread that has
+  already started, `mod+enter` is a plain send. Turn this off in Settings → Avi Code → Composer to
+  make `mod+enter` a plain send everywhere.
 - `ArrowUp` in an empty composer brings back the last prompt you sent in this thread. Press it
   again to go further back, and `ArrowDown` to come forward. Moving forward past the newest prompt
   clears the composer. Only the text you typed comes back: attachments, attached documents,
