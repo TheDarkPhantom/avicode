@@ -91,6 +91,7 @@ Upstream: t3code 0.0.31
 - Zoom and pan expanded images with the scroll wheel, a click, or the keyboard (#10869 by maria)
 - The file viewer shows HTML pages and PDFs rendered in place (#9143 by Julius Marminge)
 - Agents can open the images you attach by their saved file path (#5757 by Theo Browne)
+- Images upload as soon as you attach them, with progress and retry (#8048 by Theo Browne)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

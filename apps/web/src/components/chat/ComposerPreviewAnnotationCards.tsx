@@ -1,9 +1,13 @@
 import type { PreviewAnnotationPayload } from "@t3tools/contracts";
-import { Frame, MousePointerClick, Paintbrush, PenLine, X } from "lucide-react";
+import { Frame, MousePointerClick, Paintbrush, PenLine, RotateCcw, X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { ComposerImageAttachment } from "~/composerDraftStore";
 import { formatElementContextLabel, normalizeElementContextSelection } from "~/lib/elementContext";
+import {
+  formatAttachmentUploadProgress,
+  type AttachmentUploadState,
+} from "~/lib/attachmentUploadState";
 import { cn } from "~/lib/utils";
 
 interface ComposerPreviewAnnotationCardsProps {
@@ -11,6 +15,8 @@ interface ComposerPreviewAnnotationCardsProps {
   images: ReadonlyArray<ComposerImageAttachment>;
   onRemove: (annotationId: string) => void;
   onExpandImage: (imageId: string) => void;
+  uploadsByAttachmentId?: Readonly<Record<string, AttachmentUploadState>>;
+  onRetryUpload?: (image: ComposerImageAttachment) => void;
   className?: string;
 }
 
@@ -31,6 +37,8 @@ export function ComposerPreviewAnnotationCards({
   images,
   onRemove,
   onExpandImage,
+  uploadsByAttachmentId,
+  onRetryUpload,
   className,
 }: ComposerPreviewAnnotationCardsProps) {
   if (annotations.length === 0) return null;
@@ -40,6 +48,7 @@ export function ComposerPreviewAnnotationCards({
     <div className={cn("flex flex-wrap gap-1.5", className)}>
       {annotations.map((annotation) => {
         const image = imagesById.get(annotation.id);
+        const upload = image ? uploadsByAttachmentId?.[image.id] : undefined;
         const elementLabels = annotation.elements.flatMap((target) => {
           const context = normalizeElementContextSelection(target.element);
           return context ? [{ id: target.id, label: formatElementContextLabel(context) }] : [];
@@ -124,6 +133,22 @@ export function ComposerPreviewAnnotationCards({
                       count={annotation.styleChanges.length}
                       label="style change"
                     />
+                  ) : null}
+                  {upload?.status === "uploading" ? (
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatAttachmentUploadProgress(upload.progress)}
+                    </span>
+                  ) : null}
+                  {upload?.status === "failed" && image && onRetryUpload ? (
+                    <button
+                      type="button"
+                      aria-label={`Retry upload for ${image.name}`}
+                      title={upload.reason}
+                      className="grid size-4 place-items-center rounded text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      onClick={() => onRetryUpload(image)}
+                    >
+                      <RotateCcw className="size-3" />
+                    </button>
                   ) : null}
                 </div>
               </div>

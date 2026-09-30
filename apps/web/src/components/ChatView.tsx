@@ -379,6 +379,12 @@ import {
   serverUpdateGuidance,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
+import { forgetAttachmentUploads, releaseAttachmentUploads } from "../lib/attachmentUploadQueue";
+import {
+  buildComposerTurnAttachments,
+  optimisticComposerAttachments,
+  settleComposerAttachmentUploads,
+} from "../lib/composerTurnAttachments";
 import { queuedTurnChatMessage, useOfflineTurnOutboxStore } from "../offlineTurnOutboxStore";
 import { findHeldTurnForThread, useHeldTurnStore, type HeldTurnItem } from "../heldTurnStore";
 import { dispatchQueuedTurnCommands } from "./OfflineTurnOutboxFlusher";
@@ -2128,6 +2134,10 @@ function ChatViewContent(props: ChatViewProps) {
   const serverConfig = activeThread
     ? (activeEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
+  const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
+  const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
+  const supportsAttachmentUploads =
+    attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -5677,25 +5687,20 @@ function ChatViewContent(props: ChatViewProps) {
             };
           }),
         );
-        const newUploads = await Promise.all(
-          composerImages.map(async (attachment) =>
-            attachment.type === "document"
-              ? {
-                  type: "document" as const,
-                  name: attachment.name,
-                  mimeType: attachment.mimeType,
-                  sizeBytes: attachment.sizeBytes,
-                  extractedText: attachment.extractedText,
-                }
-              : {
-                  type: "image" as const,
-                  name: attachment.name,
-                  mimeType: attachment.mimeType,
-                  sizeBytes: attachment.sizeBytes,
-                  dataUrl: await readFileAsDataUrl(attachment.file),
-                },
-          ),
-        );
+        if (supportsAttachmentUploads) {
+          const uploadError = await settleComposerAttachmentUploads({
+            environmentId,
+            attachments: composerImages,
+          });
+          if (uploadError !== null) {
+            throw new Error(uploadError);
+          }
+        }
+        const newUploads = await buildComposerTurnAttachments({
+          environmentId,
+          attachments: composerImages,
+          useUploads: supportsAttachmentUploads,
+        });
         return [...retainedUploads, ...newUploads];
       });
 
@@ -5745,6 +5750,9 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
 
+      if (supportsAttachmentUploads) {
+        releaseAttachmentUploads(composerImages.map((attachment) => attachment.id));
+      }
       restoreComposerDraft(forkEditState.savedDraft);
       setForkEditState(null);
       await navigate({
@@ -5897,6 +5905,21 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
+    // Upload-first: with a connected server that takes uploads, every
+    // attachment's bytes must land before the turn references them. An
+    // offline send keeps the inline payload the outbox can store.
+    const turnUsesAttachmentUploads = supportsAttachmentUploads && !activeEnvironmentUnavailable;
+    if (turnUsesAttachmentUploads) {
+      const uploadError = await settleComposerAttachmentUploads({
+        environmentId,
+        attachments: composerImages,
+      });
+      if (uploadError !== null) {
+        sendInFlightRef.current = false;
+        setThreadError(threadIdForSend, uploadError);
+        return;
+      }
+    }
     if (isDraftHeroState && activeThreadKey) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
@@ -5948,33 +5971,13 @@ function ChatViewContent(props: ChatViewProps) {
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
     });
-    const turnAttachmentsPromise = Promise.all(
-      composerImagesSnapshot.map(async (attachment) =>
-        attachment.type === "document"
-          ? {
-              type: "document" as const,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              extractedText: attachment.extractedText,
-            }
-          : {
-              type: "image" as const,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              dataUrl: await readFileAsDataUrl(attachment.file),
-            },
-      ),
-    );
-    const optimisticAttachments = composerImagesSnapshot.map((image) => ({
-      type: "image" as const,
-      id: image.id,
-      name: image.name,
-      mimeType: image.mimeType,
-      sizeBytes: image.sizeBytes,
-      previewUrl: image.previewUrl,
-    }));
+    const turnAttachmentsPromise = buildComposerTurnAttachments({
+      environmentId,
+      attachments: composerImagesSnapshot,
+      useUploads: turnUsesAttachmentUploads,
+    });
+    const composerAttachmentIdsSnapshot = composerImagesSnapshot.map((attachment) => attachment.id);
+    const optimisticAttachments = optimisticComposerAttachments(composerImagesSnapshot);
     // Sending always returns to the live edge. The new row becomes the
     // anchored end-space target so it lands near the top while the response
     // streams into the reserved space below it.
@@ -6217,6 +6220,11 @@ function ChatViewContent(props: ChatViewProps) {
         resetLocalDispatch();
         return;
       }
+      // The stored turn now references the pending uploads; forget them
+      // locally without deleting what it will claim when it dispatches.
+      if (turnUsesAttachmentUploads) {
+        forgetAttachmentUploads(composerAttachmentIdsSnapshot);
+      }
       // The held turn now owns the pending row, so the optimistic copy would
       // only be a second source of truth for the same message.
       if (heldTurnTarget !== null) {
@@ -6338,6 +6346,10 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        // The server claimed its own copies; the pending uploads are done.
+        if (turnUsesAttachmentUploads) {
+          releaseAttachmentUploads(composerAttachmentIdsSnapshot);
+        }
       }
     }
 
@@ -6714,33 +6726,25 @@ function ChatViewContent(props: ChatViewProps) {
       // Avi Code addition: build the turn/optimistic attachments from the
       // composer snapshot, mirroring the normal send path so Refine/Implement
       // carry pasted images and documents.
-      const turnAttachments = await Promise.all(
-        attachmentImages.map(async (attachment) =>
-          attachment.type === "document"
-            ? {
-                type: "document" as const,
-                name: attachment.name,
-                mimeType: attachment.mimeType,
-                sizeBytes: attachment.sizeBytes,
-                extractedText: attachment.extractedText,
-              }
-            : {
-                type: "image" as const,
-                name: attachment.name,
-                mimeType: attachment.mimeType,
-                sizeBytes: attachment.sizeBytes,
-                dataUrl: await readFileAsDataUrl(attachment.file),
-              },
-        ),
-      );
-      const optimisticAttachments = attachmentImages.map((image) => ({
-        type: "image" as const,
-        id: image.id,
-        name: image.name,
-        mimeType: image.mimeType,
-        sizeBytes: image.sizeBytes,
-        previewUrl: image.previewUrl,
-      }));
+      const useAttachmentUploads = supportsAttachmentUploads;
+      if (useAttachmentUploads) {
+        const uploadError = await settleComposerAttachmentUploads({
+          environmentId,
+          attachments: attachmentImages,
+        });
+        if (uploadError !== null) {
+          setThreadError(threadIdForSend, uploadError);
+          sendInFlightRef.current = false;
+          resetLocalDispatch();
+          return;
+        }
+      }
+      const turnAttachments = await buildComposerTurnAttachments({
+        environmentId,
+        attachments: attachmentImages,
+        useUploads: useAttachmentUploads,
+      });
+      const optimisticAttachments = optimisticComposerAttachments(attachmentImages);
 
       // Position this sent row once LegendList has measured the anchored tail.
       isAtEndRef.current = true;
@@ -6825,6 +6829,9 @@ function ChatViewContent(props: ChatViewProps) {
       }
 
       if (failure === null) {
+        if (useAttachmentUploads) {
+          releaseAttachmentUploads(attachmentImages.map((attachment) => attachment.id));
+        }
         // Optimistically open the plan sidebar when implementing (not refining).
         // "default" mode here means the agent is executing the plan, which produces
         // step-tracking activities that the sidebar will display.
@@ -6871,6 +6878,7 @@ function ChatViewContent(props: ChatViewProps) {
       clearComposerDraftContent,
       composerDraftTarget,
       markThreadVisited,
+      supportsAttachmentUploads,
     ],
   );
 
@@ -8019,6 +8027,8 @@ function ChatViewContent(props: ChatViewProps) {
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
+                            attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
+                            supportsAttachmentUploads={supportsAttachmentUploads}
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}

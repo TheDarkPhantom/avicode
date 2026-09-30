@@ -72,6 +72,7 @@ import {
 } from "./composerMentionDrag";
 import {
   type ComposerAttachment,
+  type ComposerImageAttachment,
   type DraftId,
   type PersistedComposerImageAttachment,
   hydrateImagesFromPersisted,
@@ -89,6 +90,14 @@ import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
 import { extractDocument, resolveDocumentMimeType } from "../../lib/documentAttachments";
+import {
+  releaseAttachmentUpload,
+  retryAttachmentUpload,
+  startAttachmentUpload,
+  useAttachmentUploadStore,
+} from "../../lib/attachmentUploadQueue";
+import { attachmentUploadBlockReason } from "../../lib/attachmentUploadState";
+import { uploadableComposerAttachments } from "../../lib/composerTurnAttachments";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { resolveShortcutCommand } from "../../keybindings";
@@ -104,6 +113,7 @@ import { type ElementContextDraft } from "../../lib/elementContext";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
 import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
+import { ComposerAttachmentUploadStatus } from "./ComposerAttachmentUploadStatus";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -634,6 +644,8 @@ export function resolveComposerProviderSendContext<T>(input: {
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
+  attachmentUploadsCapabilityKnown: boolean;
+  supportsAttachmentUploads: boolean;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
@@ -769,6 +781,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const {
     composerDraftTarget,
     environmentId,
+    attachmentUploadsCapabilityKnown,
+    supportsAttachmentUploads,
     routeKind,
     routeThreadRef,
     draftId,
@@ -783,7 +797,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
-    sendDisabledReason,
+    sendDisabledReason: externalSendDisabledReason,
     isPreparingWorktree,
     environmentUnavailable,
     hasQueuedTurn,
@@ -846,7 +860,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
   } = props;
-  const isSendDisabled = sendDisabledReason !== null;
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -854,6 +867,48 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
+  // Upload-first attachments: an offline send stays inline, so only a
+  // connected server that takes uploads gates the send on them.
+  const attachmentUploadsActive = supportsAttachmentUploads && !environmentUnavailable;
+  const uploadsByAttachmentId = useAttachmentUploadStore((state) => state.uploadsByAttachmentId);
+  const uploadableComposerImages = useMemo(
+    () => uploadableComposerAttachments(composerImages),
+    [composerImages],
+  );
+  const attachmentBlockReason = attachmentUploadsActive
+    ? attachmentUploadBlockReason({
+        attachmentIds: uploadableComposerImages.map((attachment) => attachment.id),
+        uploadsByAttachmentId,
+        environmentId,
+      })
+    : null;
+  const sendDisabledReason =
+    externalSendDisabledReason ?? (activePendingProgress ? null : attachmentBlockReason);
+  const isSendDisabled = sendDisabledReason !== null;
+
+  useEffect(() => {
+    if (!attachmentUploadsCapabilityKnown) {
+      return;
+    }
+    if (!supportsAttachmentUploads) {
+      for (const attachment of uploadableComposerImages) {
+        releaseAttachmentUpload(attachment.id);
+      }
+      return;
+    }
+    if (environmentUnavailable) {
+      return;
+    }
+    for (const attachment of uploadableComposerImages) {
+      startAttachmentUpload({ environmentId, attachment });
+    }
+  }, [
+    attachmentUploadsCapabilityKnown,
+    environmentId,
+    environmentUnavailable,
+    supportsAttachmentUploads,
+    uploadableComposerImages,
+  ]);
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerElementContexts = composerDraft.elementContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
@@ -1617,6 +1672,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const removeComposerImageFromDraft = useCallback(
     (imageId: string) => {
+      releaseAttachmentUpload(imageId);
       removeComposerDraftImage(composerDraftTarget, imageId);
     },
     [composerDraftTarget, removeComposerDraftImage],
@@ -2695,7 +2751,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // preview annotations, and review comments are not stashable, so
       // destroying them here would be unrecoverable.
       promptRef.current = "";
+      const clearedAttachmentIds = composerImagesRef.current.map((attachment) => attachment.id);
       clearComposerDraftPromptAndImages(stashTarget);
+      for (const attachmentId of clearedAttachmentIds) {
+        releaseAttachmentUpload(attachmentId);
+      }
       setComposerCursor(0);
       setComposerTrigger(null);
       pulseStashBadge();
@@ -3584,9 +3644,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerPreviewAnnotationCards
                   annotations={composerPreviewAnnotations}
                   images={composerImages.filter((attachment) => attachment.type === "image")}
-                  onRemove={(annotationId) =>
-                    removeComposerDraftPreviewAnnotation(composerDraftTarget, annotationId)
-                  }
+                  {...(attachmentUploadsActive
+                    ? {
+                        uploadsByAttachmentId,
+                        onRetryUpload: (image: ComposerImageAttachment) =>
+                          retryAttachmentUpload({ environmentId, attachment: image }),
+                      }
+                    : {})}
+                  onRemove={(annotationId) => {
+                    releaseAttachmentUpload(annotationId);
+                    removeComposerDraftPreviewAnnotation(composerDraftTarget, annotationId);
+                  }}
                   onExpandImage={(imageId) => {
                     const preview = buildExpandedImagePreview(
                       composerImages.filter((attachment) => attachment.type === "image"),
@@ -3698,6 +3766,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             </TooltipPopup>
                           </Tooltip>
                         )}
+                        <ComposerAttachmentUploadStatus
+                          upload={
+                            attachmentUploadsActive ? uploadsByAttachmentId[image.id] : undefined
+                          }
+                          name={image.name}
+                          onRetry={() => {
+                            if (image.type === "image") {
+                              retryAttachmentUpload({ environmentId, attachment: image });
+                            }
+                          }}
+                        />
                         <Button
                           variant="ghost"
                           size="icon-xs"
