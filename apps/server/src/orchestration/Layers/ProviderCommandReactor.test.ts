@@ -1005,7 +1005,7 @@ describe("ProviderCommandReactor", () => {
     });
     harness.generateThreadTitle.mockReturnValue(Effect.succeed({ title: "Project title" }));
     const seededTitle = "Name this thread with the project model.";
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.meta.update",
         commandId: CommandId.make("cmd-thread-project-title-seed"),
@@ -1014,7 +1014,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.make("cmd-turn-start-project-title"),
