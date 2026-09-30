@@ -4,7 +4,13 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type ProjectId,
+  type ScopedProjectRef,
+  type ServerSettings,
+} from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -38,6 +44,21 @@ export function shouldCarryProviderSelectionBetweenProjects(input: {
     (input.sourceProjectRef !== null &&
       scopedProjectKey(input.sourceProjectRef) === scopedProjectKey(input.targetProjectRef))
   );
+}
+
+/**
+ * Avi Code addition. Workspace defaults for a new thread in `projectId`: the
+ * project's overrides win over the global new-thread settings.
+ */
+export function resolveNewThreadWorkspaceDefaults(
+  settings: ServerSettings,
+  projectId: ProjectId,
+): Pick<ServerSettings, "defaultThreadEnvMode" | "newWorktreesStartFromOrigin"> {
+  const { defaultThreadEnvMode, newWorktreesStartFromOrigin } = resolveProjectSettings(
+    settings,
+    projectId,
+  );
+  return { defaultThreadEnvMode, newWorktreesStartFromOrigin };
 }
 
 export function useNewThreadHandler() {
@@ -80,6 +101,11 @@ export function useNewThreadHandler() {
         setModelSelection,
       } = useComposerDraftStore.getState();
       const currentRouteTarget = getCurrentRouteTarget();
+      // Avi Code addition: per-project new-thread defaults.
+      const newThreadSettings = resolveNewThreadWorkspaceDefaults(
+        primaryServerSettings,
+        projectRef.projectId,
+      );
       // A new thread carries the user's *working mode* from the thread being
       // viewed: model (including options like reasoning effort and context
       // window), permission mode, and interaction mode. Branch, worktree, and
@@ -183,7 +209,7 @@ export function useNewThreadHandler() {
           // preserved. When the draft is already open and no options were
           // passed, leave it alone entirely — the user may have just picked a
           // branch in the composer.
-          const defaultEnvMode = primaryServerSettings.defaultThreadEnvMode;
+          const defaultEnvMode = newThreadSettings.defaultThreadEnvMode;
           const workspaceContext = hasExplicitWorkspaceOption
             ? {
                 ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
@@ -199,7 +225,7 @@ export function useNewThreadHandler() {
                   envMode: defaultEnvMode,
                   startFromOrigin: resolveNewDraftStartFromOrigin({
                     envMode: defaultEnvMode,
-                    newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,
+                    newWorktreesStartFromOrigin: newThreadSettings.newWorktreesStartFromOrigin,
                   }),
                 };
           if (workspaceContext) {
@@ -281,7 +307,7 @@ export function useNewThreadHandler() {
       const draftId = newDraftId();
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
-      const initialEnvMode = options?.envMode ?? primaryServerSettings.defaultThreadEnvMode;
+      const initialEnvMode = options?.envMode ?? newThreadSettings.defaultThreadEnvMode;
       return (async () => {
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
           threadId,
@@ -293,7 +319,7 @@ export function useNewThreadHandler() {
             options?.startFromOrigin ??
             resolveNewDraftStartFromOrigin({
               envMode: initialEnvMode,
-              newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,
+              newWorktreesStartFromOrigin: newThreadSettings.newWorktreesStartFromOrigin,
             }),
           runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),

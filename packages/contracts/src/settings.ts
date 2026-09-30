@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { ProjectId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import {
   COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS,
@@ -827,6 +827,34 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+// Avi Code addition. Per-project overrides of a few server settings. Only
+// settings that describe how work in one repository should go are listed; the
+// rest stay environment-wide. `resolveProjectSettings` in
+// `@t3tools/shared/projectSettings` applies them. Inspired by upstream #11176.
+export const AVICODE_PROJECT_OVERRIDABLE_SETTING_KEYS = [
+  "defaultThreadEnvMode",
+  "newWorktreesStartFromOrigin",
+  "textGenerationModelSelection",
+  "sourceControlWriterModelSelection",
+  "sourceControlWritingStyle",
+] as const;
+export type AviCodeProjectOverridableSettingKey =
+  (typeof AVICODE_PROJECT_OVERRIDABLE_SETTING_KEYS)[number];
+
+/**
+ * One project's overrides. An absent key inherits the global value. `null` is
+ * a real value for `sourceControlWriterModelSelection` (use the text
+ * generation model), never "inherit".
+ */
+export const AviCodeProjectSettingsOverride = Schema.Struct({
+  defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
+  newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
+  textGenerationModelSelection: Schema.optionalKey(ModelSelection),
+  sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
+} satisfies Record<AviCodeProjectOverridableSettingKey, unknown>);
+export type AviCodeProjectSettingsOverride = typeof AviCodeProjectSettingsOverride.Type;
+
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -880,6 +908,11 @@ export const ServerSettings = Schema.Struct({
   ),
   sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  // Avi Code addition. Project id -> that project's overrides. Absent in
+  // settings files written before overrides existed, hence the `{}` default.
+  aviCodeProjectSettingsOverrides: Schema.Record(ProjectId, AviCodeProjectSettingsOverride).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
 
   // Legacy single-instance-per-driver settings. Continues to be the source
@@ -1034,6 +1067,14 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  // Avi Code addition. Entry-level patch: a project's entry replaces its whole
+  // override set, and `null` removes every override for that project. Clearing
+  // one setting means resending the entry without that key; per-key `null`
+  // could not express it because `sourceControlWriterModelSelection` is itself
+  // nullable. Projects missing from the patch keep their overrides.
+  aviCodeProjectSettingsOverrides: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(AviCodeProjectSettingsOverride)),
+  ),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),

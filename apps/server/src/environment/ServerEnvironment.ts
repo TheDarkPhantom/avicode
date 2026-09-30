@@ -150,6 +150,8 @@ export const make = Effect.gen(function* () {
       threadSnooze: true,
       threadAutoSettleOptOut: true,
       threadTitleRegeneration: true,
+      // Avi Code addition.
+      aviCodeProjectSettingsOverrides: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || serverSelfUpdate === "respawn"
         ? { serverSelfUpdateProgress: true }

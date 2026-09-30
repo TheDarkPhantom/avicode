@@ -34,6 +34,10 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
 - The per-thread auto-settle switch (#11846) lives only in the SidebarV2 thread menu, whose label
   shows the current state (v1 has no settling at all). There is no row badge or bulk action yet.
   Upstream's checked submenu needs `checked` on context menu items, which the fork skipped.
+- Project overrides (fork-native take on upstream #11176) cover five settings: new-thread mode,
+  start from origin, writing style, text generation model and writer model. Not done: a sidebar
+  "Project settings" entry, t3.json project defaults (#12954), projects on remote environments,
+  and pruning overrides left behind by deleted projects (they are inert, but stay in settings.json).
 - Claude Sonnet 5.5 needs Claude Code 2.1.284 or newer. Older installs hide it and show the upgrade
   message instead.
 - Context compaction (`/compact`, upstream #9293, #10112, #11107, #8144) is server-only so far. The

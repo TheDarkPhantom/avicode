@@ -1,8 +1,41 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldCarryProviderSelectionBetweenProjects } from "./useHandleNewThread";
+import {
+  resolveNewThreadWorkspaceDefaults,
+  shouldCarryProviderSelectionBetweenProjects,
+} from "./useHandleNewThread";
+
+// Avi Code addition.
+describe("resolveNewThreadWorkspaceDefaults", () => {
+  const overridden = ProjectId.make("overridden");
+  const settings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    defaultThreadEnvMode: "local" as const,
+    newWorktreesStartFromOrigin: true,
+    aviCodeProjectSettingsOverrides: {
+      [overridden]: {
+        defaultThreadEnvMode: "worktree" as const,
+        newWorktreesStartFromOrigin: false,
+      },
+    },
+  };
+
+  it("uses the project's env mode and start-from-origin overrides", () => {
+    expect(resolveNewThreadWorkspaceDefaults(settings, overridden)).toEqual({
+      defaultThreadEnvMode: "worktree",
+      newWorktreesStartFromOrigin: false,
+    });
+  });
+
+  it("uses the global defaults for a project without overrides", () => {
+    expect(resolveNewThreadWorkspaceDefaults(settings, ProjectId.make("plain"))).toEqual({
+      defaultThreadEnvMode: "local",
+      newWorktreesStartFromOrigin: true,
+    });
+  });
+});
 
 const environmentId = EnvironmentId.make("local");
 const clientL = scopeProjectRef(environmentId, ProjectId.make("client-l"));

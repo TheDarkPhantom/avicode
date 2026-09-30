@@ -26,6 +26,10 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live in [GitCore.ts][3].
 
+#### Project override
+
+A project's own value for a global server setting, stored in `aviCodeProjectSettingsOverrides` and applied by `resolveProjectSettings` in `packages/shared/src/projectSettings.ts`. See [project-settings.md](../user/project-settings.md).
+
 ### Thread timeline
 
 #### Thread

@@ -155,6 +155,7 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly serverSettings?: Parameters<typeof ServerSettingsService.layerTest>[0];
     readonly compactThreadEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
@@ -420,7 +421,7 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
       Layer.provideMerge(Layer.mock(TerminalManager)({ closeIdle: closeIdleTerminals })),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(ServerSettingsService.layerTest(input?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(InterruptSuppressionLive),
       Layer.provideMerge(NodeServices.layer),
@@ -987,6 +988,52 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.title).toBe("Generated title");
     expect(attempts).toBe(2);
+  });
+
+  // Avi Code addition.
+  it("generates the first-turn title with the project's text generation model", async () => {
+    const projectModel = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-project-titles",
+    };
+    const harness = await createHarness({
+      serverSettings: {
+        aviCodeProjectSettingsOverrides: {
+          [asProjectId("project-1")]: { textGenerationModelSelection: projectModel },
+        },
+      },
+    });
+    harness.generateThreadTitle.mockReturnValue(Effect.succeed({ title: "Project title" }));
+    const seededTitle = "Name this thread with the project model.";
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-thread-project-title-seed"),
+        threadId: ThreadId.make("thread-1"),
+        title: seededTitle,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-project-title"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-project-title"),
+          role: "user",
+          text: seededTitle,
+          attachments: [],
+        },
+        titleSeed: seededTitle,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.generateThreadTitle.mock.calls.length === 1);
+    expect(harness.generateThreadTitle.mock.calls[0]?.[0].modelSelection).toEqual(projectModel);
   });
 
   it("regenerates a thread title from the current conversation", async () => {

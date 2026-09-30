@@ -22,6 +22,7 @@ import type {
 import {
   DEFAULT_SERVER_SETTINGS,
   GitCommandError,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   TextGenerationError,
@@ -35,6 +36,7 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as ServerConfig from "../config.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitManager from "./GitManager.ts";
 
@@ -636,6 +638,8 @@ function makeManager(input?: {
   textGeneration?: Partial<FakeGitTextGeneration>;
   serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   setupScriptRunner?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"];
+  /** Avi Code addition. Workspace roots of known projects, for project overrides. */
+  projects?: ReadonlyArray<{ readonly id: ProjectId; readonly workspaceRoot: string }>;
 }) {
   const { service: gitHubCli, ghCalls } = createGitHubCliWithFakeGh(input?.ghScenario);
   const textGeneration = createTextGeneration(input?.textGeneration);
@@ -678,6 +682,25 @@ function makeManager(input?: {
     ),
     vcsDriverLayer,
     serverSettingsLayer,
+    input?.projects
+      ? Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+          getShellSnapshot: () =>
+            Effect.succeed({
+              snapshotSequence: 0,
+              projects: (input.projects ?? []).map((project) => ({
+                id: project.id,
+                title: "Project",
+                workspaceRoot: project.workspaceRoot,
+                defaultModelSelection: null,
+                scripts: [],
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              })),
+              threads: [],
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            }),
+        })
+      : Layer.empty,
   ).pipe(Layer.provideMerge(sourceControlRegistryLayer), Layer.provideMerge(NodeServices.layer));
 
   return GitManager.make.pipe(
@@ -1608,6 +1631,58 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           Effect.map((result) => result.stdout.trim()),
         ),
       ).toBe("Implement stacked git actions");
+    }),
+  );
+
+  // Avi Code addition.
+  it.effect("uses the project's writing style and models for its repository", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nworld\n");
+      const projectId = ProjectId.make("project-overrides");
+      const projectModel = {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-project-model",
+      };
+      let generatedPolicy: TextGeneration.CommitMessageGenerationInput["policy"] = undefined;
+      let generatedModelSelection:
+        | TextGeneration.CommitMessageGenerationInput["modelSelection"]
+        | undefined;
+
+      const { manager } = yield* makeManager({
+        projects: [{ id: projectId, workspaceRoot: repoDir }],
+        serverSettings: {
+          sourceControlWritingStyle: { mode: "conventional_commits" as const },
+          sourceControlWriterModelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-global-writer",
+          },
+          aviCodeProjectSettingsOverrides: {
+            [projectId]: {
+              sourceControlWritingStyle: {
+                mode: "custom" as const,
+                customInstructions: "Project tone.",
+                followChangeRequestTemplates: true,
+              },
+              // `null` is a real override: use the text generation model.
+              sourceControlWriterModelSelection: null,
+              textGenerationModelSelection: projectModel,
+            },
+          },
+        },
+        textGeneration: {
+          generateCommitMessage: (input) => {
+            generatedPolicy = input.policy;
+            generatedModelSelection = input.modelSelection;
+            return Effect.succeed({ subject: "Use project settings", body: "" });
+          },
+        },
+      });
+      yield* runStackedAction(manager, { cwd: repoDir, action: "commit" });
+
+      expect(generatedPolicy).toMatchObject({ commitInstructions: "Project tone." });
+      expect(generatedModelSelection).toEqual(projectModel);
     }),
   );
 

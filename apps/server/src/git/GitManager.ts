@@ -42,6 +42,12 @@ import {
   getChangeRequestTerminologyForKind,
   type ChangeRequestTerminology,
 } from "@t3tools/shared/sourceControl";
+import {
+  findProjectIdForWorkspacePath,
+  hasProjectSettingsOverrides,
+  resolveProjectSettings,
+} from "@t3tools/shared/projectSettings";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 
 import { GitManagerError, GitPullRequestMaterializationError } from "@t3tools/contracts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -591,6 +597,25 @@ export const make = Effect.gen(function* () {
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
   const serverSettingsService = yield* ServerSettings.ServerSettingsService;
+  // Avi Code addition. Optional so git actions still run without orchestration
+  // (tests, CLI); without it they use the global settings.
+  const projectionSnapshotQuery = yield* Effect.serviceOption(
+    ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+  );
+  /** Global settings with the overrides of the project that owns `cwd`. */
+  const settingsForCwd = (cwd: string) =>
+    serverSettingsService.getSettings.pipe(
+      Effect.flatMap((settings) =>
+        !hasProjectSettingsOverrides(settings) || Option.isNone(projectionSnapshotQuery)
+          ? Effect.succeed(settings)
+          : projectionSnapshotQuery.value.getShellSnapshot().pipe(
+              Effect.map((shell) =>
+                resolveProjectSettings(settings, findProjectIdForWorkspacePath(shell, cwd)),
+              ),
+              Effect.orElseSucceed(() => settings),
+            ),
+      ),
+    );
   const readRepositoryInstructions = (cwd: string, fileName: string) =>
     Effect.gen(function* () {
       const root = yield* fileSystem.realPath(cwd);
@@ -2137,7 +2162,7 @@ export const make = Effect.gen(function* () {
         let commitMessageForStep = input.commitMessage;
         let preResolvedCommitSuggestion: CommitAndBranchSuggestion | undefined = undefined;
 
-        const textGenerationSettings = yield* serverSettingsService.getSettings.pipe(
+        const textGenerationSettings = yield* settingsForCwd(input.cwd).pipe(
           Effect.flatMap((settings) =>
             settings.sourceControlWriterModelSelection === null
               ? Effect.succeed({

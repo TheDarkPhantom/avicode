@@ -61,6 +61,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands regenerateTitle on thread.meta.update. Absent on
       older servers, so clients hide the action instead of sending it. */
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
+  /** Avi Code addition. Server resolves `aviCodeProjectSettingsOverrides`
+      when it acts for a project. Older servers drop the key, so clients hide
+      the project overrides editor when this is absent. */
+  aviCodeProjectSettingsOverrides: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */

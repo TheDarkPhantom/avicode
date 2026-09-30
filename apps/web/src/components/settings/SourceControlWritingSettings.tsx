@@ -211,3 +211,6 @@ export function SourceControlWritingSettingsSection() {
     </SettingsSection>
   );
 }
+
+// Avi Code addition. Shared with the project overrides editor.
+export { MODE_OPTIONS as SOURCE_CONTROL_WRITING_MODE_OPTIONS };

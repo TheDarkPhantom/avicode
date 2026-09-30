@@ -82,6 +82,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ToggleGroup, Toggle as ToggleGroupItem } from "../ui/toggle-group";
 import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
 import { ChipsSettings } from "./ChipsSettings";
+import { ProjectSettingsOverridesSection } from "./ProjectSettingsOverrides";
 import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
 import {
   WorktreeCleanupDialog,
@@ -1292,6 +1293,8 @@ export function AviCodeSettings() {
           <ColorThemeSettings />
           <NewChatSettings />
           <WorktreeAutomationSettings />
+          {/* Avi Code addition */}
+          <ProjectSettingsOverridesSection />
           {/* Avi Code addition */}
           <WorktreeCleanupSettings />
           <CommunicationStyleSettings />

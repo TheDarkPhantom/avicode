@@ -95,6 +95,10 @@
       "types": "./src/String.ts",
       "import": "./src/String.ts"
     },
+    "./projectSettings": {
+      "types": "./src/projectSettings.ts",
+      "import": "./src/projectSettings.ts"
+    },
     "./projectScripts": {
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"

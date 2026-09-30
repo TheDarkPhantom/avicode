@@ -49,6 +49,7 @@ Upstream: t3code 0.0.31
 - Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
 - Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
 - PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
+- Override worktree, git writing and model defaults for a single project (#255)
 - Turn off Ctrl+Enter starting new threads in the background in Settings, Avi Code (#254)
 
 ### Upstream t3code
