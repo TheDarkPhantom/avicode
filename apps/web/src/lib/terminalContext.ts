@@ -248,8 +248,9 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
 
 // Avi Code addition: when images are sent without text, ChatView substitutes
 // this bootstrap prompt so the provider has something to work with. It is an
-// internal instruction and should never be shown to the user.
-const IMAGE_ONLY_BOOTSTRAP_PROMPT =
+// internal instruction and should never be shown to the user, nor recalled
+// into the composer as if the user had typed it.
+export const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
 
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {

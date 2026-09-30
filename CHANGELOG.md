@@ -49,6 +49,7 @@ Upstream: t3code 0.0.31
 - Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
 - Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
 - PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
+- Turn off Ctrl+Enter starting new threads in the background in Settings, Avi Code (#254)
 
 ### Upstream t3code
 
@@ -99,6 +100,8 @@ Upstream: t3code 0.0.31
 - Set when Claude compacts a long thread with the Auto-compact after setting (#8144 by Theo Browne)
 - Resuming an old Claude session asks whether to compact it first (#8144 by Theo Browne)
 - Agents can open the images you attach by their saved file path (#5757 by Theo Browne)
+- Press Up in an empty composer to bring back prompts you sent in this thread (#9173 by Theo Browne)
+- Ctrl+Enter in a new thread starts it in the background and opens a fresh draft (#7821 by Exotic)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
