@@ -52,6 +52,21 @@ describe("UserMessageFileAttachments", () => {
     expect(withoutPlayer).toContain('aria-label="Download demo.mov"');
   });
 
+  it("gives PDFs and HTML separate preview and download controls", () => {
+    const pdf = {
+      ...base,
+      id: "p",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      previewUrl: "http://env.test/api/assets/p",
+    };
+    const markup = renderToStaticMarkup(
+      <UserMessageFileAttachments files={[pdf]} unknownAttachments={[]} onPreview={() => {}} />,
+    );
+    expect(markup).toContain('aria-label="Preview report.pdf"');
+    expect(markup).toContain('aria-label="Download report.pdf"');
+  });
+
   it("renders nothing without files", () => {
     expect(
       renderToStaticMarkup(<UserMessageFileAttachments files={[]} unknownAttachments={[]} />),

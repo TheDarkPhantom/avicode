@@ -12,6 +12,7 @@ import {
 } from "../composerDraftStore";
 import {
   type ChatAttachment,
+  documentHasStoredOriginal,
   isDocumentAttachment,
   isFileAttachment,
   isImageAttachment,
@@ -249,11 +250,6 @@ async function uploadDetachedFile(input: {
   return id;
 }
 
-// Persisted ids carry the original's extension when the server kept the
-// original bytes: `<thread>-<uuid>-pdf`.
-const ATTACHMENT_ID_WITH_EXTENSION =
-  /-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[a-z0-9]{1,10}$/i;
-
 /**
  * Rebuilds the turn payload for an attachment of an already sent message
  * (retry, fork edit) from its resolved asset URL. Avi Code addition.
@@ -270,7 +266,7 @@ export async function reloadSentAttachment(
     throw new Error(`Could not reload '${attachment.name}'.`);
   }
   if (isDocumentAttachment(attachment)) {
-    if (!ATTACHMENT_ID_WITH_EXTENSION.test(attachment.id)) {
+    if (!documentHasStoredOriginal(attachment)) {
       // Legacy documents serve their extracted text.
       return {
         type: "document",

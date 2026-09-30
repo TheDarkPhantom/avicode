@@ -322,6 +322,60 @@ describe("rightPanelStore", () => {
     });
   });
 
+  describe("attachment surfaces", () => {
+    const attachment = {
+      type: "file" as const,
+      id: "thread-A-attachment-pdf",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 42,
+    };
+    const attachmentSurface = {
+      id: "attachment:thread-A-attachment-pdf",
+      kind: "file",
+      relativePath: "report.pdf",
+      revealLine: null,
+      revealRequestId: 0,
+      attachment,
+    };
+
+    it("opens an attachment as a file surface without the standalone explorer", () => {
+      useRightPanelStore.getState().open(refA, "files");
+      useRightPanelStore.getState().openAttachment(refA, attachment);
+      useRightPanelStore.getState().openAttachment(refA, attachment);
+
+      expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+        isOpen: true,
+        activeSurfaceId: "attachment:thread-A-attachment-pdf",
+        surfaces: [attachmentSurface],
+      });
+    });
+
+    it("keeps attachment and workspace file ids disjoint", () => {
+      useRightPanelStore.getState().openFile(refA, "attachment:shared-id");
+      useRightPanelStore.getState().openAttachment(refA, { ...attachment, id: "shared-id" });
+
+      expect(
+        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces.map(
+          (surface) => surface.id,
+        ),
+      ).toEqual(["file:attachment:shared-id", "attachment:shared-id"]);
+    });
+
+    it("keeps attachment previews when their workspace is unavailable", () => {
+      useRightPanelStore.getState().openFile(refA, "README.md");
+      useRightPanelStore.getState().openAttachment(refA, attachment);
+
+      useRightPanelStore.getState().reconcileFileSurfaces(refA, false);
+
+      expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+        isOpen: true,
+        activeSurfaceId: "attachment:thread-A-attachment-pdf",
+        surfaces: [attachmentSurface],
+      });
+    });
+  });
+
   it("close hides the panel without clearing its selected surface", () => {
     useRightPanelStore.getState().open(refA, "plan");
     useRightPanelStore.getState().close(refA);

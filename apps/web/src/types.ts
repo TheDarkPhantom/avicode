@@ -108,6 +108,32 @@ export function isVideoAttachment(attachment: {
   return videoMimeType(attachment) !== null;
 }
 
+// Persisted ids carry the original's extension when the server kept the
+// original bytes of a document: `<thread>-<uuid>-pdf`.
+const ATTACHMENT_ID_WITH_EXTENSION =
+  /-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[a-z0-9]{1,10}$/i;
+
+/**
+ * Avi Code addition: whether a sent document's original bytes were stored
+ * next to its extracted text, so its asset URL serves the original.
+ */
+export function documentHasStoredOriginal(attachment: { readonly id: string }): boolean {
+  return ATTACHMENT_ID_WITH_EXTENSION.test(attachment.id);
+}
+
+/** A PDF or HTML file the file viewer can render in place. */
+export function isBrowserPreviewAttachment(attachment: {
+  readonly name: string;
+  readonly mimeType: string;
+}): boolean {
+  const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase();
+  return (
+    /\.(?:html?|pdf)$/i.test(attachment.name) ||
+    mimeType === "application/pdf" ||
+    mimeType === "text/html"
+  );
+}
+
 export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
 }

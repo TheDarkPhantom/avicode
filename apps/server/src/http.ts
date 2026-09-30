@@ -261,6 +261,10 @@ const isSafeDownloadMimeType = (mimeType: string): boolean =>
   !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
 const isSafeInlineVideoMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && mimeType.toLowerCase().startsWith("video/");
+// An inline HTML attachment runs in its own opaque origin, like the viewer's
+// sandboxed frame: scripts and forms work, the app's session does not.
+const INLINE_HTML_CONTENT_SECURITY_POLICY =
+  "sandbox allow-scripts allow-forms allow-popups allow-modals";
 
 /** RFC 6266 disposition with an ASCII fallback name plus a UTF-8 `filename*`. */
 export function downloadContentDisposition(fileName?: string): string {
@@ -307,7 +311,14 @@ export function assetResponseHeaders(options?: {
         }
       : inlineVideoMimeType !== undefined && isSafeInlineVideoMimeType(inlineVideoMimeType)
         ? { "Content-Type": inlineVideoMimeType }
-        : {}),
+        : inlineVideoMimeType?.toLowerCase() === "application/pdf"
+          ? { "Content-Type": "application/pdf" }
+          : inlineVideoMimeType?.toLowerCase() === "text/html"
+            ? {
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Security-Policy": INLINE_HTML_CONTENT_SECURITY_POLICY,
+              }
+            : {}),
   };
 }
 

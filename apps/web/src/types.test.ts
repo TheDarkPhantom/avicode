@@ -4,6 +4,8 @@ import {
   type ChatAttachment,
   isDocumentAttachment,
   isFileAttachment,
+  documentHasStoredOriginal,
+  isBrowserPreviewAttachment,
   isImageAttachment,
   videoMimeType,
 } from "./types";
@@ -34,6 +36,20 @@ describe("attachment type guards", () => {
           !isFileAttachment(attachment),
       ),
     ).toEqual([unknown]);
+  });
+});
+
+describe("document previews", () => {
+  it("knows which documents kept their original and which files a viewer can show", () => {
+    expect(
+      documentHasStoredOriginal({ id: "thread-1-00000000-0000-4000-8000-000000000001-pdf" }),
+    ).toBe(true);
+    expect(documentHasStoredOriginal({ id: "thread-1-00000000-0000-4000-8000-000000000001" })).toBe(
+      false,
+    );
+    expect(isBrowserPreviewAttachment({ name: "a.bin", mimeType: "application/pdf" })).toBe(true);
+    expect(isBrowserPreviewAttachment({ name: "page.HTM", mimeType: "" })).toBe(true);
+    expect(isBrowserPreviewAttachment({ name: "a.zip", mimeType: "application/zip" })).toBe(false);
   });
 });
 

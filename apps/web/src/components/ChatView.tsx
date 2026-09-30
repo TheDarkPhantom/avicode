@@ -140,6 +140,7 @@ import {
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
   type ChatAttachment,
+  type ChatFileAttachment,
   isFileAttachment,
   isImageAttachment,
   videoMimeType,
@@ -478,6 +479,7 @@ const PreviewPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const AttachmentPreviewPanel = lazy(() => import("./files/AttachmentPreviewPanel"));
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
@@ -7532,6 +7534,22 @@ function ChatViewContent(props: ChatViewProps) {
     }
   };
 
+  // Avi Code port: a sent PDF or HTML attachment opens in the file viewer.
+  // Only the attachment's identity is kept on the tab; its signed preview URL
+  // expires, and the panel mints its own inline one.
+  const openAttachmentPreview = useCallback(
+    (attachment: ChatFileAttachment) => {
+      if (!activeThreadRef) return;
+      useRightPanelStore.getState().openAttachment(activeThreadRef, {
+        type: "file",
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      });
+    },
+    [activeThreadRef],
+  );
   const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
@@ -7712,6 +7730,14 @@ function ChatViewContent(props: ChatViewProps) {
         timestampFormat={timestampFormat}
         mode="embedded"
       />
+    ) : activeRightPanelSurface?.kind === "file" && activeRightPanelSurface.attachment ? (
+      <Suspense fallback={null}>
+        <AttachmentPreviewPanel
+          key={`${environmentId}:${activeRightPanelSurface.attachment.id}`}
+          environmentId={environmentId}
+          attachment={activeRightPanelSurface.attachment}
+        />
+      </Suspense>
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeFileSurfaceRoot ? (
@@ -7936,6 +7962,7 @@ function ChatViewContent(props: ChatViewProps) {
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 isForkingThread={isForkingThread}
                 onImageExpand={onExpandTimelineImage}
+                onAttachmentPreview={openAttachmentPreview}
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}

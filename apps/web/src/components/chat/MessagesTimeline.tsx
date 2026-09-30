@@ -35,6 +35,9 @@ import {
 } from "../../session-logic";
 import { getLegendListScrollNode } from "../../legendListScrollNode";
 import {
+  type ChatFileAttachment,
+  documentHasStoredOriginal,
+  isBrowserPreviewAttachment,
   isDocumentAttachment,
   isFileAttachment,
   isImageAttachment,
@@ -174,6 +177,7 @@ interface TimelineRowSharedState {
   onRetryUserMessage: (messageId: MessageId) => void;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
+  onAttachmentPreview: ((attachment: ChatFileAttachment) => void) | undefined;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorElement?: HTMLElement) => void;
@@ -232,6 +236,8 @@ interface MessagesTimelineProps {
   isRevertingCheckpoint: boolean;
   isForkingThread?: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
+  /** Avi Code port: opens a sent PDF or HTML attachment in the file viewer. */
+  onAttachmentPreview?: (attachment: ChatFileAttachment) => void;
   activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
@@ -296,6 +302,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isRevertingCheckpoint,
   isForkingThread = false,
   onImageExpand,
+  onAttachmentPreview,
   activeThreadEnvironmentId,
   markdownCwd,
   resolvedTheme,
@@ -898,6 +905,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRetryUserMessage,
       onRevertUserMessage,
       onImageExpand,
+      onAttachmentPreview,
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
@@ -923,6 +931,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRetryUserMessage,
       onRevertUserMessage,
       onImageExpand,
+      onAttachmentPreview,
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
@@ -1660,22 +1669,51 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
         {userDocuments.length > 0 && (
           <div className="mb-2 flex max-w-[420px] flex-wrap gap-2">
-            {userDocuments.map((document) => (
-              <div
-                key={document.id}
-                className="flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2 text-xs"
-                title={`${document.extractedChars.toLocaleString()} extracted characters`}
-              >
-                <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{document.name}</span>
-              </div>
-            ))}
+            {userDocuments.map((document) => {
+              const chip = (
+                <>
+                  <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{document.name}</span>
+                </>
+              );
+              const className =
+                "flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2 text-xs";
+              const title = `${document.extractedChars.toLocaleString()} extracted characters`;
+              // A PDF whose original the server kept opens in the file viewer.
+              return ctx.onAttachmentPreview &&
+                documentHasStoredOriginal(document) &&
+                isBrowserPreviewAttachment(document) ? (
+                <button
+                  key={document.id}
+                  type="button"
+                  className={`${className} cursor-pointer hover:bg-background`}
+                  title={title}
+                  aria-label={`Preview ${document.name}`}
+                  onClick={() =>
+                    ctx.onAttachmentPreview?.({
+                      type: "file",
+                      id: document.id,
+                      name: document.name,
+                      mimeType: document.mimeType,
+                      sizeBytes: Math.max(1, document.sizeBytes),
+                    })
+                  }
+                >
+                  {chip}
+                </button>
+              ) : (
+                <div key={document.id} className={className} title={title}>
+                  {chip}
+                </div>
+              );
+            })}
           </div>
         )}
         <UserMessageFileAttachments
           files={userFiles}
           unknownAttachments={unknownAttachments}
           onExpand={ctx.onImageExpand}
+          {...(ctx.onAttachmentPreview ? { onPreview: ctx.onAttachmentPreview } : {})}
         />
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">

@@ -1,9 +1,14 @@
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { DownloadIcon, FileIcon, PlayIcon } from "lucide-react";
+import { DownloadIcon, EyeIcon, FileIcon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { downloadAttachmentFromUrl, loadAttachmentBlobUrl } from "../../lib/attachmentDownload";
-import { type ChatAttachment, type ChatFileAttachment, isVideoAttachment } from "../../types";
+import {
+  type ChatAttachment,
+  type ChatFileAttachment,
+  isBrowserPreviewAttachment,
+  isVideoAttachment,
+} from "../../types";
 import { toastManager } from "../ui/toast";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 
@@ -76,8 +81,10 @@ export function UserMessageFileAttachments(props: {
   readonly files: ReadonlyArray<ChatFileAttachment>;
   readonly unknownAttachments: ReadonlyArray<ChatAttachment>;
   readonly onExpand?: (preview: ExpandedImagePreview) => void;
+  /** Opens a PDF or HTML file in the file viewer. Absent: those download too. */
+  readonly onPreview?: (file: ChatFileAttachment) => void;
 }) {
-  const { onExpand } = props;
+  const { onExpand, onPreview } = props;
   const videos = onExpand ? props.files.filter(isVideoAttachment) : [];
   const files = props.files.filter((file) => !videos.includes(file));
   if (videos.length === 0 && files.length === 0 && props.unknownAttachments.length === 0) {
@@ -108,6 +115,41 @@ export function UserMessageFileAttachments(props: {
               </>
             );
             const previewUrl = file.downloadable === false ? undefined : file.previewUrl;
+            if (onPreview && previewUrl && isBrowserPreviewAttachment(file)) {
+              return (
+                <div key={file.id} className="flex min-w-0 items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={`Preview ${file.name}`}
+                    onClick={() => onPreview(file)}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+                  >
+                    <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                    <EyeIcon className="size-4 shrink-0" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Download ${file.name}`}
+                    onClick={() => {
+                      void downloadAttachmentFromUrl(previewUrl, file.name).catch(
+                        (cause: unknown) => {
+                          toastManager.add({
+                            type: "error",
+                            title: `Could not download ${file.name}`,
+                            description:
+                              cause instanceof Error ? cause.message : "The file is unavailable.",
+                          });
+                        },
+                      );
+                    }}
+                    className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                  >
+                    <DownloadIcon className="size-4" />
+                  </button>
+                </div>
+              );
+            }
             return previewUrl ? (
               <button
                 key={file.id}

@@ -9,7 +9,9 @@ message holds up to twelve attachments.
   real file.
 - **Other files** (ZIP, binaries, anything else) up to 50MB attach as files on servers that take
   file uploads. They show as rows with their size and send as a path the agent can open. In the
-  chat they download under their original name.
+  chat they download under their original name. A sent PDF or HTML file opens in the file viewer
+  instead, with a download button beside it. A sent PDF document opens there too when your server
+  kept its original.
 - **Videos** attach as files. Select one before or after sending to play it with the built-in
   player. Playback depends on the formats the app can decode (MP4 and WebM play; a Mac `.mov`
   often does not), and anything it cannot play offers a download instead.

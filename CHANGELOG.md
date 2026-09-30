@@ -94,6 +94,7 @@ Upstream: t3code 0.0.31
 - Images upload as soon as you attach them, with progress and retry (#8048 by Theo Browne)
 - Attach PDFs, ZIPs and other files up to 50MB to a message (#8236 by Theo Browne)
 - Play video attachments right in the chat (#8688 by Bilal Bakr)
+- Open attached PDFs and HTML pages in the file viewer (#9292 by Julius Marminge)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 

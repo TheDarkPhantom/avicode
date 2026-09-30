@@ -58,6 +58,7 @@ import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRev
 import { fileBreadcrumbs } from "./filePath";
 import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
+import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { isProjectFileMissing } from "./projectFileErrorMessage";
 import {
   confirmProjectFileQueryData,
@@ -216,8 +217,6 @@ function WorkspaceImagePreview(props: {
   );
 }
 
-const isPdfPreviewFile = (path: string): boolean => /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
-
 /**
  * Renders an HTML or PDF file in place from its signed asset URL. HTML runs in
  * a sandboxed frame with an opaque origin, so a page cannot reach the app's
@@ -265,19 +264,11 @@ function WorkspaceBrowserPreview(props: {
     props.reloadSignal === ""
       ? ""
       : `${assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.reloadSignal)}`;
-  const src = `${assetUrl.url}${revisionSuffix}`;
-  const className = "min-h-0 flex-1 border-0 bg-white";
-  // The built-in PDF viewer needs an unsandboxed frame; a PDF runs no scripts.
-  return isPdfPreviewFile(props.absolutePath) ? (
-    // oxlint-disable-next-line react/iframe-missing-sandbox
-    <iframe key={src} src={src} title={props.title} className={className} />
-  ) : (
-    <iframe
-      key={src}
-      src={src}
+  return (
+    <BrowserDocumentFrame
+      src={`${assetUrl.url}${revisionSuffix}`}
       title={props.title}
-      className={className}
-      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+      pdf={isPdfPreviewFile(props.absolutePath)}
     />
   );
 }
