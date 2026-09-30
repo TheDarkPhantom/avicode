@@ -49,7 +49,7 @@ import {
   type OrchestrationProjectionPipelineShape,
 } from "../Services/ProjectionPipeline.ts";
 import {
-  attachmentRelativePath,
+  attachmentRelativePaths,
   parseAttachmentIdFromRelativePath,
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
@@ -344,7 +344,9 @@ function collectThreadAttachmentRelativePaths(
       if (!attachmentThreadSegment || attachmentThreadSegment !== threadSegment) {
         continue;
       }
-      relativePaths.add(attachmentRelativePath(attachment));
+      for (const relativePath of attachmentRelativePaths(attachment)) {
+        relativePaths.add(relativePath);
+      }
     }
   }
   return relativePaths;
