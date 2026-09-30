@@ -76,6 +76,7 @@ export function applyThreadDetailEvent(
           settledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
+          autoSettleDisabledAt: null,
           deletedAt: null,
           messages: [],
           proposedPlans: [],
@@ -145,6 +146,16 @@ export function applyThreadDetailEvent(
           ...thread,
           snoozedUntil: null,
           snoozedAt: null,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
+    case "thread.auto-settle-set":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          autoSettleDisabledAt: event.payload.autoSettleDisabledAt,
           updatedAt: event.payload.updatedAt,
         },
       };

@@ -58,6 +58,8 @@ import Migration0038 from "./Migrations/038_ProjectionThreadTitleRegeneration.ts
 import Migration0039 from "./Migrations/039_ProjectionThreadMessageCommunicationStyle.ts";
 import Migration0040 from "./Migrations/040_BackfillProjectionThreadsLatestTurn.ts";
 import Migration0041 from "./Migrations/041_ProjectionThreadProposedPlanDiscardedAt.ts";
+// Upstream shipped this as 054; renumbered to follow the fork's 041.
+import Migration0042 from "./Migrations/042_ProjectionThreadsAutoSettleDisabledAt.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -111,6 +113,7 @@ export const migrationEntries = [
   [39, "ProjectionThreadMessageCommunicationStyle", Migration0039],
   [40, "BackfillProjectionThreadsLatestTurn", Migration0040],
   [41, "ProjectionThreadProposedPlanDiscardedAt", Migration0041],
+  [42, "ProjectionThreadsAutoSettleDisabledAt", Migration0042],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

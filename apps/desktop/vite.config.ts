@@ -50,6 +50,20 @@ export default defineConfig({
       ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
     },
     {
+      // boot.cjs requires the other two at runtime, so all three stay separate files.
+      format: "cjs",
+      outDir: "dist-electron",
+      dts: false,
+      sourcemap: true,
+      outExtensions: () => ({ js: ".cjs" }),
+      entry: ["src/boot.ts", "src/compileCache.ts"],
+      clean: false,
+      deps: {
+        alwaysBundle: (id) => id.startsWith("@t3tools/"),
+        neverBundle: (id) => id === "./main.cjs" || id === "./compileCache.cjs",
+      },
+    },
+    {
       format: "cjs",
       outDir: "dist-electron",
       sourcemap: true,
