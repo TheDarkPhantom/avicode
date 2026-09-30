@@ -198,6 +198,10 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   extracted text, so it sends without the original. Resending an earlier message (retry, fork
   edit) re-extracts a document's text without OCR. Documents are still capped at 20MB even though
   generic files may be 50MB.
+- Video attachments play from a blob URL read in full first, so a large video waits for its whole
+  download before playing; there are no composer thumbnails (upstream renders a first-frame tile).
+  The file viewer previews only PDF and HTML attachments; TXT, Markdown, CSV, and DOCX documents
+  still show as chips.
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.
