@@ -47,7 +47,9 @@ Prioritized work. Structure: **shipped foundation → alpha verification → nex
 - [ ] Install the Windows x64 package on Avi's daily-driver machine.
 - [ ] Confirm Avi Code and T3 run side by side with separate taskbar identities and data.
 - [ ] Import a representative T3 database and verify projects, threads, settings, and migrations.
-- [ ] Send an image, PDF, TXT, and Markdown file through Codex and Claude.
+- [ ] Send an image, PDF, TXT, and Markdown file through Codex, Claude, Cursor, Grok, and OpenCode.
+      Server-side routing is fixed and unit-tested (documents ride as inlined text, only images go
+      natively); this item is the real-install confirmation.
 - [ ] Confirm encrypted/scanned PDF errors clearly explain the v1 limits.
 - [ ] Confirm ActivityWatch sees `repository — thread — Avi Code`.
 - [ ] Run an ALFRED window and verify project/thread/work-kind calendar attribution.

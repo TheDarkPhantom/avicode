@@ -196,6 +196,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 - Explorer drag progress and cancellation.
 - Source archives (zip/tar) and RTF documents. DOCX and JSON now extract like the other document
   types. OCR is opt-in and English-only in v1; page language selection would be the next step.
+- The server now accepts upload-first images, generic files up to 50MB (ZIP and the like), and the
+  original bytes of documents next to their extracted text, but the web composer still sends
+  images and documents inline and cannot attach other files yet. That is the web half of the
+  upstream file-attachment port. `ChatUnknownAttachment` is defined but stays out of
+  `ChatAttachment` until the chat view and timeline read attachments through type guards.
+  Documents are still capped at 20MB even though generic files may be 50MB.
 - Encrypted PDF password prompts without persistence.
 - Attachment hashing/deduplication and IndexedDB draft storage.
 - User-selectable ALFRED title templates.

@@ -486,6 +486,67 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       });
     }).pipe(Effect.provide(customLayer));
   });
+
+  // Avi Code addition: a document's stored file is its extracted `.txt`, which
+  // the turn text already carries. Sending it as a base64 image was a bug.
+  it.effect("sends only image attachments to Codex as images", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      makeCodexAdapter(decodeCodexSettings({}), { makeRuntime: runtimeFactory.factory }),
+    ).pipe(
+      Layer.provideMerge(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3code-codex-attachments-" }),
+      ),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const { attachmentsDir } = yield* ServerConfig;
+      const imageId = "sess-attach-00000000-0000-4000-8000-000000000001";
+      const documentId = "sess-attach-00000000-0000-4000-8000-000000000002";
+      NodeFS.writeFileSync(NodePath.join(attachmentsDir, `${imageId}.png`), "png-bytes");
+      NodeFS.writeFileSync(NodePath.join(attachmentsDir, `${documentId}.txt`), "report text");
+
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-attach"),
+        runtimeMode: "full-access",
+      });
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.sendTurnImpl.mockClear();
+
+      yield* adapter.sendTurn({
+        threadId: asThreadId("sess-attach"),
+        input: "look at these",
+        attachments: [
+          { type: "image", id: imageId, name: "shot.png", mimeType: "image/png", sizeBytes: 9 },
+          {
+            type: "document",
+            id: documentId,
+            name: "report.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 100,
+            extractedChars: 11,
+          },
+        ],
+      });
+
+      NodeAssert.deepStrictEqual(runtime.sendTurnImpl.mock.calls[0]?.[0], {
+        input: "look at these",
+        attachments: [
+          {
+            type: "image",
+            url: `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`,
+          },
+        ],
+      });
+    }).pipe(Effect.provide(layer));
+  });
 });
 
 const lifecycleRuntimeFactory = makeRuntimeFactory();

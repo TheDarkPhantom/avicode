@@ -1822,8 +1822,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   });
 
   const sendTurn: CodexAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+    // Codex ingests images only. Anything else would be base64-encoded as an
+    // image and rejected or misread; generic files reach the agent through the
+    // path line ProviderService puts in the prompt. Avi Code addition:
+    // documents are already inlined into the turn text as extracted text.
     const codexAttachments = yield* Effect.forEach(
-      input.attachments ?? [],
+      (input.attachments ?? []).filter((attachment) => attachment.type === "image"),
       (attachment) => resolveAttachment(input, attachment),
       { concurrency: 1 },
     );
