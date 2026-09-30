@@ -1233,6 +1233,7 @@ export function makeCursorAdapter(
       },
       startSession,
       sendTurn,
+      compaction: { type: "slash-command", command: "/compress" },
       askSideQuestion,
       interruptTurn,
       readThread,

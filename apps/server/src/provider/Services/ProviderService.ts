@@ -12,6 +12,7 @@
  * @module ProviderService
  */
 import type {
+  MessageId,
   ProviderInterruptTurnInput,
   ProviderSideQuestionChunk,
   ProviderSideQuestionInput,
@@ -52,6 +53,19 @@ export interface ProviderServiceShape {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, ProviderServiceError>;
+
+  /**
+   * Avi Code addition (upstream #9293): compact the thread's provider context.
+   *
+   * Resolves once the provider reports the thread compacted. `requestId` is
+   * the `/compact` message id; the compacted runtime event carries it so the
+   * result can be tied back to the request.
+   */
+  readonly compactThread: (
+    threadId: ThreadId,
+    modelSelection?: ProviderSendTurnInput["modelSelection"],
+    requestId?: MessageId,
+  ) => Effect.Effect<void, ProviderServiceError>;
 
   /**
    * Interrupt a running provider turn.

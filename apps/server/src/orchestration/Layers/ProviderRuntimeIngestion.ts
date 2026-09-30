@@ -17,10 +17,12 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
+  RuntimeRequestId,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -45,6 +47,7 @@ import {
   USER_INPUT_EXPIRED_SUMMARY,
 } from "../pendingUserInputClosure.ts";
 import { InterruptSuppression } from "../InterruptSuppression.ts";
+import { isCompactCommandMessage } from "../compactCommand.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -256,10 +259,54 @@ function assistantSegmentMessageId(baseKey: string, segmentIndex: number): Messa
 function buildContextWindowActivityPayload(
   event: ProviderRuntimeEvent,
 ): ThreadTokenUsageSnapshot | undefined {
-  if (event.type !== "thread.token-usage.updated" || event.payload.usage.usedTokens <= 0) {
+  // Zero is a real reading: a freshly compacted context can report it.
+  if (event.type !== "thread.token-usage.updated" || event.payload.usage.usedTokens < 0) {
     return undefined;
   }
   return event.payload.usage;
+}
+
+/** Compact token count for activity summaries: 899000 -> "899K", 1250000 -> "1.25M". */
+function formatCompactionTokens(value: number): string {
+  const scale = (divisor: number, suffix: string) => {
+    const scaled = value / divisor;
+    const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+    // Round-tripping through Number drops trailing zeros ("1.50" -> "1.5").
+    return `${Number(scaled.toFixed(digits))}${suffix}`;
+  };
+  if (value >= 1e6) return scale(1e6, "M");
+  if (value >= 1e3) return scale(1e3, "K");
+  return String(Math.round(value));
+}
+
+/**
+ * Before/after context size for a compaction the provider did not measure:
+ * the last two context-window readings since the previous compaction, when
+ * the later one shrank.
+ */
+function compactedTokenCountsFromActivities(
+  activities: ReadonlyArray<OrchestrationThreadActivity> | undefined,
+): { readonly beforeTokens: number; readonly afterTokens: number } | undefined {
+  if (!activities) return undefined;
+  const lastCompactionIndex = activities.findLastIndex(
+    (activity) => activity.kind === "context-compaction",
+  );
+  const usedTokens = activities.slice(lastCompactionIndex + 1).flatMap((activity) => {
+    if (activity.kind !== "context-window.updated") return [];
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as { readonly usedTokens?: unknown })
+        : undefined;
+    return typeof payload?.usedTokens === "number" && payload.usedTokens >= 0
+      ? [payload.usedTokens]
+      : [];
+  });
+  const beforeTokens = usedTokens.at(-2);
+  const afterTokens = usedTokens.at(-1);
+  if (beforeTokens === undefined || afterTokens === undefined || afterTokens >= beforeTokens) {
+    return undefined;
+  }
+  return { beforeTokens, afterTokens };
 }
 
 function normalizeRuntimeTurnState(
@@ -594,15 +641,25 @@ export function runtimeEventToActivities(
         return [];
       }
 
+      const beforeTokens = event.payload.beforeTokens;
+      const afterTokens = event.payload.afterTokens;
+      const summary =
+        beforeTokens !== undefined && afterTokens !== undefined
+          ? `Compacted context ${formatCompactionTokens(beforeTokens)} → ${formatCompactionTokens(afterTokens)} tokens`
+          : "Context compacted";
       return [
         {
           id: event.eventId,
           createdAt: event.createdAt,
           tone: "info",
           kind: "context-compaction",
-          summary: "Context compacted",
+          summary,
           payload: {
             state: event.payload.state,
+            ...(beforeTokens !== undefined ? { beforeTokens } : {}),
+            ...(afterTokens !== undefined ? { afterTokens } : {}),
+            // The `/compact` message id, when a requested compaction produced this.
+            ...(event.requestId !== undefined ? { requestId: event.requestId } : {}),
             ...(event.payload.detail !== undefined ? { detail: event.payload.detail } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -1894,10 +1951,56 @@ const make = Effect.gen(function* () {
       // Avi Code addition: a stopped turn leaves no destructive "Runtime error"
       // row in the work log. The session write above is already suppressed;
       // this is the same decision applied to the timeline.
+      // Avi Code addition (upstream #9293): a compaction the provider reported
+      // on its own, while a `/compact` request is pending, answers that
+      // request; and a compaction without measured sizes borrows them from
+      // the context-window readings around it.
+      let activityEvent = event;
+      if (event.type === "thread.state.changed" && event.payload.state === "compacted") {
+        if (
+          event.requestId === undefined &&
+          Option.isSome(pendingTurnStart) &&
+          thread.session?.status === "starting" &&
+          activeTurnId === null &&
+          sameId(thread.session.providerName, event.provider) &&
+          sameId(thread.session.providerInstanceId, event.providerInstanceId) &&
+          DateTime.isGreaterThanOrEqualTo(
+            DateTime.makeUnsafe(event.createdAt),
+            DateTime.makeUnsafe(pendingTurnStart.value.requestedAt),
+          )
+        ) {
+          const threadDetail = yield* getLoadedThreadDetail();
+          const pendingMessage = threadDetail
+            ? findMessageById(threadDetail.messages, pendingTurnStart.value.messageId)
+            : undefined;
+          if (isCompactCommandMessage(pendingMessage)) {
+            activityEvent = {
+              ...event,
+              requestId: RuntimeRequestId.make(String(pendingTurnStart.value.messageId)),
+            };
+          }
+        }
+        if (event.payload.beforeTokens === undefined || event.payload.afterTokens === undefined) {
+          const tokenCounts = compactedTokenCountsFromActivities(
+            (yield* getLoadedThreadDetail())?.activities,
+          );
+          if (tokenCounts && activityEvent.type === "thread.state.changed") {
+            activityEvent = {
+              ...activityEvent,
+              payload: {
+                ...activityEvent.payload,
+                beforeTokens: activityEvent.payload.beforeTokens ?? tokenCounts.beforeTokens,
+                afterTokens: activityEvent.payload.afterTokens ?? tokenCounts.afterTokens,
+              },
+            };
+          }
+        }
+      }
+
       const activities =
         interruptSuppressed && event.type === "runtime.error"
           ? []
-          : runtimeEventToActivities(event, taskTitle);
+          : runtimeEventToActivities(activityEvent, taskTitle);
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

@@ -106,6 +106,7 @@ function createProviderServiceHarness() {
   const service: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
+    compactThread: () => unsupported(),
     interruptTurn: () => unsupported(),
     askSideQuestion: () => Stream.empty,
     respondToRequest: () => unsupported(),
@@ -3425,6 +3426,101 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(activity?.summary).toBe("Context compacted");
     expect(activity?.tone).toBe("info");
+  });
+
+  // Avi Code addition: `/compact`, ported from upstream #9293.
+  effectIt.effect("ties a provider compaction to the pending /compact request and sizes it", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = asThreadId("thread-1");
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-thread-compact"),
+        threadId,
+        message: {
+          messageId: asMessageId("message-compact"),
+          role: "user",
+          text: "/compact",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-starting-compact"),
+        threadId,
+        session: {
+          threadId,
+          status: "starting",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      });
+      for (const [index, usedTokens] of [899_000, 0].entries()) {
+        harness.emit({
+          type: "thread.token-usage.updated",
+          eventId: asEventId(`evt-thread-token-usage-compact-${index}`),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: now,
+          threadId,
+          payload: { usage: { usedTokens } },
+        });
+      }
+      harness.emit({
+        type: "thread.state.changed",
+        eventId: asEventId("evt-thread-compacted-requested"),
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        createdAt: now,
+        threadId,
+        payload: { state: "compacted" },
+      });
+      yield* Effect.promise(() => harness.drain());
+
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === threadId,
+      );
+      const activity = thread?.activities.find(
+        (candidate: ProviderRuntimeTestActivity) =>
+          candidate.id === "evt-thread-compacted-requested",
+      );
+      expect(activity?.summary).toBe("Compacted context 899K → 0 tokens");
+      expect(activity?.payload).toMatchObject({
+        requestId: "message-compact",
+        beforeTokens: 899_000,
+        afterTokens: 0,
+      });
+    }),
+  );
+
+  it("summarizes a compaction the provider measured itself", async () => {
+    const harness = await createHarness();
+    harness.emit({
+      type: "thread.state.changed",
+      eventId: asEventId("evt-thread-compacted-measured"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      payload: { state: "compacted", beforeTokens: 1_250_000, afterTokens: 40_500 },
+    });
+    await harness.drain();
+
+    const thread = (await harness.readModel()).threads.find(
+      (entry) => entry.id === asThreadId("thread-1"),
+    );
+    const activity = thread?.activities.find(
+      (candidate: ProviderRuntimeTestActivity) => candidate.id === "evt-thread-compacted-measured",
+    );
+    expect(activity?.summary).toBe("Compacted context 1.25M → 40.5K tokens");
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

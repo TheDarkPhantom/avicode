@@ -105,6 +105,7 @@ function createProviderServiceHarness(
   const service: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
+    compactThread: () => unsupported(),
     interruptTurn: () => unsupported(),
     askSideQuestion: () => Stream.empty,
     respondToRequest: () => unsupported(),

@@ -49,6 +49,25 @@ export type ProviderSideQuestionMode = "fork-session" | "unsupported";
  */
 export type ProviderPlanTurnEnforcementMode = "tool-denial" | "unsupported";
 
+/**
+ * How ProviderService runs manual context compaction (`/compact`) for an adapter.
+ *
+ * Native adapters expose a start call and must emit a compacted
+ * `thread.state.changed` event when they finish. Slash-command adapters get
+ * the command sent as an ordinary turn. "unsupported" fails the request loudly
+ * instead of pretending to compact.
+ */
+export type ProviderCompaction<TError> =
+  | {
+      readonly type: "native";
+      readonly start: (
+        threadId: ThreadId,
+        modelSelection?: ProviderSendTurnInput["modelSelection"],
+      ) => Effect.Effect<void, TError>;
+    }
+  | { readonly type: "slash-command"; readonly command: `/${string}` }
+  | { readonly type: "unsupported" };
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
@@ -106,6 +125,12 @@ export interface ProviderAdapterShape<TError> {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, TError>;
+
+  /**
+   * Manual context compaction strategy. Required so every adapter makes an
+   * explicit choice; declare `{ type: "unsupported" }` to opt out.
+   */
+  readonly compaction: ProviderCompaction<TError>;
 
   /**
    * Interrupt an active turn.
