@@ -70,13 +70,22 @@ function sanitizePlanFileSegment(input: string): string {
   return sanitized.length > 0 ? sanitized : "plan";
 }
 
+/** Prefix of the message the app sends when the user approves a plan. */
+export const PLAN_IMPLEMENTATION_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:\n";
+
 export function buildPlanImplementationPrompt(planMarkdown: string): string {
-  return `PLEASE IMPLEMENT THIS PLAN:\n${planMarkdown.trim()}`;
+  return `${PLAN_IMPLEMENTATION_PROMPT_PREFIX}${planMarkdown.trim()}`;
 }
 
-export function buildPlanReviewPrompt(planMarkdown: string): string {
-  return `Review the proposed plan below as an independent senior engineer.
+/**
+ * Avi Code addition: opening line of the plan review prompt, so prompt recall
+ * can recognise the app-composed send.
+ */
+export const PLAN_REVIEW_PROMPT_PREFIX =
+  "Review the proposed plan below as an independent senior engineer.\n";
 
+export function buildPlanReviewPrompt(planMarkdown: string): string {
+  return `${PLAN_REVIEW_PROMPT_PREFIX}
 Stay in read-only plan mode. Inspect the repository to validate the plan's assumptions, but do not edit files or implement the plan.
 
 Evaluate:

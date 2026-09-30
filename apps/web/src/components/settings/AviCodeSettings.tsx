@@ -345,10 +345,27 @@ function ComposerLayoutSettings() {
   const showInteractionModeLabel = useClientSettings(
     (settings) => settings.aviCodeComposerShowInteractionModeLabel,
   );
+  const ctrlEnterStartsBackgroundThread = useClientSettings(
+    (settings) => settings.aviCodeCtrlEnterStartsBackgroundThread,
+  );
   const updateSettings = useUpdateClientSettings();
 
   return (
     <SettingsSection title="Composer" icon={<PilcrowIcon className="size-5" />}>
+      <SettingsRow
+        title="Ctrl+Enter starts new threads in the background"
+        description="In a new thread, Ctrl+Enter (Cmd+Enter on macOS) sends the first message and keeps you on a fresh new-thread draft while that thread starts. A toast offers to open it. Turn this off to make Ctrl+Enter a plain send."
+        status="In a thread that has already started, Ctrl+Enter always sends normally."
+        control={
+          <Switch
+            checked={ctrlEnterStartsBackgroundThread}
+            onCheckedChange={(checked) =>
+              updateSettings({ aviCodeCtrlEnterStartsBackgroundThread: Boolean(checked) })
+            }
+            aria-label="Ctrl+Enter starts new threads in the background"
+          />
+        }
+      />
       <SettingsRow
         title="Show access mode label"
         description="Spell out the access mode — Supervised, Auto-accept edits, Auto, Full access — next to its padlock in the composer footer. Turn this off to keep the icon alone, which frees room on narrow windows if you rarely change the setting."

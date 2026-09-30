@@ -49,6 +49,7 @@ Upstream: t3code 0.0.31
 - Pick Claude Sonnet 5.5 in the model picker, marked New (#242)
 - Alt+Left, Alt+Right, and the mouse back and forward buttons go back and forward (#248)
 - PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
+- Turn off Ctrl+Enter starting new threads in the background in Settings, Avi Code (#254)
 
 ### Upstream t3code
 
@@ -105,6 +106,8 @@ Upstream: t3code 0.0.31
 - Compacting a thread keeps your unsent draft in the composer (#11103 by maria)
 - A compaction folds away with the rest of a finished turn's work (#9623 by maria)
 - The context meter names the thread's model instead of its provider (#4772 by nqrwhal)
+- Press Up in an empty composer to bring back prompts you sent in this thread (#9173 by Theo Browne)
+- Ctrl+Enter in a new thread starts it in the background and opens a fresh draft (#7821 by Exotic)
 
 ## 0.0.31-avicode.9.16 (2026-09-24)
 
