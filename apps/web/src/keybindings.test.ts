@@ -6,7 +6,7 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { DEFAULT_KEYBINDINGS, DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   formatShortcutLabel,
   isAppZoomShortcut,
@@ -1007,5 +1007,141 @@ describe("plus key parsing", () => {
         platform: "Linux",
       }),
     );
+  });
+});
+
+describe("navigation history shortcuts", () => {
+  it("navigates history with mod+[ and mod+] outside the terminal", () => {
+    const back = event({ key: "[", code: "BracketLeft", metaKey: true });
+    const forward = event({ key: "]", code: "BracketRight", ctrlKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel" }),
+      "navigation.back",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(forward, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Linux" }),
+      "navigation.forward",
+    );
+    assert.isNull(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("keeps mod+shift+[ and mod+shift+] on thread traversal", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "{", code: "BracketLeft", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "thread.previous",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "thread.next",
+    );
+  });
+
+  // Avi Code addition: the Windows browser chords.
+  it("navigates history with Alt+Left and Alt+Right outside text fields", () => {
+    const back = event({ key: "ArrowLeft", code: "ArrowLeft", altKey: true });
+    const forward = event({ key: "ArrowRight", code: "ArrowRight", altKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Win32" }),
+      "navigation.back",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(forward, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Win32" }),
+      "navigation.forward",
+    );
+    assert.isNull(
+      resolveShortcutCommand(back, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { editableFocus: true },
+      }),
+    );
+    assert.isNull(
+      resolveShortcutCommand(forward, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+});
+
+describe("settle thread shortcut", () => {
+  it("resolves mod+shift+e outside the terminal", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "e", metaKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+      "thread.settle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "E", code: "KeyE", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+      "thread.settle",
+    );
+  });
+
+  it("does not intercept the terminal", () => {
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "E", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32", context: { terminalFocus: true } },
+      ),
+    );
+  });
+
+  it("leaves upstream's mod+shift+s to the preview split", () => {
+    const chord = event({ key: "S", code: "KeyS", ctrlKey: true, shiftKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(chord, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { previewOpen: true },
+      }),
+      "preview.toggleSplit",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(chord, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Win32" }),
+      "thread.settle",
+    );
+  });
+});
+
+describe("new default chords", () => {
+  it("do not share a key with any other default rule", () => {
+    const newRules = DEFAULT_KEYBINDINGS.filter(
+      (rule) =>
+        rule.command === "navigation.back" ||
+        rule.command === "navigation.forward" ||
+        rule.command === "thread.settle",
+    );
+    assert.deepStrictEqual(newRules.map((rule) => rule.key).toSorted(), [
+      "alt+arrowleft",
+      "alt+arrowright",
+      "mod+[",
+      "mod+]",
+      "mod+shift+e",
+    ]);
+    for (const rule of newRules) {
+      const sharing = DEFAULT_KEYBINDINGS.filter(
+        (candidate) => candidate !== rule && candidate.key === rule.key,
+      );
+      assert.deepStrictEqual(sharing, [], `${rule.key} is also bound`);
+    }
   });
 });

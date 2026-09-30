@@ -82,6 +82,20 @@ it.effect("parses keybinding rules", () =>
       command: "thread.previous",
     });
     assert.strictEqual(parsedThreadPrevious.command, "thread.previous");
+
+    const parsedThreadSettle = yield* decode(KeybindingRule, {
+      key: "mod+shift+e",
+      command: "thread.settle",
+      when: "!terminalFocus",
+    });
+    assert.strictEqual(parsedThreadSettle.command, "thread.settle");
+
+    const parsedNavigationBack = yield* decode(KeybindingRule, {
+      key: "mod+[",
+      command: "navigation.back",
+      when: "!terminalFocus",
+    });
+    assert.strictEqual(parsedNavigationBack.command, "navigation.back");
   }),
 );
 

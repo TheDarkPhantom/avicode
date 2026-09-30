@@ -39,6 +39,7 @@ export type SettleThreadInput = CommandInput<"thread.settle">;
 export type UnsettleThreadInput = CommandInput<"thread.unsettle">;
 export type SnoozeThreadInput = CommandInput<"thread.snooze">;
 export type UnsnoozeThreadInput = CommandInput<"thread.unsnooze">;
+export type SetThreadAutoSettleInput = CommandInput<"thread.auto-settle.set">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
@@ -196,6 +197,16 @@ export const unsnoozeThread: (input: UnsnoozeThreadInput) => CommandEffect = Eff
   return yield* dispatch({
     ...input,
     type: "thread.unsnooze",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const setThreadAutoSettle: (input: SetThreadAutoSettleInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.setThreadAutoSettle",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "thread.auto-settle.set",
     commandId: yield* commandId(input),
   });
 });
