@@ -550,6 +550,8 @@ export const ServerConfig = Schema.Struct({
   shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
   /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /** Whether thread reads accept the reasoningMessages opt-in. */
+  reasoningMessages: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

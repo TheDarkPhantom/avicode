@@ -20,6 +20,7 @@ import {
   TerminalNotRunningError,
   type OrchestrationCommand,
   type OrchestrationEvent,
+  type OrchestrationThreadDetailSnapshot,
   ORCHESTRATION_WS_METHODS,
   type PreviewEvent,
   ProjectId,
@@ -6100,6 +6101,111 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.deepEqual(Option.getOrThrow(firstItem), { kind: "synchronized" });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
+
+  for (const reasoningMessages of [undefined, true] as const) {
+    it.effect(`preserves reasoning wire compatibility with opt-in ${reasoningMessages}`, () =>
+      Effect.gen(function* () {
+        const message = {
+          id: MessageId.make("thinking-compatibility"),
+          role: "reasoning" as const,
+          text: "Checking the available evidence.",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-01-01T00:00:01.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        };
+        const thread = { ...makeDefaultOrchestrationReadModel().threads[0]!, messages: [message] };
+        const event = {
+          sequence: 2,
+          eventId: EventId.make("thinking-compatibility-event"),
+          aggregateKind: "thread" as const,
+          aggregateId: defaultThreadId,
+          occurredAt: message.createdAt,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "thread.message-sent" as const,
+          payload: {
+            messageId: message.id,
+            threadId: defaultThreadId,
+            role: message.role,
+            text: message.text,
+            turnId: message.turnId,
+            streaming: message.streaming,
+            createdAt: message.createdAt,
+            updatedAt: message.updatedAt,
+          },
+        } satisfies OrchestrationEvent;
+        const answer = {
+          ...event,
+          sequence: 3,
+          eventId: EventId.make("thinking-answer-event"),
+          payload: {
+            ...event.payload,
+            messageId: MessageId.make("thinking-answer"),
+            role: "assistant" as const,
+            text: "Here is the answer.",
+          },
+        };
+        const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+        yield* buildAppUnderTest({
+          layers: {
+            orchestrationEngine: {
+              streamDomainEvents: Stream.fromPubSub(liveEvents),
+              latestSequence: Effect.succeed(3),
+              readEvents: () => Stream.make(event, answer),
+            },
+            projectionSnapshotQuery: {
+              getThreadDetailSnapshot: () =>
+                Effect.succeed(Option.some({ snapshotSequence: 1, thread })),
+            },
+          },
+        });
+        const role = reasoningMessages ? "reasoning" : "system";
+        const response = yield* fetchEffect(
+          yield* getHttpServerUrl(
+            `/api/orchestration/threads/${defaultThreadId}${reasoningMessages ? "?reasoningMessages=true" : ""}`,
+          ),
+          { headers: { cookie: yield* getAuthenticatedSessionCookieHeader() } },
+        );
+        const httpSnapshot = yield* responseJsonEffect<OrchestrationThreadDetailSnapshot>(response);
+        assert.equal(response.status, 200);
+        assert.deepEqual(httpSnapshot.thread.messages, [{ ...message, role }]);
+        const wsUrl = yield* getWsServerUrl("/ws");
+        for (const afterSequence of [undefined, 1]) {
+          const items = yield* Effect.scoped(
+            withWsRpcClient(wsUrl, (client) =>
+              client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+                threadId: defaultThreadId,
+                requestCompletionMarker: true,
+                ...(reasoningMessages ? { reasoningMessages } : {}),
+                ...(afterSequence !== undefined ? { afterSequence } : {}),
+              }).pipe(
+                Stream.takeUntil((item) => item.kind === "synchronized"),
+                Stream.runCollect,
+              ),
+            ),
+          );
+          assert.deepEqual(items.at(-1), { kind: "synchronized" });
+          if (afterSequence === undefined) {
+            const first = items[0];
+            assertTrue(first?.kind === "snapshot");
+            assert.deepEqual(first.snapshot.thread.messages, [{ ...message, role }]);
+            continue;
+          }
+          // The resume path replays persisted events through the same projection.
+          const events = items.filter((item) => item.kind === "event");
+          assert.equal(events.length, 2);
+          assert.deepEqual(events[0]?.event, { ...event, payload: { ...event.payload, role } });
+          assert.deepEqual(events[1]?.event, answer);
+          assert.deepEqual(items.at(-1), { kind: "synchronized" });
+        }
+        assert.equal(message.role, "reasoning");
+        assert.equal(event.payload.role, "reasoning");
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
+  }
 
   it.effect("marks a socket thread snapshot as synchronized when requested", () =>
     Effect.gen(function* () {

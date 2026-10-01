@@ -251,10 +251,19 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     subscribeDynamic(
       ORCHESTRATION_WS_METHODS.subscribeThread,
       Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* (session) {
-        const supportsCompletionMarker = yield* session.initialConfig.pipe(
-          Effect.map((config) => config.threadResumeCompletionMarker === true),
-          Effect.orElseSucceed(() => false),
+        const config = yield* session.initialConfig.pipe(
+          Effect.orElseSucceed(
+            () =>
+              ({}) as {
+                threadResumeCompletionMarker?: boolean;
+                reasoningMessages?: boolean;
+              },
+          ),
         );
+        const supportsCompletionMarker = config.threadResumeCompletionMarker === true;
+        // Older servers decode message roles without `reasoning`; only opt in
+        // when the server advertises it, so they keep sending system rows.
+        const supportsReasoningMessages = config.reasoningMessages === true;
         yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
         yield* setSynchronizing;
 
@@ -274,7 +283,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               }),
             ),
           );
-          const httpSnapshot = yield* snapshotLoader.load(prepared, threadId);
+          const httpSnapshot = yield* snapshotLoader.load(
+            prepared,
+            threadId,
+            supportsReasoningMessages,
+          );
           if (Option.isSome(httpSnapshot)) {
             yield* applyItem({ kind: "snapshot", snapshot: httpSnapshot.value });
             current = yield* SubscriptionRef.get(state);
@@ -295,6 +308,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           threadId,
           ...(canResume ? { afterSequence: sequence } : {}),
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
+          ...(supportsReasoningMessages ? { reasoningMessages: true as const } : {}),
         };
       }),
       {

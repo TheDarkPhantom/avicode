@@ -298,7 +298,7 @@ function maxIsoTimestamp(a: string | null, b: string | null): string | null {
 
 export interface TimelineDurationMessage {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: ChatMessage["role"];
   createdAt: string;
   updatedAt: string;
   streaming: boolean;
@@ -545,8 +545,13 @@ function deriveTurnFolds(input: {
       pendingUserBoundary = entry.message.createdAt;
       continue;
     }
+    // Thinking is work, so it folds with the rest of it. A provider that
+    // interleaves a block with every tool call would otherwise leave dozens of
+    // "Thought" rows standing beside the "Worked for ..." summary.
+    // Nothing folds while the turn is live, which is when traces are watched.
     const turnId =
-      entry.kind === "message" && entry.message.role === "assistant"
+      entry.kind === "message" &&
+      (entry.message.role === "assistant" || entry.message.role === "reasoning")
         ? (entry.message.turnId ?? null)
         : entry.kind === "work"
           ? (entry.entry.turnId ?? null)
@@ -573,7 +578,10 @@ function deriveTurnFolds(input: {
       if (input.terminalAssistantMessageIds.has(entry.message.id)) {
         group.terminalEntry = entry;
       }
-      if (entry.message.streaming) {
+      // A live turn is already excluded above, so only an answer still being
+      // written may hold a fold open. A thinking block stranded by a crashed
+      // provider keeps its streaming flag forever and must not.
+      if (entry.message.streaming && entry.message.role !== "reasoning") {
         group.hasStreamingMessage = true;
       }
     }
@@ -598,9 +606,15 @@ function deriveTurnFolds(input: {
     }
     // Avi Code addition (upstream #9623): a lone compaction row stays visible
     // on its own; it only folds away as part of a turn that folds other work.
+    // Thinking is the same (upstream #11784): a question answered by thought
+    // alone keeps its "Thought" row rather than collapsing behind a
+    // "Worked for ..." that hides nothing else.
     if (
       group.entries.every(
-        (entry) => !hiddenEntryIds.has(entry.id) || isContextCompactionEntry(entry),
+        (entry) =>
+          !hiddenEntryIds.has(entry.id) ||
+          isContextCompactionEntry(entry) ||
+          (entry.kind === "message" && entry.message.role === "reasoning"),
       )
     ) {
       continue;

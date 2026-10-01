@@ -35,6 +35,7 @@ export const fetchEnvironmentThreadSnapshot = Effect.fn(
   readonly threadId: ThreadId;
   readonly signer: Option.Option<ManagedRelayDpopSigner["Service"]>;
   readonly timeoutMs?: number;
+  readonly reasoningMessages?: boolean;
 }) {
   const requestUrl = environmentEndpointUrl(
     input.prepared.httpBaseUrl,
@@ -54,6 +55,7 @@ export const fetchEnvironmentThreadSnapshot = Effect.fn(
       input.prepared.httpAuthorization,
       client.orchestration.threadSnapshot({
         params: { threadId: input.threadId },
+        payload: input.reasoningMessages === true ? { reasoningMessages: "true" as const } : {},
         headers,
       }),
     ),
@@ -74,6 +76,7 @@ export class ThreadSnapshotLoader extends Context.Service<
     readonly load: (
       prepared: PreparedConnection,
       threadId: ThreadId,
+      reasoningMessages?: boolean,
     ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
   }
 >()("@t3tools/client-runtime/state/threadSnapshotHttp/ThreadSnapshotLoader") {}
@@ -91,8 +94,13 @@ export const threadSnapshotLoaderLayer: Layer.Layer<
     // connections work without one).
     const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
     return ThreadSnapshotLoader.of({
-      load: (prepared: PreparedConnection, threadId: ThreadId) =>
-        fetchEnvironmentThreadSnapshot({ prepared, threadId, signer }).pipe(
+      load: (prepared: PreparedConnection, threadId: ThreadId, reasoningMessages?: boolean) =>
+        fetchEnvironmentThreadSnapshot({
+          prepared,
+          threadId,
+          signer,
+          ...(reasoningMessages === true ? { reasoningMessages: true } : {}),
+        }).pipe(
           Effect.map(Option.some<OrchestrationThreadDetailSnapshot>),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           // A genuinely missing thread (404) is expected — the socket
