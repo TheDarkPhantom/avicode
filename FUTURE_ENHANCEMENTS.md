@@ -38,6 +38,11 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
   and pruning overrides left behind by deleted projects (they are inert, but stay in settings.json).
 - Claude Sonnet 5.5 needs Claude Code 2.1.284 or newer. Older installs hide it and show the upgrade
   message instead.
+- Thinking traces (upstream #11784, ported in #259) show as collapsed Thought rows. On Opus 5.5 that
+  includes the notes Claude writes between steps, so the note a question refers to sits one click
+  away while the question waits. Opening the latest note by default is a possible follow-up. Not
+  ported: Cursor and Grok thoughts (the fork's ACP runtime has no thought events), and the
+  follow-ups #13626 and #14546, which target upstream-only systems.
 - Context compaction (`/compact`, upstream #9293, #10112, #11107, #8144) ships with the meter's
   "Compact context" action, the timeline row, the auto-compact marker and Claude's resume banner.
   Codex may report one compaction twice (the deprecated `thread/compacted` plus the

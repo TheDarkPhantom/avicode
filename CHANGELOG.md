@@ -51,9 +51,11 @@ Upstream: t3code 0.0.31
 - PDFs and documents you attach now reach Codex, Cursor, Grok and OpenCode as text (#253)
 - Override worktree, git writing and model defaults for a single project (#255)
 - Turn off Ctrl+Enter starting new threads in the background in Settings, Avi Code (#254)
+- Claude's notes between steps show as Thought rows instead of disappearing (#259)
 
 ### Upstream t3code
 
+- See what the agent was thinking in a collapsible Thought row (#11784 by maria)
 - Undoing turns in Codex threads keeps working on Codex 0.156 (#13481 by Julius Marminge)
 - Typing in the composer no longer lags on large sidebars (#13884 by Morgana Allen)
 - Saving the thread list for offline use no longer freezes the app (#13767 by Theo Browne)

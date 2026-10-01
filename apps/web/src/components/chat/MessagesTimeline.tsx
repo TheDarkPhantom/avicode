@@ -1062,6 +1062,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     if (activeFindMatch.entryId && !expandedWorkEntryIds.has(activeFindMatch.entryId)) {
       onToggleWorkEntry(activeFindMatch.entryId);
     }
+    // A thinking trace is collapsed by default, so open it the same way.
+    const matchRow = rows[activeFindMatch.rowIndex];
+    if (
+      matchRow?.kind === "message" &&
+      matchRow.message.role === "reasoning" &&
+      !expandedReasoningMessageIds.has(matchRow.message.id)
+    ) {
+      onToggleReasoning(matchRow.message.id);
+    }
     // Without this, live follow drags the view back to the bottom mid-read.
     handleManualNavigation();
     void listRef.current?.scrollToIndex({
