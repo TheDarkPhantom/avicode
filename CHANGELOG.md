@@ -36,7 +36,7 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
-## Unreleased
+## 0.0.31-avicode.9.17 (2026-10-02)
 
 Upstream: t3code 0.0.31
 
