@@ -1322,6 +1322,32 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
   return buildUserMessage({ sdkContent });
 });
 
+/**
+ * True when a result answers a different Claude turn than the active real
+ * turn. Claude runs turns of its own between user prompts (a resumed session
+ * first reports background tasks the previous process left behind; peer
+ * messages wake the agent), and a queued prompt waits behind them. Real turns
+ * send their turn id as the prompt uuid, which newer CLIs echo in
+ * `user_message_uuids`. Claude-initiated turns echo nothing and carry a
+ * non-human `origin`. Results with neither field (older CLIs) still complete
+ * the active turn.
+ */
+function isResultForOtherTurn(result: SDKResultMessage, turn: ClaudeTurnState): boolean {
+  // A synthetic turn mirrors a Claude-initiated turn, so any result is its own.
+  if (turn.synthetic) return false;
+  // The pinned SDK types predate the echo fields; newer CLIs send them anyway.
+  const echo = result as {
+    readonly user_message_uuid?: string;
+    readonly user_message_uuids?: ReadonlyArray<string>;
+  };
+  const echoed = [
+    ...(echo.user_message_uuids ?? []),
+    ...(echo.user_message_uuid ? [echo.user_message_uuid] : []),
+  ];
+  if (echoed.length > 0) return !echoed.includes(turn.turnId);
+  return result.origin !== undefined && result.origin.kind !== "human";
+}
+
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
   if (result.subtype === "success") {
     return "completed";
@@ -3108,6 +3134,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
+    const turn = context.turnState;
+    if (turn && isResultForOtherTurn(message, turn)) {
+      // Completing here would end the user's turn before its prompt runs. A
+      // `/compact` would then compact with no turn open and leave the thread
+      // looking busy.
+      yield* Effect.logInfo("claude.turn.result-for-other-turn", {
+        threadId: context.session.threadId,
+        turnId: turn.turnId,
+        origin: message.origin?.kind,
+        numTurns: message.num_turns,
+      });
+      return;
+    }
+
     const status = turnStatusFromResult(message);
     const errorMessage = message.subtype === "success" ? undefined : message.errors[0];
 
@@ -4540,9 +4580,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       boundInstanceId,
     });
 
+    // A new turn sends its id as the prompt uuid so results can be matched
+    // back to it (see `isResultForOtherTurn`). A steer continues the open
+    // turn, so it keeps the CLI-assigned uuid.
     yield* Queue.offer(context.promptQueue, {
       type: "message",
-      message,
+      message:
+        steeringTurnState === null
+          ? { ...message, uuid: turnId as NonNullable<SDKUserMessage["uuid"]> }
+          : message,
     }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
 
     return {
