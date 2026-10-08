@@ -56,6 +56,8 @@ const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
 } as const;
+// Avi Code addition: Claude Haiku 5.5 requires Claude Code >= 2.1.293.
+const MINIMUM_CLAUDE_HAIKU_5_5_VERSION = "2.1.293";
 // Avi Code addition: Claude Sonnet 5.5 requires Claude Code >= 2.1.284.
 const MINIMUM_CLAUDE_SONNET_5_5_VERSION = "2.1.284";
 // Avi Code addition: Claude Opus 5.5 requires Claude Code >= 2.1.280.
@@ -418,6 +420,38 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
       ],
     }),
   },
+  // Avi Code addition: Claude Haiku 5.5 (upstream #16903).
+  {
+    slug: "claude-haiku-5-5",
+    name: "Claude Haiku 5.5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium", isDefault: true },
+            { value: "high", label: "High" },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          // Claude Code selects the 1M variant explicitly (`claude-haiku-5-5[1m]`).
+          options: [
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
+          ],
+        }),
+      ],
+    }),
+  },
   {
     slug: "claude-haiku-4-5",
     name: "Claude Haiku 4.5",
@@ -432,6 +466,11 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     }),
   },
 ];
+
+// Avi Code addition: Claude Haiku 5.5 gating.
+function supportsClaudeHaiku55(version: string | null | undefined): boolean {
+  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_HAIKU_5_5_VERSION) >= 0 : false;
+}
 
 // Avi Code addition: Claude Sonnet 5.5 gating.
 function supportsClaudeSonnet55(version: string | null | undefined): boolean {
@@ -468,6 +507,9 @@ function getBuiltInClaudeModelsForVersion(
   version: string | null | undefined,
 ): ReadonlyArray<ServerProviderModel> {
   return BUILT_IN_MODELS.filter((model) => {
+    if (model.slug === "claude-haiku-5-5") {
+      return supportsClaudeHaiku55(version);
+    }
     if (model.slug === "claude-sonnet-5-5") {
       return supportsClaudeSonnet55(version);
     }
@@ -491,6 +533,12 @@ function getBuiltInClaudeModelsForVersion(
     }
     return true;
   });
+}
+
+// Avi Code addition: Claude Haiku 5.5 upgrade nudge.
+function formatClaudeHaiku55UpgradeMessage(version: string | null): string {
+  const versionLabel = version ? `v${version}` : "the installed version";
+  return `Claude Code ${versionLabel} is too old for Claude Haiku 5.5. Upgrade to v${MINIMUM_CLAUDE_HAIKU_5_5_VERSION} or newer to access it.`;
 }
 
 // Avi Code addition: Claude Sonnet 5.5 upgrade nudge.
@@ -579,7 +627,8 @@ export function normalizeClaudeCliEffort(
     model !== "claude-opus-5" &&
     model !== "claude-opus-4-8" &&
     model !== "claude-sonnet-5-5" &&
-    model !== "claude-sonnet-5"
+    model !== "claude-sonnet-5" &&
+    model !== "claude-haiku-5-5"
   ) {
     return "max";
   }
@@ -1076,22 +1125,24 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
-  // Avi Code addition: Sonnet 5.5 sits at the top of the upgrade ladder (highest min version).
-  const versionUpgradeMessage = supportsClaudeSonnet55(parsedVersion)
+  // Avi Code addition: Haiku 5.5 sits at the top of the upgrade ladder (highest min version).
+  const versionUpgradeMessage = supportsClaudeHaiku55(parsedVersion)
     ? undefined
-    : supportsClaudeOpus55(parsedVersion)
-      ? formatClaudeSonnet55UpgradeMessage(parsedVersion)
-      : supportsClaudeFable51(parsedVersion)
-        ? formatClaudeOpus55UpgradeMessage(parsedVersion)
-        : supportsClaudeOpus5(parsedVersion)
-          ? formatClaudeFable51UpgradeMessage(parsedVersion)
-          : supportsClaudeFable5(parsedVersion)
-            ? formatClaudeOpus5UpgradeMessage(parsedVersion)
-            : supportsClaudeOpus48(parsedVersion)
-              ? formatClaudeFable5UpgradeMessage(parsedVersion)
-              : supportsClaudeOpus47(parsedVersion)
-                ? formatClaudeOpus48UpgradeMessage(parsedVersion)
-                : formatClaudeOpus47UpgradeMessage(parsedVersion);
+    : supportsClaudeSonnet55(parsedVersion)
+      ? formatClaudeHaiku55UpgradeMessage(parsedVersion)
+      : supportsClaudeOpus55(parsedVersion)
+        ? formatClaudeSonnet55UpgradeMessage(parsedVersion)
+        : supportsClaudeFable51(parsedVersion)
+          ? formatClaudeOpus55UpgradeMessage(parsedVersion)
+          : supportsClaudeOpus5(parsedVersion)
+            ? formatClaudeFable51UpgradeMessage(parsedVersion)
+            : supportsClaudeFable5(parsedVersion)
+              ? formatClaudeOpus5UpgradeMessage(parsedVersion)
+              : supportsClaudeOpus48(parsedVersion)
+                ? formatClaudeFable5UpgradeMessage(parsedVersion)
+                : supportsClaudeOpus47(parsedVersion)
+                  ? formatClaudeOpus48UpgradeMessage(parsedVersion)
+                  : formatClaudeOpus47UpgradeMessage(parsedVersion);
 
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))

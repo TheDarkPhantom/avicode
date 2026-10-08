@@ -683,6 +683,30 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("preserves xhigh effort and opens the 1M window for Claude Haiku 5.5", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-haiku-5-5",
+          [{ id: "effort", value: "xhigh" }],
+        ),
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.equal(createInput?.options.effort, "xhigh");
+      assert.equal(createInput?.options.model, "claude-haiku-5-5[1m]");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("falls back to default effort when unsupported max is requested for Sonnet 4.6", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

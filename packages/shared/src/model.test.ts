@@ -176,6 +176,16 @@ describe("model slug normalization", () => {
     expect(normalizeModelSlug("sonnet", claude)).toBe("claude-sonnet-5");
     expect(normalizeModelSlug("sonnet-5", claude)).toBe("claude-sonnet-5");
   });
+
+  it("resolves Claude Haiku 5.5 aliases to the canonical slug", () => {
+    const claude = ProviderDriverKind.make("claudeAgent");
+
+    expect(normalizeModelSlug("haiku-5.5", claude)).toBe("claude-haiku-5-5");
+    expect(normalizeModelSlug("claude-haiku-5.5", claude)).toBe("claude-haiku-5-5");
+    expect(normalizeModelSlug("claude-haiku-5-5", claude)).toBe("claude-haiku-5-5");
+    // The bare "haiku" shortcut stays on Haiku 4.5.
+    expect(normalizeModelSlug("haiku", claude)).toBe("claude-haiku-4-5");
+  });
 });
 
 // Avi Code addition: ported from upstream #8144.
