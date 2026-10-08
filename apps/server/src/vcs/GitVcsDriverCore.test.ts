@@ -1072,6 +1072,50 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         }
       }),
     );
+
+    it.effect("reads status without rewriting the index of a stat-dirty worktree", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        // Same content, new mtime (2001-01-01): git would refresh and save the index to record it.
+        const touchedSeconds = 978_307_200;
+        yield* fileSystem.utimes(
+          pathService.join(cwd, "README.md"),
+          touchedSeconds,
+          touchedSeconds,
+        );
+        const indexPath = pathService.join(cwd, ".git", "index");
+        const indexBefore = yield* fileSystem.readFile(indexPath);
+
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal(cwd);
+
+        assert.equal(status.hasWorkingTreeChanges, false);
+        assert.deepStrictEqual(status.workingTree.files, []);
+        assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), indexBefore);
+      }),
+    );
+
+    it.effect("keeps rename detection in working tree totals", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "old.ts", "// one\n// two\n// three\n// four\n");
+        yield* git(cwd, ["add", "old.ts"]);
+        yield* git(cwd, ["commit", "-m", "add old"]);
+        yield* git(cwd, ["mv", "old.ts", "new.ts"]);
+        yield* writeTextFile(cwd, "new.ts", "// one\n// two\n// three\n// four\n// five\n");
+
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal(cwd);
+
+        const file = status.workingTree.files.find((entry) => entry.path === "new.ts");
+        assert.ok(file);
+        assert.equal(file.insertions, 1);
+        assert.equal(file.deletions, 0);
+        assert.equal(status.workingTree.insertions, 1);
+      }),
+    );
   });
 
   describe("refName operations", () => {
