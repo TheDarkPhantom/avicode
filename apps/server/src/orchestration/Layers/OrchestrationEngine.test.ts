@@ -1,3 +1,8 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import {
   CheckpointRef,
   CommandId,
@@ -11,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Metric from "effect/Metric";
@@ -22,7 +28,10 @@ import { describe, expect, it } from "vite-plus/test";
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import {
+  makeSqlitePersistenceLive,
+  SqlitePersistenceMemory,
+} from "../../persistence/Layers/Sqlite.ts";
 import {
   OrchestrationEventStore,
   type OrchestrationEventStoreShape,
@@ -44,7 +53,10 @@ const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
-async function createOrchestrationSystem() {
+async function createOrchestrationSystem(databasePath?: string) {
+  const persistence = databasePath
+    ? makeSqlitePersistenceLive(databasePath)
+    : SqlitePersistenceMemory;
   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-orchestration-engine-test-",
   });
@@ -58,7 +70,7 @@ async function createOrchestrationSystem() {
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provide(persistence),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -1129,6 +1141,93 @@ describe("OrchestrationEngine", () => {
     ).rejects.toThrow("already archived");
 
     await runtime.dispose();
+  });
+
+  it("does not republish another server's turn when a local dispatch fails", async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-shared-db-"));
+    const databasePath = NodePath.join(directory, "state.sqlite");
+    const serverA = await createOrchestrationSystem(databasePath);
+    const serverB = await createOrchestrationSystem(databasePath);
+    const threadId = ThreadId.make("thread-shared");
+    const createdAt = now();
+    const sentinelCommandId = CommandId.make("cmd-shared-rename");
+    try {
+      await serverA.run(
+        serverA.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("cmd-shared-project-create"),
+          projectId: asProjectId("project-shared"),
+          title: "Shared Project",
+          workspaceRoot: "/tmp/project-shared",
+          createdAt,
+        }),
+      );
+      await serverA.run(
+        serverA.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-shared-thread-create"),
+          threadId,
+          projectId: asProjectId("project-shared"),
+          title: "shared",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        }),
+      );
+      await serverA.run(
+        serverA.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-shared-turn-start"),
+          threadId,
+          message: {
+            messageId: asMessageId("msg-shared"),
+            role: "user",
+            text: "hello",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt,
+        }),
+      );
+
+      const published = await serverB.run(
+        Effect.gen(function* () {
+          // Starting immediately subscribes before B dispatches anything.
+          const published = yield* Stream.runCollect(
+            Stream.takeUntil(
+              serverB.engine.streamDomainEvents,
+              (event) => event.commandId === sentinelCommandId,
+            ),
+          ).pipe(Effect.forkScoped({ startImmediately: true }));
+          // B's command model is still empty, so this fails and reconciles.
+          yield* serverB.engine
+            .dispatch({
+              type: "thread.meta.update",
+              commandId: CommandId.make("cmd-shared-stale-rename"),
+              threadId,
+              title: "stale",
+            })
+            .pipe(Effect.flip);
+          yield* serverB.engine.dispatch({
+            type: "thread.meta.update",
+            commandId: sentinelCommandId,
+            threadId,
+            title: "renamed on B",
+          });
+          return yield* Fiber.join(published);
+        }).pipe(Effect.scoped),
+      );
+
+      expect(Array.from(published).map((event) => event.type)).toEqual(["thread.meta-updated"]);
+    } finally {
+      await serverA.dispose();
+      await serverB.dispose();
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("fails command dispatch when command invariants are violated", async () => {

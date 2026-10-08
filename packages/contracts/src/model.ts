@@ -206,6 +206,11 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-4-6-20251117": "claude-sonnet-4-6",
+    // Avi Code addition: Claude Haiku 5.5 aliases (bare "haiku" stays on Haiku 4.5, which needs
+    // no minimum Claude Code version and backs text generation by default).
+    "haiku-5.5": "claude-haiku-5-5",
+    "claude-haiku-5.5": "claude-haiku-5-5",
+    "claude-haiku-5-5": "claude-haiku-5-5",
     haiku: "claude-haiku-4-5",
     "haiku-4.5": "claude-haiku-4-5",
     "claude-haiku-4.5": "claude-haiku-4-5",
