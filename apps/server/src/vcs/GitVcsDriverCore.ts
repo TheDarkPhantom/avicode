@@ -2813,7 +2813,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
-    const args = ["worktree", "remove"];
+    // Git refuses to remove a worktree with untracked files unless forced, but
+    // its check honors `status.showUntrackedFiles=no` and would delete them.
+    const args = ["-c", "status.showUntrackedFiles=normal", "worktree", "remove"];
     if (input.force) {
       args.push("--force");
     }
@@ -2863,6 +2865,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return [] as ReadonlyArray<GitVcsDriver.GitWorktreeEntry>;
     }
     return parseWorktreeEntries(result.stdout);
+  });
+
+  // Whether deleting the worktree directory would lose anything. Untracked files count even
+  // when `status.showUntrackedFiles=no` hides them from ordinary status reads.
+  const hasWorktreeChanges: GitVcsDriver.GitVcsDriver["Service"]["hasWorktreeChanges"] = Effect.fn(
+    "hasWorktreeChanges",
+  )(function* (input) {
+    const result = yield* executeGit(
+      "GitVcsDriver.hasWorktreeChanges",
+      input.cwd,
+      ["status", "--porcelain", "--untracked-files=normal"],
+      {
+        timeoutMs: 30_000,
+        fallbackErrorDetail: "git status failed",
+      },
+    );
+    return result.stdout.trim().length > 0;
   });
 
   const deleteBranch: GitVcsDriver.GitVcsDriver["Service"]["deleteBranch"] = Effect.fn(
@@ -3071,6 +3090,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
     // Avi Code addition: worktree cleanup driver ops
     listWorktrees: (input) => listWorktrees(input),
+    hasWorktreeChanges,
     deleteBranch: (input) => withListRefsInvalidation(input.cwd, deleteBranch(input)),
     pruneWorktrees: (input) => withListRefsInvalidation(input.cwd, pruneWorktrees(input)),
     gc: (input) => withListRefsInvalidation(input.cwd, gc(input)),

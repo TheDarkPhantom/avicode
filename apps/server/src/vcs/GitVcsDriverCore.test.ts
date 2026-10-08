@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -692,7 +693,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           _tag: "GitCommandError",
           operation: "GitVcsDriver.removeWorktree",
           command: "git",
-          argumentCount: 3,
+          argumentCount: 5,
           cwd,
         });
         assert.notProperty(error, "cause");
@@ -1327,6 +1328,56 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* driver.removeWorktree({ cwd, path: worktreePath });
         const fileSystem = yield* FileSystem.FileSystem;
         assert.equal(yield* fileSystem.exists(worktreePath), false);
+      }),
+    );
+
+    it.effect("keeps a worktree whose untracked files status is configured to hide", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "hidden");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/hidden",
+        });
+        yield* git(cwd, ["config", "status.showUntrackedFiles", "no"]);
+        yield* writeTextFile(worktreePath, "notes.txt", "draft\n");
+        assert.equal(yield* git(worktreePath, ["status", "--porcelain"]), "");
+
+        const result = yield* Effect.result(driver.removeWorktree({ cwd, path: worktreePath }));
+
+        assert.isTrue(Result.isFailure(result));
+        const fileSystem = yield* FileSystem.FileSystem;
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(worktreePath, "notes.txt")),
+          "draft\n",
+        );
+      }),
+    );
+
+    it.effect("counts untracked files hidden by status config as worktree changes", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "dirty");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/dirty",
+        });
+        yield* git(cwd, ["config", "status.showUntrackedFiles", "no"]);
+        assert.isFalse(yield* driver.hasWorktreeChanges({ cwd: worktreePath }));
+
+        yield* writeTextFile(worktreePath, "notes.txt", "draft\n");
+        assert.isFalse((yield* driver.statusDetailsLocal(worktreePath)).hasWorkingTreeChanges);
+        assert.isTrue(yield* driver.hasWorktreeChanges({ cwd: worktreePath }));
       }),
     );
   });
