@@ -540,6 +540,9 @@ export const make = Effect.gen(function* () {
       webPreferences.nodeIntegrationInSubFrames = false;
       webPreferences.contextIsolation = false;
     });
+    window.webContents.on("did-attach-webview", (_event, contents) => {
+      void runPromise(previewManager.prepareWebview(contents));
+    });
 
     window.webContents.on("context-menu", (event, params) => {
       event.preventDefault();
