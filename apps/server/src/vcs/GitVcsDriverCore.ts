@@ -1,4 +1,3 @@
-import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
@@ -45,7 +44,10 @@ const RANGE_COMMIT_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
-const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+// Untracked files are diffed by adding them to a temporary index, and git add's cost grows
+// much faster than the file count (50k files took about 30 seconds). Past this many, the
+// untracked diff is reported truncated instead.
+const REVIEW_UNTRACKED_MAX_FILES = 5_000;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -2097,6 +2099,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
+  // Diffs every untracked file in one process: the paths go into an empty temporary index as
+  // intent-to-add entries, so `git diff` against that index shows exactly them as new files.
+  // Spawning `git diff --no-index` per file instead cost about 100ms per file on Windows.
   const readUntrackedReviewDiffs = Effect.fn("readUntrackedReviewDiffs")(function* (cwd: string) {
     const untrackedResult = yield* executeGit(
       "GitVcsDriver.readUntrackedReviewDiffs.list",
@@ -2111,41 +2116,70 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (untrackedPaths.length === 0) {
       return { diff: "", truncated: untrackedResult.stdoutTruncated };
     }
+    if (untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES) {
+      return { diff: "", truncated: true };
+    }
 
-    const diffs = yield* Effect.forEach(
-      untrackedPaths,
-      (relativePath) =>
-        executeGit(
-          "GitVcsDriver.readUntrackedReviewDiffs.diff",
-          cwd,
-          [
-            "diff",
-            "--no-index",
-            "--patch",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--minimal",
-            "--",
-            "/dev/null",
-            relativePath,
-          ],
-          {
-            allowNonZeroExit: true,
-            maxOutputBytes: REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES,
-            appendTruncationMarker: true,
-          },
+    // A path that does not exist yet reads as an empty index; a zero-byte file would not.
+    const tempIndexDir = yield* fileSystem
+      .makeTempDirectoryScoped({ prefix: "t3code-review-untracked-" })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.readUntrackedReviewDiffs",
+              command: "git add --intent-to-add",
+              cwd,
+              detail: "Could not create the untracked review index.",
+              cause,
+            }),
         ),
-      { concurrency: 4 },
+      );
+    const env = { GIT_INDEX_FILE: path.join(tempIndexDir, "index") };
+    // A split index would write its shared half into the repository's .git directory.
+    const tempIndexConfig = ["-c", "core.splitIndex=false"];
+    yield* executeGit(
+      "GitVcsDriver.readUntrackedReviewDiffs.addIntentToAdd",
+      cwd,
+      [
+        ...tempIndexConfig,
+        "--literal-pathspecs",
+        "add",
+        "--intent-to-add",
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+      ],
+      {
+        env,
+        stdin: `${untrackedPaths.join("\0")}\0`,
+        fallbackErrorDetail: "Could not stage untracked files in the review index.",
+      },
+    );
+    const diffResult = yield* executeGit(
+      "GitVcsDriver.readUntrackedReviewDiffs.diff",
+      cwd,
+      [
+        ...tempIndexConfig,
+        "diff",
+        "--patch",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--minimal",
+        "--",
+      ],
+      {
+        env,
+        maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
+      },
     );
 
     return {
-      diff: Arr.filterMap(diffs, (result) =>
-        result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
-      ).join("\n"),
-      truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
+      diff: diffResult.stdout,
+      truncated: untrackedResult.stdoutTruncated || diffResult.stdoutTruncated,
     };
-  });
+  }, Effect.scoped);
 
   const getReviewDiffPreview = Effect.fn("getReviewDiffPreview")(function* (
     input: ReviewDiffPreviewInput,

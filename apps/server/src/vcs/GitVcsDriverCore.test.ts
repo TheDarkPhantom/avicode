@@ -758,6 +758,59 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         );
       }),
     );
+
+    it.effect("shows untracked files as new without staging them in the real index", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        yield* writeTextFile(cwd, "notes.txt", "first\n");
+        yield* writeTextFile(cwd, "nested/with space.ts", "export const a = 1;\n");
+        const indexPath = pathService.join(cwd, ".git", "index");
+        const indexBefore = yield* fileSystem.readFile(indexPath);
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+
+        const workingTree = preview.sources.find((source) => source.kind === "working-tree");
+        assert.ok(workingTree);
+        assert.isFalse(workingTree.truncated);
+        assert.include(workingTree.diff, "diff --git a/notes.txt b/notes.txt\nnew file mode");
+        assert.include(workingTree.diff, "+first");
+        assert.include(workingTree.diff, "nested/with space.ts");
+        assert.include(workingTree.diff, "+export const a = 1;");
+        assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), indexBefore);
+        assert.equal(
+          yield* git(cwd, ["status", "--porcelain", "--untracked-files=all"]),
+          '?? "nested/with space.ts"\n?? notes.txt',
+        );
+      }),
+    );
+
+    it.effect("skips untracked diffs instead of indexing thousands of untracked files", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* Effect.forEach(
+          Array.from({ length: 5_001 }, (_, index) => `bulk/${index}.txt`),
+          (file) => writeTextFile(cwd, file, "x\n"),
+          { concurrency: 32, discard: true },
+        );
+        yield* writeTextFile(cwd, "README.md", "changed\n");
+
+        const status = yield* driver.statusDetailsLocal(cwd);
+        assert.isTrue(status.hasWorkingTreeChanges);
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const workingTree = preview.sources.find((source) => source.kind === "working-tree");
+        assert.ok(workingTree);
+        assert.isTrue(workingTree.truncated);
+        assert.include(workingTree.diff, "+changed");
+        assert.notInclude(workingTree.diff, "bulk/");
+      }),
+    );
   });
 
   describe("repository status", () => {
