@@ -4,7 +4,7 @@ import {
   liveThoughtLine,
   SIDEBAR_LIVE_THOUGHT_MAX_LENGTH,
   sidebarLiveThoughtLine,
-} from "./liveThoughtLine";
+} from "./liveThoughtLine.ts";
 
 describe("liveThoughtLine", () => {
   it("keeps the first sentence, including a closing quote", () => {
