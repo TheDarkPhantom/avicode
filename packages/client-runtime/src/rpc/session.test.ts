@@ -6,10 +6,12 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -193,6 +195,29 @@ const awaitRequest = Effect.fn("TestRpcSessionFactory.awaitRequest")(function* (
     yield* Effect.yieldNow;
   }
   return yield* Effect.die(new Error("Expected the RPC protocol to send a request."));
+});
+
+const awaitRequestByTag = Effect.fn("TestRpcSessionFactory.awaitRequestByTag")(function* (
+  socket: TestWebSocket,
+  tag: string,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    for (const message of socket.sent) {
+      const decoded = decodeJson(message);
+      if (
+        typeof decoded === "object" &&
+        decoded !== null &&
+        "_tag" in decoded &&
+        decoded._tag === "Request" &&
+        "tag" in decoded &&
+        decoded.tag === tag
+      ) {
+        return decodeRpcRequest(decoded);
+      }
+    }
+    yield* Effect.yieldNow;
+  }
+  return yield* Effect.die(new Error(`Expected the RPC protocol to send a ${tag} request.`));
 });
 
 const countSentMessages = (socket: TestWebSocket, tag: string) =>
@@ -408,6 +433,55 @@ describe("RpcSessionFactory", () => {
         expect(closedFiber.pollUnsafe()).toBeUndefined();
       }),
     ).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  // Avi Code addition (upstream #15563): upstream's effect version reads socket
+  // frames one at a time, so a closed stream whose buffer was full stalled every
+  // later reply until upstream patched RpcClient to shut the buffer down. The
+  // fork's effect version handles each frame in its own fiber and passes as is;
+  // this guards the behavior across effect upgrades.
+  it.effect("keeps reading replies after closing a stream with a full buffer", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+
+      // The consumer takes one event and stops pulling, so the stream buffer fills.
+      const consuming = yield* Deferred.make<void>();
+      const streamFiber = yield* session.client[WS_METHODS.subscribeServerConfig]({}).pipe(
+        Stream.runForEach(() =>
+          Deferred.succeed(consuming, undefined).pipe(Effect.andThen(Effect.never)),
+        ),
+        Effect.forkChild,
+      );
+      const streamRequest = yield* awaitRequest(socket, 1);
+      const snapshot = { version: 1, type: "snapshot", config: ENCODED_SERVER_CONFIG };
+      socket.serverMessage(
+        encodeJson({
+          _tag: "Chunk",
+          requestId: streamRequest.id,
+          values: Array.from({ length: 64 }, () => snapshot),
+        }),
+      );
+      yield* Deferred.await(consuming);
+      yield* Fiber.interrupt(streamFiber);
+
+      // Closing the stream sends an Interrupt frame; the probe request follows it.
+      const probeFiber = yield* Effect.forkChild(session.probe);
+      const probeRequest = yield* awaitRequestByTag(socket, WS_METHODS.serverProbe);
+      socket.serverMessage(
+        encodeJson({
+          _tag: "Exit",
+          requestId: probeRequest.id,
+          exit: { _tag: "Success", value: {} },
+        }),
+      );
+      yield* Fiber.join(probeFiber);
+    }).pipe(Effect.scoped),
   );
 
   it.effect("treats any decoded inbound RPC frame as proof of liveness", () =>
