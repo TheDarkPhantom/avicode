@@ -1,7 +1,11 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ServerProvider } from "./server.ts";
+import {
+  isProviderSkillsSnapshotCurrent,
+  PROVIDER_SKILLS_SNAPSHOT_TTL_MS,
+  ServerProvider,
+} from "./server.ts";
 
 const decodeServerProvider = Schema.decodeUnknownSync(ServerProvider);
 
@@ -70,5 +74,22 @@ describe("ServerProvider", () => {
     });
 
     expect(parsed.continuation?.groupKey).toBe("codex:home:/Users/julius/.codex");
+  });
+});
+
+describe("isProviderSkillsSnapshotCurrent", () => {
+  it("asks for a rescan once the provider snapshot outlives its TTL", () => {
+    const checkedAt = "2026-01-01T00:01:00.000Z";
+    const scannedAt = Date.parse(checkedAt);
+    expect(isProviderSkillsSnapshotCurrent({ checkedAt }, scannedAt)).toBe(true);
+    expect(
+      isProviderSkillsSnapshotCurrent(
+        { checkedAt },
+        scannedAt + PROVIDER_SKILLS_SNAPSHOT_TTL_MS - 1,
+      ),
+    ).toBe(true);
+    expect(
+      isProviderSkillsSnapshotCurrent({ checkedAt }, scannedAt + PROVIDER_SKILLS_SNAPSHOT_TTL_MS),
+    ).toBe(false);
   });
 });

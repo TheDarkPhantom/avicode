@@ -18,6 +18,7 @@ import {
   ClaudeSettings,
   CodexSettings,
   DEFAULT_SERVER_SETTINGS,
+  PROVIDER_SKILLS_SNAPSHOT_TTL_MS,
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
@@ -1300,6 +1301,118 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               cachedProvider,
             ]);
           }).pipe(Effect.provide(runtimeServices));
+        }),
+      );
+
+      // Builds a registry over one Claude instance whose probe and cache
+      // invalidation are counted. `checkedAt` is the snapshot's probe time.
+      const makeCountingRegistry = Effect.fn("makeCountingRegistry")(function* (input: {
+        readonly checkedAt: string;
+      }) {
+        const claudeDriver = ProviderDriverKind.make("claudeAgent");
+        const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+        const refreshes = yield* Ref.make(0);
+        const invalidations = yield* Ref.make(0);
+        const provider = {
+          instanceId: claudeInstanceId,
+          driver: claudeDriver,
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: input.checkedAt,
+          version: "1.0.0",
+          models: [],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const instance = {
+          instanceId: claudeInstanceId,
+          driverKind: claudeDriver,
+          continuationIdentity: {
+            driverKind: claudeDriver,
+            continuationKey: "claudeAgent:instance:claudeAgent",
+          },
+          displayName: undefined,
+          enabled: true,
+          snapshot: {
+            maintenanceCapabilities: makeManualOnlyProviderMaintenanceCapabilities({
+              provider: claudeDriver,
+              packageName: null,
+            }),
+            getSnapshot: Effect.succeed(provider),
+            refresh: Ref.update(refreshes, (count) => count + 1).pipe(Effect.as(provider)),
+            streamChanges: Stream.empty,
+          },
+          invalidateCaches: Ref.update(invalidations, (count) => count + 1),
+          adapter: {} as ProviderInstance["adapter"],
+          textGeneration: {} as ProviderInstance["textGeneration"],
+        } satisfies ProviderInstance;
+        const instanceRegistryLayer = Layer.succeed(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          {
+            getInstance: (instanceId) =>
+              Effect.succeed(instanceId === claudeInstanceId ? instance : undefined),
+            listInstances: Effect.succeed([instance]),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
+              PubSub.subscribe(pubsub),
+            ),
+          },
+        );
+        const scope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+        const runtimeServices = yield* Layer.build(
+          ProviderRegistryLive.pipe(
+            Layer.provide(ProviderQuotaTrackerLive),
+            Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-provider-registry-counting-",
+              }),
+            ),
+            Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ).pipe(Scope.provide(scope));
+        const registry = yield* ProviderRegistry.ProviderRegistry.pipe(
+          Effect.provide(runtimeServices),
+        );
+        return { registry, instanceId: claudeInstanceId, refreshes, invalidations };
+      });
+
+      it.effect("drops the instance's cached probe results only on a fresh refresh", () =>
+        Effect.gen(function* () {
+          const { registry, instanceId, refreshes, invalidations } = yield* makeCountingRegistry({
+            checkedAt: "2026-04-29T10:00:00.000Z",
+          });
+
+          yield* registry.refreshInstance(instanceId);
+          assert.strictEqual(yield* Ref.get(refreshes), 1);
+          assert.strictEqual(yield* Ref.get(invalidations), 0);
+
+          yield* registry.refreshInstance(instanceId, { fresh: true });
+          assert.strictEqual(yield* Ref.get(refreshes), 2);
+          assert.strictEqual(yield* Ref.get(invalidations), 1);
+        }),
+      );
+
+      it.effect("answers stale-only refreshes from the cache until the snapshot expires", () =>
+        Effect.gen(function* () {
+          // The layer's TestClock is shared across tests; check the snapshot "now".
+          const { registry, instanceId, refreshes } = yield* makeCountingRegistry({
+            checkedAt: DateTime.formatIso(yield* DateTime.now),
+          });
+
+          // Nothing watches skill directories, so an expired scan is redone on use.
+          yield* TestClock.adjust(PROVIDER_SKILLS_SNAPSHOT_TTL_MS - 1);
+          yield* registry.refreshInstance(instanceId, { ifStale: true });
+          assert.strictEqual(yield* Ref.get(refreshes), 0);
+
+          yield* TestClock.adjust(1);
+          yield* registry.refreshInstance(instanceId, { ifStale: true });
+          assert.strictEqual(yield* Ref.get(refreshes), 1);
         }),
       );
 

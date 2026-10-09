@@ -24,6 +24,7 @@
  */
 import {
   defaultInstanceIdForDriver,
+  isProviderSkillsSnapshotCurrent,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderQuotaSnapshot,
@@ -31,6 +32,7 @@ import {
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
@@ -44,7 +46,11 @@ import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "../../config.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderQuotaTracker } from "../Services/ProviderQuotaTracker.ts";
-import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
+import {
+  ProviderRegistry,
+  type ProviderRefreshInstanceOptions,
+  type ProviderRegistryShape,
+} from "../Services/ProviderRegistry.ts";
 import {
   hydrateCachedProvider,
   isCachedProviderCorrelated,
@@ -206,6 +212,7 @@ const buildSnapshotSource = (instance: ProviderInstance): ProviderSnapshotSource
   driverKind: instance.driverKind,
   getSnapshot: instance.snapshot.getSnapshot,
   refresh: instance.snapshot.refresh,
+  ...(instance.invalidateCaches ? { invalidateCaches: instance.invalidateCaches } : {}),
   streamChanges: instance.snapshot.streamChanges,
 });
 
@@ -541,11 +548,25 @@ export const ProviderRegistryLive = Layer.effect(
 
     const refreshInstance = Effect.fn("refreshInstance")(function* (
       instanceId: ProviderInstanceId,
+      options?: ProviderRefreshInstanceOptions,
     ) {
       const sources = yield* getLiveSources;
       const providerSource = sources.find((candidate) => candidate.instanceId === instanceId);
       if (!providerSource) {
         return yield* Ref.get(providersRef);
+      }
+      // A fresh refresh drops cached probe results first, so skills and
+      // commands added since the last check are read again.
+      if (options?.fresh === true) {
+        yield* providerSource.invalidateCaches ?? Effect.void;
+      } else if (options?.ifStale === true) {
+        // Composers ask on use; one probe per TTL window answers them all.
+        const providers = yield* Ref.get(providersRef);
+        const current = providers.find((candidate) => candidate.instanceId === instanceId);
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+        if (!current?.enabled || isProviderSkillsSnapshotCurrent(current, nowMs)) {
+          return providers;
+        }
       }
       return yield* refreshOneSource(providerSource);
     });
@@ -779,8 +800,8 @@ export const ProviderRegistryLive = Layer.effect(
       getProviders: Ref.get(providersRef),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
-      refreshInstance: (instanceId: ProviderInstanceId) =>
-        refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
+      refreshInstance: (instanceId: ProviderInstanceId, options?: ProviderRefreshInstanceOptions) =>
+        refreshInstance(instanceId, options).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviderMaintenanceCapabilitiesForInstance,
       setProviderMaintenanceActionState,
       get streamChanges() {

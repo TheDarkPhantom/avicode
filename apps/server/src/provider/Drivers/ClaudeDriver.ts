@@ -214,6 +214,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        // Plugin slash commands come from the capabilities probe, which is
+        // cached; a fresh refresh must read them again.
+        invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
         adapter,
         textGeneration,
       } satisfies ProviderInstance;
