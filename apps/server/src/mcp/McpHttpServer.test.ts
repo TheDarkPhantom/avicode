@@ -204,6 +204,29 @@ it.effect("tells the agent how to fall back when no desktop app can run the snap
   }).pipe(Effect.provide(TestLayer)),
 );
 
+it.effect.each([
+  { mode: "default", input: {}, images: false },
+  { mode: "explicit image", input: { includeImage: true }, images: true },
+  { mode: "text only", input: { includeImage: false }, images: false },
+])("returns the snapshot image only when asked for in $mode mode", ({ input, images }) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const inputs = yield* serveSnapshots(`mcp-image-${String(images)}-client`, snapshotResult);
+
+      const snapshot = yield* callSnapshot(input);
+
+      expect(snapshot.isError).toBe(false);
+      // Images stay out of tool history unless asked for: providers replay them every turn.
+      expect(snapshot.content.some((content) => content.type === "image")).toBe(images);
+      expect(snapshot.structuredContent).toMatchObject({
+        screenshot: { mimeType: "image/png", width: 10, height: 5 },
+      });
+      // The browser never receives the MCP-only `includeImage` flag.
+      expect(inputs).toEqual([{}]);
+    }),
+  ).pipe(Effect.provide(TestLayer)),
+);
+
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -555,7 +578,10 @@ it.effect("registers annotated tools and preserves authenticated request context
       expect(malformed.isError).toBe(true);
 
       const snapshot = yield* server
-        .callTool({ name: "preview_snapshot", arguments: { tabId: alternateTabId } })
+        .callTool({
+          name: "preview_snapshot",
+          arguments: { tabId: alternateTabId, includeImage: true },
+        })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(McpSchema.McpServerClient, client),

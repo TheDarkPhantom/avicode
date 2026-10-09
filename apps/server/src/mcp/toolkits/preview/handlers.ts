@@ -70,7 +70,11 @@ const handlers = {
     invokeTargeted<PreviewAutomationResizeResult>("resize", input, input.timeoutMs),
   preview_set_appearance: (input) =>
     invokeTargeted<PreviewAutomationSetColorSchemeResult>("setColorScheme", input),
-  preview_snapshot: (input) => invokeTargeted<PreviewAutomationSnapshot>("snapshot", input ?? {}),
+  // `includeImage` only shapes the MCP response; the browser always captures.
+  preview_snapshot: (input) => {
+    const { includeImage: _includeImage, ...snapshotInput } = input ?? {};
+    return invokeTargeted<PreviewAutomationSnapshot>("snapshot", snapshotInput);
+  },
   preview_click: (input) =>
     invokeTargeted<void>("click", input, input.timeoutMs).pipe(Effect.as(null)),
   preview_type: (input) =>
