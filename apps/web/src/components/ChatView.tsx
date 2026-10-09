@@ -358,6 +358,7 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
   resolveSubmissionIntent,
+  shouldOpenNewThreadAfterSend,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -1282,6 +1283,15 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  // Avi Code addition: lets an async send tell whether the user is still on the
+  // thread it was sent from.
+  const currentRouteThreadKeyRef = useRef<string | null>(routeThreadKey);
+  useLayoutEffect(() => {
+    currentRouteThreadKeyRef.current = routeThreadKey;
+    return () => {
+      currentRouteThreadKeyRef.current = null;
+    };
+  }, [routeThreadKey]);
   // Opening a running thread resyncs for a few frames. Show the sync pill only
   // when the sync lasts; logic that depends on the real phase keeps reading
   // `threadSyncPhase`.
@@ -6673,6 +6683,16 @@ function ChatViewContent(props: ChatViewProps) {
               startFromOrigin,
             }),
           });
+        } else if (
+          shouldOpenNewThreadAfterSend({
+            requested: submissionIntent,
+            isLocalDraftThread,
+            sentFromThreadKey: routeThreadKey,
+            currentRouteThreadKey: currentRouteThreadKeyRef.current,
+          })
+        ) {
+          // An existing thread keeps running; open a fresh composer like a draft does.
+          handleNewThreadInActiveProject();
         }
       }
     }

@@ -90,9 +90,10 @@ export function resolveDraftPromotionNavigationTarget(input: {
 
 /**
  * Background only from a new-thread draft whose send dispatches right away.
- * Anywhere else the same keypress is a plain send: an existing thread has no
- * draft to return to, and a send stored in the offline outbox has not started
- * a thread to open later.
+ * Anywhere else the same keypress dispatches as a plain send: an existing thread
+ * has no draft to return to, and a send stored in the offline outbox has not
+ * started a thread to open later. `shouldOpenNewThreadAfterSend` handles the
+ * existing-thread case once the turn has started.
  */
 export function resolveSubmissionIntent(input: {
   requested: ComposerSubmissionIntent;
@@ -102,6 +103,24 @@ export function resolveSubmissionIntent(input: {
   return input.requested === "background" && input.isLocalDraftThread && !input.isQueuedSend
     ? "background"
     : "foreground";
+}
+
+/**
+ * Ctrl/Cmd+Alt+Enter in a thread that has already started: once the turn is
+ * under way the thread keeps running and a fresh new-thread draft opens, like a
+ * background draft send. Skipped when the user navigated away mid-send.
+ */
+export function shouldOpenNewThreadAfterSend(input: {
+  requested: ComposerSubmissionIntent;
+  isLocalDraftThread: boolean;
+  sentFromThreadKey: string;
+  currentRouteThreadKey: string | null;
+}): boolean {
+  return (
+    input.requested === "background" &&
+    !input.isLocalDraftThread &&
+    input.currentRouteThreadKey === input.sentFromThreadKey
+  );
 }
 
 export function canSubmitComposerSendContext(input: {

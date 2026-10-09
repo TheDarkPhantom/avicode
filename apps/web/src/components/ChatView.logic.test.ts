@@ -37,6 +37,7 @@ import {
   resolveSendEnvMode,
   startNewThreadForProject,
   shouldDockDraftHeroForSubmission,
+  shouldOpenNewThreadAfterSend,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -74,6 +75,27 @@ describe("background submission from a new-thread draft", () => {
         isQueuedSend: false,
       }),
     ).toBe("foreground");
+  });
+
+  it("opens a new thread after Ctrl/Cmd+Alt+Enter in a started thread", () => {
+    const base = {
+      requested: "background" as const,
+      isLocalDraftThread: false,
+      sentFromThreadKey: "environment-local:thread-1",
+      currentRouteThreadKey: "environment-local:thread-1",
+    };
+    expect(shouldOpenNewThreadAfterSend(base)).toBe(true);
+    expect(shouldOpenNewThreadAfterSend({ ...base, requested: "foreground" })).toBe(false);
+    // A draft goes to the background through its own path.
+    expect(shouldOpenNewThreadAfterSend({ ...base, isLocalDraftThread: true })).toBe(false);
+    // The user already left the thread while the send was in flight.
+    expect(
+      shouldOpenNewThreadAfterSend({
+        ...base,
+        currentRouteThreadKey: "environment-local:thread-2",
+      }),
+    ).toBe(false);
+    expect(shouldOpenNewThreadAfterSend({ ...base, currentRouteThreadKey: null })).toBe(false);
   });
 
   it("does not dock the composer before a background submission", () => {
