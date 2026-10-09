@@ -56,7 +56,11 @@ import { installFileEditorDismissal } from "./fileEditorDismissal";
 import { LocalCommentAnnotation } from "./LocalCommentAnnotation";
 import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRevision";
 import { fileBreadcrumbs } from "./filePath";
-import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
+import {
+  isMarkdownPreviewFile,
+  setMarkdownTaskChecked,
+  workspaceAssetResource,
+} from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { isProjectFileMissing } from "./projectFileErrorMessage";
@@ -146,12 +150,16 @@ function WorkspaceImagePreview(props: {
   readonly absolutePath: string;
   readonly alt: string;
   /**
-   * Avi Code addition: the repository this file belongs to, when the surface is
-   * showing another project's root. Without it the server resolved the image
-   * against the thread's own workspace and rejected it as outside, so a
-   * cross-repo image failed to load while its text neighbours opened fine.
+   * Avi Code addition: the root the surface shows. Sent to the server when the
+   * surface shows another project's root, or the thread is still a draft;
+   * otherwise the server resolved the image against the thread's own
+   * workspace (or found no thread at all) and the image failed to load while
+   * its text neighbours opened fine.
    */
-  readonly workspaceRoot: string | null;
+  readonly workspaceRoot: string;
+  readonly externalRoot: boolean;
+  /** The thread is a draft the server does not know yet. */
+  readonly draft: boolean;
   /**
    * Avi Code addition: reload triggers so an image an agent is about to write
    * loads itself once it lands, matching the text preview's behaviour.
@@ -160,13 +168,15 @@ function WorkspaceImagePreview(props: {
   readonly reloadSignal: string;
 }) {
   const resource = useMemo<AssetResource>(
-    () => ({
-      _tag: "workspace-file",
-      threadId: props.threadRef.threadId,
-      path: props.absolutePath,
-      ...(props.workspaceRoot === null ? {} : { workspaceRoot: props.workspaceRoot }),
-    }),
-    [props.threadRef.threadId, props.absolutePath, props.workspaceRoot],
+    () =>
+      workspaceAssetResource({
+        threadRef: props.threadRef,
+        draft: props.draft,
+        externalRoot: props.externalRoot,
+        workspaceRoot: props.workspaceRoot,
+        absolutePath: props.absolutePath,
+      }),
+    [props.threadRef, props.draft, props.externalRoot, props.workspaceRoot, props.absolutePath],
   );
   const assetUrl = useAssetUrlState(props.environmentId, resource);
   const refreshAsset = useAtomRefresh(
@@ -226,8 +236,11 @@ function WorkspaceBrowserPreview(props: {
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
   readonly absolutePath: string;
-  /** Avi Code addition: set when the surface shows another repo's root. */
-  readonly workspaceRoot: string | null;
+  /** Avi Code addition: see {@link WorkspaceImagePreview}. */
+  readonly workspaceRoot: string;
+  readonly externalRoot: boolean;
+  /** The thread is a draft the server does not know yet. */
+  readonly draft: boolean;
   readonly title: string;
   /**
    * Avi Code addition: changes when the thread checkpoints, so a page the agent
@@ -236,13 +249,15 @@ function WorkspaceBrowserPreview(props: {
   readonly reloadSignal: string;
 }) {
   const resource = useMemo<AssetResource>(
-    () => ({
-      _tag: "workspace-file",
-      threadId: props.threadRef.threadId,
-      path: props.absolutePath,
-      ...(props.workspaceRoot === null ? {} : { workspaceRoot: props.workspaceRoot }),
-    }),
-    [props.threadRef.threadId, props.absolutePath, props.workspaceRoot],
+    () =>
+      workspaceAssetResource({
+        threadRef: props.threadRef,
+        draft: props.draft,
+        externalRoot: props.externalRoot,
+        workspaceRoot: props.workspaceRoot,
+        absolutePath: props.absolutePath,
+      }),
+    [props.threadRef, props.draft, props.externalRoot, props.workspaceRoot, props.absolutePath],
   );
   const assetUrl = useAssetUrlState(props.environmentId, resource);
 
@@ -797,6 +812,8 @@ export default function FilePreviewPanel({
   onOpenFile,
   onPendingChange,
 }: FilePreviewPanelProps) {
+  // A draft's composer target is its draft id; a thread the server knows is a ref.
+  const draft = typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -1065,7 +1082,9 @@ export default function FilePreviewPanel({
               threadRef={threadRef}
               absolutePath={absolutePath}
               alt={relativePath}
-              workspaceRoot={isExternalRoot ? cwd : null}
+              workspaceRoot={cwd}
+              externalRoot={isExternalRoot}
+              draft={draft}
               isThreadWorking={isThreadWorking}
               reloadSignal={reloadSignal}
             />
@@ -1075,7 +1094,9 @@ export default function FilePreviewPanel({
               environmentId={environmentId}
               threadRef={threadRef}
               absolutePath={absolutePath}
-              workspaceRoot={isExternalRoot ? cwd : null}
+              workspaceRoot={cwd}
+              externalRoot={isExternalRoot}
+              draft={draft}
               title={relativePath}
               reloadSignal={reloadSignal}
             />

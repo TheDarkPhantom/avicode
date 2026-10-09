@@ -1,3 +1,4 @@
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -5,7 +6,11 @@ import {
   normalizeFileCommentRange,
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
-import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
+import {
+  isMarkdownPreviewFile,
+  setMarkdownTaskChecked,
+  workspaceAssetResource,
+} from "./filePreviewMode";
 
 describe("file comment annotations", () => {
   it("normalizes and formats selected line ranges", () => {
@@ -78,5 +83,42 @@ describe("setMarkdownTaskChecked", () => {
   it("leaves the document unchanged for a stale or invalid marker offset", () => {
     expect(setMarkdownTaskChecked(markdown, 0, true)).toBe(markdown);
     expect(setMarkdownTaskChecked(markdown, 200, true)).toBe(markdown);
+  });
+});
+
+describe("workspaceAssetResource", () => {
+  const input = {
+    threadRef: {
+      environmentId: "env" as ScopedThreadRef["environmentId"],
+      threadId: "thread-1" as ScopedThreadRef["threadId"],
+    },
+    workspaceRoot: "/repo",
+    absolutePath: "/repo/docs/index.html",
+  };
+
+  it("resolves through the thread once the server knows it", () => {
+    expect(workspaceAssetResource({ ...input, draft: false, externalRoot: false })).toEqual({
+      _tag: "workspace-file",
+      threadId: "thread-1",
+      path: "/repo/docs/index.html",
+    });
+  });
+
+  it("names the workspace root for a draft, which the server cannot resolve from a thread", () => {
+    expect(workspaceAssetResource({ ...input, draft: true, externalRoot: false })).toEqual({
+      _tag: "workspace-file",
+      threadId: "thread-1",
+      path: "/repo/docs/index.html",
+      workspaceRoot: "/repo",
+    });
+  });
+
+  it("names the workspace root for a surface showing another repository", () => {
+    expect(workspaceAssetResource({ ...input, draft: false, externalRoot: true })).toEqual({
+      _tag: "workspace-file",
+      threadId: "thread-1",
+      path: "/repo/docs/index.html",
+      workspaceRoot: "/repo",
+    });
   });
 });
