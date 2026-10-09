@@ -32,4 +32,6 @@ export * from "./voice.ts";
 export * from "./preview.ts";
 export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
+// Avi Code addition: live thought lines for running sidebar rows.
+export * from "./liveThoughts.ts";
 export * from "./rpc.ts";
