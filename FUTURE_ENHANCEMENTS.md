@@ -16,8 +16,27 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
-- Upstream sync of 2026-09-29 (#242 to #245) reviewed `pingdotgg/t3code` through `d2c9281b8`; the
-  next review starts there. It left these out on purpose:
+- Upstream sync of 2026-10-08 (#261 to #265) reviewed `pingdotgg/t3code` through `a4c9494b0e`; the
+  next review starts there. It hand-ported about 15 fixes out of 518 commits and left these out:
+  - The new orchestrator (#2829) and every fix that lives only in it, including most of upstream's
+    "Claude thread stuck" fixes (#14726, #15048, #15224, #15770, #16287, #16897, #16908). The fork
+    still runs V1 orchestration; see `docs/UPSTREAM_ORCHESTRATION_V2.md`.
+  - Upstream-only systems: the MCP server with OAuth, webhooks and automations, the GitHub API
+    transport that replaces `gh`, PR watches, the Usage page, split permission scopes, and the Muse
+    and Antigravity providers.
+  - Claude subagent model labels (#14540) build on subagent tracking the fork lacks. Startup
+    auto-pull timing (#14912) fixes a feature the fork never took. Find in diffs (#14623) is mostly
+    a patch to `@pierre/diffs@1.5.2`; the fork is on 1.3.0-beta.10.
+  - Haiku 5.5 (#16903) landed without upstream's retirements: Sonnet 5 stays the default, bare
+    `sonnet` and `haiku` still mean Sonnet 5 and Haiku 4.5, and Opus 5 is not marked legacy.
+  - Mermaid diagrams render only after a reply finishes streaming, and have no download action.
+  - Untracked files in the review diff now share one 120KB output cap, so one huge file can cut off
+    the files listed after it. Upstream later unified the tracked and untracked halves.
+  - The zoomed titlebar fix (#15496) covers the chat panels only. The settings, changelog and usage
+    headers still read the raw titlebar values and likely misplace controls under zoom.
+  - Sending on an older thread (#15059) fixes upstream's runs import, which the fork lacks.
+- Upstream sync of 2026-09-29 (#242 to #245) reviewed through `d2c9281b8`. It left these out on
+  purpose:
   - Settling a thread (#13673) closes idle terminals only. Closing the setup-script shell needs the
     fork's `ProjectSetupScriptRunner` to observe completion. Stopping the agent session on settle
     needs an `onlyIfSettled` contracts field.
