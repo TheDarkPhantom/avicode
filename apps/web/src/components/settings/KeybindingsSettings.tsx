@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import {
   type KeyboardEvent,
-  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -59,6 +58,7 @@ import {
   buildWhenVariableOptions,
   commandLabel,
   DEFAULT_WHEN_VARIABLE,
+  groupKeybindingRows,
   isKnownWhenVariable,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
@@ -100,68 +100,38 @@ function KeybindingPill({ value }: { value: string }) {
   );
 }
 
-function ExpandableHeaderSearch({
+/**
+ * Port of upstream #12822: the always-visible filter box in the page toolbar.
+ * Mod+F focuses it from anywhere on the page.
+ */
+function KeybindingsSearchInput({
   query,
   onChange,
-  isOpen,
-  onOpenChange,
   inputRef,
-  collapsedAccessory,
 }: {
   query: string;
   onChange: (next: string) => void;
-  isOpen: boolean;
-  onOpenChange: (next: boolean) => void;
-  inputRef?: RefObject<HTMLInputElement | null>;
-  collapsedAccessory?: ReactNode;
+  inputRef: RefObject<HTMLInputElement | null>;
 }) {
-  if (!isOpen) {
-    return (
-      <>
-        {collapsedAccessory}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                onClick={() => onOpenChange(true)}
-                aria-label="Search keybindings"
-              >
-                <SearchIcon className="size-3" />
-              </Button>
-            }
-          />
-          <TooltipPopup side="top">Search keybindings</TooltipPopup>
-        </Tooltip>
-      </>
-    );
-  }
-
   return (
-    <div className="relative">
-      <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
+    <div className="relative min-w-0 flex-1">
+      <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <input
         ref={inputRef}
-        autoFocus
-        type="text"
+        type="search"
         value={query}
         onChange={(event) => onChange(event.currentTarget.value)}
-        onBlur={() => {
-          if (query.length === 0) onOpenChange(false);
-        }}
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onChange("");
-            onOpenChange(false);
-          }
+          // The settings route treats an unhandled Escape as "go back";
+          // inside the search box it clears, then leaves the field.
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          if (query.length > 0) onChange("");
+          else event.currentTarget.blur();
         }}
         placeholder="Search keybindings"
         aria-label="Search keybindings"
-        className="h-6 w-44 rounded-md border border-input bg-background pl-7 pr-2 text-[11px] text-foreground outline-none placeholder:text-muted-foreground/72 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
+        className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/72 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
       />
     </div>
   );
@@ -1097,11 +1067,11 @@ export function KeybindingsSettingsPanel() {
     availableEditors,
   );
   const [query, setQuery] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [savingCommand, setSavingCommand] = useState<KeybindingCommand | null>(null);
   const [isAddingBinding, setIsAddingBinding] = useState(false);
   const rows = useMemo(() => buildKeybindingRows(keybindings, query), [keybindings, query]);
+  const groups = useMemo(() => groupKeybindingRows(rows), [rows]);
   const commandOptions = useMemo(() => buildKeybindingCommandOptions(keybindings), [keybindings]);
   const whenVariables = useMemo(() => buildWhenVariableOptions(), []);
 
@@ -1120,11 +1090,8 @@ export function KeybindingsSettingsPanel() {
       }
 
       event.preventDefault();
-      setIsSearchOpen(true);
-      requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      });
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -1220,65 +1187,38 @@ export function KeybindingsSettingsPanel() {
     [saveKeybinding],
   );
 
-  const bindingsCount = (
-    <span className="text-[11px] text-muted-foreground">
-      {rows.length + (isAddingBinding ? 1 : 0)}{" "}
-      {rows.length + (isAddingBinding ? 1 : 0) === 1 ? "binding" : "bindings"}
-    </span>
-  );
-
   return (
     <SettingsPageContainer className="max-w-5xl">
-      <SettingsSection
-        title="Keybindings"
-        headerAction={
-          <div className="flex items-center gap-1.5">
-            <ExpandableHeaderSearch
-              query={query}
-              onChange={setQuery}
-              isOpen={isSearchOpen}
-              onOpenChange={setIsSearchOpen}
-              inputRef={searchInputRef}
-              collapsedAccessory={bindingsCount}
+      <SettingsSection title="Keybindings">
+        <div className="flex items-center gap-2 px-3 pb-2 sm:px-4">
+          <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isAddingBinding}
+            onClick={() => setIsAddingBinding(true)}
+          >
+            <PlusIcon aria-hidden className="size-3.5" />
+            Add keybinding
+          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  disabled={!keybindingsConfigPath}
+                  onClick={openKeybindingsFile}
+                  aria-label="Open keybindings.json"
+                >
+                  <FileJsonIcon aria-hidden className="size-3.5" />
+                </Button>
+              }
             />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                    onClick={() => setIsAddingBinding(true)}
-                    aria-label="Add keybinding"
-                  >
-                    <PlusIcon className="size-3" />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Add keybinding</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                    disabled={!keybindingsConfigPath}
-                    onClick={openKeybindingsFile}
-                    aria-label="Open keybindings.json"
-                  >
-                    <FileJsonIcon className="size-3" />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-            </Tooltip>
-          </div>
-        }
-      >
+            <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
+          </Tooltip>
+        </div>
         {!isElectron ? (
           <div className="flex items-start gap-2 border-b border-warning/20 bg-warning/5 px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground sm:px-4">
             <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
@@ -1312,17 +1252,29 @@ export function KeybindingsSettingsPanel() {
                 onCancel={() => setIsAddingBinding(false)}
               />
             ) : null}
-            {rows.map((row) => (
-              <KeybindingTableRow
-                key={row.id}
-                row={row}
-                allRows={rows}
-                variables={whenVariables}
-                isSaving={savingCommand === row.command}
-                onSave={saveKeybinding}
-                onReset={resetKeybinding}
-                onRemove={removeKeybinding}
-              />
+            {groups.map((group) => (
+              <div key={group.id}>
+                <h3
+                  id={`keybindings-${group.id}`}
+                  className="bg-muted/10 px-4 pt-3 pb-1.5 text-xs font-semibold text-foreground"
+                >
+                  {group.title}
+                </h3>
+                <div className="divide-y divide-border/60">
+                  {group.rows.map((row) => (
+                    <KeybindingTableRow
+                      key={row.id}
+                      row={row}
+                      allRows={rows}
+                      variables={whenVariables}
+                      isSaving={savingCommand === row.command}
+                      onSave={saveKeybinding}
+                      onReset={resetKeybinding}
+                      onRemove={removeKeybinding}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
             {rows.length === 0 && !isAddingBinding ? (
               <div className="px-4 py-12 text-center text-sm text-muted-foreground">
