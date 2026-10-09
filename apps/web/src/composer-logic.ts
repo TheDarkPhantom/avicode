@@ -53,18 +53,23 @@ export type ComposerSubmissionIntent = "foreground" | "background";
 /**
  * What Enter does in the composer: null inserts a newline, otherwise it
  * submits. Ctrl/Cmd+Enter on a new-thread draft starts that thread in the
- * background, unless the Avi Code setting turned it off; everywhere else it
- * is a plain send.
+ * background, unless the Avi Code setting turned it off. Ctrl/Cmd+Alt+Enter in
+ * a thread that has already started sends, keeps that thread running, and
+ * opens a fresh new-thread draft. Everywhere else it is a plain send.
  */
 export function composerSubmissionIntentForEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;
   modifierKey: boolean;
+  altKey?: boolean;
   isDraftThread: boolean;
   backgroundThreadEnabled: boolean;
 }): ComposerSubmissionIntent | null {
   if (input.isMobileViewport || input.shiftKey) {
     return null;
+  }
+  if (input.modifierKey && input.altKey && !input.isDraftThread) {
+    return "background";
   }
   return input.modifierKey && input.isDraftThread && input.backgroundThreadEnabled
     ? "background"

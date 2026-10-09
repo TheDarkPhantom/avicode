@@ -210,7 +210,10 @@ import { chatContentMaxWidthCss } from "~/lib/chatContentWidth";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
+import {
+  decodeProjectScriptKeybindingRule,
+  planProjectScriptKeybindingWrites,
+} from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   buildProjectScript,
@@ -358,6 +361,7 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
   resolveSubmissionIntent,
+  shouldOpenNewThreadAfterSend,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -1282,12 +1286,24 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  // Avi Code addition: lets an async send tell whether the user is still on the
+  // thread it was sent from.
+  const currentRouteThreadKeyRef = useRef<string | null>(routeThreadKey);
+  useLayoutEffect(() => {
+    currentRouteThreadKeyRef.current = routeThreadKey;
+    return () => {
+      currentRouteThreadKeyRef.current = null;
+    };
+  }, [routeThreadKey]);
   // Opening a running thread resyncs for a few frames. Show the sync pill only
   // when the sync lasts; logic that depends on the real phase keeps reading
   // `threadSyncPhase`.
   const shownThreadSyncPhase = useDelayedStatus(routeThreadKey, threadSyncPhase);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
+    reportFailure: false,
+  });
+  const removeKeybinding = useAtomCommand(serverEnvironment.removeKeybinding, {
     reportFailure: false,
   });
   const refreshProviderUsage = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -3520,18 +3536,44 @@ function ChatViewContent(props: ChatViewProps) {
         command: input.keybindingCommand,
       });
 
-      if (isElectron && keybindingRule) {
-        return mapAtomCommandResult(
-          await upsertKeybinding({
-            environmentId,
-            input: keybindingRule,
-          }),
-          () => undefined,
-        );
+      if (!isElectron) return updateResult;
+
+      // Avi Code addition (upstream #15394): replace or remove the script's
+      // previous shortcut rather than leaving it bound.
+      const scriptId = projectScriptIdFromCommand(input.keybindingCommand);
+      const writes = planProjectScriptKeybindingWrites({
+        command: input.keybindingCommand,
+        nextRule: keybindingRule,
+        scriptWasSaved: input.previousScripts.some((script) => script.id === scriptId),
+        scriptRetainedElsewhere:
+          !input.nextScripts.some((script) => script.id === scriptId) &&
+          allProjects.some(
+            (project) =>
+              project.environmentId === environmentId &&
+              project.id !== input.projectId &&
+              project.scripts.some((script) => script.id === scriptId),
+          ),
+        keybindings: environmentById.get(environmentId)?.serverConfig?.keybindings ?? [],
+      });
+      for (const rule of writes.remove) {
+        const result = await removeKeybinding({ environmentId, input: rule });
+        if (result._tag === "Failure") return mapAtomCommandResult(result, () => undefined);
       }
-      return updateResult;
+      return writes.upsert
+        ? mapAtomCommandResult(
+            await upsertKeybinding({ environmentId, input: writes.upsert }),
+            () => undefined,
+          )
+        : updateResult;
     },
-    [environmentId, updateProject, upsertKeybinding],
+    [
+      allProjects,
+      environmentById,
+      environmentId,
+      removeKeybinding,
+      updateProject,
+      upsertKeybinding,
+    ],
   );
   const saveProjectScript = useCallback(
     async (input: NewProjectScriptInput): Promise<AtomCommandResult<void, unknown>> => {
@@ -6673,6 +6715,16 @@ function ChatViewContent(props: ChatViewProps) {
               startFromOrigin,
             }),
           });
+        } else if (
+          shouldOpenNewThreadAfterSend({
+            requested: submissionIntent,
+            isLocalDraftThread,
+            sentFromThreadKey: routeThreadKey,
+            currentRouteThreadKey: currentRouteThreadKeyRef.current,
+          })
+        ) {
+          // An existing thread keeps running; open a fresh composer like a draft does.
+          handleNewThreadInActiveProject();
         }
       }
     }

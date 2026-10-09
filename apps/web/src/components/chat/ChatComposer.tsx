@@ -2751,6 +2751,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             isMobileViewport,
             shiftKey: event.shiftKey,
             modifierKey: event.metaKey || event.ctrlKey,
+            altKey: event.altKey,
             isDraftThread: routeKind === "draft",
             backgroundThreadEnabled: ctrlEnterStartsBackgroundThread,
           })

@@ -47,6 +47,25 @@ describe("composerSubmissionIntentForEnter", () => {
     ).toBe("foreground");
   });
 
+  it("sends and opens a new thread with Ctrl/Cmd+Alt+Enter in an existing thread", () => {
+    const existingThread = { ...base, isDraftThread: false, modifierKey: true, altKey: true };
+    expect(composerSubmissionIntentForEnter(existingThread)).toBe("background");
+    expect(
+      composerSubmissionIntentForEnter({ ...existingThread, backgroundThreadEnabled: false }),
+    ).toBe("background");
+    expect(composerSubmissionIntentForEnter({ ...existingThread, modifierKey: false })).toBe(
+      "foreground",
+    );
+  });
+
+  it("keeps Ctrl/Cmd+Alt+Enter on a draft governed by the background setting", () => {
+    const draft = { ...base, modifierKey: true, altKey: true };
+    expect(composerSubmissionIntentForEnter(draft)).toBe("background");
+    expect(composerSubmissionIntentForEnter({ ...draft, backgroundThreadEnabled: false })).toBe(
+      "foreground",
+    );
+  });
+
   it("keeps Ctrl/Cmd+Enter a plain send when the setting is off", () => {
     expect(
       composerSubmissionIntentForEnter({
