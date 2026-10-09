@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Stdio from "effect/Stdio";
+import * as ErrorReporter from "effect/ErrorReporter";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -19,6 +20,7 @@ import {
   callRpc,
   decodeExtNotificationRegistration,
   decodeExtRequestRegistration,
+  isolateNotificationHandler,
   runHandler,
 } from "./_internal/shared.ts";
 import { makeChildStdio, makeTerminationError } from "./_internal/stdio.ts";
@@ -335,9 +337,10 @@ export const make = Effect.fn("effect-acp/AcpClient.make")(function* (
     registration: BufferedNotificationHandler<A>,
     notification: A,
   ) =>
+    // One handler failing or dying does not stop the others, or the reader.
     Effect.forEach(
       registration.handlers,
-      (handler) => handler(notification).pipe(Effect.catch(() => Effect.void)),
+      (handler) => isolateNotificationHandler(handler(notification)),
       { discard: true },
     );
 
@@ -445,7 +448,10 @@ export const make = Effect.fn("effect-acp/AcpClient.make")(function* (
     }),
   );
 
-  yield* RpcServer.make(AcpRpcs.ClientRpcs).pipe(
+  yield* RpcServer.make(AcpRpcs.ClientRpcs, { disableFatalDefects: true }).pipe(
+    // runHandler logs handler defects with their method. A reporter inherited
+    // from the caller (a WebSocket request, say) would log them again.
+    Effect.provideService(ErrorReporter.CurrentErrorReporters, new Set()),
     Effect.provideService(RpcServer.Protocol, transport.serverProtocol),
     Effect.provide(clientHandlerLayer),
     Effect.forkScoped,
