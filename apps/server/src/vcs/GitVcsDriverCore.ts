@@ -1003,6 +1003,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   ): Effect.Effect<void, GitCommandError> =>
     executeGit(operation, cwd, args, { allowNonZeroExit }).pipe(Effect.asVoid);
 
+  const runGitWithOptions = (
+    operation: string,
+    cwd: string,
+    args: readonly string[],
+    options: ExecuteGitOptions = {},
+  ): Effect.Effect<void, GitCommandError> =>
+    executeGit(operation, cwd, args, options).pipe(Effect.asVoid);
+
   const runGitStdout = (
     operation: string,
     cwd: string,
@@ -1840,48 +1848,132 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       })),
     );
 
+  const stageCommitChanges = Effect.fnUntraced(function* (
+    cwd: string,
+    filePaths?: readonly string[],
+    env?: NodeJS.ProcessEnv,
+  ) {
+    const config = env
+      ? ["-c", "core.splitIndex=false", "-c", "splitIndex.sharedIndexExpire=never"]
+      : [];
+    if (filePaths && filePaths.length > 0) {
+      if (env) {
+        const head = yield* executeGit(
+          "GitVcsDriver.prepareCommitContext.head",
+          cwd,
+          ["rev-parse", "--verify", "--quiet", "HEAD"],
+          { allowNonZeroExit: true },
+        );
+        // Even with GIT_INDEX_FILE, reset clears the repository's merge state.
+        yield* runGitWithOptions(
+          "GitVcsDriver.prepareCommitContext.readTree",
+          cwd,
+          [...config, "read-tree", ...(head.exitCode === 0 ? ["HEAD"] : ["--empty"])],
+          { env },
+        );
+      } else {
+        yield* runGit("GitVcsDriver.commit.reset", cwd, ["reset"]).pipe(
+          Effect.catchTags({ GitCommandError: () => Effect.void }),
+        );
+      }
+      yield* runGitWithOptions(
+        "GitVcsDriver.commit.addSelected",
+        cwd,
+        [...config, "--literal-pathspecs", "add", "-A", "--", ...filePaths],
+        env ? { env } : {},
+      );
+    } else {
+      yield* runGitWithOptions(
+        "GitVcsDriver.commit.addAll",
+        cwd,
+        [...config, "add", "-A"],
+        env ? { env } : {},
+      );
+    }
+  });
+
   const prepareCommitContext: GitVcsDriver.GitVcsDriver["Service"]["prepareCommitContext"] =
     Effect.fn("prepareCommitContext")(function* (cwd, filePaths) {
-      if (filePaths && filePaths.length > 0) {
-        yield* runGit("GitVcsDriver.prepareCommitContext.reset", cwd, ["reset"]).pipe(
-          Effect.catchTags({
-            GitCommandError: () => Effect.void,
-          }),
-        );
-        yield* runGit("GitVcsDriver.prepareCommitContext.addSelected", cwd, [
-          "--literal-pathspecs",
-          "add",
-          "-A",
-          "--",
-          ...filePaths,
-        ]);
-      } else {
-        yield* runGit("GitVcsDriver.prepareCommitContext.addAll", cwd, ["add", "-A"]);
-      }
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const indexValue = yield* runGitStdout(
+            "GitVcsDriver.prepareCommitContext.indexPath",
+            cwd,
+            ["rev-parse", "--git-path", "index"],
+          );
+          const indexPath = path.resolve(cwd, indexValue.trim());
+          const directory = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "t3code-commit-index-",
+          });
+          const tempIndexPath = path.join(directory, "index");
+          const env = { GIT_INDEX_FILE: tempIndexPath } satisfies NodeJS.ProcessEnv;
+          const config = [
+            "-c",
+            "core.splitIndex=false",
+            "-c",
+            "splitIndex.sharedIndexExpire=never",
+          ];
+          if (yield* fileSystem.exists(indexPath)) {
+            const { mtime } = yield* fileSystem.stat(indexPath);
+            yield* fileSystem.copyFile(indexPath, tempIndexPath);
+            const indexTime = Option.isSome(mtime)
+              ? Math.max(0, Math.floor(mtime.value.getTime() / 1000))
+              : 0;
+            yield* fileSystem.utimes(tempIndexPath, indexTime, indexTime);
+            yield* runGitWithOptions(
+              "GitVcsDriver.prepareCommitContext.expandSplitIndex",
+              cwd,
+              [...config, "update-index", "--no-split-index"],
+              { env },
+            );
+          } else {
+            yield* runGitWithOptions(
+              "GitVcsDriver.prepareCommitContext.emptyIndex",
+              cwd,
+              [...config, "read-tree", "--empty"],
+              { env },
+            );
+          }
+          yield* stageCommitChanges(cwd, filePaths, env);
 
-      const stagedSummary = yield* runGitStdout(
-        "GitVcsDriver.prepareCommitContext.stagedSummary",
-        cwd,
-        ["diff", "--cached", "--name-status"],
-      ).pipe(Effect.map((stdout) => stdout.trim()));
-      if (stagedSummary.length === 0) {
-        return null;
-      }
+          const stagedSummary = yield* runGitStdoutWithOptions(
+            "GitVcsDriver.prepareCommitContext.stagedSummary",
+            cwd,
+            ["diff", "--cached", "--name-status"],
+            { env },
+          ).pipe(Effect.map((stdout) => stdout.trim()));
+          if (stagedSummary.length === 0) {
+            return null;
+          }
 
-      const stagedPatch = yield* runGitStdoutWithOptions(
-        "GitVcsDriver.prepareCommitContext.stagedPatch",
-        cwd,
-        ["diff", "--no-ext-diff", "--cached", "--patch", "--minimal"],
-        {
-          maxOutputBytes: PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES,
-          appendTruncationMarker: true,
-        },
+          const stagedPatch = yield* runGitStdoutWithOptions(
+            "GitVcsDriver.prepareCommitContext.stagedPatch",
+            cwd,
+            ["diff", "--no-ext-diff", "--cached", "--patch", "--minimal"],
+            {
+              env,
+              maxOutputBytes: PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES,
+              appendTruncationMarker: true,
+            },
+          );
+
+          return {
+            stagedSummary,
+            stagedPatch,
+          };
+        }),
+      ).pipe(
+        Effect.catchTags({
+          PlatformError: (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.prepareCommitContext",
+              command: "git",
+              cwd,
+              detail: "Failed to prepare the temporary commit index.",
+              cause,
+            }),
+        }),
       );
-
-      return {
-        stagedSummary,
-        stagedPatch,
-      };
     });
 
   const commit: GitVcsDriver.GitVcsDriver["Service"]["commit"] = Effect.fn("commit")(function* (
@@ -1890,6 +1982,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     body,
     options?: GitVcsDriver.GitCommitOptions,
   ) {
+    if (options?.stage !== undefined) {
+      yield* stageCommitChanges(cwd, options.stage.filePaths);
+    }
     const args = ["commit", "-m", subject];
     const trimmedBody = body.trim();
     if (trimmedBody.length > 0) {
