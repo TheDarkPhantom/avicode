@@ -81,6 +81,8 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     flushMainWindowBounds: Effect.void,
     setPanelWindowReservation: () => Effect.void,
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
+    runMainContentsCommand: (command) =>
+      Deferred.succeed(selectedAction, `main-${command}`).pipe(Effect.asVoid),
     syncAppearance: Effect.void,
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 
@@ -178,6 +180,109 @@ describe("DesktopApplicationMenu", () => {
       for (const item of closeItems) {
         assert.equal(item.accelerator, "CmdOrCtrl+Shift+W");
       }
+    }),
+  );
+
+  it.effect("reloads the main window even while a browser page has focus", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* Effect.gen(function* () {
+        const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+        yield* menu.configure;
+      }).pipe(
+        Effect.provide(
+          DesktopApplicationMenu.layer.pipe(
+            Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
+            Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+            Layer.provideMerge(desktopUpdatesLayer),
+            Layer.provideMerge(electronDialogLayer),
+            Layer.provideMerge(electronAppLayer),
+            Layer.provideMerge(
+              DesktopEnvironment.layer(environmentInput).pipe(
+                Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const viewMenu = template.find((item) => item.label === "View");
+      if (!Array.isArray(viewMenu?.submenu)) {
+        throw new Error("Expected View menu submenu to be an array.");
+      }
+      // The reload and DevTools roles act on the focused webContents, which is
+      // the guest page whenever a browser tab has focus.
+      assert.isUndefined(
+        viewMenu.submenu.find((item) =>
+          ["reload", "devtools"].some((role) => item.role?.toLowerCase().includes(role)),
+        ),
+      );
+      const reload = viewMenu.submenu.find((item) => item.label === "Reload");
+      assert.equal(reload?.accelerator, "CmdOrCtrl+R");
+      if (typeof reload?.click !== "function") {
+        throw new Error("Expected Reload menu item to have a click handler.");
+      }
+
+      reload.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(selectedAction), "main-reload");
+    }),
+  );
+
+  it.effect("keeps display branding in the macOS application menu", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* Effect.gen(function* () {
+        const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+        yield* menu.configure;
+      }).pipe(
+        Effect.provide(
+          DesktopApplicationMenu.layer.pipe(
+            Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
+            Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+            Layer.provideMerge(desktopUpdatesLayer),
+            Layer.provideMerge(electronDialogLayer),
+            Layer.provideMerge(electronAppLayer),
+            Layer.provideMerge(
+              DesktopEnvironment.layer({
+                ...environmentInput,
+                platform: "darwin",
+                appVersion: "0.0.43-nightly.20260929.2428",
+              }).pipe(
+                Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // The runtime app name drops the parentheses for a valid User-Agent, so the menu
+      // reads the display name from the environment instead of from Electron.
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const applicationMenu = template[0];
+      assert.isDefined(applicationMenu);
+      assert.equal(applicationMenu.label, "Avi Code (Nightly)");
+      if (!Array.isArray(applicationMenu.submenu)) {
+        throw new Error("Expected application menu submenu to be an array.");
+      }
+      assert.equal(
+        applicationMenu.submenu.find((item) => item.role === "about")?.label,
+        "About Avi Code (Nightly)",
+      );
+      assert.equal(
+        applicationMenu.submenu.find((item) => item.role === "hide")?.label,
+        "Hide Avi Code (Nightly)",
+      );
+      assert.equal(
+        applicationMenu.submenu.find((item) => item.role === "quit")?.label,
+        "Quit Avi Code (Nightly)",
+      );
     }),
   );
 });

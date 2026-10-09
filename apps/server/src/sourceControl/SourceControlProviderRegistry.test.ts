@@ -226,6 +226,59 @@ it.effect("routes authenticated self-hosted GitLab remotes on non-standard ports
   }),
 );
 
+const ghAuthStatus = (host: string, state: "success" | "error") =>
+  JSON.stringify({
+    hosts: {
+      [host]: [{ state, active: true, host, login: "octocat" }],
+    },
+  });
+
+it.effect.each([
+  { name: "an authenticated gh account", state: "success", expected: "github" },
+  { name: "a failed gh account", state: "error", expected: "unknown" },
+] as const)("resolves custom-host remotes with $name", (scenario) =>
+  Effect.gen(function* () {
+    const commands: Array<string> = [];
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@code.example.test:team/project.git" }],
+      process: {
+        run: ({ command }) => {
+          commands.push(command);
+          return Effect.succeed(
+            processOutput(
+              command === "gh" ? ghAuthStatus("code.example.test", scenario.state) : "",
+            ),
+          );
+        },
+      },
+    });
+
+    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+
+    assert.strictEqual(handle.provider.kind, scenario.expected);
+    assert.strictEqual(handle.context?.provider.baseUrl, "https://code.example.test");
+    assert.include(commands, "gh");
+  }),
+);
+
+it.effect("leaves custom-host remotes unclaimed when gh is signed in elsewhere", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "https://code.example.test/team/project.git" }],
+      process: {
+        run: ({ command }) =>
+          Effect.succeed(
+            processOutput(command === "gh" ? ghAuthStatus("github.com", "success") : ""),
+          ),
+      },
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+
+    assert.strictEqual(provider.kind, "unknown");
+  }),
+);
+
 it.effect("routes Bitbucket remotes to the Bitbucket provider", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({

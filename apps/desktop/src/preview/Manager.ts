@@ -132,6 +132,43 @@ const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
   fontMono: "ui-monospace, monospace",
 };
 
+const NEW_TAB_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
+
+const isNewTabUrl = (rawUrl: string): boolean => {
+  try {
+    return NEW_TAB_PROTOCOLS.has(new URL(rawUrl).protocol);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * What a preview tab does with a page's request for another window.
+ *
+ * `"new-tab"` hands a link with a tab disposition (`target="_blank"`, or a
+ * middle-click / Ctrl/Cmd-click) to the web app, which opens it as another
+ * preview tab so the page that held the link stays put. Other schemes keep
+ * loading in place, and so does a form POST with a body, which a new tab could
+ * only reopen as a GET. Everything else (`window.open` with features) also
+ * keeps loading in place: the fork has no hardened popup windows.
+ *
+ * `"deny"` is for a blank window (`""` or `about:blank`): loading it into the
+ * preview tab would replace the opener with an empty page. Denying makes
+ * `window.open()` return `null`, which SDKs such as MSAL treat as a blocked
+ * popup and fall back from.
+ */
+export const previewWindowOpenAction = (details: {
+  readonly url: string;
+  readonly disposition: Electron.HandlerDetails["disposition"];
+  readonly postBody?: Electron.PostBody;
+}): "new-tab" | "navigate" | "deny" => {
+  if (details.url === "" || details.url === "about:blank") return "deny";
+  if (!isNewTabUrl(details.url) || details.postBody) return "navigate";
+  return details.disposition === "foreground-tab" || details.disposition === "background-tab"
+    ? "new-tab"
+    : "navigate";
+};
+
 export const buildPreviewPictureInPictureDataUrl = (): string => {
   const html = `<!doctype html>
 <html>
@@ -1270,7 +1307,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const url = wc.getURL();
     const title = wc.getTitle();
     if (url === "" || url === "about:blank") return { kind: "Idle" };
-    if (wc.isLoading()) return { kind: "Loading", url, title };
+    // Main frame only. `isLoading()` covers the whole frame tree, so a
+    // cross-origin iframe that loads after the page can leave it true with no
+    // later event to clear it, and the tab's loading bar never finishes.
+    if (wc.isLoadingMainFrame()) return { kind: "Loading", url, title };
     return { kind: "Success", url, title };
   };
 
@@ -1477,12 +1517,22 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("did-stop-loading", sync);
         wc.on("did-fail-load", failed as never);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
-        wc.setWindowOpenHandler(({ url, disposition }) => {
+        wc.setWindowOpenHandler((details) => {
+          const { url, disposition } = details;
           // Avi Code addition: middle-click and Ctrl/Cmd-click both arrive as
-          // "background-tab"; open those in a new background tab. Everything else
-          // (target=_blank, window.open) keeps navigating this same tab.
-          if (disposition === "background-tab") {
-            runFork(emitOpenTabRequest({ sourceTabId: tabId, url }).pipe(Effect.ignore));
+          // "background-tab" and open a new background tab; a `target="_blank"`
+          // link ("foreground-tab") opens a new focused tab. `window.open` keeps
+          // navigating this same tab (see `previewWindowOpenAction`).
+          const action = previewWindowOpenAction(details);
+          if (action === "deny") return { action: "deny" };
+          if (action === "new-tab") {
+            runFork(
+              emitOpenTabRequest({
+                sourceTabId: tabId,
+                url,
+                background: disposition === "background-tab",
+              }).pipe(Effect.ignore),
+            );
             return { action: "deny" };
           }
           runFork(

@@ -7,7 +7,6 @@ import * as Schema from "effect/Schema";
 import type * as Electron from "electron";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
-import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -47,6 +46,13 @@ const dispatchMenuAction = Effect.fn("desktop.menu.dispatchMenuAction")(function
 ): Effect.fn.Return<void, DesktopWindow.DesktopWindowError, DesktopWindow.DesktopWindow> {
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   yield* desktopWindow.dispatchMenuAction(action);
+});
+
+const runMainContentsCommand = Effect.fn("desktop.menu.runMainContentsCommand")(function* (
+  command: DesktopWindow.MainWindowContentsCommand,
+): Effect.fn.Return<void, never, DesktopWindow.DesktopWindow> {
+  const desktopWindow = yield* DesktopWindow.DesktopWindow;
+  yield* desktopWindow.runMainContentsCommand(command);
 });
 
 const checkForUpdatesFromMenu = Effect.gen(function* () {
@@ -97,10 +103,8 @@ const handleCheckForUpdatesMenuClick = Effect.gen(function* () {
 }).pipe(Effect.withSpan("desktop.menu.handleCheckForUpdatesClick"));
 
 export const make = Effect.gen(function* () {
-  const electronApp = yield* ElectronApp.ElectronApp;
   const electronMenu = yield* ElectronMenu.ElectronMenu;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const appName = yield* electronApp.name;
   const context = yield* Effect.context<DesktopApplicationMenuRuntimeServices>();
   const runPromise = Effect.runPromiseWith(context);
 
@@ -127,13 +131,16 @@ export const make = Effect.gen(function* () {
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
+    const mainContentsClick = (command: DesktopWindow.MainWindowContentsCommand) => () => {
+      runMenuEffect(command, runMainContentsCommand(command));
+    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (environment.platform === "darwin") {
       template.push({
-        label: appName,
+        label: environment.displayName,
         submenu: [
-          { role: "about" },
+          { role: "about", label: `About ${environment.displayName}` },
           {
             label: "Check for Updates...",
             click: checkForUpdatesClick,
@@ -147,11 +154,11 @@ export const make = Effect.gen(function* () {
           { type: "separator" },
           { role: "services" },
           { type: "separator" },
-          { role: "hide" },
+          { role: "hide", label: `Hide ${environment.displayName}` },
           { role: "hideOthers" },
           { role: "unhide" },
           { type: "separator" },
-          { role: "quit" },
+          { role: "quit", label: `Quit ${environment.displayName}` },
         ],
       });
     }
@@ -183,9 +190,21 @@ export const make = Effect.gen(function* () {
       {
         label: "View",
         submenu: [
-          { role: "reload" },
-          { role: "forceReload" },
-          { role: "toggleDevTools" },
+          // Not the reload or DevTools roles: those act on the focused
+          // webContents, so with a browser page focused they reload the guest
+          // page and the app UI appears stuck. These always target the main
+          // window (see DesktopWindow.runMainContentsCommand).
+          { label: "Reload", accelerator: "CmdOrCtrl+R", click: mainContentsClick("reload") },
+          {
+            label: "Force Reload",
+            accelerator: "Shift+CmdOrCtrl+R",
+            click: mainContentsClick("forceReload"),
+          },
+          {
+            label: "Toggle Developer Tools",
+            accelerator: environment.platform === "darwin" ? "Alt+Command+I" : "Ctrl+Shift+I",
+            click: mainContentsClick("toggleDevTools"),
+          },
           { type: "separator" },
           // The renderer owns these chords (`app.zoomIn` / `app.zoomOut` /
           // `app.resetZoom`) so they survive focus contexts that consume the

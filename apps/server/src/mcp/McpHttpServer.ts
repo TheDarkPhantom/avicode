@@ -361,6 +361,10 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
                 },
               };
               const bounded = boundSnapshotMetadata(metadata);
+              // Images stay out of tool history unless asked for: providers replay them on
+              // every later request, and some reject inline images outright.
+              const includeImage =
+                (payload as { readonly includeImage?: unknown } | undefined)?.includeImage === true;
               return Effect.succeed(
                 new McpSchema.CallToolResult({
                   isError: false,
@@ -378,11 +382,15 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
                             text: `Snapshot text was bounded. Omitted: ${bounded.omitted.join("; ")}.`,
                           },
                         ]),
-                    {
-                      type: "image",
-                      data: new Uint8Array(Buffer.from(screenshot.data, "base64")),
-                      mimeType: screenshot.mimeType,
-                    },
+                    ...(includeImage
+                      ? [
+                          {
+                            type: "image" as const,
+                            data: new Uint8Array(Buffer.from(screenshot.data, "base64")),
+                            mimeType: screenshot.mimeType,
+                          },
+                        ]
+                      : []),
                   ],
                 }),
               );
