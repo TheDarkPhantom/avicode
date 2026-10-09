@@ -43,6 +43,13 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Attachments too large for one message block Send instead of breaking the thread (#276)
+- Threads without a project skip the worktree icon and Git buttons that do not apply to them (#PR)
+
+### Upstream t3code
+
+- Start a thread without a project from the new thread heading, Ctrl+K, or Ctrl+Alt+N (#13612 by Theo Browne)
+- No project sits near the top of the New thread in list (#16628 by Julius Marminge)
+- Threads without a project show their machine when you use several (#17022 by oliver)
 
 ## 0.0.31-avicode.9.18 (2026-10-09)
 

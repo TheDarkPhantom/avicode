@@ -568,6 +568,12 @@ export const ServerConfig = Schema.Struct({
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
   /** Whether thread reads accept the reasoningMessages opt-in. */
   reasoningMessages: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Folder behind this environment's Scratch project, for threads that need
+   * no repository. Present only on servers that answer projects.ensureScratch
+   * and whose data dir is outside a Git checkout.
+   */
+  scratchWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

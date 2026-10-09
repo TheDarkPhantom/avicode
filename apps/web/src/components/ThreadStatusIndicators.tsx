@@ -4,6 +4,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import type { VcsStatusResult } from "@t3tools/contracts";
+import { isScratchThreadFolder } from "@t3tools/client-runtime/state/projects";
 import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
 import { useMemo, type AnimationEvent } from "react";
 import { useClientSettings } from "../hooks/useSettings";
@@ -158,13 +159,20 @@ export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
 export function ThreadWorktreeIndicator({
   thread,
 }: {
-  thread: Pick<SidebarThreadSummary, "id" | "branch" | "worktreePath">;
+  thread: Pick<SidebarThreadSummary, "id" | "environmentId" | "branch" | "worktreePath">;
 }) {
   // Avi Code addition: the icon can be hidden globally from the Avi Code
   // settings page; upstream always renders it for worktree threads.
   const showWorktreeIcon = useClientSettings((settings) => settings.aviCodeSidebarShowWorktreeIcon);
+  const scratchWorkspaceRoot = useEnvironment(thread.environmentId)?.serverConfig
+    ?.scratchWorkspaceRoot;
   const worktreePath = thread.worktreePath?.trim();
-  if (!showWorktreeIcon || !worktreePath) {
+  // A "No project" thread's folder is a plain folder, not a git worktree.
+  if (
+    !showWorktreeIcon ||
+    !worktreePath ||
+    isScratchThreadFolder(worktreePath, scratchWorkspaceRoot)
+  ) {
     return null;
   }
 

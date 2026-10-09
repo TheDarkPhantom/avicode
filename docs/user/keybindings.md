@@ -47,6 +47,7 @@ See the full schema for more details: [`packages/contracts/src/keybindings.ts`](
   { "key": "mod+n", "command": "chat.new", "when": "!terminalFocus" },
   { "key": "mod+shift+o", "command": "chat.new", "when": "!terminalFocus" },
   { "key": "mod+shift+n", "command": "chat.newLocal", "when": "!terminalFocus" },
+  { "key": "mod+alt+n", "command": "chat.newWithoutProject", "when": "!terminalFocus" },
   { "key": "mod+o", "command": "editor.openFavorite" },
   { "key": "mod+shift+e", "command": "thread.settle", "when": "!terminalFocus" }
 ]
@@ -117,6 +118,7 @@ Invalid rules are ignored. Invalid config files are ignored. Warnings are logged
 - `find.next` / `find.previous`: step to the next or previous match (Enter and Shift+Enter in the bar)
 - `chat.new`: create a new chat thread preserving the active thread's branch/worktree state
 - `chat.newLocal`: create a new chat thread for the active project in a new environment (local/worktree determined by app settings (default `local`))
+- `chat.newWithoutProject`: start a thread [without a project](./threads-without-a-project.md)
 - `editor.openFavorite`: open current project/worktree in the last-used editor
 - `script.{id}.run`: run a project script by id (for example `script.test.run`)
 

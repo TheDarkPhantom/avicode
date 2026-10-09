@@ -13,6 +13,7 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { ThreadAttentionChime } from "../components/ThreadAttentionChime";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useIsScratchProject, useScratchProject } from "../hooks/useScratchProject";
 import { useReopenLastArchivedThread } from "../hooks/useReopenLastArchivedThread";
 import { useToggleThreadSettled } from "../hooks/useToggleThreadSettled";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -41,15 +42,19 @@ function ChatRouteGlobalShortcuts() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const isScratch = useIsScratchProject();
+  // Avi Code addition: "No project" has its own shortcut, so it does not count
+  // as a choice that sends mod+n through the command palette.
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
-        projects,
+        projects: projects.filter((project) => !isScratch(project)),
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: () => null,
       }).length,
-    [primaryEnvironmentId, projectGroupingSettings, projects],
+    [isScratch, primaryEnvironmentId, projectGroupingSettings, projects],
   );
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -141,6 +146,17 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "chat.newWithoutProject") {
+        const environmentId = scratchEnvironmentId(
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
+        );
+        if (environmentId === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void startScratchThread(environmentId);
+        return;
+      }
+
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
@@ -226,11 +242,14 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     previewOpen,
+    primaryEnvironmentId,
     projectGroupCount,
     reopenLastArchivedThread,
     routeThreadRef,
+    scratchEnvironmentId,
     selectedThreadKeysSize,
     sidebarV2Enabled,
+    startScratchThread,
     terminalOpen,
     toggleThreadSettled,
   ]);

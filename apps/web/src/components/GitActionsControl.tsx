@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { isScratchThreadFolder } from "@t3tools/client-runtime/state/projects";
 import { type ScopedThreadRef, type T3ProjectAutoMerge } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -1713,7 +1714,9 @@ export default function GitActionsControl({
 
   const canPublishRepository = isRepo && gitStatusForActions !== null && !hasPrimaryRemote;
 
-  if (!gitCwd) return null;
+  // Avi Code addition: a "No project" thread works in a plain folder that is
+  // never meant to become a repository, so it gets no git actions at all.
+  if (!gitCwd || isScratchThreadFolder(gitCwd, serverConfig?.scratchWorkspaceRoot)) return null;
 
   return (
     <>

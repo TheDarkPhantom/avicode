@@ -1,4 +1,10 @@
-import { ArchiveIcon, CloudIcon, PinIcon, TerminalIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  CloudIcon,
+  MessageSquareDashedIcon,
+  PinIcon,
+  TerminalIcon,
+} from "lucide-react";
 import React, { useCallback, memo, useMemo } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
@@ -21,6 +27,7 @@ import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import { ThreadDevServerButton } from "./ThreadDevServerButton";
+import { useIsScratchProject } from "../../hooks/useScratchProject";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   ChangeRequestStatusIcon,
@@ -117,6 +124,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
+  const isScratch = useIsScratchProject();
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   // Avi Code addition: pinned marker.
   const isThreadPinned = useUiStateStore((state) => state.pinnedThreadKeys.includes(threadKey));
@@ -482,6 +490,12 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                   environmentId={projectIdentity.environmentId}
                   cwd={projectIdentity.cwd}
                   className="size-4"
+                  {...(isScratch({
+                    environmentId: projectIdentity.environmentId,
+                    workspaceRoot: projectIdentity.cwd,
+                  })
+                    ? { fallbackIcon: MessageSquareDashedIcon }
+                    : {})}
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">{projectIdentity.label}</TooltipPopup>

@@ -29,6 +29,7 @@ import {
   GitMergeIcon,
   GitPullRequestClosedIcon,
   EllipsisIcon,
+  MessageSquareDashedIcon,
   MessageSquareIcon,
   PinIcon,
   PlusIcon,
@@ -88,6 +89,7 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useIsScratchProject, useScratchProject } from "../hooks/useScratchProject";
 import { useMouseBackForwardThreadNavigation } from "../hooks/useMouseBackForwardThreadNavigation";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -425,6 +427,11 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   environmentLabel: string | null;
   projectCwd: string | null;
   projectTitle: string | null;
+  // Avi Code addition: the thread lives in its machine's "No project" folder.
+  isScratch: boolean;
+  // Set only for "No project" threads when threads span several machines, so
+  // the empty branch line says which machine the folder is on.
+  scratchMachineLabel: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
@@ -512,7 +519,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
     }),
   );
   const gitStatus = useEnvironmentQuery(
-    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
+    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null && !props.isScratch
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
           input: { cwd: gitCwd },
@@ -1024,8 +1031,14 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   }
 
   const diff = latestTurnDiff(thread);
+  const showsScratchMachine = !thread.branch && props.scratchMachineLabel !== null;
   const branchLabel = thread.branch ? (
     <span className="min-w-0 flex-1 truncate whitespace-nowrap">{thread.branch}</span>
+  ) : showsScratchMachine ? (
+    <span className="flex min-w-0 flex-1 items-center gap-1">
+      <ServerIcon aria-hidden className="size-3 shrink-0 text-muted-foreground/40" />
+      <span className="min-w-0 truncate whitespace-nowrap">{props.scratchMachineLabel}</span>
+    </span>
   ) : (
     <span className="flex-1" />
   );
@@ -1057,6 +1070,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 environmentId={thread.environmentId}
                 cwd={props.projectCwd ?? ""}
                 className="size-4 shrink-0"
+                {...(props.isScratch ? { fallbackIcon: MessageSquareDashedIcon } : {})}
               />
               {props.projectTitle ? (
                 <span
@@ -1192,7 +1206,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
               >
-                {isRemote ? (
+                {isRemote && !showsScratchMachine ? (
                   <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
                     <ServerIcon aria-hidden className="size-3.5" />
                   </span>
@@ -1300,6 +1314,8 @@ export default function SidebarV2() {
   );
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const isScratch = useIsScratchProject();
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
@@ -1412,6 +1428,27 @@ export default function SidebarV2() {
         ),
       ),
     [projectGroups],
+  );
+  // Avi Code addition: "No project" is reachable from its own entry points, so
+  // it never counts as a project to pick between.
+  const realProjectGroupCount = useMemo(
+    () =>
+      projectGroups.filter((group) => !group.memberProjects.some((project) => isScratch(project)))
+        .length,
+    [isScratch, projectGroups],
+  );
+  const projectsSpanEnvironments = useMemo(
+    () => new Set(projects.map((project) => project.environmentId)).size > 1,
+    [projects],
+  );
+  const scratchProjectKeys = useMemo(
+    () =>
+      new Set(
+        projects
+          .filter((project) => isScratch(project))
+          .map((project) => `${project.environmentId}:${project.id}`),
+      ),
+    [isScratch, projects],
   );
 
   // now is quantized to the minute so effectiveSettled memoization doesn't
@@ -2650,9 +2687,20 @@ export default function SidebarV2() {
   // falling back to the top project) — same resolution the command palette
   // uses. The command palette already offers a "New thread in..." submenu
   // for multi-project setups.
+  const scratchTargetEnvironmentId = scratchEnvironmentId(
+    newThreadContext.activeThread?.environmentId ??
+      newThreadContext.activeDraftThread?.environmentId ??
+      primaryEnvironmentId,
+  );
   const handleNewThreadClick = useCallback(() => {
+    // No real project yet: the only place a thread can start is "No project".
+    if (realProjectGroupCount === 0 && scratchTargetEnvironmentId !== null) {
+      if (isMobile) setOpenMobile(false);
+      void startScratchThread(scratchTargetEnvironmentId);
+      return;
+    }
     // One project: nothing to pick, create immediately.
-    if (projectGroups.length <= 1) {
+    if (realProjectGroupCount <= 1) {
       if (isMobile) setOpenMobile(false);
       void startNewThreadFromContext({
         activeDraftThread: newThreadContext.activeDraftThread,
@@ -2664,7 +2712,14 @@ export default function SidebarV2() {
     }
     if (isMobile) setOpenMobile(false);
     openCommandPalette({ open: "new-thread-in" });
-  }, [isMobile, newThreadContext, projectGroups.length, setOpenMobile]);
+  }, [
+    isMobile,
+    newThreadContext,
+    realProjectGroupCount,
+    scratchTargetEnvironmentId,
+    setOpenMobile,
+    startScratchThread,
+  ]);
 
   const commandPaletteShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   // Same resolution as v1: prefer the local-thread binding, fall back to
@@ -2709,7 +2764,7 @@ export default function SidebarV2() {
                         type="button"
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
-                        disabled={projects.length === 0}
+                        disabled={projects.length === 0 && scratchTargetEnvironmentId === null}
                         aria-label="New thread"
                       />
                     }
@@ -2781,6 +2836,9 @@ export default function SidebarV2() {
                               environmentId={project.environmentId}
                               cwd={project.workspaceRoot}
                               className="size-4 shrink-0"
+                              {...(isScratch(project)
+                                ? { fallbackIcon: MessageSquareDashedIcon }
+                                : {})}
                             />
                             <span className="min-w-0 truncate text-sm">{project.displayName}</span>
                             {/* Avi Code addition: v2 has no project rows, so
@@ -2915,6 +2973,15 @@ export default function SidebarV2() {
                           `${thread.environmentId}:${thread.projectId}`,
                         ) ?? null
                       }
+                      isScratch={scratchProjectKeys.has(
+                        `${thread.environmentId}:${thread.projectId}`,
+                      )}
+                      scratchMachineLabel={
+                        projectsSpanEnvironments &&
+                        scratchProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)
+                          ? (environmentLabelById.get(thread.environmentId) ?? null)
+                          : null
+                      }
                       providerEntryByInstanceId={providerEntryByInstanceId}
                       onThreadClick={handleThreadClick}
                       onThreadActivate={navigateToThread}
@@ -3026,6 +3093,16 @@ export default function SidebarV2() {
                     <PlusIcon className="-mx-0.5 size-3" />
                     Add project
                   </button>
+                  {scratchTargetEnvironmentId === null ? null : (
+                    <button
+                      type="button"
+                      onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <MessageSquareDashedIcon className="-mx-0.5 size-3" />
+                      Start without a project
+                    </button>
+                  )}
                 </>
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`

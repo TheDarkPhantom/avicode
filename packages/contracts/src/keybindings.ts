@@ -112,6 +112,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "composer.dictate",
   "chat.new",
   "chat.newLocal",
+  "chat.newWithoutProject",
   "editor.openFavorite",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,

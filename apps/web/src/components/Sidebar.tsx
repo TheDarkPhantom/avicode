@@ -10,6 +10,7 @@ import {
   Globe2Icon,
   GripVerticalIcon,
   LoaderIcon,
+  MessageSquareDashedIcon,
   PinIcon,
   SearchIcon,
   SquarePenIcon,
@@ -122,6 +123,7 @@ import { useShortcutModifierState } from "../shortcutModifierState";
 import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useIsScratchProject } from "../hooks/useScratchProject";
 import { useMouseBackForwardThreadNavigation } from "../hooks/useMouseBackForwardThreadNavigation";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
@@ -547,6 +549,7 @@ interface SidebarProjectItemProps {
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
+  const isScratch = useIsScratchProject();
   const {
     project,
     isThreadListExpanded,
@@ -1459,7 +1462,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }`}
             />
           )}
-          <ProjectFavicon environmentId={project.environmentId} cwd={project.workspaceRoot} />
+          <ProjectFavicon
+            environmentId={project.environmentId}
+            cwd={project.workspaceRoot}
+            {...(isScratch(project) ? { fallbackIcon: MessageSquareDashedIcon } : {})}
+          />
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-sm font-medium text-sidebar-foreground/90">
               {project.displayName}
