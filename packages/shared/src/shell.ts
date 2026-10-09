@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as Cache from "effect/Cache";
+import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -627,6 +628,43 @@ export const resolveCommandPath = Effect.fn("shell.resolveCommandPath")(function
   });
 });
 
+// Avi Code addition (port of upstream #12600): the spawn-time PATH scan is
+// synchronous and runs before every child process on Windows, so a hit is
+// kept for a short window. Upstream shares its command-resolution cache here;
+// the fork has no such cache, so spawn resolution gets its own. Keys include
+// PATH and PATHEXT, so any change to the search environment misses at once.
+// TTL expiry uses the monotonic clock so a backward wall-clock change cannot
+// keep an entry alive.
+const SPAWN_RESOLUTION_CACHE_TTL_NANOS = 30_000_000_000n;
+const SPAWN_RESOLUTION_CACHE_MAX_ENTRIES = 512;
+const SPAWN_RESOLUTION_CACHE_KEY_SEPARATOR = String.fromCharCode(0);
+
+interface SpawnResolutionCacheEntry {
+  readonly resolvedPath: string;
+  readonly expiresAtNanos: bigint;
+}
+
+// Lives in the Effect environment so tests can provide an isolated map; the
+// default is one process-wide map.
+export const SpawnResolutionCache = Context.Reference<Map<string, SpawnResolutionCacheEntry>>(
+  "@t3tools/shared/shell/SpawnResolutionCache",
+  {
+    defaultValue: () => new Map(),
+  },
+);
+
+// An injected resolver may answer differently for the same search, so its
+// entries are kept apart from every other resolver's.
+let spawnResolverCacheIdCount = 0;
+const spawnResolverCacheIds = new WeakMap<SpawnExecutableResolver, number>();
+function spawnResolverCacheId(resolver: SpawnExecutableResolver): number {
+  const known = spawnResolverCacheIds.get(resolver);
+  if (known !== undefined) return known;
+  const id = spawnResolverCacheIdCount++;
+  spawnResolverCacheIds.set(resolver, id);
+  return id;
+}
+
 export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(function* (
   command: string,
   args: ReadonlyArray<string>,
@@ -645,7 +683,37 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
         ? { ...hostEnvironment, ...options.env }
         : options.env;
   const resolveExecutable = yield* SpawnExecutableResolution;
-  const resolvedCommand = resolveExecutable(command, platform, env) ?? command;
+  // Explicit paths stay uncached (callers probe paths they have just written),
+  // and so do misses: a failed spawn is how providers report "not installed",
+  // and that has to clear the moment the binary appears.
+  const explicitPath = command.includes("/") || command.includes("\\");
+  const cache = yield* SpawnResolutionCache;
+  const cacheKey = [
+    String(spawnResolverCacheId(resolveExecutable)),
+    platform,
+    resolvePathEnvironmentVariable(env),
+    resolveWindowsPathExtensions(env).join(";"),
+    command,
+  ].join(SPAWN_RESOLUTION_CACHE_KEY_SEPARATOR);
+  const nowNanos = yield* Clock.currentTimeNanos;
+  const cached = explicitPath ? undefined : cache.get(cacheKey);
+  let resolvedExecutable: string | undefined;
+  if (cached !== undefined && cached.expiresAtNanos > nowNanos) {
+    resolvedExecutable = cached.resolvedPath;
+  } else {
+    resolvedExecutable = resolveExecutable(command, platform, env);
+    if (!explicitPath && resolvedExecutable !== undefined) {
+      if (cache.size >= SPAWN_RESOLUTION_CACHE_MAX_ENTRIES && !cache.has(cacheKey)) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey !== undefined) cache.delete(oldestKey);
+      }
+      cache.set(cacheKey, {
+        resolvedPath: resolvedExecutable,
+        expiresAtNanos: nowNanos + SPAWN_RESOLUTION_CACHE_TTL_NANOS,
+      });
+    }
+  }
+  const resolvedCommand = resolvedExecutable ?? command;
   const extension = NodePath.win32.extname(resolvedCommand).toLowerCase();
   if (extension !== ".cmd" && extension !== ".bat") {
     return { command: resolvedCommand, args: [...args], shell: false };

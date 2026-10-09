@@ -81,6 +81,7 @@ import {
   observeRpcStream as instrumentRpcStream,
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
+import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 // Avi Code addition: in-app `claude auth login` for a provider instance.
@@ -2345,6 +2346,14 @@ const makeWsRpcLayer = (
     }),
   );
 
+// A defect in a handler's effect fails only its own request. RpcServer's default
+// sends a socket-level Defect frame instead, and the client ends every pending
+// request on the socket with it. DefectReporter logs these defects.
+export const WS_RPC_SERVER_OPTIONS = {
+  disableTracing: true,
+  disableFatalDefects: true,
+} as const;
+
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
@@ -2364,12 +2373,16 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             failEnvironmentInternal("internal_error", error),
           ),
         );
-        const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
-          disableTracing: true,
-        }).pipe(
+        const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(
+          WsRpcGroup,
+          WS_RPC_SERVER_OPTIONS,
+        ).pipe(
           Effect.provide(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              // Request fibers run in the handlers' context, so this reporter sees
+              // their defects, not the rest of the server's.
+              Layer.provide(DefectReporter.layer),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               Layer.provide(

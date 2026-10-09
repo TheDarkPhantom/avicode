@@ -206,7 +206,9 @@ export const make = Effect.gen(function* () {
     yield* git.execute({
       operation: "SourceControlRepositoryService.cloneRepository",
       cwd: preparedDestination.parentPath,
-      args: ["clone", remoteUrl, preparedDestination.directoryName],
+      // "--" ends the options, so a local repository named like one ("--bare")
+      // is still read as the source and never changes how git clones.
+      args: ["clone", "--", remoteUrl, preparedDestination.directoryName],
       timeoutMs: 120_000,
       maxOutputBytes: 256 * 1024,
     });
