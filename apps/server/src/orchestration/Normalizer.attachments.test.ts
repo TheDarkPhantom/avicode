@@ -541,4 +541,53 @@ describe("normalizeDispatchCommand document attachments", () => {
       expect(wrongExtension.message).toContain("attachment type");
     }).pipe(Effect.provide(testLayer)),
   );
+
+  it.effect("refuses documents that together exceed the turn limit before claiming any", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      // Each is under the per-document cap; together they are over the turn cap.
+      const text = "a".repeat(350_000);
+      const pendingIds = [`pending-${attachmentUuid}-txt`, `pending-${attachmentUuid}-xt2`];
+      for (const pendingId of pendingIds) {
+        NodeFS.writeFileSync(NodePath.join(config.attachmentsDir, `${pendingId}.txt`), text);
+      }
+      const command: ClientOrchestrationCommand = {
+        type: "thread.turn.start",
+        commandId: CommandId.make("command-oversized"),
+        threadId: ThreadId.make("thread-oversized"),
+        message: {
+          messageId: MessageId.make("message-oversized"),
+          role: "user",
+          text: "more context",
+          attachments: pendingIds.map((id, index) => ({
+            type: "document" as const,
+            id,
+            name: `notes-${index}.txt`,
+            mimeType: "text/plain",
+            sizeBytes: text.length,
+            extractedText: text,
+          })),
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: "2026-08-01T00:00:00.000Z",
+      };
+
+      const error = yield* normalizeDispatchCommand(command).pipe(Effect.flip);
+      expect(error.message).toMatch(
+        /^This message and its attachments come to 700,\d{3} characters; the limit is 600,000\./,
+      );
+      // Nothing was claimed for the thread, and both uploads remain for a retry.
+      expect(
+        NodeFS.readdirSync(config.attachmentsDir).filter((name) =>
+          name.startsWith("thread-oversized"),
+        ),
+      ).toEqual([]);
+      for (const pendingId of pendingIds) {
+        expect(NodeFS.existsSync(NodePath.join(config.attachmentsDir, `${pendingId}.txt`))).toBe(
+          true,
+        );
+      }
+    }).pipe(Effect.provide(testLayer)),
+  );
 });
