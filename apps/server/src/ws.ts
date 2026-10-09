@@ -76,6 +76,8 @@ import {
 } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+// Avi Code addition: live thought lines for running sidebar rows.
+import { ThreadLiveThoughts } from "./orchestration/Services/ThreadLiveThoughts.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -406,6 +408,8 @@ const makeWsRpcLayer = (
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
+      // Avi Code addition: live thought lines for running sidebar rows.
+      const threadLiveThoughts = yield* ThreadLiveThoughts;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerService = yield* ProviderService.ProviderService;
       // Avi Code addition: in-app `claude auth login`.
@@ -2342,6 +2346,11 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
+        // Avi Code addition: live thought lines for running sidebar rows.
+        [WS_METHODS.subscribeThreadLiveThoughts]: (_input) =>
+          observeRpcStream(WS_METHODS.subscribeThreadLiveThoughts, threadLiveThoughts.changes, {
+            "rpc.aggregate": "orchestration",
+          }),
       });
     }),
   );
