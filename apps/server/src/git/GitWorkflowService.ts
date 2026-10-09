@@ -38,6 +38,7 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   {
+    readonly isRepository: (cwd: string) => Effect.Effect<boolean, GitManagerServiceError>;
     readonly status: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
@@ -297,6 +298,19 @@ export const make = Effect.gen(function* () {
       ensureGit(operation, input.cwd).pipe(Effect.andThen(run(input)));
 
   return GitWorkflowService.of({
+    isRepository: (cwd) =>
+      registry.detect({ cwd }).pipe(
+        Effect.map((handle) => handle?.kind === "git"),
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "GitWorkflowService.isRepository",
+              cwd,
+              detail: "Failed to detect a VCS repository for this Git workflow.",
+              cause,
+            }),
+        ),
+      ),
     status: (input) =>
       detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(
         Effect.flatMap((isGitRepository) =>

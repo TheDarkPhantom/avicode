@@ -1,6 +1,6 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { LinkIcon, MessageSquareDashedIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -9,12 +9,13 @@ import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { cn } from "~/lib/utils";
@@ -106,6 +107,9 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
 
 function NoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
@@ -117,13 +121,25 @@ function NoProjectsHero() {
                 What should we work on?
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Add a project to start your first thread.
+                {scratchTargetEnvironmentId === null
+                  ? "Add a project to start your first thread."
+                  : "Add a project, or start without one."}
               </EmptyDescription>
-              <div className="mt-6 flex justify-center">
+              <div className="mt-6 flex justify-center gap-2">
                 <Button size="sm" onClick={openAddProject}>
                   <PlusIcon className="size-4" />
                   Add project
                 </Button>
+                {scratchTargetEnvironmentId === null ? null : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                  >
+                    <MessageSquareDashedIcon className="size-4" />
+                    Start without a project
+                  </Button>
+                )}
               </div>
             </EmptyHeader>
           </div>

@@ -135,6 +135,33 @@ export function findProjectByPath<T extends { workspaceRoot?: string; cwd?: stri
   });
 }
 
+/** Whether a project is its environment's Scratch project (`ServerConfig.scratchWorkspaceRoot`). */
+export function isScratchProject(
+  project: { readonly workspaceRoot: string },
+  scratchWorkspaceRoot: string | null | undefined,
+): boolean {
+  return (
+    scratchWorkspaceRoot != null && findProjectByPath([project], scratchWorkspaceRoot) !== undefined
+  );
+}
+
+/**
+ * Avi Code addition: whether a thread's folder sits inside its environment's
+ * Scratch root, i.e. it is a "No project" thread folder and not a git worktree.
+ */
+export function isScratchThreadFolder(
+  folder: string | null | undefined,
+  scratchWorkspaceRoot: string | null | undefined,
+): boolean {
+  if (folder == null || scratchWorkspaceRoot == null) return false;
+  const root = normalizeProjectPathForComparison(scratchWorkspaceRoot);
+  const candidate = normalizeProjectPathForComparison(folder);
+  if (root.length === 0) return false;
+  return (
+    candidate === root || candidate.startsWith(`${root}/`) || candidate.startsWith(`${root}\\`)
+  );
+}
+
 export function inferProjectTitleFromPath(value: string): string {
   const normalized = normalizeProjectPathForDispatch(value);
   const absolutePath = splitAbsolutePath(normalized);

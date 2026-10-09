@@ -101,6 +101,7 @@ import {
   ProjectDeleteEntryError,
   ProjectDeleteEntryInput,
   ProjectDeleteEntryResult,
+  ProjectEnsureScratchResult,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -213,6 +214,7 @@ export const WS_METHODS = {
   projectsCreateEntry: "projects.createEntry",
   projectsRenameEntry: "projects.renameEntry",
   projectsDeleteEntry: "projects.deleteEntry",
+  projectsEnsureScratch: "projects.ensureScratch",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -620,6 +622,13 @@ export const WsProjectsDeleteEntryRpc = Rpc.make(WS_METHODS.projectsDeleteEntry,
   error: Schema.Union([ProjectDeleteEntryError, EnvironmentAuthorizationError]),
 });
 
+// Finds or creates the Scratch project rooted at ServerConfig.scratchWorkspaceRoot.
+export const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
+  payload: Schema.Struct({}),
+  success: ProjectEnsureScratchResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1011,6 +1020,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsCreateEntryRpc,
   WsProjectsRenameEntryRpc,
   WsProjectsDeleteEntryRpc,
+  WsProjectsEnsureScratchRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,

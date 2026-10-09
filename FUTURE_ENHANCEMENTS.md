@@ -304,6 +304,14 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
   was considered as an alternative to threshold-based cleanup and deferred: it changes how every new
   chat starts, needs rules for when all slots are busy, and an old chat reopened on a recycled slot
   would see another chat's files. The threshold approach bounds disk using code that already ships.
+- Threads without a project (upstream #13612, #14759, #16628, #17022) left out:
+  - Switching machines on a no-project draft (#15356). The fork hides the whole branch toolbar,
+    machine picker included, for folders that are not Git repositories.
+  - A new no-project draft briefly shows the branch toolbar, because Git status defaults to "is a
+    repo" while it loads. Upstream remembers each folder's answer.
+  - Upstream's gray dashed project icon is stored on the project. The fork has no project icons, so
+    the sidebar and pickers draw the dashed icon from the scratch path instead.
+  - Forking a no-project thread shares the parent's folder rather than claiming a new one.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
 

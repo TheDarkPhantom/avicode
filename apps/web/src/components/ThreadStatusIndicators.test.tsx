@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -10,6 +10,7 @@ describe("ThreadWorktreeIndicator", () => {
       <ThreadWorktreeIndicator
         thread={{
           id: ThreadId.make("thread-1"),
+          environmentId: EnvironmentId.make("environment-1"),
           branch: "feature/sidebar-indicator",
           worktreePath: "/tmp/worktrees/sidebar-indicator",
         }}
@@ -28,6 +29,7 @@ describe("ThreadWorktreeIndicator", () => {
       <ThreadWorktreeIndicator
         thread={{
           id: ThreadId.make("thread-1"),
+          environmentId: EnvironmentId.make("environment-1"),
           branch: "main",
           worktreePath,
         }}

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { SearchIcon, SquarePenIcon } from "lucide-react";
+import { MessageSquareDashedIcon, SearchIcon, SquarePenIcon } from "lucide-react";
 
 import type { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useIsScratchProject } from "../../hooks/useScratchProject";
 import type {
   SidebarProjectGroupMember,
   SidebarProjectSnapshot,
@@ -41,6 +42,7 @@ export function FlatNewThreadButton({
   newThreadShortcutLabel: string | null;
 }) {
   const createInProject = useCreateThreadInProject(handleNewThread);
+  const isScratch = useIsScratchProject();
   const members = useMemo(() => projects.flatMap((project) => project.memberProjects), [projects]);
 
   const [open, setOpen] = useState(false);
@@ -148,6 +150,7 @@ export function FlatNewThreadButton({
                 environmentId={member.environmentId}
                 cwd={member.workspaceRoot}
                 className="size-4 shrink-0"
+                {...(isScratch(member) ? { fallbackIcon: MessageSquareDashedIcon } : {})}
               />
               <span className="min-w-0 truncate">{memberLabel(member)}</span>
             </ComboboxItem>

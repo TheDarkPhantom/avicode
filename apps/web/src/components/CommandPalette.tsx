@@ -35,6 +35,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   LinkIcon,
+  MessageSquareDashedIcon,
   MessageSquareIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -69,6 +70,8 @@ import { threadEnvironment } from "../state/threads";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { useScratchProject } from "../hooks/useScratchProject";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -508,6 +511,7 @@ function OpenCommandPaletteDialog(props: {
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
+  const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
   });
@@ -755,6 +759,11 @@ function OpenCommandPaletteDialog(props: {
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
+  // Where "without a project" threads start: the current environment when it
+  // offers them, otherwise the one connected environment that does.
+  const scratchTargetEnvironmentId = scratchEnvironmentId(
+    currentProjectEnvironmentId ?? primaryEnvironmentId,
+  );
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
@@ -894,44 +903,73 @@ function OpenCommandPaletteDialog(props: {
     [openProjectFromSearch, pickerProjects, projectGroupByTargetKey],
   );
 
-  const projectThreadItems = useMemo(
-    () =>
-      enumerateCommandPaletteItems(
-        buildProjectActionItems({
-          projects: pickerProjects,
-          valuePrefix: "new-thread-in",
-          searchTerms: (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            return (
-              group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
+  const projectThreadItems = useMemo(() => {
+    const isScratch = (project: (typeof pickerProjects)[number]) =>
+      isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
+    const projectItems = enumerateCommandPaletteItems(
+      buildProjectActionItems({
+        // The no-project home shows once, as the "No project" item below.
+        projects: pickerProjects.filter((project) => !isScratch(project)),
+        valuePrefix: "new-thread-in",
+        searchTerms: (project) => {
+          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+          return (
+            group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
+          );
+        },
+        icon: (project) => (
+          <ProjectFavicon
+            environmentId={project.environmentId}
+            cwd={project.workspaceRoot}
+            className={ITEM_ICON_CLASS}
+          />
+        ),
+        runProject: async (project) => {
+          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+          const contextualRefBelongsToGroup =
+            contextualProjectRef !== null &&
+            group?.memberProjectRefs.some(
+              (projectRef) =>
+                projectRef.environmentId === contextualProjectRef.environmentId &&
+                projectRef.projectId === contextualProjectRef.projectId,
             );
-          },
-          icon: (project) => (
-            <ProjectFavicon
-              environmentId={project.environmentId}
-              cwd={project.workspaceRoot}
-              className={ITEM_ICON_CLASS}
-            />
-          ),
-          runProject: async (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            const contextualRefBelongsToGroup =
-              contextualProjectRef !== null &&
-              group?.memberProjectRefs.some(
-                (projectRef) =>
-                  projectRef.environmentId === contextualProjectRef.environmentId &&
-                  projectRef.projectId === contextualProjectRef.projectId,
-              );
-            await handleNewThread(
-              contextualRefBelongsToGroup
-                ? contextualProjectRef
-                : scopeProjectRef(project.environmentId, project.id),
-            );
-          },
-        }),
-      ),
-    [contextualProjectRef, handleNewThread, pickerProjects, projectGroupByTargetKey],
-  );
+          await handleNewThread(
+            contextualRefBelongsToGroup
+              ? contextualProjectRef
+              : scopeProjectRef(project.environmentId, project.id),
+          );
+        },
+      }),
+    );
+    if (scratchTargetEnvironmentId === null) return projectItems;
+
+    // "No project" goes right after the current project: visible without
+    // scrolling past every project, while Enter still starts in the current
+    // one. When the current thread has no project, it is the current entry and
+    // goes first. It keeps its own shortcut, so the projects' mod+1..9 hold.
+    const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;
+    return [
+      ...projectItems.slice(0, noProjectIndex),
+      {
+        kind: "action" as const,
+        value: "new-thread-in:no-project",
+        searchTerms: ["no project", "without project", "none"],
+        title: "No project",
+        icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
+        shortcutCommand: "chat.newWithoutProject" as const,
+        run: () => startScratchThread(scratchTargetEnvironmentId),
+      },
+      ...projectItems.slice(noProjectIndex),
+    ];
+  }, [
+    contextualProjectRef,
+    handleNewThread,
+    pickerProjects,
+    projectGroupByTargetKey,
+    scratchTargetEnvironmentId,
+    scratchWorkspaceRootFor,
+    startScratchThread,
+  ]);
 
   const allThreadItems = useMemo(
     () =>
@@ -1282,35 +1320,12 @@ function OpenCommandPaletteDialog(props: {
     setAddProjectCloneFlow(null);
     setViewStack([]);
     setQuery("");
-    const currentPrefix =
-      currentProjectEnvironmentId && currentProjectId
-        ? `new-thread-in:${currentProjectEnvironmentId}:${currentProjectId}`
-        : null;
-    const prioritized = currentPrefix
-      ? [
-          ...projectThreadItems.filter((item) => item.value === currentPrefix),
-          ...projectThreadItems.filter((item) => item.value !== currentPrefix),
-        ]
-      : projectThreadItems;
+    // projectThreadItems already lists the current project first.
     pushPaletteView({
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-      groups: [
-        {
-          value: "projects",
-          label: "Projects",
-          items: enumerateCommandPaletteItems(prioritized),
-        },
-      ],
+      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
-  }, [
-    clearOpenIntent,
-    browseNavigation,
-    currentProjectEnvironmentId,
-    currentProjectId,
-    openIntent,
-    projectThreadItems,
-    pushPaletteView,
-  ]);
+  }, [clearOpenIntent, browseNavigation, openIntent, projectThreadItems, pushPaletteView]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
@@ -1350,6 +1365,18 @@ function OpenCommandPaletteDialog(props: {
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
+    });
+  }
+
+  if (scratchTargetEnvironmentId !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-thread-without-project",
+      searchTerms: ["new thread", "no project", "without project", "none", "chat"],
+      title: "New thread without a project",
+      icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.newWithoutProject",
+      run: () => startScratchThread(scratchTargetEnvironmentId),
     });
   }
 
