@@ -775,6 +775,38 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
+  // Avi Code addition (upstream #16284).
+  it("shows the latest thought's first sentence above the working status", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        activeTurnInProgress
+        activeTurnStartedAt={MESSAGE_CREATED_AT}
+        timelineEntries={[
+          buildUserTimelineEntry("Find the bug"),
+          {
+            id: "entry-thought",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("thought-1"),
+              role: "reasoning",
+              text: "**Tracing the worktree fetch**\n\nThe launch service skips it.",
+              turnId: null,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Tracing the worktree fetch");
+    expect(markup).not.toContain("The launch service skips it.");
+  });
+
   it("formats changed file paths from the workspace root", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

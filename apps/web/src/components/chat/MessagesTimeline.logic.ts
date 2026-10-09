@@ -8,6 +8,7 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import { liveThoughtLine } from "./liveThoughtLine";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -358,7 +359,41 @@ export type MessagesTimelineRow =
       createdAt: string;
       proposedPlan: ProposedPlan;
     }
-  | { kind: "working"; id: string; createdAt: string | null };
+  | {
+      kind: "working";
+      id: string;
+      createdAt: string | null;
+      /**
+       * Avi Code addition (upstream #16284): first sentence of the live turn's
+       * latest thought, shown above the working status so a finding never
+       * hides behind the next tool call.
+       */
+      thought?: LiveThought;
+    };
+
+export interface LiveThought {
+  messageId: MessageId;
+  line: string;
+}
+
+/**
+ * The latest non-empty thought since the last user message. Walks back only
+ * through the live turn, so it stays cheap on long threads, and a steer starts
+ * over from the next thought.
+ */
+export function deriveLiveThought(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+): LiveThought | undefined {
+  for (let index = timelineEntries.length - 1; index >= 0; index -= 1) {
+    const entry = timelineEntries[index];
+    if (entry?.kind !== "message") continue;
+    if (entry.message.role === "user") return undefined;
+    if (entry.message.role !== "reasoning") continue;
+    const line = liveThoughtLine(entry.message.text);
+    if (line !== "") return { messageId: entry.message.id, line };
+  }
+  return undefined;
+}
 
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
@@ -846,10 +881,12 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   if (input.isWorking) {
+    const thought = deriveLiveThought(input.timelineEntries);
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
+      ...(thought ? { thought } : {}),
     });
   }
 
@@ -881,8 +918,16 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   if (a.kind !== b.kind || a.id !== b.id) return false;
 
   switch (a.kind) {
-    case "working":
-      return a.createdAt === (b as typeof a).createdAt;
+    case "working": {
+      const bw = b as typeof a;
+      // Comparing the derived line, not the message, keeps a streaming thought
+      // from re-rendering this row once its first sentence is complete.
+      return (
+        a.createdAt === bw.createdAt &&
+        a.thought?.messageId === bw.thought?.messageId &&
+        a.thought?.line === bw.thought?.line
+      );
+    }
 
     case "turn-fold": {
       const bf = b as typeof a;
