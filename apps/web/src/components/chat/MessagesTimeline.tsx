@@ -2169,6 +2169,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   }
   return (
     <div className="py-0.5 pl-1.5">
+      <LiveThoughtLine row={row} />
       <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground/70 tabular-nums">
         <span className="inline-flex items-center gap-[3px]">
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse" />
@@ -2186,6 +2187,30 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * Avi Code addition (upstream #16284): the latest thought's first sentence
+ * above the working status, so a finding never hides behind the collapsed
+ * Thought row and the tool calls after it. Clicking opens that thought; an
+ * open thought already shows its text, so the preview steps aside.
+ */
+function LiveThoughtLine({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const { thought } = row;
+  if (!thought || ctx.expandedReasoningMessageIds.has(thought.messageId)) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => ctx.onToggleReasoning(thought.messageId)}
+      className="flex w-full min-w-0 cursor-pointer items-start gap-1.5 rounded-md text-left text-muted-foreground text-xs leading-relaxed transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+    >
+      <BrainIcon aria-hidden className="mt-[3px] size-3.5 shrink-0 opacity-70" />
+      <span className="line-clamp-4 min-w-0">{thought.line}</span>
+    </button>
   );
 }
 
