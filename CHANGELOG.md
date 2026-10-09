@@ -36,6 +36,33 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Worktree cleanup keeps worktrees with hidden or unreadable changes instead of deleting them (#263)
+
+### Upstream t3code
+
+- Pick Claude Haiku 5.5 in the model picker, marked New (#16903 by Julius Marminge)
+- Claude's /compact no longer stops early and leaves the thread looking busy (#14497 by Theo Browne)
+- A second server sharing your data no longer sends Claude turns twice (#13295 by Cestercian)
+- Claude skills with a colon in their description show up in the picker again (#15452 by maria)
+- One failed background job no longer stalls the work queued behind it (#16223 by Julius Marminge)
+- Mermaid code blocks in replies show as diagrams (#15067 by maria)
+- Checking git status no longer locks the repository for other git tools (#14718 by ahalekelly)
+- The review diff stays fast in repos with thousands of untracked files (#16771 by Theo Browne)
+- Removing a worktree keeps files git was told to hide (#15834 by Dara Adedeji)
+- Worktrees in deep Windows folders no longer fail or get stuck half removed (#14917 by Roger Maxwell)
+- Markdown pages no longer load invisible in the dark mode browser (#14727 by shivam)
+- Downloads the agent clicks in the browser no longer pop up a Save dialog (#14573 by Theo Browne)
+- Title bar buttons stay clear of the window controls when the app is zoomed (#15496 by maria)
+- Windows paths in reply links and images keep every backslash (#12615 by Dara Adedeji)
+- The command palette stays quick with long thread lists (#15266 by oliver)
+- Reconnecting backs off gently and no longer drops a healthy connection (#14897 by Theo Browne)
+
 ## 0.0.31-avicode.9.17 (2026-10-02)
 
 Upstream: t3code 0.0.31
