@@ -178,6 +178,7 @@ import {
 } from "./settings/WorktreeCleanupDialog";
 import { ThreadDevServerButton } from "./sidebar/ThreadDevServerButton";
 import { ProjectUnsentDraftDot, ThreadUnsentDraftDot } from "./sidebar/UnsentDraftDot";
+import { SidebarLiveThought } from "./sidebar/SidebarLiveThought";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -1023,6 +1024,11 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   }
 
   const diff = latestTurnDiff(thread);
+  const branchLabel = thread.branch ? (
+    <span className="min-w-0 flex-1 truncate whitespace-nowrap">{thread.branch}</span>
+  ) : (
+    <span className="flex-1" />
+  );
 
   return (
     <li
@@ -1161,10 +1167,17 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
               ) : null}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground/75">
-              {thread.branch ? (
-                <span className="min-w-0 flex-1 truncate whitespace-nowrap">{thread.branch}</span>
+              {/* Avi Code addition: while working, the agent's latest thought
+                  takes the branch's place, so the card keeps its height. */}
+              {status === "working" ? (
+                <SidebarLiveThought
+                  environmentId={thread.environmentId}
+                  threadId={thread.id}
+                  className="flex-1 whitespace-nowrap"
+                  fallback={branchLabel}
+                />
               ) : (
-                <span className="flex-1" />
+                branchLabel
               )}
               {devServerButton}
               {terminalStatusIcon}

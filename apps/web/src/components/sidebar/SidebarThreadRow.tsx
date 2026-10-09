@@ -35,6 +35,7 @@ import {
 import { resolveThreadRowClassName, resolveThreadStatusPill } from "../Sidebar.logic";
 import { ThreadModelBadge } from "./ThreadModelBadge";
 import { ThreadUnsentDraftDot } from "./UnsentDraftDot";
+import { SidebarLiveThought } from "./SidebarLiveThought";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarMenuSubButton, SidebarMenuSubItem } from "../ui/sidebar";
@@ -626,6 +627,16 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
           </div>
         </div>
       </SidebarMenuSubButton>
+      {/* Avi Code addition: the agent's latest thought while the turn runs.
+          Outside the fixed-height row button, so the row grows by one line
+          when the first thought arrives and shrinks back when the turn ends. */}
+      {isThreadRunning ? (
+        <SidebarLiveThought
+          environmentId={thread.environmentId}
+          threadId={thread.id}
+          className="pointer-events-none -mt-0.5 px-2 pb-1 text-[11px] leading-4"
+        />
+      ) : null}
     </SidebarMenuSubItem>
   );
 });

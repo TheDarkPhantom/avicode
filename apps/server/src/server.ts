@@ -60,6 +60,7 @@ import { InterruptSuppressionLive } from "./orchestration/InterruptSuppression.t
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ProposedPlanImplementationReactorLive } from "./orchestration/Layers/ProposedPlanImplementationReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import { ThreadLiveThoughtsLive } from "./orchestration/Layers/ThreadLiveThoughts.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderQuotaTrackerLive } from "./provider/Layers/ProviderQuotaTracker.ts";
@@ -225,6 +226,8 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ProposedPlanImplementationReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
+  // Avi Code addition: live thought lines for running sidebar rows.
+  Layer.provideMerge(ThreadLiveThoughtsLive),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
   // Avi Code addition: the reactor marks an interrupt and ingestion reads it,

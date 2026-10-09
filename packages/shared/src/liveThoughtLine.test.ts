@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { liveThoughtLine } from "./liveThoughtLine";
+import {
+  liveThoughtLine,
+  SIDEBAR_LIVE_THOUGHT_MAX_LENGTH,
+  sidebarLiveThoughtLine,
+} from "./liveThoughtLine.ts";
 
 describe("liveThoughtLine", () => {
   it("keeps the first sentence, including a closing quote", () => {
@@ -36,5 +40,17 @@ describe("liveThoughtLine", () => {
       "This is really not fine in snake_case_names.",
     );
     expect(liveThoughtLine("   ")).toBe("");
+  });
+});
+
+describe("sidebarLiveThoughtLine", () => {
+  it("passes a short line through", () => {
+    expect(sidebarLiveThoughtLine("Found it. More text.")).toBe("Found it.");
+  });
+
+  it("caps a long line with an ellipsis", () => {
+    const line = sidebarLiveThoughtLine("word ".repeat(80));
+    expect(line.length).toBeLessThanOrEqual(SIDEBAR_LIVE_THOUGHT_MAX_LENGTH);
+    expect(line.endsWith("…")).toBe(true);
   });
 });

@@ -10,6 +10,11 @@ label display setting only changes how that state looks.
 - **Completed** means the latest finished turn has not been opened on this client.
 - Approval, input, failure, and resume states take priority over these labels.
 
+While a thread is Working, its row also shows the first sentence of the agent's latest thought as
+one muted line. In the classic sidebar the line sits under the row; in the beta sidebar it replaces
+the branch on the card. It updates at most once a second and disappears when the turn ends. Claude,
+Codex, and OpenCode send thoughts; Cursor and Grok do not, so their rows show no line.
+
 Turn and plan state lives on the server. Locking Windows, reconnecting, reloading, or server idle
 cleanup does not remove it. A migration repairs historical threads whose latest-turn pointer was
 cleared by old idle cleanup.

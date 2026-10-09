@@ -88,6 +88,7 @@ import {
   ClaudeLoginStreamEvent,
   ClaudeLoginSubmitCodeInput,
 } from "./claudeLogin.ts";
+import { ThreadLiveThoughtsSnapshot } from "./liveThoughts.ts";
 import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
@@ -319,6 +320,8 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  // Avi Code addition: live thought lines for running sidebar rows.
+  subscribeThreadLiveThoughts: "subscribeThreadLiveThoughts",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -958,6 +961,15 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+// Avi Code addition: the latest thought of each running thread, one short
+// line per thread, for the sidebar.
+export const WsSubscribeThreadLiveThoughtsRpc = Rpc.make(WS_METHODS.subscribeThreadLiveThoughts, {
+  payload: Schema.Struct({}),
+  success: ThreadLiveThoughtsSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1046,6 +1058,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeThreadLiveThoughtsRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,

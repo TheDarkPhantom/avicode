@@ -129,6 +129,7 @@ import * as DesktopTelemetryReceiver from "./resourceTelemetry/DesktopTelemetryR
 import * as NativeTelemetryClient from "./resourceTelemetry/NativeTelemetryClient.ts";
 import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
+import { ThreadLiveThoughts } from "./orchestration/Services/ThreadLiveThoughts.ts";
 import * as Data from "effect/Data";
 
 const defaultProjectId = ProjectId.make("project-default");
@@ -355,6 +356,7 @@ const buildAppUnderTest = (options?: {
     >;
     terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
+    threadLiveThoughts?: Partial<ThreadLiveThoughts["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
     providerInstanceUsage?: Partial<ProviderInstanceUsageRepository["Service"]>;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
@@ -764,6 +766,10 @@ const buildAppUnderTest = (options?: {
             retain: Effect.void,
             registerTerminalProcesses: () => Effect.void,
             unregisterTerminal: () => Effect.void,
+          }),
+          Layer.mock(ThreadLiveThoughts)({
+            changes: Stream.make({ thoughts: [] }),
+            ...options?.layers?.threadLiveThoughts,
           }),
           Layer.mock(ProviderInstanceUsageRepository)({
             record: () => Effect.void,
@@ -4728,6 +4734,26 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(Option.isSome(snapshot));
       assert.equal(snapshot.value.processes.length, 0);
       assert.equal(snapshot.value.groups.backend.processCount, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  // Avi Code addition: live thought lines for running sidebar rows.
+  it.effect("routes websocket live thought lines through the subscription", () =>
+    Effect.gen(function* () {
+      const thoughts = [{ threadId: ThreadId.make("thread-live"), line: "Found the cause." }];
+      yield* buildAppUnderTest({
+        layers: { threadLiveThoughts: { changes: Stream.make({ thoughts }) } },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const snapshot = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeThreadLiveThoughts]({}).pipe(Stream.runHead),
+        ),
+      );
+
+      assertTrue(Option.isSome(snapshot));
+      assert.deepEqual(snapshot.value.thoughts, thoughts);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
