@@ -35,6 +35,18 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - The zoomed titlebar fix (#15496) covers the chat panels only. The settings, changelog and usage
     headers still read the raw titlebar values and likely misplace controls under zoom.
   - Sending on an older thread (#15059) fixes upstream's runs import, which the fork lacks.
+- Follow-up round of 2026-10-09 (#266 to #269) took more from the same range and left out:
+  - Grouped notifications (#12048) are mobile push only; desktop posts no OS alerts for agents.
+  - Skill menus list the server's working folder plus user skills, not each project's
+    `.claude/skills` (upstream per-project discovery #8778, #9180, #9210, #11519, #15462, about
+    3,000 lines). A failed skill rescan retries only after 5 minutes. Restarting an OpenCode
+    session on an external server does not reload that server's config.
+  - The diff panel opening on all changes (#15005) needs upstream's server rewrite that folds
+    uncommitted and untracked files into branch changes. Worth porting on its own.
+  - Compact before send (#16631, #17127) relies on a server-side message queue the fork lacks.
+  - Ctrl+Alt+Enter does not open a new thread when the message is held behind a running turn.
+  - Not applicable here: #14893, #15594, #15618, #16206, #13917, #16291, #16571.
+  - Program lookups on Windows are cached for 30 seconds, so a moved CLI can launch stale briefly.
 - Upstream sync of 2026-09-29 (#242 to #245) reviewed through `d2c9281b8`. It left these out on
   purpose:
   - Settling a thread (#13673) closes idle terminals only. Closing the setup-script shell needs the
