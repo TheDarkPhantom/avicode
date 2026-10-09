@@ -86,7 +86,7 @@ export function PreviewEmptyState({
         {startButton}
       </Empty>
     ) : (
-      <div className="flex h-full min-h-0 overflow-y-auto px-5 py-8">
+      <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
         <div className="m-auto flex w-full max-w-xl flex-col gap-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <RadioTower className="size-4 shrink-0" />

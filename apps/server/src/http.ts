@@ -263,8 +263,9 @@ const isSafeInlineVideoMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && mimeType.toLowerCase().startsWith("video/");
 // An inline HTML attachment runs in its own opaque origin, like the viewer's
 // sandboxed frame: scripts and forms work, the app's session does not.
+// Downloads stay allowed so download links and buttons in the page work.
 const INLINE_HTML_CONTENT_SECURITY_POLICY =
-  "sandbox allow-scripts allow-forms allow-popups allow-modals";
+  "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads";
 
 /** RFC 6266 disposition with an ASCII fallback name plus a UTF-8 `filename*`. */
 export function downloadContentDisposition(fileName?: string): string {

@@ -4,6 +4,7 @@ export const isPdfPreviewFile = (path: string): boolean =>
 /**
  * An HTML page or PDF rendered in place. HTML runs in a sandboxed frame with
  * an opaque origin, so a page cannot reach the app's session or storage.
+ * Downloads stay allowed so download links and buttons in the page work.
  */
 export function BrowserDocumentFrame(props: {
   readonly src: string;
@@ -21,7 +22,7 @@ export function BrowserDocumentFrame(props: {
       src={props.src}
       title={props.title}
       className={className}
-      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
     />
   );
 }
