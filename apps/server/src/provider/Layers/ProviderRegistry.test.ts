@@ -1303,6 +1303,100 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      // Builds a registry over one Claude instance whose probe and cache
+      // invalidation are counted. `checkedAt` is the snapshot's probe time.
+      const makeCountingRegistry = Effect.fn("makeCountingRegistry")(function* (input: {
+        readonly checkedAt: string;
+      }) {
+        const claudeDriver = ProviderDriverKind.make("claudeAgent");
+        const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+        const refreshes = yield* Ref.make(0);
+        const invalidations = yield* Ref.make(0);
+        const provider = {
+          instanceId: claudeInstanceId,
+          driver: claudeDriver,
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: input.checkedAt,
+          version: "1.0.0",
+          models: [],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const instance = {
+          instanceId: claudeInstanceId,
+          driverKind: claudeDriver,
+          continuationIdentity: {
+            driverKind: claudeDriver,
+            continuationKey: "claudeAgent:instance:claudeAgent",
+          },
+          displayName: undefined,
+          enabled: true,
+          snapshot: {
+            maintenanceCapabilities: makeManualOnlyProviderMaintenanceCapabilities({
+              provider: claudeDriver,
+              packageName: null,
+            }),
+            getSnapshot: Effect.succeed(provider),
+            refresh: Ref.update(refreshes, (count) => count + 1).pipe(Effect.as(provider)),
+            streamChanges: Stream.empty,
+          },
+          invalidateCaches: Ref.update(invalidations, (count) => count + 1),
+          adapter: {} as ProviderInstance["adapter"],
+          textGeneration: {} as ProviderInstance["textGeneration"],
+        } satisfies ProviderInstance;
+        const instanceRegistryLayer = Layer.succeed(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          {
+            getInstance: (instanceId) =>
+              Effect.succeed(instanceId === claudeInstanceId ? instance : undefined),
+            listInstances: Effect.succeed([instance]),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
+              PubSub.subscribe(pubsub),
+            ),
+          },
+        );
+        const scope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+        const runtimeServices = yield* Layer.build(
+          ProviderRegistryLive.pipe(
+            Layer.provide(ProviderQuotaTrackerLive),
+            Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-provider-registry-counting-",
+              }),
+            ),
+            Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ).pipe(Scope.provide(scope));
+        const registry = yield* ProviderRegistry.ProviderRegistry.pipe(
+          Effect.provide(runtimeServices),
+        );
+        return { registry, instanceId: claudeInstanceId, refreshes, invalidations };
+      });
+
+      it.effect("drops the instance's cached probe results only on a fresh refresh", () =>
+        Effect.gen(function* () {
+          const { registry, instanceId, refreshes, invalidations } = yield* makeCountingRegistry({
+            checkedAt: "2026-04-29T10:00:00.000Z",
+          });
+
+          yield* registry.refreshInstance(instanceId);
+          assert.strictEqual(yield* Ref.get(refreshes), 1);
+          assert.strictEqual(yield* Ref.get(invalidations), 0);
+
+          yield* registry.refreshInstance(instanceId, { fresh: true });
+          assert.strictEqual(yield* Ref.get(refreshes), 2);
+          assert.strictEqual(yield* Ref.get(invalidations), 1);
+        }),
+      );
+
       it.effect("keeps consuming registry changes after one sync fails", () =>
         Effect.gen(function* () {
           const codexDriver = ProviderDriverKind.make("codex");

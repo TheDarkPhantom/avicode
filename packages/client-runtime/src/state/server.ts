@@ -694,7 +694,9 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverRefreshProviders,
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId }) => environmentId,
+        // A fresh or targeted refresh must not join a different running one.
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.instanceId ?? null, input.fresh ?? false]),
       },
     }),
     updateProvider: createEnvironmentRpcCommand(runtime, {

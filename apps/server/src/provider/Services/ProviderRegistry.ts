@@ -19,6 +19,12 @@ import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts"
 
 export type ProviderMaintenanceActionKind = "update";
 
+/** Options for an explicit refresh of one configured instance. */
+export interface ProviderRefreshInstanceOptions {
+  /** Drop the instance's cached probe results first, e.g. Claude's plugin commands. */
+  readonly fresh?: boolean;
+}
+
 export interface ProviderRegistryShape {
   /**
    * Read the latest provider snapshots for every configured instance.
@@ -46,6 +52,7 @@ export interface ProviderRegistryShape {
    */
   readonly refreshInstance: (
     instanceId: ProviderInstanceId,
+    options?: ProviderRefreshInstanceOptions,
   ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**

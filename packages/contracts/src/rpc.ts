@@ -354,6 +354,9 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      * refreshes.
      */
     instanceId: Schema.optional(ProviderInstanceId),
+    /** With `instanceId`: drop the instance's cached probe results first, so
+     * skills and slash commands added since the last check are read again. */
+    fresh: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,

@@ -69,6 +69,8 @@ export interface ProviderInstance {
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
   readonly snapshot: ServerProviderShape;
+  /** Invalidate server-owned discovery caches before an explicit fresh refresh. */
+  readonly invalidateCaches?: Effect.Effect<void>;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
 }
