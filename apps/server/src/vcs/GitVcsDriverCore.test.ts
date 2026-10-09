@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -15,8 +16,13 @@ import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { GitCommandError } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { ServerConfig } from "../config.ts";
-import { makeGitVcsDriverCore, splitNullSeparatedGitStdoutPaths } from "./GitVcsDriverCore.ts";
+import {
+  makeGitVcsDriverCore,
+  splitNullSeparatedGitStdoutPaths,
+  windowsLongPathConfigEnv,
+} from "./GitVcsDriverCore.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 
 const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -692,7 +698,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           _tag: "GitCommandError",
           operation: "GitVcsDriver.removeWorktree",
           command: "git",
-          argumentCount: 3,
+          argumentCount: 5,
           cwd,
         });
         assert.notProperty(error, "cause");
@@ -756,6 +762,59 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           ignored.sources.find((source) => source.kind === "branch-range")?.diff,
           "",
         );
+      }),
+    );
+
+    it.effect("shows untracked files as new without staging them in the real index", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        yield* writeTextFile(cwd, "notes.txt", "first\n");
+        yield* writeTextFile(cwd, "nested/with space.ts", "export const a = 1;\n");
+        const indexPath = pathService.join(cwd, ".git", "index");
+        const indexBefore = yield* fileSystem.readFile(indexPath);
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+
+        const workingTree = preview.sources.find((source) => source.kind === "working-tree");
+        assert.ok(workingTree);
+        assert.isFalse(workingTree.truncated);
+        assert.include(workingTree.diff, "diff --git a/notes.txt b/notes.txt\nnew file mode");
+        assert.include(workingTree.diff, "+first");
+        assert.include(workingTree.diff, "nested/with space.ts");
+        assert.include(workingTree.diff, "+export const a = 1;");
+        assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), indexBefore);
+        assert.equal(
+          yield* git(cwd, ["status", "--porcelain", "--untracked-files=all"]),
+          '?? "nested/with space.ts"\n?? notes.txt',
+        );
+      }),
+    );
+
+    it.effect("skips untracked diffs instead of indexing thousands of untracked files", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* Effect.forEach(
+          Array.from({ length: 5_001 }, (_, index) => `bulk/${index}.txt`),
+          (file) => writeTextFile(cwd, file, "x\n"),
+          { concurrency: 32, discard: true },
+        );
+        yield* writeTextFile(cwd, "README.md", "changed\n");
+
+        const status = yield* driver.statusDetailsLocal(cwd);
+        assert.isTrue(status.hasWorkingTreeChanges);
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const workingTree = preview.sources.find((source) => source.kind === "working-tree");
+        assert.ok(workingTree);
+        assert.isTrue(workingTree.truncated);
+        assert.include(workingTree.diff, "+changed");
+        assert.notInclude(workingTree.diff, "bulk/");
       }),
     );
   });
@@ -1072,6 +1131,50 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         }
       }),
     );
+
+    it.effect("reads status without rewriting the index of a stat-dirty worktree", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        // Same content, new mtime (2001-01-01): git would refresh and save the index to record it.
+        const touchedSeconds = 978_307_200;
+        yield* fileSystem.utimes(
+          pathService.join(cwd, "README.md"),
+          touchedSeconds,
+          touchedSeconds,
+        );
+        const indexPath = pathService.join(cwd, ".git", "index");
+        const indexBefore = yield* fileSystem.readFile(indexPath);
+
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal(cwd);
+
+        assert.equal(status.hasWorkingTreeChanges, false);
+        assert.deepStrictEqual(status.workingTree.files, []);
+        assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), indexBefore);
+      }),
+    );
+
+    it.effect("keeps rename detection in working tree totals", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "old.ts", "// one\n// two\n// three\n// four\n");
+        yield* git(cwd, ["add", "old.ts"]);
+        yield* git(cwd, ["commit", "-m", "add old"]);
+        yield* git(cwd, ["mv", "old.ts", "new.ts"]);
+        yield* writeTextFile(cwd, "new.ts", "// one\n// two\n// three\n// four\n// five\n");
+
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal(cwd);
+
+        const file = status.workingTree.files.find((entry) => entry.path === "new.ts");
+        assert.ok(file);
+        assert.equal(file.insertions, 1);
+        assert.equal(file.deletions, 0);
+        assert.equal(status.workingTree.insertions, 1);
+      }),
+    );
   });
 
   describe("refName operations", () => {
@@ -1230,6 +1333,56 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* driver.removeWorktree({ cwd, path: worktreePath });
         const fileSystem = yield* FileSystem.FileSystem;
         assert.equal(yield* fileSystem.exists(worktreePath), false);
+      }),
+    );
+
+    it.effect("keeps a worktree whose untracked files status is configured to hide", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "hidden");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/hidden",
+        });
+        yield* git(cwd, ["config", "status.showUntrackedFiles", "no"]);
+        yield* writeTextFile(worktreePath, "notes.txt", "draft\n");
+        assert.equal(yield* git(worktreePath, ["status", "--porcelain"]), "");
+
+        const result = yield* Effect.result(driver.removeWorktree({ cwd, path: worktreePath }));
+
+        assert.isTrue(Result.isFailure(result));
+        const fileSystem = yield* FileSystem.FileSystem;
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(worktreePath, "notes.txt")),
+          "draft\n",
+        );
+      }),
+    );
+
+    it.effect("counts untracked files hidden by status config as worktree changes", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "dirty");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/dirty",
+        });
+        yield* git(cwd, ["config", "status.showUntrackedFiles", "no"]);
+        assert.isFalse(yield* driver.hasWorktreeChanges({ cwd: worktreePath }));
+
+        yield* writeTextFile(worktreePath, "notes.txt", "draft\n");
+        assert.isFalse((yield* driver.statusDetailsLocal(worktreePath)).hasWorkingTreeChanges);
+        assert.isTrue(yield* driver.hasWorktreeChanges({ cwd: worktreePath }));
       }),
     );
   });
@@ -1516,5 +1669,96 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.notEqual(originMain.exitCode, 0);
       }),
     );
+  });
+});
+
+describe("Windows long path configuration", () => {
+  const readGitConfig = Effect.fn("readGitConfig")(function* (
+    platform: NodeJS.Platform,
+    key: string,
+  ) {
+    const layer = GitVcsDriver.layer.pipe(
+      Layer.provide(ServerConfigLayer),
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provide(Layer.succeed(HostProcessPlatform, platform)),
+    );
+    return yield* Effect.gen(function* () {
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const cwd = yield* makeTmpDir("git-longpath-test-");
+      const result = yield* driver.execute({
+        operation: "GitVcsDriverTest.readGitConfig",
+        cwd,
+        args: ["config", "--get", key],
+        // Overrides any host core.longpaths=true so it cannot mask a missing
+        // injection. Entry 2 sits past the count and must stay unread.
+        env: {
+          GIT_CONFIG_COUNT: "2",
+          GIT_CONFIG_KEY_0: "user.name",
+          GIT_CONFIG_VALUE_0: "inherited-name",
+          GIT_CONFIG_KEY_1: "core.longpaths",
+          GIT_CONFIG_VALUE_1: "false",
+          GIT_CONFIG_KEY_2: "user.name",
+          GIT_CONFIG_VALUE_2: "outside-count",
+        },
+      });
+      return result.stdout.trim();
+    }).pipe(Effect.provide(layer), Effect.scoped);
+  });
+
+  it.effect("enables long paths for every Git command on Windows", () =>
+    Effect.gen(function* () {
+      assert.equal(yield* readGitConfig("win32", "core.longpaths"), "true");
+      assert.equal(yield* readGitConfig("win32", "user.name"), "inherited-name");
+    }),
+  );
+
+  it.effect("leaves Git config untouched on other platforms", () =>
+    Effect.gen(function* () {
+      assert.equal(yield* readGitConfig("linux", "core.longpaths"), "false");
+      assert.equal(yield* readGitConfig("linux", "user.name"), "inherited-name");
+    }),
+  );
+
+  it("extends an inherited count spelled in a different case", () => {
+    // Two spellings collapse to one on spawn (the uppercase one wins), so the
+    // count must be bumped under the spelling that is already there.
+    assert.deepStrictEqual(windowsLongPathConfigEnv("win32", { git_config_count: "2" }), {
+      git_config_count: "3",
+      GIT_CONFIG_KEY_2: "core.longpaths",
+      GIT_CONFIG_VALUE_2: "true",
+    });
+  });
+
+  it("appends after inherited entries, parsing the count as Git does", () => {
+    for (const [count, next] of [
+      [undefined, 0],
+      ["", 0],
+      ["0", 0],
+      ["-0", 0],
+      ["2", 2],
+      [" 2", 2],
+      ["+2", 2],
+      ["02", 2],
+    ] as const) {
+      assert.deepStrictEqual(
+        windowsLongPathConfigEnv("win32", count === undefined ? {} : { GIT_CONFIG_COUNT: count }),
+        {
+          GIT_CONFIG_COUNT: String(next + 1),
+          [`GIT_CONFIG_KEY_${next}`]: "core.longpaths",
+          [`GIT_CONFIG_VALUE_${next}`]: "true",
+        },
+        `GIT_CONFIG_COUNT=${JSON.stringify(count)}`,
+      );
+    }
+  });
+
+  it("leaves a count Git would reject for Git to report", () => {
+    for (const count of ["nope", "2x", "-1", "1.5", "  ", "1 "]) {
+      assert.deepStrictEqual(
+        windowsLongPathConfigEnv("win32", { GIT_CONFIG_COUNT: count }),
+        {},
+        `GIT_CONFIG_COUNT=${JSON.stringify(count)}`,
+      );
+    }
   });
 });

@@ -280,11 +280,12 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => undefined),
     );
 
+  // Not `localStatus`: its status read hides untracked files under
+  // `status.showUntrackedFiles=no`, which would let cleanup delete them.
+  // Avi Code addition: a failed check reads as dirty, so an unverifiable worktree is
+  // never auto-removed or pre-selected.
   const isDirtyFor = (cwd: string): Effect.Effect<boolean> =>
-    gitWorkflow.localStatus({ cwd }).pipe(
-      Effect.map((local) => local.hasWorkingTreeChanges),
-      Effect.orElseSucceed(() => false),
-    );
+    gitWorkflow.hasWorktreeChanges({ cwd }).pipe(Effect.orElseSucceed(() => true));
 
   const listThreads = (
     projectId: string,

@@ -1,5 +1,4 @@
-import type { VcsStatusLocalResult } from "@t3tools/contracts";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { GitCommandError, ProjectId, ThreadId } from "@t3tools/contracts";
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -14,8 +13,7 @@ import { ProjectionThreadRepository } from "../persistence/Services/ProjectionTh
 import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
 import { GitWorkflowService } from "./GitWorkflowService.ts";
 import * as WorktreeCleanup from "./WorktreeCleanup.ts";
-
-const cleanLocalStatus = { hasWorkingTreeChanges: false } as unknown as VcsStatusLocalResult;
+import { selectAutoCleanupCandidates } from "./WorktreeHealthMonitor.ts";
 
 interface Counters {
   pruneCalls: number;
@@ -32,6 +30,8 @@ interface MockState {
     archivedAt: string | null;
   }>;
   activeThreadIds: ReadonlyArray<string>;
+  dirtyPaths?: ReadonlyArray<string>;
+  failingDirtyCheckPaths?: ReadonlyArray<string>;
 }
 
 // The mock reads `state` lazily at call time so a test can fill it after it has
@@ -49,7 +49,17 @@ function makeDeps(counters: Counters, state: MockState) {
           isLocked: false,
         })),
       ),
-    localStatus: () => Effect.succeed(cleanLocalStatus),
+    hasWorktreeChanges: ({ cwd }) =>
+      state.failingDirtyCheckPaths?.includes(cwd)
+        ? Effect.fail(
+            new GitCommandError({
+              operation: "GitVcsDriver.hasWorktreeChanges",
+              command: "git",
+              cwd,
+              detail: "git status failed",
+            }),
+          )
+        : Effect.succeed(state.dirtyPaths?.includes(cwd) ?? false),
     removeWorktree: () => {
       counters.removeWorktreeCalls += 1;
       return Effect.void;
@@ -208,5 +218,61 @@ describe("WorktreeCleanupService.classify", () => {
           expect(candidates[0]?.diskBytes).toBe(0);
         }).pipe(Effect.provide(deps));
       }),
+  );
+  it.effect("marks a candidate dirty from the worktree change check", () =>
+    Effect.gen(function* () {
+      const counters: Counters = { pruneCalls: 0, removeWorktreeCalls: 0, gcCalls: 0 };
+      const state = emptyState();
+      const deps = makeDeps(counters, state);
+
+      yield* Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const config = yield* ServerConfigModule.ServerConfig;
+        const dirtyPath = path.join(config.worktreesDir, "repo", "t3code-dirty001");
+        const cleanPath = path.join(config.worktreesDir, "repo", "t3code-clean001");
+        state.worktrees = [
+          { path: dirtyPath, branch: "feature/dirty", isMain: false },
+          { path: cleanPath, branch: "feature/clean", isMain: false },
+        ];
+        state.dirtyPaths = [dirtyPath];
+
+        const service = yield* WorktreeCleanup.make;
+        const candidates = yield* service.classify({
+          cwd: config.cwd,
+          projectId: ProjectId.make("p1"),
+        });
+
+        expect(candidates.map((candidate) => [candidate.worktreePath, candidate.isDirty])).toEqual([
+          [dirtyPath, true],
+          [cleanPath, false],
+        ]);
+      }).pipe(Effect.provide(deps));
+    }),
+  );
+  it.effect("keeps a worktree whose dirty check fails out of auto-cleanup and selection", () =>
+    Effect.gen(function* () {
+      const counters: Counters = { pruneCalls: 0, removeWorktreeCalls: 0, gcCalls: 0 };
+      const state = emptyState();
+      const deps = makeDeps(counters, state);
+
+      yield* Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const config = yield* ServerConfigModule.ServerConfig;
+        const brokenPath = path.join(config.worktreesDir, "repo", "t3code-broken01");
+        state.worktrees = [{ path: brokenPath, branch: "feature/broken", isMain: false }];
+        state.failingDirtyCheckPaths = [brokenPath];
+
+        const service = yield* WorktreeCleanup.make;
+        const candidates = yield* service.classify({
+          cwd: config.cwd,
+          projectId: ProjectId.make("p1"),
+        });
+
+        expect(candidates).toHaveLength(1);
+        expect(candidates[0]?.reason).toBe("orphaned");
+        expect(candidates[0]?.isDirty).toBe(true);
+        expect(selectAutoCleanupCandidates(candidates)).toEqual([]);
+      }).pipe(Effect.provide(deps));
+    }),
   );
 });

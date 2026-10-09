@@ -98,6 +98,9 @@ export class GitWorkflowService extends Context.Service<
     readonly listWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<ReadonlyArray<GitVcsDriver.GitWorktreeEntry>, GitCommandError>;
+    readonly hasWorktreeChanges: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
     readonly deleteBranch: (input: {
       readonly cwd: string;
       readonly branch: string;
@@ -381,6 +384,10 @@ export const make = Effect.gen(function* () {
     listWorktrees: (input) =>
       ensureGitCommand("GitWorkflowService.listWorktrees", input.cwd).pipe(
         Effect.andThen(git.listWorktrees(input)),
+      ),
+    hasWorktreeChanges: (input) =>
+      ensureGitCommand("GitWorkflowService.hasWorktreeChanges", input.cwd).pipe(
+        Effect.andThen(git.hasWorktreeChanges(input)),
       ),
     deleteBranch: (input) =>
       ensureGitCommand("GitWorkflowService.deleteBranch", input.cwd).pipe(
