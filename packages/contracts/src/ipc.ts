@@ -575,19 +575,23 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
   });
 
 /**
- * Avi Code addition: a guest page asked to open `url` in a new background tab
- * (middle-click or Ctrl/Cmd-click). `sourceTabId` is the runtime tab id of the
- * tab the click came from, used to resolve which thread should get the new tab.
+ * Avi Code addition: a guest page asked to open `url` in a new tab (a
+ * `target="_blank"` link, or a middle-click / Ctrl/Cmd-click). `sourceTabId` is
+ * the runtime tab id of the tab the click came from, used to resolve which
+ * thread should get the new tab.
  */
 export interface DesktopPreviewOpenTabRequest {
   sourceTabId: string;
   url: string;
+  /** True for middle-click / Ctrl/Cmd-click, which should not take focus. */
+  background: boolean;
 }
 
 export const DesktopPreviewOpenTabRequestSchema: Schema.Codec<DesktopPreviewOpenTabRequest> =
   Schema.Struct({
     sourceTabId: DesktopPreviewTabIdSchema,
     url: Schema.String,
+    background: Schema.Boolean,
   });
 
 /**

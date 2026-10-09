@@ -24,9 +24,11 @@ export function resolveBackgroundTabTarget(
 }
 
 /**
- * Avi Code addition: opens a new background browser tab when a guest page asks
- * for one (middle-click or Ctrl/Cmd-click on a link). Works from either pane of
- * a split, because the request is per-webview.
+ * Avi Code addition: opens a new browser tab when a guest page asks for one. A
+ * middle-click or Ctrl/Cmd-click opens it in the background; a
+ * `target="_blank"` link opens it focused, so the page that held the link
+ * stays put. Works from either pane of a split, because the request is
+ * per-webview.
  */
 export function useOpenBackgroundTabRequests<E>(input: {
   readonly openPreview: OpenPreviewMutation<E>;
@@ -45,8 +47,11 @@ export function useOpenBackgroundTabRequests<E>(input: {
           threadRef: target,
           url: request.url,
         });
-        if (result._tag === "Success") {
+        if (result._tag !== "Success") return;
+        if (request.background) {
           useRightPanelStore.getState().openBrowserBackground(target, result.value.tabId);
+        } else {
+          useRightPanelStore.getState().openBrowser(target, result.value.tabId);
         }
       })();
     });

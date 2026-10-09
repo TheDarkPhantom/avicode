@@ -79,6 +79,7 @@ describe("DesktopLifecycle", () => {
         flushMainWindowBounds: Effect.void,
         setPanelWindowReservation: () => Effect.void,
         dispatchMenuAction: () => Effect.void,
+        runMainContentsCommand: () => Effect.void,
         syncAppearance: Effect.void,
       });
 

@@ -60,6 +60,11 @@ export function BrowserSurfaceSlot(props: {
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
+    // A sidebar opening or closing shifts the whole column, so a slot that keeps
+    // its size still moves on screen. The gap element carries the sidebar's width.
+    for (const gap of document.querySelectorAll('[data-slot="sidebar-gap"]')) {
+      observer.observe(gap);
+    }
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {

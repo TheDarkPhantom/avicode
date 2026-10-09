@@ -78,9 +78,11 @@ function makeFakeBrowserWindow() {
     once: vi.fn(),
     openDevTools: vi.fn(),
     reload: vi.fn(),
+    reloadIgnoringCache: vi.fn(),
     replaceMisspelling: vi.fn(),
     send: vi.fn(),
     setWindowOpenHandler: vi.fn(),
+    toggleDevTools: vi.fn(),
   };
 
   const window = {
@@ -124,6 +126,8 @@ function makeFakeBrowserWindow() {
     setBounds: window.setBounds,
     openDevTools: webContents.openDevTools,
     reload: webContents.reload,
+    reloadIgnoringCache: webContents.reloadIgnoringCache,
+    toggleDevTools: webContents.toggleDevTools,
     send: webContents.send,
     setAutoHideCursor: window.setAutoHideCursor,
     setTitle: window.setTitle,
@@ -196,6 +200,7 @@ function makeTestLayer(input: {
     bounds: DesktopAppSettings.DesktopWindowBounds,
   ) => Effect.Effect<void>;
   readonly openedExternalUrls?: unknown[];
+  readonly focusedWindow?: Electron.BrowserWindow;
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -241,7 +246,10 @@ function makeTestLayer(input: {
       ),
     main: Ref.get(input.mainWindow),
     currentMainOrFirst: Ref.get(input.mainWindow),
-    focusedMainOrFirst: Ref.get(input.mainWindow),
+    focusedMainOrFirst:
+      input.focusedWindow === undefined
+        ? Ref.get(input.mainWindow)
+        : Effect.succeedSome(input.focusedWindow),
     setMain: (window) => Ref.set(input.mainWindow, Option.some(window)),
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
     reveal: () => Effect.void,
@@ -442,9 +450,41 @@ describe("DesktopWindow", () => {
         assert.isUndefined(createdWindowOptions[0]?.y);
         assert.isTrue(createdWindowOptions[0]?.disableAutoHideCursor);
         assert.isFalse(createdWindowOptions[0]?.webPreferences?.backgroundThrottling);
+        assert.isTrue(createdWindowOptions[0]?.webPreferences?.disableHtmlFullscreenWindowResize);
         assert.deepEqual(fakeWindow.setAutoHideCursor.mock.calls, [[false]]);
         assert.deepEqual(fakeWindow.loadURL.mock.calls[0], ["avicode-dev://app/"]);
         assert.equal(fakeWindow.openDevTools.mock.calls.length, 1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reloads and inspects the main window even when a popup has focus", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const popup = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        focusedWindow: popup.window,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        yield* desktopWindow.runMainContentsCommand("reload");
+        yield* desktopWindow.runMainContentsCommand("forceReload");
+        yield* desktopWindow.runMainContentsCommand("toggleDevTools");
+
+        assert.equal(fakeWindow.reload.mock.calls.length, 1);
+        assert.equal(fakeWindow.reloadIgnoringCache.mock.calls.length, 1);
+        assert.equal(fakeWindow.toggleDevTools.mock.calls.length, 1);
+        assert.equal(popup.reload.mock.calls.length, 0);
+        assert.equal(popup.reloadIgnoringCache.mock.calls.length, 0);
+        assert.equal(popup.toggleDevTools.mock.calls.length, 0);
       }).pipe(Effect.provide(layer));
     }),
   );

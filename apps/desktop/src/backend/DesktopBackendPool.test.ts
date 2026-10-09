@@ -92,6 +92,7 @@ function makePoolLayer(
           flushMainWindowBounds: Effect.void,
           setPanelWindowReservation: () => Effect.void,
           dispatchMenuAction: () => Effect.die("unexpected menu action"),
+          runMainContentsCommand: () => Effect.die("unexpected main contents command"),
           syncAppearance: Effect.void,
         } satisfies DesktopWindow.DesktopWindow["Service"]),
       ),
