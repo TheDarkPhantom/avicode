@@ -74,7 +74,9 @@ function applyResolvedWindowControlsOverlayGeometry(
   geometry: ReturnType<typeof resolveWindowControlsOverlayGeometry>,
 ): void {
   const style = document.documentElement.style;
-  style.setProperty("--workspace-topbar-height", `${geometry.height}px`);
+  // Avi Code addition: same 40px floor as the `.wco` fallback in index.css, so a zoomed-in
+  // titlebar band (fewer CSS px) does not crush the top bar.
+  style.setProperty("--workspace-topbar-height", `max(40px, ${geometry.height}px)`);
   style.setProperty("--workspace-controls-top", `${geometry.y}px`);
   style.setProperty("--workspace-controls-left", `calc(${geometry.x}px + 0.75rem)`);
   style.setProperty("--workspace-controls-right", `calc(${geometry.rightInset}px + 0.75rem)`);
