@@ -736,6 +736,82 @@ describe("deriveMessagesTimelineRows", () => {
     expect(rows.some((row) => row.kind === "turn-fold")).toBe(true);
   });
 
+  // Avi Code addition (upstream #16284): the working row carries the latest thought.
+  const workingRowOf = (
+    timelineEntries: Parameters<typeof deriveMessagesTimelineRows>[0]["timelineEntries"],
+  ) =>
+    deriveMessagesTimelineRows({
+      timelineEntries,
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    }).find((row) => row.kind === "working");
+
+  const userEntry = (id: string, at: string) => ({
+    id,
+    kind: "message" as const,
+    createdAt: at,
+    message: {
+      id: id as never,
+      role: "user" as const,
+      text: "do the thing",
+      turnId: null,
+      createdAt: at,
+      updatedAt: at,
+      streaming: false,
+    },
+  });
+
+  const thoughtEntry = (id: string, at: string, text: string) => {
+    const entry = reasoningEntry(id, at, "turn-1");
+    return { ...entry, message: { ...entry.message, text } };
+  };
+
+  it("carries the latest thought on the working row while a later tool runs", () => {
+    expect(
+      workingRowOf([
+        userEntry("user", "2026-01-01T00:00:00Z"),
+        thoughtEntry("old-thought", "2026-01-01T00:00:01Z", "First idea."),
+        thoughtEntry("new-thought", "2026-01-01T00:00:02Z", "Found the cause. Checking more."),
+        toolEntry("running-command", "2026-01-01T00:00:03Z", "turn-1"),
+      ]),
+    ).toMatchObject({ thought: { messageId: "new-thought", line: "Found the cause." } });
+  });
+
+  it("skips an empty thought and leaves the row bare when no thought exists", () => {
+    expect(
+      workingRowOf([
+        userEntry("user", "2026-01-01T00:00:00Z"),
+        thoughtEntry("real-thought", "2026-01-01T00:00:01Z", "Looking at the adapter"),
+        thoughtEntry("empty-thought", "2026-01-01T00:00:02Z", "   "),
+      ]),
+    ).toMatchObject({ thought: { messageId: "real-thought", line: "Looking at the adapter" } });
+    expect(
+      workingRowOf([
+        userEntry("user", "2026-01-01T00:00:00Z"),
+        toolEntry("running-command", "2026-01-01T00:00:01Z", "turn-1"),
+      ]),
+    ).not.toHaveProperty("thought");
+  });
+
+  it("does not carry a thought across a newer user message", () => {
+    expect(
+      workingRowOf([
+        userEntry("user-1", "2026-01-01T00:00:00Z"),
+        thoughtEntry("earlier-thought", "2026-01-01T00:00:01Z", "Earlier idea."),
+        userEntry("user-2", "2026-01-01T00:00:02Z"),
+        toolEntry("running-command", "2026-01-01T00:00:03Z", "turn-1"),
+      ]),
+    ).not.toHaveProperty("thought");
+  });
+
   it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {
     // A steer ends the previous turn early: its only message completes the
     // instant it is created, and trailing work entries land after it. The
@@ -1650,5 +1726,45 @@ describe("deriveMessagesTimelineRows context compaction", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.kind).toBe("work");
+  });
+});
+
+describe("computeStableMessagesTimelineRows live thought", () => {
+  const rowsFor = (thoughtText: string) =>
+    deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "thought-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:01Z",
+          message: {
+            id: "thought" as never,
+            role: "reasoning",
+            text: thoughtText,
+            turnId: "turn-1" as never,
+            createdAt: "2026-01-01T00:00:01Z",
+            updatedAt: "2026-01-01T00:00:01Z",
+            streaming: true,
+          },
+        },
+      ],
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+  const workingRow = (state: ReturnType<typeof computeStableMessagesTimelineRows>) =>
+    state.result.find((row) => row.kind === "working");
+
+  it("keeps the working row while a thought streams past its first sentence", () => {
+    const initial = computeStableMessagesTimelineRows(rowsFor("Found it. Now"), {
+      byId: new Map(),
+      result: [],
+    });
+    const grown = computeStableMessagesTimelineRows(rowsFor("Found it. Now checking"), initial);
+    expect(workingRow(grown)).toBe(workingRow(initial));
+
+    const rewritten = computeStableMessagesTimelineRows(rowsFor("Found it again. Now"), grown);
+    expect(workingRow(rewritten)).not.toBe(workingRow(grown));
   });
 });
