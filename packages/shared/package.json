@@ -231,6 +231,10 @@
       "types": "./src/devProxy.ts",
       "import": "./src/devProxy.ts"
     },
+    "./liveThoughtLine": {
+      "types": "./src/liveThoughtLine.ts",
+      "import": "./src/liveThoughtLine.ts"
+    },
     "./avicodeIdentity": {
       "types": "./src/avicodeIdentity.ts",
       "import": "./src/avicodeIdentity.ts"
