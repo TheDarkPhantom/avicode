@@ -18,6 +18,7 @@ import {
   providerAuth,
   type SourceControlAuthProbeInput,
   type SourceControlCliDiscoverySpec,
+  type SourceControlUnknownRemoteRefinementInput,
 } from "./SourceControlProviderDiscovery.ts";
 
 function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeRequest {
@@ -82,6 +83,27 @@ function parseGitHubAuth(input: SourceControlAuthProbeInput) {
   });
 }
 
+/**
+ * Claims a custom host (GitHub Enterprise) that `gh` holds an authenticated account for, so a
+ * server whose name does not contain "github" still routes to the GitHub provider.
+ */
+function refineUnknownGitHubRemote(input: SourceControlUnknownRemoteRefinementInput) {
+  const host = input.context.provider.name.toLowerCase();
+  const authenticated = parseGitHubAuthStatus(input.auth.stdout).accounts.some(
+    (account) => account.authenticated && account.host === host,
+  );
+
+  if (!authenticated) {
+    return null;
+  }
+
+  return {
+    kind: "github",
+    name: "GitHub Self-Hosted",
+    baseUrl: input.context.provider.baseUrl,
+  } as const;
+}
+
 export const discovery = {
   type: "cli",
   kind: "github",
@@ -90,6 +112,7 @@ export const discovery = {
   versionArgs: ["--version"],
   authArgs: ["auth", "status", "--json", "hosts"],
   parseAuth: parseGitHubAuth,
+  refineUnknownRemote: refineUnknownGitHubRemote,
   installHint:
     "Install the GitHub command-line tool (`gh`) via https://cli.github.com/ or your package manager (for example `brew install gh`).",
 } satisfies SourceControlCliDiscoverySpec;
