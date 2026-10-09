@@ -16,8 +16,8 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
 
 ## Deferred
 
-- Upstream sync of 2026-10-08 (#261 to #265) reviewed `pingdotgg/t3code` through `a4c9494b0e`; the
-  next review starts there. It hand-ported about 15 fixes out of 518 commits and left these out:
+- Upstream sync of 2026-10-08 (#261 to #265) reviewed `pingdotgg/t3code` through `a4c9494b0e`
+  (round 3 below moves the marker). It hand-ported about 15 fixes out of 518 commits and left these out:
   - The new orchestrator (#2829) and every fix that lives only in it, including most of upstream's
     "Claude thread stuck" fixes (#14726, #15048, #15224, #15770, #16287, #16897, #16908). The fork
     still runs V1 orchestration; see `docs/UPSTREAM_ORCHESTRATION_V2.md`.
@@ -35,6 +35,18 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - The zoomed titlebar fix (#15496) covers the chat panels only. The settings, changelog and usage
     headers still read the raw titlebar values and likely misplace controls under zoom.
   - Sending on an older thread (#15059) fixes upstream's runs import, which the fork lacks.
+- Round 3 of 2026-10-09 (#270 to #274) reviewed upstream through `563645cf6e`; the next review
+  starts there. It left out:
+  - Find in thread (#10439, about 8,000 lines on upstream-only parts) and the provider package
+    split (#17299 onward), which only makes later ports harder.
+  - #17360, #16730, #17016, #17378 and #17372 do not apply to the fork.
+  - #16961 without forwarded layout shortcuts, server tab downloads, crop fixes, per profile link
+    tabs and Electron 44. `window.open` pop-ups still load in the same tab.
+  - #16956 without tab ownership, profiles or the viewed-tab fallback (no server browser).
+  - GitHub Enterprise detection (#11059) reads only `gh auth status`.
+  - Drafts inside an existing worktree still cannot preview images, HTML or PDF (#17352).
+  - The sidebar thought line (fork #273) sits outside the v1 row button, so clicking the line
+    itself does nothing; V2 slim rows do not show it. Cursor and Grok send no thoughts.
 - Follow-up round of 2026-10-09 (#266 to #269) took more from the same range and left out:
   - Grouped notifications (#12048) are mobile push only; desktop posts no OS alerts for agents.
   - Skill menus list the server's working folder plus user skills, not each project's

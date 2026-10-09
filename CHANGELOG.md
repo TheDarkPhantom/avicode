@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Worktree cleanup keeps worktrees with hidden or unreadable changes instead of deleting them (#263)
+- Sidebar rows show the agent's latest thought while it works (#273)
 
 ### Upstream t3code
 
@@ -81,6 +82,16 @@ Upstream: t3code 0.0.31
 - Coding tools start faster on Windows (#12600 by SkiTee3000)
 - One failing server request no longer cuts off the app's other live updates (#15515 by Julius Marminge)
 - Cloning a local repository whose name starts with a dash works (#14781 by Alex Southwell)
+- The agent's latest thought shows above Working while it works (#16284 by Theo Browne)
+- A logged out Claude CLI no longer shows as signed in (#15459 by Yordis Prieto)
+- Quitting the desktop app no longer stalls (#17386 by Yash Singh)
+- Websites see a valid browser name from the desktop app (#17264 by jztmanyl)
+- GitHub Enterprise remotes are recognized when gh is signed in to that host (#11059 by Grzegorz Mandziak)
+- Browser tabs handle fullscreen, new tab links, app links and reload properly (#16961 by Julius Marminge)
+- Agent page snapshots skip the screenshot unless asked, keeping history small (#16956 by Julius Marminge)
+- Images, HTML and PDFs preview in a new thread before the first message (#17352 by Julius Marminge)
+- Centered pages no longer jump sideways when a scrollbar appears (#17077 by maria)
+- Download buttons and section links work in previews, and local link icons stay private (#16950 by Julius Marminge)
 
 ## 0.0.31-avicode.9.17 (2026-10-02)
 
