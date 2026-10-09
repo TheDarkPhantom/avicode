@@ -59,7 +59,8 @@ describe("assetResponseHeaders", () => {
     });
     expect(assetResponseHeaders({ mimeType: "text/html" })).toMatchObject({
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads",
+      "Content-Security-Policy":
+        "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads",
     });
   });
 
