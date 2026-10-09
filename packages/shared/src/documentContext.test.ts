@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { extractTrailingDocumentContexts, formatDocumentContext } from "./documentContext.ts";
+import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
+
+import {
+  appendDocumentContexts,
+  extractTrailingDocumentContexts,
+  formatDocumentContext,
+  turnInputTooLargeReason,
+} from "./documentContext.ts";
 
 const block = (name: string, text: string) =>
   formatDocumentContext({ name, mimeType: "text/markdown", text });
@@ -76,5 +83,40 @@ describe("formatDocumentContext", () => {
       promptText: "look",
       documentCount: 1,
     });
+  });
+});
+
+describe("appendDocumentContexts", () => {
+  it("leaves text alone when nothing is attached", () => {
+    expect(appendDocumentContexts("hello", [])).toBe("hello");
+  });
+
+  it("appends each block, and round-trips through the renderer's strip", () => {
+    const message = appendDocumentContexts("compare", [block("a.md", "one"), block("b.md", "two")]);
+    expect(message).toBe(`compare
+
+${block("a.md", "one")}
+
+${block("b.md", "two")}`);
+    expect(extractTrailingDocumentContexts(message)).toEqual({
+      promptText: "compare",
+      documentCount: 2,
+    });
+  });
+
+  it("drops the empty prompt instead of leading with a blank line", () => {
+    expect(appendDocumentContexts("", [block("a.md", "one")])).toBe(block("a.md", "one"));
+  });
+});
+
+describe("turnInputTooLargeReason", () => {
+  it("allows a message exactly at the limit", () => {
+    expect(turnInputTooLargeReason(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)).toBeNull();
+  });
+
+  it("explains a message over the limit in plain terms", () => {
+    expect(turnInputTooLargeReason(712_000)).toBe(
+      "This message and its attachments come to 712,000 characters; the limit is 600,000. Remove an attachment or shorten the message.",
+    );
   });
 });

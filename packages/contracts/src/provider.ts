@@ -10,6 +10,7 @@ import {
 } from "./baseSchemas.ts";
 import {
   ChatAttachment,
+  COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS,
   ModelSelection,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -20,6 +21,7 @@ import {
   ProviderSandboxMode,
   ProviderUserInputAnswers,
   RuntimeMode,
+  THREAD_CONTEXT_MAX_SERIALIZED_CHARS,
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 
@@ -64,10 +66,24 @@ export const ProviderSessionStartInput = Schema.Struct({
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 
+/**
+ * Avi Code addition: the user's message (typed text plus attached documents)
+ * is held to PROVIDER_SEND_TURN_MAX_INPUT_CHARS when the turn is dispatched,
+ * before anything is persisted. The provider-bound text then also carries the
+ * referenced-thread context and the communication style directive, so this
+ * late check leaves room for both. Without that room, a message accepted at
+ * dispatch could still fail here, after it is already in the transcript.
+ */
+const PROVIDER_SEND_TURN_MAX_PROVIDER_INPUT_CHARS =
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS +
+  THREAD_CONTEXT_MAX_SERIALIZED_CHARS +
+  COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS +
+  1_000;
+
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
   input: Schema.optional(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_PROVIDER_INPUT_CHARS)),
   ),
   attachments: Schema.optional(
     Schema.Array(ChatAttachment).check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS)),

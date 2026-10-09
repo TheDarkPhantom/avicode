@@ -8,6 +8,8 @@
  * changed, and the failure would be silent: the block simply stops being
  * hidden and the whole document appears in the chat.
  */
+import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
+
 export const DOCUMENT_CONTEXT_TAG = "avicode_document";
 
 function escapeDocumentAttribute(value: string): string {
@@ -20,6 +22,29 @@ export function formatDocumentContext(input: {
   readonly text: string;
 }): string {
   return `<${DOCUMENT_CONTEXT_TAG} name="${escapeDocumentAttribute(input.name)}" mime="${escapeDocumentAttribute(input.mimeType)}">\n${input.text}\n</${DOCUMENT_CONTEXT_TAG}>`;
+}
+
+/**
+ * The message text a turn carries once its document blocks are appended. The
+ * server persists exactly this, so measuring it is measuring the turn.
+ */
+export function appendDocumentContexts(
+  text: string,
+  documentContexts: ReadonlyArray<string>,
+): string {
+  return documentContexts.length === 0
+    ? text
+    : [text, ...documentContexts].filter(Boolean).join("\n\n");
+}
+
+/**
+ * Why a message of `chars` characters (text plus document blocks) cannot be
+ * sent, or null when it fits. The composer blocks Send with this and the
+ * server rejects the dispatch with it, before anything reaches the thread.
+ */
+export function turnInputTooLargeReason(chars: number): string | null {
+  if (chars <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS) return null;
+  return `This message and its attachments come to ${chars.toLocaleString("en-US")} characters; the limit is ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS.toLocaleString("en-US")}. Remove an attachment or shorten the message.`;
 }
 
 /**

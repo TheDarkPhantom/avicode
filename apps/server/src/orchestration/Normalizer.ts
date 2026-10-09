@@ -13,7 +13,11 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
-import { formatDocumentContext } from "@t3tools/shared/documentContext";
+import {
+  appendDocumentContexts,
+  formatDocumentContext,
+  turnInputTooLargeReason,
+} from "@t3tools/shared/documentContext";
 
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import {
@@ -206,6 +210,30 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       canonicalCommand.type === "thread.fork"
         ? canonicalCommand.forkThreadId
         : canonicalCommand.threadId;
+
+    // Avi Code addition: each document passes its own cap, but the turn carries
+    // the text and every document as one message. Measure that whole message
+    // before any upload is claimed, so an oversized send is refused with the
+    // thread and the user's attachments untouched.
+    const tooLargeReason = turnInputTooLargeReason(
+      appendDocumentContexts(
+        canonicalCommand.message.text,
+        canonicalCommand.message.attachments.flatMap((attachment) =>
+          attachment.type === "document" && "extractedText" in attachment
+            ? [
+                formatDocumentContext({
+                  name: attachment.name,
+                  mimeType: attachment.mimeType,
+                  text: attachment.extractedText.trim(),
+                }),
+              ]
+            : [],
+        ),
+      ).length,
+    );
+    if (tooLargeReason !== null) {
+      return yield* new OrchestrationDispatchCommandError({ message: tooLargeReason });
+    }
 
     const documentContexts: string[] = [];
     const claimedAttachmentPaths: string[] = [];
@@ -432,10 +460,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       ...canonicalCommand,
       message: {
         ...canonicalCommand.message,
-        text:
-          documentContexts.length === 0
-            ? canonicalCommand.message.text
-            : [canonicalCommand.message.text, ...documentContexts].filter(Boolean).join("\n\n"),
+        text: appendDocumentContexts(canonicalCommand.message.text, documentContexts),
         attachments: normalizedAttachments,
       },
     } satisfies OrchestrationCommand;

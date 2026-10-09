@@ -22,6 +22,11 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import {
+  appendDocumentContexts,
+  formatDocumentContext,
+  turnInputTooLargeReason,
+} from "@t3tools/shared/documentContext";
 import { driverEnforcesPlanTurns } from "@t3tools/shared/planTurnEnforcementSupport";
 import { driverSupportsSideQuestion } from "@t3tools/shared/sideQuestionSupport";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -946,8 +951,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : composerFiles.length > 0 && environmentUnavailable
         ? "File attachments send once the server reconnects"
         : null);
+  // Avi Code addition: each document fits its own cap, but the turn carries the
+  // text and every document as one message. The server refuses an oversized
+  // one before it reaches the thread; blocking here says so before Send.
+  const documentContexts = useMemo(
+    () =>
+      composerImages.flatMap((attachment) =>
+        attachment.type === "document"
+          ? [
+              formatDocumentContext({
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                text: attachment.extractedText.trim(),
+              }),
+            ]
+          : [],
+      ),
+    [composerImages],
+  );
+  const documentContextsChars = useMemo(
+    () => appendDocumentContexts("", documentContexts).length,
+    [documentContexts],
+  );
+  const promptChars = prompt.trim().length;
+  // Same total as `appendDocumentContexts(prompt, documentContexts)`, without
+  // rebuilding a multi-megabyte string on every keystroke.
+  const turnTooLargeReason = turnInputTooLargeReason(
+    promptChars + documentContextsChars + (promptChars > 0 && documentContextsChars > 0 ? 2 : 0),
+  );
   const sendDisabledReason =
-    externalSendDisabledReason ?? (activePendingProgress ? null : attachmentBlockReason);
+    externalSendDisabledReason ??
+    (activePendingProgress ? null : (turnTooLargeReason ?? attachmentBlockReason));
   const isSendDisabled = sendDisabledReason !== null;
 
   useEffect(() => {
@@ -4146,6 +4180,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   })
                 }
               />
+            ) : null}
+
+            {/* Avi Code addition: the Send button's label is not visible, so
+                say why it is disabled where the attachments are. */}
+            {!isComposerCollapsedMobile && !isComposerApprovalState && turnTooLargeReason ? (
+              <p role="alert" className="mb-3 text-xs leading-tight text-destructive">
+                {turnTooLargeReason}
+              </p>
             ) : null}
 
             <div className="relative">
