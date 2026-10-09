@@ -277,7 +277,7 @@ export function UsagePageContent() {
   }, [providers]);
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="scrollbar-gutter-both flex-1 overflow-y-auto">
       <div className="mx-auto max-w-2xl px-5 py-6">
         {/* Quota Gauges */}
         {providersWithQuota.length > 0 ? (

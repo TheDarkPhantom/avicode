@@ -116,6 +116,7 @@ export default defineConfig({
       "t3code/no-inline-schema-compile": "warn",
       "t3code/no-manual-effect-runtime-in-tests": "error",
       "t3code/namespace-node-imports": "error",
+      "t3code/require-centered-scroll-gutter": "error",
     },
     options: {
       // Revisit once Oxlint's tsgolint path can integrate with @effect/tsgo diagnostics.
