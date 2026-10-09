@@ -166,6 +166,7 @@ import { ProviderQuotaMeter } from "./ProviderQuotaMeter";
 // Avi Code addition: per-thread token/cost total in the composer footer.
 import { ThreadUsageBadge } from "./ThreadUsageBadge";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
+import { useRefreshStaleProviderSkills } from "./useRefreshStaleProviderSkills";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -1477,6 +1478,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Derived: composer trigger / menu
   // ------------------------------------------------------------------
   const composerTriggerKind = composerTrigger?.kind ?? null;
+  // Avi Code addition: rescan skills on use once the snapshot is old (upstream #16750).
+  useRefreshStaleProviderSkills({
+    environmentId,
+    provider: selectedProviderStatus,
+    menuKind: composerTriggerKind,
+  });
   const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
   const isPathTrigger = composerTriggerKind === "path";
   const workspaceEntries = useComposerPathSearch({

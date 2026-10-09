@@ -18,6 +18,7 @@ import {
   ClaudeSettings,
   CodexSettings,
   DEFAULT_SERVER_SETTINGS,
+  PROVIDER_SKILLS_SNAPSHOT_TTL_MS,
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
@@ -1394,6 +1395,24 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* registry.refreshInstance(instanceId, { fresh: true });
           assert.strictEqual(yield* Ref.get(refreshes), 2);
           assert.strictEqual(yield* Ref.get(invalidations), 1);
+        }),
+      );
+
+      it.effect("answers stale-only refreshes from the cache until the snapshot expires", () =>
+        Effect.gen(function* () {
+          // The layer's TestClock is shared across tests; check the snapshot "now".
+          const { registry, instanceId, refreshes } = yield* makeCountingRegistry({
+            checkedAt: DateTime.formatIso(yield* DateTime.now),
+          });
+
+          // Nothing watches skill directories, so an expired scan is redone on use.
+          yield* TestClock.adjust(PROVIDER_SKILLS_SNAPSHOT_TTL_MS - 1);
+          yield* registry.refreshInstance(instanceId, { ifStale: true });
+          assert.strictEqual(yield* Ref.get(refreshes), 0);
+
+          yield* TestClock.adjust(1);
+          yield* registry.refreshInstance(instanceId, { ifStale: true });
+          assert.strictEqual(yield* Ref.get(refreshes), 1);
         }),
       );
 

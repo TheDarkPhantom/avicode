@@ -23,6 +23,8 @@ export type ProviderMaintenanceActionKind = "update";
 export interface ProviderRefreshInstanceOptions {
   /** Drop the instance's cached probe results first, e.g. Claude's plugin commands. */
   readonly fresh?: boolean;
+  /** Skip the probe when the instance's snapshot is still current or disabled. */
+  readonly ifStale?: boolean;
 }
 
 export interface ProviderRegistryShape {

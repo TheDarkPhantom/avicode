@@ -24,6 +24,7 @@
  */
 import {
   defaultInstanceIdForDriver,
+  isProviderSkillsSnapshotCurrent,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderQuotaSnapshot,
@@ -31,6 +32,7 @@ import {
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
@@ -557,6 +559,14 @@ export const ProviderRegistryLive = Layer.effect(
       // commands added since the last check are read again.
       if (options?.fresh === true) {
         yield* providerSource.invalidateCaches ?? Effect.void;
+      } else if (options?.ifStale === true) {
+        // Composers ask on use; one probe per TTL window answers them all.
+        const providers = yield* Ref.get(providersRef);
+        const current = providers.find((candidate) => candidate.instanceId === instanceId);
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+        if (!current?.enabled || isProviderSkillsSnapshotCurrent(current, nowMs)) {
+          return providers;
+        }
       }
       return yield* refreshOneSource(providerSource);
     });

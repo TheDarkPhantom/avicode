@@ -200,6 +200,22 @@ export const ServerProvider = Schema.Struct({
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
+/**
+ * How long a provider's skill and command scan stays current. Nothing watches
+ * skill directories, so a composer that opens its skill or command menu after
+ * this asks for a rescan, and the server answers repeat requests inside the
+ * window from its cache. (Upstream scopes this to per-workspace snapshots; the
+ * fork's skills live on the provider snapshot, so its `checkedAt` is the clock.)
+ */
+export const PROVIDER_SKILLS_SNAPSHOT_TTL_MS = 5 * 60_000;
+
+export function isProviderSkillsSnapshotCurrent(
+  snapshot: Pick<ServerProvider, "checkedAt">,
+  nowMs: number,
+): boolean {
+  return nowMs - Date.parse(snapshot.checkedAt) < PROVIDER_SKILLS_SNAPSHOT_TTL_MS;
+}
+
 export const ServerProviders = Schema.Array(ServerProvider);
 export type ServerProviders = typeof ServerProviders.Type;
 
