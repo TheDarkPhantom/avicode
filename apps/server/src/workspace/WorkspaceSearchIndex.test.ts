@@ -3,6 +3,8 @@ import { afterEach, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
 
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -154,6 +156,63 @@ it.effect("keeps returned search diagnostics out of the cause chain", () =>
         reason: "native refresh rejected",
       });
       expect(refreshError.cause).toBeUndefined();
+    }),
+  ),
+);
+
+it.effect("returns partial path results when the initial scan times out", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const mixedResult = () => ({
+        ok: true as const,
+        value: {
+          items: [
+            {
+              type: "directory" as const,
+              item: { relativePath: "src", fileName: "src", fileCount: 1 },
+            },
+            {
+              type: "file" as const,
+              item: { relativePath: "src/index.ts", fileName: "index.ts" },
+            },
+          ],
+          scores: [],
+          totalMatched: 2,
+          totalFiles: 1,
+        },
+      });
+      const mixedSearch = vi.fn(mixedResult);
+      let scanning = true;
+      const finder = {
+        destroy: vi.fn(),
+        isScanning: vi.fn(() => scanning),
+        mixedSearch,
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const creating = yield* Effect.forkScoped(WorkspaceSearchIndex.make("/workspace/project"));
+      yield* TestClock.adjust("15 seconds");
+      const searchIndex = yield* Fiber.join(creating);
+      const list = yield* searchIndex.list();
+      const search = yield* searchIndex.search("src", 10);
+      mixedSearch.mockImplementationOnce(() => {
+        scanning = false;
+        return mixedResult();
+      });
+      const searchCompletingDuringQuery = yield* searchIndex.search("src", 10);
+      const completedSearch = yield* searchIndex.search("src", 10);
+
+      expect(list).toEqual({
+        entries: [
+          { kind: "directory", path: "src" },
+          { kind: "file", path: "src/index.ts" },
+        ],
+        truncated: true,
+      });
+      expect(search.truncated).toBe(true);
+      expect(searchCompletingDuringQuery.truncated).toBe(true);
+      expect(completedSearch.truncated).toBe(false);
+      expect(mixedSearch).toHaveBeenCalledTimes(4);
     }),
   ),
 );

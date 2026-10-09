@@ -218,6 +218,9 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
       catch: (cause) => new WorkspaceSearchIndexDestroyFailed({ cwd, cause }),
     }).pipe(Effect.orDie),
   );
+  // A slow first scan (a huge tree, a cold disk) still serves what it has
+  // found so far, marked truncated, instead of failing the request outright.
+  let initialScanTimedOut = false;
   yield* waitForScan(
     cwd,
     finder,
@@ -227,7 +230,15 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
         reason: "FileFinder.isScanning threw while creating the index.",
         cause,
       }),
+  ).pipe(
+    Effect.catchTag("WorkspaceSearchIndexScanTimedOut", () =>
+      Effect.sync(() => {
+        initialScanTimedOut = true;
+      }),
+    ),
   );
+
+  const hasIncompleteInitialScan = () => initialScanTimedOut && finder.isScanning();
 
   const runMixedSearch = Effect.fn("WorkspaceSearchIndex.runMixedSearch")(function* (
     query: string,
@@ -287,6 +298,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
 
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
     function* () {
+      const incompleteBeforeQuery = hasIncompleteInitialScan();
       const result = yield* runMixedSearch("", WORKSPACE_INDEX_PAGE_SIZE);
       const mapped = mapMixedSearchResult(result, WORKSPACE_INDEX_MAX_ENTRIES);
       const sortedEntries = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
@@ -295,7 +307,8 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
       const entries = sortedEntries.slice(0, WORKSPACE_INDEX_MAX_ENTRIES);
       return {
         entries,
-        truncated: mapped.truncated || entries.length < sortedEntries.length,
+        truncated:
+          incompleteBeforeQuery || mapped.truncated || entries.length < sortedEntries.length,
       };
     },
   );
@@ -303,8 +316,10 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
   const search: WorkspaceSearchIndex["Service"]["search"] = Effect.fn(
     "WorkspaceSearchIndex.search",
   )(function* (query, limit) {
+    const incompleteBeforeQuery = hasIncompleteInitialScan();
     const result = yield* runMixedSearch(query, Math.max(1, limit + 1));
-    return mapMixedSearchResult(result, limit);
+    const mapped = mapMixedSearchResult(result, limit);
+    return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
   });
 
   return WorkspaceSearchIndex.of({ list, refresh, search });
