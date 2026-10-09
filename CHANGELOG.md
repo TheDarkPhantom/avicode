@@ -43,7 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Attachments too large for one message block Send instead of breaking the thread (#276)
-- Threads without a project skip the worktree icon and Git buttons that do not apply to them (#PR)
+- Threads without a project skip the worktree icon and Git buttons that do not apply to them (#277)
 
 ### Upstream t3code
 
