@@ -28,6 +28,7 @@ function thread(
     archivedAt: null,
     settledOverride: null,
     deletedAt: null,
+    updatedAt: null,
     ...overrides,
   };
 }
@@ -39,6 +40,7 @@ function run(input: {
   dirtyByPath?: ReadonlyMap<string, boolean>;
   diskBytesByPath?: ReadonlyMap<string, number>;
   activeThreadIds?: ReadonlySet<ThreadId>;
+  now?: number;
 }) {
   return computeCleanupCandidates({
     threads: input.threads,
@@ -48,6 +50,7 @@ function run(input: {
     dirtyByPath: input.dirtyByPath ?? new Map(),
     diskBytesByPath: input.diskBytesByPath ?? new Map(),
     activeThreadIds: input.activeThreadIds ?? new Set(),
+    ...(input.now !== undefined ? { now: input.now } : {}),
   });
 }
 
@@ -160,6 +163,38 @@ describe("computeCleanupCandidates", () => {
       activeThreadIds: new Set([ThreadId.make("t1")]),
     });
     expect(candidates[0]?.isActive).toBe(true);
+  });
+
+  it("marks a merged-PR worktree active when its thread was used in the last week", () => {
+    const now = Date.parse("2026-10-20T00:00:00Z");
+    const recentPath = `${WORKTREES_DIR}/recent`;
+    const stalePath = `${WORKTREES_DIR}/stale`;
+    const candidates = run({
+      threads: [
+        thread("t-recent", recentPath, { updatedAt: "2026-10-19T00:00:00Z" }),
+        thread("t-stale", stalePath, { updatedAt: "2026-10-10T00:00:00Z" }),
+      ],
+      worktrees: [worktree(recentPath), worktree(stalePath)],
+      prStateByPath: new Map<string, PrState>([
+        [recentPath, "merged"],
+        [stalePath, "merged"],
+      ]),
+      now,
+    });
+    const byPath = new Map(candidates.map((candidate) => [candidate.worktreePath, candidate]));
+    expect(byPath.get(recentPath)?.reason).toBe("pr-merged");
+    expect(byPath.get(recentPath)?.isActive).toBe(true);
+    expect(byPath.get(stalePath)?.isActive).toBe(false);
+  });
+
+  it("ignores recency when no clock is supplied", () => {
+    const wtPath = `${WORKTREES_DIR}/noclock`;
+    const candidates = run({
+      threads: [thread("t1", wtPath, { updatedAt: "2026-10-19T00:00:00Z" })],
+      worktrees: [worktree(wtPath)],
+      prStateByPath: new Map<string, PrState>([[wtPath, "merged"]]),
+    });
+    expect(candidates[0]?.isActive).toBe(false);
   });
 });
 

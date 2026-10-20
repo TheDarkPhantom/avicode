@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as TestClock from "effect/testing/TestClock";
 import { describe, expect } from "vite-plus/test";
 
 import { CheckpointStore } from "../checkpointing/CheckpointStore.ts";
@@ -28,6 +29,7 @@ interface MockState {
     worktreePath: string | null;
     branch: string | null;
     archivedAt: string | null;
+    updatedAt?: string;
   }>;
   activeThreadIds: ReadonlyArray<string>;
   dirtyPaths?: ReadonlyArray<string>;
@@ -89,6 +91,7 @@ function makeDeps(counters: Counters, state: MockState) {
           archivedAt: thread.archivedAt,
           settledOverride: null,
           deletedAt: null,
+          updatedAt: thread.updatedAt ?? null,
         })) as never,
       ),
   });
@@ -218,6 +221,51 @@ describe("WorktreeCleanupService.classify", () => {
           expect(candidates[0]?.diskBytes).toBe(0);
         }).pipe(Effect.provide(deps));
       }),
+  );
+  it.effect("keeps a merged-PR worktree out of auto-cleanup while its thread is recent", () =>
+    Effect.gen(function* () {
+      const counters: Counters = { pruneCalls: 0, removeWorktreeCalls: 0, gcCalls: 0 };
+      const state = emptyState();
+      const deps = makeDeps(counters, state);
+
+      yield* Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse("2026-10-20T00:00:00.000Z"));
+        const path = yield* Path.Path;
+        const config = yield* ServerConfigModule.ServerConfig;
+        const recentPath = path.join(config.worktreesDir, "repo", "t3code-recent01");
+        const stalePath = path.join(config.worktreesDir, "repo", "t3code-stale001");
+        state.worktrees = [
+          { path: recentPath, branch: "feature/recent", isMain: false },
+          { path: stalePath, branch: "feature/stale", isMain: false },
+        ];
+        state.threads = [
+          {
+            threadId: "t-recent",
+            worktreePath: recentPath,
+            branch: "feature/recent",
+            archivedAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-19T00:00:00.000Z",
+          },
+          {
+            threadId: "t-stale",
+            worktreePath: stalePath,
+            branch: "feature/stale",
+            archivedAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-01T00:00:00.000Z",
+          },
+        ];
+
+        const service = yield* WorktreeCleanup.make;
+        const candidates = yield* service.classify({
+          cwd: config.cwd,
+          projectId: ProjectId.make("p1"),
+        });
+
+        expect(selectAutoCleanupCandidates(candidates).map((c) => c.worktreePath)).toEqual([
+          stalePath,
+        ]);
+      }).pipe(Effect.provide(deps));
+    }),
   );
   it.effect("marks a candidate dirty from the worktree change check", () =>
     Effect.gen(function* () {

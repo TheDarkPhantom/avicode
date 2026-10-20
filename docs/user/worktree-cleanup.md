@@ -17,6 +17,10 @@ A worktree shared by more than one thread is only offered when every thread usin
 primary working tree is never touched, and only worktrees Avi Code created (under its managed
 worktrees directory) are eligible.
 
+A thread you used in the last 7 days counts as in use, even if its PR has merged. Its worktree still
+shows up in the scan, but unchecked, and automatic removal skips it. Merging a PR rarely ends the
+conversation; follow-up questions in the same thread need the folder.
+
 ## Scanning and deleting
 
 1. Open **Settings -> Avi Code -> Worktree cleanup** and choose **Scan for dead worktrees** to sweep
@@ -53,6 +57,14 @@ the clean dead worktree folders on the spot and tells you what it freed. Automat
 deletes worktree directories. It never touches branches or checkpoints, never removes a worktree
 with uncommitted changes or a running session, and leaves "PR closed without merge" worktrees for
 you to remove by hand.
+
+## If a thread's folder was removed anyway
+
+When you send a message in a thread whose worktree folder is gone, Avi Code rebuilds it at the same
+location from the thread's branch before the agent starts, then reruns the project's setup script.
+If the branch was deleted too, it is recreated from the project's current HEAD. The thread shows a
+"Worktree folder restored" note. Committed work comes back with the branch; untracked files that
+lived only in the old folder (a local `.env`, build output) do not.
 
 All of this lives under **Settings -> Avi Code -> Worktree cleanup**: the last check result, a
 **Check now** button, the two thresholds, and the automatic-removal switch.
