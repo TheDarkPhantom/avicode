@@ -35,6 +35,7 @@ import {
   type WorktreeCleanupCandidate,
   type WorktreeCleanupReason,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -58,7 +59,16 @@ export interface CleanupThreadInfo {
   readonly archivedAt: string | null;
   readonly settledOverride: "settled" | "active" | null;
   readonly deletedAt: string | null;
+  /** Last projection update (ISO). Recently touched threads keep their worktree. */
+  readonly updatedAt: string | null;
 }
+
+/**
+ * Avi Code addition: how long after a thread's last activity its worktree stays
+ * protected from cleanup. Merging a PR does not end a thread; users keep
+ * chatting in it, and deleting the folder under them broke every later turn.
+ */
+export const RECENT_THREAD_ACTIVITY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Minimal on-disk worktree shape the classifier needs. */
 export interface CleanupWorktreeInfo {
@@ -75,6 +85,12 @@ export interface ComputeCleanupCandidatesInput {
   readonly dirtyByPath: ReadonlyMap<string, boolean>;
   readonly diskBytesByPath: ReadonlyMap<string, number>;
   readonly activeThreadIds: ReadonlySet<ThreadId>;
+  /**
+   * Avi Code addition: current time (epoch ms). When set, threads updated within
+   * `recentActivityMs` count as active, same as a live session.
+   */
+  readonly now?: number;
+  readonly recentActivityMs?: number;
 }
 
 export interface ComputedCleanupCandidate {
@@ -101,6 +117,16 @@ export function isUnderWorktreesDir(path: string, worktreesDir: string): boolean
   const base = normalizePathForCompare(worktreesDir);
   const target = normalizePathForCompare(path);
   return target !== base && target.startsWith(`${base}/`);
+}
+
+function threadIsRecent(
+  thread: CleanupThreadInfo,
+  now: number | undefined,
+  recentActivityMs: number,
+): boolean {
+  if (now === undefined || thread.updatedAt == null) return false;
+  const updatedAt = Date.parse(thread.updatedAt);
+  return Number.isFinite(updatedAt) && now - updatedAt < recentActivityMs;
 }
 
 function threadIsDead(thread: CleanupThreadInfo, prState: PrState | undefined): boolean {
@@ -135,6 +161,8 @@ function pickReason(input: {
  *   every referencing (non-deleted) thread is dead.
  * - An orphaned worktree (no non-deleted thread references it) is always a
  *   candidate.
+ * - A candidate whose thread has a live session or recent activity is flagged
+ *   `isActive`, which keeps it out of auto cleanup and unchecked in the dialog.
  */
 export function computeCleanupCandidates(
   input: ComputeCleanupCandidatesInput,
@@ -150,7 +178,12 @@ export function computeCleanupCandidates(
     const prState = input.prStateByPath.get(worktree.path);
     const isDirty = input.dirtyByPath.get(worktree.path) ?? false;
     const diskBytes = input.diskBytesByPath.get(worktree.path) ?? 0;
-    const isActive = refThreads.some((thread) => input.activeThreadIds.has(thread.threadId));
+    const recentActivityMs = input.recentActivityMs ?? RECENT_THREAD_ACTIVITY_MS;
+    const isActive = refThreads.some(
+      (thread) =>
+        input.activeThreadIds.has(thread.threadId) ||
+        threadIsRecent(thread, input.now, recentActivityMs),
+    );
 
     let reason: WorktreeCleanupReason;
     let threadIds: ReadonlyArray<ThreadId>;
@@ -299,6 +332,7 @@ export const make = Effect.gen(function* () {
           archivedAt: row.archivedAt,
           settledOverride: row.settledOverride,
           deletedAt: row.deletedAt,
+          updatedAt: row.updatedAt,
         })),
       ),
       Effect.mapError(
@@ -365,6 +399,7 @@ export const make = Effect.gen(function* () {
         dirtyByPath: new Map(),
         diskBytesByPath: new Map(),
         activeThreadIds,
+        now: yield* Clock.currentTimeMillis,
       });
 
       return yield* Effect.forEach(

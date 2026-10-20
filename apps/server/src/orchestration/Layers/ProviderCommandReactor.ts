@@ -23,6 +23,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
@@ -58,6 +59,9 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { restoreThreadWorktree } from "../../git/restoreThreadWorktree.ts";
+import { ServerConfig } from "../../config.ts";
+import { ProjectSetupScriptRunner } from "../../project/ProjectSetupScriptRunner.ts";
 import {
   serializeReferencedThreadContext,
   type ReferencedThreadTranscript,
@@ -318,6 +322,10 @@ const make = Effect.gen(function* () {
   });
   const interruptSuppression = yield* InterruptSuppression;
   const terminalManager = yield* TerminalManager.TerminalManager;
+  // Avi Code addition: restoring worktrees that cleanup deleted under a thread.
+  const fileSystem = yield* FileSystem.FileSystem;
+  const { worktreesDir } = yield* ServerConfig;
+  const projectSetupScriptRunner = yield* Effect.serviceOption(ProjectSetupScriptRunner);
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -435,6 +443,85 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+
+  /**
+   * Avi Code addition: worktree cleanup deletes a folder but keeps the thread,
+   * branch, and provider transcript. Rebuild the folder at the same path before
+   * a provider is started in it, rerun the project setup script, and leave a
+   * note in the thread. A failed rebuild fails the turn with a plain reason
+   * instead of handing the provider a directory that does not exist.
+   */
+  const ensureThreadWorktreeOnDisk = Effect.fn("ensureThreadWorktreeOnDisk")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly projectId: ProjectId;
+    readonly projectRoot: string | undefined;
+    readonly worktreePath: string | null;
+    readonly branch: string | null;
+    readonly provider: ProviderDriverKind;
+    readonly createdAt: string;
+  }) {
+    const outcome = yield* restoreThreadWorktree({
+      worktreePath: input.worktreePath,
+      branch: input.branch,
+      projectRoot: input.projectRoot,
+      worktreesDir,
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(GitWorkflowService, gitWorkflow),
+      Effect.mapError(
+        (error) =>
+          new ProviderAdapterRequestError({
+            provider: input.provider,
+            method: "thread.turn.start",
+            detail: `This thread's worktree folder was deleted and could not be restored: ${error.detail}`,
+          }),
+      ),
+    );
+    if (outcome.status !== "restored" || input.worktreePath === null) {
+      return;
+    }
+    yield* Effect.logInfo("provider command reactor restored missing thread worktree", {
+      threadId: input.threadId,
+      worktreePath: input.worktreePath,
+      branchRecreated: outcome.branchRecreated,
+    });
+    if (Option.isSome(projectSetupScriptRunner)) {
+      yield* projectSetupScriptRunner.value
+        .runForThread({
+          threadId: input.threadId,
+          projectId: input.projectId,
+          ...(input.projectRoot ? { projectCwd: input.projectRoot } : {}),
+          worktreePath: input.worktreePath,
+        })
+        .pipe(Effect.ignore({ log: true, message: "failed to run setup script after restore" }));
+    }
+    const detail = outcome.branchRecreated
+      ? `Worktree cleanup removed this thread's folder and its branch was gone. Rebuilt it at ${input.worktreePath} with a new '${input.branch}' branch from the project's current HEAD.`
+      : `Worktree cleanup removed this thread's folder. Rebuilt it at ${input.worktreePath} from branch '${input.branch ?? "HEAD"}'. Untracked files from the old folder are not recoverable.`;
+    yield* Effect.all({
+      commandId: serverCommandId("worktree-restored-activity"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: "worktree.restored",
+            summary: "Worktree folder restored",
+            payload: { detail },
+            turnId: null,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+      Effect.ignore({ log: true, message: "failed to record worktree restore" }),
+    );
+  });
 
   const formatFailureDetail = (cause: Cause.Cause<unknown>): string => {
     const failReason = cause.reasons.find(Cause.isFailReason);
@@ -781,6 +868,15 @@ const make = Effect.gen(function* () {
     const effectiveCwd = resolveThreadWorkspaceCwd({
       thread,
       projects: project ? [project] : [],
+    });
+    yield* ensureThreadWorktreeOnDisk({
+      threadId,
+      projectId: thread.projectId,
+      projectRoot: project?.workspaceRoot,
+      worktreePath: thread.worktreePath,
+      branch: thread.branch,
+      provider: preferredProvider,
+      createdAt,
     });
 
     const startProviderSession = (input?: {

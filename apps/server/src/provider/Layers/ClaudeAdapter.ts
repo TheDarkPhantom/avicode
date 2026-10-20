@@ -1674,6 +1674,39 @@ function previewUnknownSdkContent(message: unknown): string | undefined {
   return joined.length > 280 ? `${joined.slice(0, 279)}…` : joined;
 }
 
+/**
+ * Avi Code addition: wire-only message kinds the Claude CLI sends that are
+ * absent from the SDK's typed unions, so they cannot be switch cases. None has
+ * a T3 surface: `command_lifecycle` tracks each prompt through
+ * queued/started/completed, `code_change_published` announces a created PR
+ * (the agent's own reply carries the link), `vcs_state_changed` follows a push.
+ * `background_tasks_changed` is a roster snapshot; the task_* lifecycle events
+ * carry the authoritative per-agent data.
+ */
+const IGNORED_UNDECLARED_SDK_MESSAGE_TYPES: ReadonlySet<string> = new Set(["command_lifecycle"]);
+const IGNORED_UNDECLARED_SYSTEM_SUBTYPES: ReadonlySet<string> = new Set([
+  "background_tasks_changed",
+  "code_change_published",
+  "vcs_state_changed",
+]);
+
+/**
+ * Avi Code addition: the OS error code behind a stream failure (for example
+ * "spawn ENOENT" when the working directory is gone). Only the code is
+ * surfaced: the error message itself can carry credential material.
+ */
+function describeStreamFailureCode(cause: unknown): string | undefined {
+  let current: unknown = cause;
+  for (let depth = 0; depth < 4 && typeof current === "object" && current !== null; depth += 1) {
+    const { code, syscall } = current as { code?: unknown; syscall?: unknown };
+    if (typeof code === "string" && /^[A-Z][A-Z0-9_]+$/.test(code)) {
+      return typeof syscall === "string" && /^[a-z_]+$/.test(syscall) ? `${syscall} ${code}` : code;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 function describeUnknownSdkMessage(kind: string, message: unknown): string {
   const preview = previewUnknownSdkContent(message);
   return preview ? `${kind} — ${preview}` : `${kind} (no displayable text content)`;
@@ -3183,13 +3216,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     };
 
     // Undeclared-but-real subtypes (absent from the SDK's union, so they can't
-    // be switch cases): consumed intentionally without emitting, otherwise
-    // they fall through to the unknown-subtype warning and surface as spurious
-    // error rows in client work logs. `background_tasks_changed` is a roster
-    // snapshot ({tasks: [...]}) — the task_* lifecycle events carry the
-    // authoritative per-agent data and the typed background_tasks control
-    // request is the reconciliation source.
-    if ((message.subtype as string) === "background_tasks_changed") {
+    // be switch cases): consumed intentionally without emitting.
+    if (IGNORED_UNDECLARED_SYSTEM_SUBTYPES.has(message.subtype as string)) {
       return;
     }
 
@@ -3436,11 +3464,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // wire-only subtypes (like background_tasks_changed used to be).
         message satisfies never;
         const unknownMessage = message as never as { subtype: string };
-        yield* emitRuntimeWarning(
-          context,
-          describeUnknownSdkMessage(`Claude system message '${unknownMessage.subtype}'`, message),
-          message,
-        );
+        // Avi Code addition: server log only. Every CLI release can add a
+        // wire-only subtype, and as a user-facing warning each one became a red
+        // work-log row on every turn. The native event log keeps the raw payload.
+        yield* Effect.logWarning("claude.sdk.unknown-system-subtype", {
+          threadId: context.session.threadId,
+          description: describeUnknownSdkMessage(
+            `Claude system message '${unknownMessage.subtype}'`,
+            message,
+          ),
+        });
         return;
       }
     }
@@ -3529,6 +3562,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   ) {
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
+    if (IGNORED_UNDECLARED_SDK_MESSAGE_TYPES.has(message.type as string)) {
+      return;
+    }
 
     switch (message.type) {
       case "stream_event":
@@ -3560,11 +3596,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // message types fail typecheck here instead of warning at runtime.
         message satisfies never;
         const unknownMessage = message as never as { type: string };
-        yield* emitRuntimeWarning(
-          context,
-          describeUnknownSdkMessage(`Claude SDK message '${unknownMessage.type}'`, message),
-          message,
-        );
+        // Avi Code addition: server log only (see handleSystemMessage).
+        yield* Effect.logWarning("claude.sdk.unknown-message-type", {
+          threadId: context.session.threadId,
+          description: describeUnknownSdkMessage(
+            `Claude SDK message '${unknownMessage.type}'`,
+            message,
+          ),
+        });
         return;
       }
     }
@@ -3573,16 +3612,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const runSdkStream = (
     context: ClaudeSessionContext,
   ): Effect.Effect<void, ProviderAdapterProcessError> =>
-    Stream.fromAsyncIterable(
-      context.query,
-      (cause) =>
-        new ProviderAdapterProcessError({
-          provider: PROVIDER,
-          threadId: context.session.threadId,
-          detail: "Claude runtime stream failed.",
-          cause,
-        }),
-    ).pipe(
+    Stream.fromAsyncIterable(context.query, (cause) => {
+      const code = describeStreamFailureCode(cause);
+      return new ProviderAdapterProcessError({
+        provider: PROVIDER,
+        threadId: context.session.threadId,
+        detail: code ? `Claude runtime stream failed (${code}).` : "Claude runtime stream failed.",
+        cause,
+      });
+    }).pipe(
       Stream.takeWhile(() => !context.stopped),
       Stream.runForEach((message) =>
         handleSdkMessage(context, message).pipe(

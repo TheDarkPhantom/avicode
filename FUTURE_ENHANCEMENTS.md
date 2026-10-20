@@ -326,6 +326,12 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
 - Sending while dictating sends what is already in the composer and releases the microphone at
   once. Words still in flight to Deepgram at that moment are dropped rather than delaying the send.
 - Editing inside the dictated span while dictating ends the dictation session, with a toast.
+- A thread's worktree is protected from cleanup for 7 days after its last activity. A worktree that
+  cleanup removed anyway is rebuilt from the branch on the next message, but only what git and the
+  setup script recreate comes back: ignored files such as a worktree-local `.env.local` are gone.
+  The window is a constant (`RECENT_THREAD_ACTIVITY_MS`), not a setting. Unrecognised Claude SDK
+  message kinds go to the server log instead of the work log, so a genuinely useful new kind stays
+  invisible until someone maps it.
 
 ## Shipped
 

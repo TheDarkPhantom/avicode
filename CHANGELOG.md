@@ -36,6 +36,15 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Threads keep working after their PR merges, and a removed worktree folder is rebuilt (#279)
+- The work log stops showing red rows for routine Claude status messages (#279)
+
 ## 0.0.31-avicode.9.19 (2026-10-09)
 
 Upstream: t3code 0.0.31

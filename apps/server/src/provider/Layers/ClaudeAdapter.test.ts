@@ -2018,6 +2018,54 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("names the OS error code when the Claude process cannot start", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.fail(
+        Object.assign(new Error("spawn /secret/claude ENOENT"), {
+          code: "ENOENT",
+          syscall: "spawn",
+        }),
+      );
+
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+
+      const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(
+          completed.payload.errorMessage,
+          "Claude runtime stream failed (spawn ENOENT).",
+        );
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("keeps Claude stream failure events structural", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -2350,6 +2398,32 @@ describe("ClaudeAdapterLive", () => {
         { type: "system", subtype: "memory_recall", session_id: "session", uuid: "mr" },
         { type: "system", subtype: "elicitation_complete", session_id: "session", uuid: "ec" },
         { type: "prompt_suggestion", suggestion: "try this", session_id: "session", uuid: "ps" },
+        // Avi Code addition: CLI wire-only kinds, plus made-up future ones that
+        // must land in the server log rather than as work-log warning rows.
+        {
+          type: "command_lifecycle",
+          command_uuid: "cmd-1",
+          state: "started",
+          session_id: "session",
+          uuid: "cl",
+        },
+        {
+          type: "system",
+          subtype: "code_change_published",
+          provider: "github",
+          url: "https://github.com/acme/repo/pull/1",
+          session_id: "session",
+          uuid: "ccp",
+        },
+        {
+          type: "system",
+          subtype: "vcs_state_changed",
+          kind: "push",
+          session_id: "session",
+          uuid: "vsc",
+        },
+        { type: "future_thing", session_id: "session", uuid: "ft" },
+        { type: "system", subtype: "future_subtype", session_id: "session", uuid: "fs" },
         {
           type: "system",
           subtype: "notification",
