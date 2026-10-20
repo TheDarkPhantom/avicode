@@ -1715,53 +1715,55 @@ describe("ProviderCommandReactor", () => {
     expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe("/tmp/provider-project-worktree");
   });
 
-  it("rebuilds a thread worktree that cleanup deleted before starting the provider", async () => {
-    const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-reactor-"));
-    const harness = await createHarness({ baseDir });
-    const now = "2026-01-01T00:00:00.000Z";
-    const worktreePath = NodePath.join(baseDir, "worktrees", "repo", "t3code-deleted1");
+  effectIt.effect(
+    "rebuilds a thread worktree that cleanup deleted before starting the provider",
+    () =>
+      Effect.gen(function* () {
+        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-reactor-"));
+        const harness = yield* Effect.promise(() => createHarness({ baseDir }));
+        const now = "2026-01-01T00:00:00.000Z";
+        const worktreePath = NodePath.join(baseDir, "worktrees", "repo", "t3code-deleted1");
 
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.meta.update",
-        commandId: CommandId.make("cmd-thread-missing-worktree"),
-        threadId: ThreadId.make("thread-1"),
-        branch: "t3code/merged-work",
-        worktreePath,
-      }),
-    );
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.turn.start",
-        commandId: CommandId.make("cmd-turn-start-missing-worktree"),
-        threadId: ThreadId.make("thread-1"),
-        message: {
-          messageId: asMessageId("user-message-missing-worktree"),
-          role: "user",
-          text: "where is the settings file?",
-          attachments: [],
-        },
-        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        runtimeMode: "approval-required",
-        createdAt: now,
-      }),
-    );
+        yield* harness.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("cmd-thread-missing-worktree"),
+          threadId: ThreadId.make("thread-1"),
+          branch: "t3code/merged-work",
+          worktreePath,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-turn-start-missing-worktree"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("user-message-missing-worktree"),
+            role: "user",
+            text: "where is the settings file?",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        });
 
-    await waitFor(() => harness.startSession.mock.calls.length === 1);
-    expect(harness.createWorktree.mock.calls[0]?.[0]).toMatchObject({
-      cwd: "/tmp/provider-project",
-      refName: "t3code/merged-work",
-      path: worktreePath,
-    });
-    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ cwd: worktreePath });
-    await waitFor(async () =>
-      Boolean(
-        (await readThread(harness))?.activities.some(
-          (activity) => activity.kind === "worktree.restored",
-        ),
-      ),
-    );
-  });
+        yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+        expect(harness.createWorktree.mock.calls[0]?.[0]).toMatchObject({
+          cwd: "/tmp/provider-project",
+          refName: "t3code/merged-work",
+          path: worktreePath,
+        });
+        expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ cwd: worktreePath });
+        yield* Effect.promise(() =>
+          waitFor(async () =>
+            Boolean(
+              (await readThread(harness))?.activities.some(
+                (activity) => activity.kind === "worktree.restored",
+              ),
+            ),
+          ),
+        );
+      }),
+  );
 
   it("forwards codex model options through session start and turn send", async () => {
     const harness = await createHarness();
