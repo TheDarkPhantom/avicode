@@ -6076,19 +6076,20 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     if (showPlanFollowUpPrompt && activeProposedPlan) {
+      const followUp = resolvePlanFollowUpSubmission({
+        draftText: trimmed,
+        planMarkdown: activeProposedPlan.planMarkdown,
+        attachmentCount: composerImages.length + composerFiles.length,
+      });
       // Avi Code addition: an empty composer means "implement the plan", but
       // only when the user explicitly triggered the send (Enter key or
       // Implement button). Without this gate a stray programmatic `onSend()`
       // call (e.g. the attachment follow-up effect) would silently start an
-      // implementation the user never asked for. Typed text ("Refine") is
-      // always intentional, so it skips the gate.
-      if (!trimmed && !hasExplicitImplementIntent) {
+      // implementation the user never asked for. Feedback (typed text or
+      // attachments) refines, which is always safe, so it skips the gate.
+      if (followUp.interactionMode === "default" && !hasExplicitImplementIntent) {
         return;
       }
-      const followUp = resolvePlanFollowUpSubmission({
-        draftText: trimmed,
-        planMarkdown: activeProposedPlan.planMarkdown,
-      });
       // Avi Code addition: snapshot the composer's images/documents so the plan
       // follow-up (Refine/Implement) carries them, matching the normal send
       // path. The draft is cleared inside onSubmitPlanFollowUp after the

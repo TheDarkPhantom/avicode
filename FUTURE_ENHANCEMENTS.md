@@ -123,6 +123,10 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
   extension. Review threads are inferred (plan-mode turn + source-plan reference to another
   thread) rather than typed, which holds only while the Codex review flow is the sole creator of
   that shape.
+- Plan follow-ups (Refine and Implement) carry typed text, images, and documents only. Terminal
+  contexts, element contexts, preview annotations, and review comments in the composer are not
+  sent with them and do not switch the button to Refine. Carrying them means reusing the normal
+  send path's `append*ToPrompt` helpers in the plan branch of `ChatView`'s `onSend`.
 - Expired questionnaire answers are restored as plain composer text so the user can confirm and
   resend them. Reconstructing the original multi-step questionnaire would require a durable client
   draft schema and is unnecessary while the plain-text recovery preserves every submitted value.

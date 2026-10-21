@@ -529,6 +529,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isRunning: boolean;
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
+  hasAttachments?: boolean;
   isSendBusy: boolean;
   sendDisabledReason: string | null;
   isConnecting: boolean;
@@ -583,6 +584,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isRunning={props.isRunning}
         showPlanFollowUpPrompt={props.showPlanFollowUpPrompt}
         promptHasText={props.promptHasText}
+        hasAttachments={props.hasAttachments ?? false}
         isSendBusy={props.isSendBusy}
         sendDisabledReason={props.sendDisabledReason}
         isConnecting={props.isConnecting}
@@ -1703,12 +1705,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return "running";
     }
     if (showPlanFollowUpPrompt) {
-      return prompt.trim().length > 0 ? "plan:refine" : "plan:implement";
+      return prompt.trim().length > 0 || composerImages.length + composerFiles.length > 0
+        ? "plan:refine"
+        : "plan:implement";
     }
     return `idle:${composerSendState.hasSendableContent}:${isSendBusy}:${isConnecting}:${isPreparingWorktree}`;
   }, [
     activePendingIsResponding,
     activePendingProgress,
+    composerFiles.length,
+    composerImages.length,
     composerSendState.hasSendableContent,
     isConnecting,
     isPreparingWorktree,
@@ -4467,6 +4473,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isRunning={phase === "running"}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}
                   promptHasText={prompt.trim().length > 0}
+                  hasAttachments={composerImages.length + composerFiles.length > 0}
                   isSendBusy={isSendBusy}
                   sendDisabledReason={sendDisabledReason}
                   isConnecting={isConnecting}

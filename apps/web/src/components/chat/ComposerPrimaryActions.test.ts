@@ -9,22 +9,29 @@ import {
 } from "./ComposerPrimaryActions";
 
 describe("planFollowUpPrimaryAction", () => {
+  const empty = { promptHasText: false, hasAttachments: false };
+
   it("reopens an existing review from an empty plan composer", () => {
-    expect(planFollowUpPrimaryAction({ promptHasText: false, hasLinkedPlanReview: true })).toBe(
-      "review",
-    );
+    expect(planFollowUpPrimaryAction({ ...empty, hasLinkedPlanReview: true })).toBe("review");
   });
 
   it("implements a plan that has no review", () => {
-    expect(planFollowUpPrimaryAction({ promptHasText: false, hasLinkedPlanReview: false })).toBe(
-      "implement",
-    );
+    expect(planFollowUpPrimaryAction({ ...empty, hasLinkedPlanReview: false })).toBe("implement");
   });
 
   it("refines typed feedback even when a review exists", () => {
-    expect(planFollowUpPrimaryAction({ promptHasText: true, hasLinkedPlanReview: true })).toBe(
-      "refine",
-    );
+    expect(
+      planFollowUpPrimaryAction({ ...empty, promptHasText: true, hasLinkedPlanReview: true }),
+    ).toBe("refine");
+  });
+
+  it("refines when only attachments are added", () => {
+    expect(
+      planFollowUpPrimaryAction({ ...empty, hasAttachments: true, hasLinkedPlanReview: false }),
+    ).toBe("refine");
+    expect(
+      planFollowUpPrimaryAction({ ...empty, hasAttachments: true, hasLinkedPlanReview: true }),
+    ).toBe("refine");
   });
 });
 

@@ -7,6 +7,7 @@ import {
   buildPlanReviewPrompt,
   buildPlanReviewThreadTitle,
   buildProposedPlanMarkdownFilename,
+  PLAN_REFINE_ATTACHMENTS_ONLY_PROMPT,
   proposedPlanTitle,
   resolvePlanFollowUpSubmission,
   stripDisplayedPlanMarkdown,
@@ -87,6 +88,7 @@ describe("resolvePlanFollowUpSubmission", () => {
       resolvePlanFollowUpSubmission({
         draftText: "   ",
         planMarkdown: "## Ship it\n\n- step 1\n",
+        attachmentCount: 0,
       }),
     ).toEqual({
       text: "PLEASE IMPLEMENT THIS PLAN:\n## Ship it\n\n- step 1",
@@ -99,9 +101,36 @@ describe("resolvePlanFollowUpSubmission", () => {
       resolvePlanFollowUpSubmission({
         draftText: "Refine step 2 first",
         planMarkdown: "## Ship it\n\n- step 1\n",
+        attachmentCount: 0,
       }),
     ).toEqual({
       text: "Refine step 2 first",
+      interactionMode: "plan",
+    });
+  });
+
+  it("refines instead of implementing when only attachments are added", () => {
+    expect(
+      resolvePlanFollowUpSubmission({
+        draftText: "  ",
+        planMarkdown: "## Ship it\n\n- step 1\n",
+        attachmentCount: 2,
+      }),
+    ).toEqual({
+      text: PLAN_REFINE_ATTACHMENTS_ONLY_PROMPT,
+      interactionMode: "plan",
+    });
+  });
+
+  it("keeps the typed feedback when text and attachments are both present", () => {
+    expect(
+      resolvePlanFollowUpSubmission({
+        draftText: "Match this mockup",
+        planMarkdown: "## Ship it\n\n- step 1\n",
+        attachmentCount: 1,
+      }),
+    ).toEqual({
+      text: "Match this mockup",
       interactionMode: "plan",
     });
   });
