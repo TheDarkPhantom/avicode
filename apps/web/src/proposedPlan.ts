@@ -106,7 +106,20 @@ PROPOSED PLAN:
 ${planMarkdown.trim()}`;
 }
 
-export function resolvePlanFollowUpSubmission(input: { draftText: string; planMarkdown: string }): {
+/** Avi Code addition: the refine prompt sent when feedback is attachments with no text. */
+export const PLAN_REFINE_ATTACHMENTS_ONLY_PROMPT =
+  "Refine the plan using the attached file(s) as feedback.";
+
+/**
+ * Decides whether a plan follow-up refines or implements. Typed text or any
+ * attachment (Avi Code addition) counts as feedback; only a fully empty
+ * composer implements.
+ */
+export function resolvePlanFollowUpSubmission(input: {
+  draftText: string;
+  planMarkdown: string;
+  attachmentCount: number;
+}): {
   text: string;
   interactionMode: "default" | "plan";
 } {
@@ -114,6 +127,12 @@ export function resolvePlanFollowUpSubmission(input: { draftText: string; planMa
   if (trimmedDraftText.length > 0) {
     return {
       text: trimmedDraftText,
+      interactionMode: "plan",
+    };
+  }
+  if (input.attachmentCount > 0) {
+    return {
+      text: PLAN_REFINE_ATTACHMENTS_ONLY_PROMPT,
       interactionMode: "plan",
     };
   }

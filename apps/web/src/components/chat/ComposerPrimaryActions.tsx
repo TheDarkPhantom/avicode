@@ -21,6 +21,8 @@ interface ComposerPrimaryActionsProps {
   isRunning: boolean;
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
+  /** Avi Code addition: attachments count as plan feedback, like typed text. */
+  hasAttachments?: boolean;
   isSendBusy: boolean;
   sendDisabledReason: string | null;
   isConnecting: boolean;
@@ -107,9 +109,10 @@ export function canSubmitComposerProviderState(input: {
 
 export function planFollowUpPrimaryAction(input: {
   readonly promptHasText: boolean;
+  readonly hasAttachments: boolean;
   readonly hasLinkedPlanReview: boolean;
 }): "refine" | "review" | "implement" {
-  if (input.promptHasText) return "refine";
+  if (input.promptHasText || input.hasAttachments) return "refine";
   return input.hasLinkedPlanReview ? "review" : "implement";
 }
 
@@ -133,6 +136,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isRunning,
   showPlanFollowUpPrompt,
   promptHasText,
+  hasAttachments = false,
   isSendBusy,
   sendDisabledReason,
   isConnecting,
@@ -257,7 +261,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   }
 
   if (showPlanFollowUpPrompt) {
-    const planAction = planFollowUpPrimaryAction({ promptHasText, hasLinkedPlanReview });
+    const planAction = planFollowUpPrimaryAction({
+      promptHasText,
+      hasAttachments,
+      hasLinkedPlanReview,
+    });
     if (planAction === "refine") {
       return (
         <Button
