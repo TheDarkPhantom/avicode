@@ -375,10 +375,15 @@ const make = Effect.gen(function* () {
     return { settings: decoded.value, parseFailure: Option.none() };
   });
 
-  const settingsCache = yield* Cache.make<typeof cacheKey, LoadedSettings, ServerSettingsError>({
-    capacity: 1,
-    lookup: () => loadSettingsFromDisk,
-  });
+  // Failed reads are not cached: a save that hits a briefly locked file (antivirus, sync tools)
+  // must not leave every later read failing until the file changes again.
+  const settingsCache = yield* Cache.makeWith<typeof cacheKey, LoadedSettings, ServerSettingsError>(
+    () => loadSettingsFromDisk,
+    {
+      capacity: 1,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
+    },
+  );
 
   const getSettingsFromCache = Cache.get(settingsCache, cacheKey).pipe(
     Effect.map((loaded) => loaded.settings),
