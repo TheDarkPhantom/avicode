@@ -11,7 +11,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 import { isAbsolutePathForPlatform } from "./launchTargetPath.ts";
@@ -94,6 +94,77 @@ it.effect("launches the default browser through the platform command", () => {
         },
       }),
     ),
+  );
+});
+
+it.effect.skipIf(windowsHost)(
+  "launched browsers and editors do not inherit ELECTRON_RUN_AS_NODE",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
+      const codePath = path.join(binDir, "code");
+      yield* fileSystem.writeFileString(codePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(codePath, 0o755);
+
+      const spawned: ChildProcess.StandardCommand[] = [];
+      yield* Effect.gen(function* () {
+        const launcher = yield* ExternalLauncher.ExternalLauncher;
+        yield* launcher.launchBrowser("https://example.com");
+        yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace" });
+      }).pipe(
+        Effect.provide(
+          testLayer({
+            platform: "linux",
+            env: { PATH: binDir, DISPLAY: ":0" },
+            onSpawn: (command) => spawned.push(command),
+          }),
+        ),
+        Effect.provideService(HostProcessEnvironment, {
+          PATH: binDir,
+          DISPLAY: ":0",
+          ELECTRON_RUN_AS_NODE: "1",
+        }),
+      );
+
+      assert.deepEqual(
+        spawned.map((command) => ({
+          command: command.command,
+          env: command.options.env,
+          extendEnv: command.options.extendEnv,
+        })),
+        ["xdg-open", "code"].map((command) => ({
+          command,
+          env: { PATH: binDir, DISPLAY: ":0" },
+          extendEnv: false,
+        })),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("launched Windows browsers do not inherit ELECTRON_RUN_AS_NODE", () => {
+  let spawned: ChildProcess.StandardCommand | undefined;
+  return Effect.gen(function* () {
+    const launcher = yield* ExternalLauncher.ExternalLauncher;
+    yield* launcher.launchBrowser("https://example.com");
+    assert.ok(spawned);
+    assert.deepEqual(spawned.options.env, { Path: "C:\\Windows" });
+    assert.equal(spawned.options.extendEnv, false);
+  }).pipe(
+    Effect.provide(
+      testLayer({
+        platform: "win32",
+        env: { SYSTEMROOT: "C:\\Windows" },
+        onSpawn: (command) => {
+          spawned = command;
+        },
+      }),
+    ),
+    Effect.provideService(HostProcessEnvironment, {
+      Path: "C:\\Windows",
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
   );
 });
 
