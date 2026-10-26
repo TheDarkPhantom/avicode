@@ -52,6 +52,7 @@ import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../..
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDisabledReason,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -471,7 +472,7 @@ function AboutVersionSection() {
   const description =
     action === "download" || action === "install"
       ? "Update available."
-      : "Current version of the application.";
+      : (getDesktopUpdateDisabledReason(updateState) ?? "Current version of the application.");
 
   return (
     <>
