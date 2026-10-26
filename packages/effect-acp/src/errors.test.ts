@@ -12,6 +12,13 @@ const decodeNestedNumberPayload = Schema.decodeUnknownEffect(
 );
 const encodeUnknownJson = Schema.encodeSync(Schema.UnknownFromJsonString);
 
+const decodeSummaryPayload = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    update: Schema.Struct({ used: Schema.Number, size: Schema.Number }),
+    env: Schema.Record(Schema.String, Schema.Number),
+  }),
+);
+
 describe("effect-acp errors", () => {
   it.effect("retains RPC method and cause without deriving the message from the cause", () => {
     const rootCause = new Error("connection details that must not become the public message");
@@ -141,6 +148,31 @@ describe("effect-acp errors", () => {
       expect(protocolError.message).not.toContain(secret);
       expect(encodeUnknownJson(protocolDiagnostics)).not.toContain(secret);
       expect("detail" in protocolError).toBe(false);
+    }),
+  );
+
+  // The summary goes into logs, so it names where a payload broke its schema
+  // and never copies a value, including a record key the agent chose.
+  it.effect("summarizes schema issues by path without payload values", () =>
+    Effect.gen(function* () {
+      const secret = "acp-summary-secret";
+      const cause = yield* decodeSummaryPayload(
+        { update: { size: secret }, env: { [`${secret} key`]: secret } },
+        { errors: "all" },
+      ).pipe(Effect.flip);
+      const error = AcpError.AcpProtocolParseError.fromSchemaError(
+        "decode-notification-payload",
+        "session/update",
+        cause,
+      );
+
+      expect(error.issueSummary).toBe(
+        "update.used missing, update.size wrong type, env.* wrong type",
+      );
+      expect(error.message).toBe(
+        "ACP protocol operation 'decode-notification-payload' failed for method 'session/update': update.used missing, update.size wrong type, env.* wrong type.",
+      );
+      expect(error.message).not.toContain(secret);
     }),
   );
 });
