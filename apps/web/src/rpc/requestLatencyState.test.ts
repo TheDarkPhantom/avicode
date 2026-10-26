@@ -6,6 +6,7 @@ import {
   getSlowRpcAckRequests,
   resetRequestLatencyStateForTests,
   trackRpcRequestSent,
+  LONG_RUNNING_RPC_ACK_THRESHOLD_MS,
   SLOW_RPC_ACK_THRESHOLD_MS,
   MAX_TRACKED_RPC_ACK_REQUESTS,
 } from "./requestLatencyState";
@@ -56,6 +57,37 @@ describe("requestLatencyState", () => {
     vi.advanceTimersByTime(SLOW_RPC_ACK_THRESHOLD_MS * 2);
 
     expect(getSlowRpcAckRequests()).toEqual([]);
+  });
+
+  it("keeps ignoring untracked methods when a display tag is supplied", () => {
+    trackRpcRequestSent(
+      "1",
+      WS_METHODS.previewAutomationConnect,
+      `${WS_METHODS.previewAutomationConnect} · env-1`,
+    );
+    vi.advanceTimersByTime(SLOW_RPC_ACK_THRESHOLD_MS * 2);
+
+    expect(getSlowRpcAckRequests()).toEqual([]);
+  });
+
+  it.each([
+    WS_METHODS.serverUpdateProvider,
+    WS_METHODS.serverRefreshProviders,
+    WS_METHODS.serverUpdateServer,
+    WS_METHODS.vcsRefreshStatus,
+  ])("gives %s a longer threshold before warning", (method) => {
+    trackRpcRequestSent("1", method, `${method} · env-1`);
+    vi.advanceTimersByTime(LONG_RUNNING_RPC_ACK_THRESHOLD_MS - 1);
+    expect(getSlowRpcAckRequests()).toEqual([]);
+
+    vi.advanceTimersByTime(1);
+    expect(getSlowRpcAckRequests()).toMatchObject([
+      {
+        requestId: "1",
+        tag: `${method} · env-1`,
+        thresholdMs: LONG_RUNNING_RPC_ACK_THRESHOLD_MS,
+      },
+    ]);
   });
 
   it("evicts the oldest pending requests once the tracker reaches capacity", () => {
