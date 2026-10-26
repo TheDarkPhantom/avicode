@@ -347,9 +347,16 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  // `parseFailure` is set when settings.json exists but does not decode. The
+  // file must stay on disk for the user to repair, so saves refuse to run.
+  interface LoadedSettings {
+    readonly settings: ServerSettings;
+    readonly parseFailure: Option.Option<unknown>;
+  }
+
   const loadSettingsFromDisk = Effect.gen(function* () {
     if (!(yield* readConfigExists)) {
-      return DEFAULT_SERVER_SETTINGS;
+      return { settings: DEFAULT_SERVER_SETTINGS, parseFailure: Option.none() };
     }
 
     const raw = yield* readRawConfig;
@@ -360,17 +367,27 @@ const make = Effect.gen(function* () {
         issues: Cause.pretty(decoded.cause),
         cause: decoded.cause,
       });
-      return DEFAULT_SERVER_SETTINGS;
+      return {
+        settings: DEFAULT_SERVER_SETTINGS,
+        parseFailure: Option.some(Cause.squash(decoded.cause)),
+      };
     }
-    return decoded.value;
+    return { settings: decoded.value, parseFailure: Option.none() };
   });
 
-  const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({
+  const settingsCache = yield* Cache.make<typeof cacheKey, LoadedSettings, ServerSettingsError>({
     capacity: 1,
     lookup: () => loadSettingsFromDisk,
   });
 
-  const getSettingsFromCache = Cache.get(settingsCache, cacheKey);
+  const getSettingsFromCache = Cache.get(settingsCache, cacheKey).pipe(
+    Effect.map((loaded) => loaded.settings),
+  );
+  // Saves start from the file, not the cache: the watcher may not have
+  // reloaded an external edit yet, and saving the cached copy would revert it.
+  const reloadSettings = Cache.invalidate(settingsCache, cacheKey).pipe(
+    Effect.andThen(Cache.get(settingsCache, cacheKey)),
+  );
 
   const materializeProviderEnvironmentSecrets = (
     settings: ServerSettings,
@@ -731,8 +748,7 @@ const make = Effect.gen(function* () {
 
   const revalidateAndEmit = writeSemaphore.withPermits(1)(
     Effect.gen(function* () {
-      yield* Cache.invalidate(settingsCache, cacheKey);
-      const settings = yield* getSettingsFromCache;
+      const { settings } = yield* reloadSettings;
       yield* emitChange(settings);
     }),
   );
@@ -784,8 +800,7 @@ const make = Effect.gen(function* () {
 
     const startup = Effect.gen(function* () {
       yield* startWatcher;
-      yield* Cache.invalidate(settingsCache, cacheKey);
-      yield* getSettingsFromCache;
+      yield* reloadSettings;
     });
 
     const startupExit = yield* Effect.exit(startup);
@@ -807,14 +822,24 @@ const make = Effect.gen(function* () {
     updateSettings: (patch) =>
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
-          const current = yield* getSettingsFromCache;
+          const { settings: current, parseFailure } = yield* reloadSettings;
+          if (Option.isSome(parseFailure)) {
+            return yield* new ServerSettingsError({
+              settingsPath,
+              operation: "read-file",
+              cause: parseFailure.value,
+            });
+          }
           const nextPersisted = yield* persistSecrets(
             current,
             applyServerSettingsPatch(current, patch),
           );
           const next = yield* normalizeServerSettings(nextPersisted);
           yield* writeSettingsAtomically(next);
-          yield* Cache.set(settingsCache, cacheKey, next);
+          yield* Cache.set(settingsCache, cacheKey, {
+            settings: next,
+            parseFailure: Option.none(),
+          });
           yield* emitChange(next);
           const materialized = yield* materializeSecrets(next);
           return resolveTextGenerationProvider(materialized);
