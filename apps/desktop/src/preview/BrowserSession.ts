@@ -23,12 +23,13 @@ const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
 const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set([
   "clipboard-read",
   "clipboard-sanitized-write",
-  "notifications",
   "geolocation",
   // The Fullscreen API. `DesktopWindow` disables HTML fullscreen window resizing
   // for the app window and every preview guest, so a page that goes fullscreen
   // fills its own webview instead of taking over the whole app window.
   "fullscreen",
+  // Deliberately NOT notifications: a page could post OS notifications branded
+  // as the app. The app's own come from the app window on the default session.
 ]);
 
 /**
