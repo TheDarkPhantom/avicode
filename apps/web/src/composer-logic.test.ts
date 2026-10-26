@@ -78,6 +78,15 @@ describe("composerSubmissionIntentForEnter", () => {
 });
 
 describe("detectComposerTrigger", () => {
+  it.each([
+    ["Run /tmp/build.sh", "Run /tmp/build.sh".length],
+    ["/etc/hosts", "/etc/hosts".length],
+    ["/src/foo.ts", "/sr".length],
+    ["Use /etc/hosts now", "Use /et".length],
+  ])("keeps the path in %j out of the slash menu", (text, cursor) => {
+    expect(detectComposerTrigger(text, cursor)).toBeNull();
+  });
+
   it("detects @path trigger at cursor", () => {
     const text = "Please check @src/com";
     const trigger = detectComposerTrigger(text, text.length);
