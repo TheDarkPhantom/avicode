@@ -111,6 +111,18 @@ describe("extractTerminalLinks", () => {
     ]);
   });
 
+  it.each([
+    "src/żółć.ts:12:7",
+    "żółć/main.ts:12",
+    String.raw`żółć\main.ts:12`,
+    "src/café.ts:12",
+    "src/𐐀.ts:12",
+  ])("keeps the complete Unicode relative path %s", (text) => {
+    expect(extractTerminalLinks(`see ${text} for details`)).toEqual([
+      { kind: "path", text, start: 4, end: 4 + text.length },
+    ]);
+  });
+
   it("finds Windows absolute paths with forward slashes", () => {
     const line = "see C:/Users/someone/project/src/file.ts:42 for details";
     const path = "C:/Users/someone/project/src/file.ts:42";
