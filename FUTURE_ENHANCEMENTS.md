@@ -35,8 +35,33 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - The zoomed titlebar fix (#15496) covers the chat panels only. The settings, changelog and usage
     headers still read the raw titlebar values and likely misplace controls under zoom.
   - Sending on an older thread (#15059) fixes upstream's runs import, which the fork lacks.
-- Round 3 of 2026-10-09 (#270 to #274) reviewed upstream through `563645cf6e`; the next review
-  starts there. It left out:
+- Upstream sync of 2026-10-26 (#282 to #285) reviewed upstream through `8ecb607de4`; the next
+  review starts there. It hand-ported about 50 of 2,009 commits and left out:
+  - Not yet ported, pending a go-ahead: the Windows server batch. Git launcher token leak (#17707),
+    idle terminal process scans (#21242), PowerShell port scans (#18524), PowerShell browser
+    launch (#19656), `ELECTRON_RUN_AS_NODE` leaking into launched apps (#20206), worktree junction
+    cleanup (#15833), worktree creation races (#19411, #11773), settings save retries (#21062),
+    shell fixes (#19385, #19965, #19525, #21103), terminal kill and history saves (#18519, #17181,
+    #17179, #21209), and the `.cmd` editor path injection guard (#17749).
+  - Never port: the 14 desktop fixes upstream reverted in #22222 (including #21273, #19467,
+    #21225, #19232, #15995), and migrations 061 to 066. `063_DropUnusedV1Projections` drops tables
+    the fork's V1 orchestration reads.
+  - V2 and rewrite-only work: about 40 Claude V2 adapter fixes, Codex "always allow this session"
+    (`39aeaf404a`), the Tiptap composer, the ghostty terminal, the SQLite reader-worker series, the
+    re-render series built on `ThreadRouteView`, and 254 React Compiler conversions.
+  - Dependency jumps, each its own project: Effect 4.0.x stable, Electron 44, TypeScript 7,
+    `@pierre/diffs` 1.5, and fff 0.11 (#14543, #18514, which also needs its patch replaced).
+  - Not applicable: #21658 (needs the staged WSL runtime), #18414 (needs upstream's backend
+    restart after a failed install, #6554), #16544 (the fork's OpenCode version probe has no
+    timeout), #21510 (no automations), `196c397b1b` (no OS thread notifications).
+  - Partial: #7829 without `differentialPackage`; #18404 without the sidebar update pill tooltip.
+    A failed update install leaves backends stopped until the app restarts.
+  - The jsdom test for #19312 and the browser test for #21269 were not ported; the fork has no
+    harness for them. Grok and Codex text generation tests use `/bin/sh` fakes and run only on CI.
+  - The Windows packaging job runs only on `chore/upstream-sync-*` branches or a manual dispatch,
+    so installer changes need a dispatched run before merge.
+- Round 3 of 2026-10-09 (#270 to #274) reviewed upstream through `563645cf6e` (the 2026-10-26
+  sync above moves the marker). It left out:
   - Find in thread (#10439, about 8,000 lines on upstream-only parts) and the provider package
     split (#17299 onward), which only makes later ports harder.
   - #17360, #16730, #17016, #17378 and #17372 do not apply to the fork.
