@@ -77,9 +77,8 @@ function maxDrawerHeight(): number {
   return Math.max(MIN_DRAWER_HEIGHT, Math.floor(window.innerHeight * MAX_DRAWER_HEIGHT_RATIO));
 }
 
-function clampDrawerHeight(height: number): number {
+function clampDrawerHeight(height: number, maxHeight = maxDrawerHeight()): number {
   const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
-  const maxHeight = maxDrawerHeight();
   return Math.min(Math.max(Math.round(safeHeight), MIN_DRAWER_HEIGHT), maxHeight);
 }
 
@@ -924,13 +923,16 @@ export default function ThreadTerminalDrawer({
   terminalLaunchLocationsById,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
-  const controlledDrawerHeight = clampDrawerHeight(height);
+  // The stored height is the user's preference; the window only clamps what renders.
+  const controlledDrawerHeight = height;
+  const [windowMaxDrawerHeight, setWindowMaxDrawerHeight] = useState(maxDrawerHeight);
   const [drawerHeightState, setDrawerHeightState] = useState(() => ({
     threadId,
     height: controlledDrawerHeight,
   }));
-  const drawerHeight =
+  const preferredDrawerHeight =
     drawerHeightState.threadId === threadId ? drawerHeightState.height : controlledDrawerHeight;
+  const drawerHeight = clampDrawerHeight(preferredDrawerHeight, windowMaxDrawerHeight);
   const setDrawerHeight = useCallback(
     (update: SetStateAction<number>) => {
       setDrawerHeightState((current) => {
@@ -944,17 +946,16 @@ export default function ThreadTerminalDrawer({
     },
     [controlledDrawerHeight, threadId],
   );
-  const setDrawerHeightFromWindowResize = useEffectEvent((nextHeight: number) => {
-    setDrawerHeight(nextHeight);
-  });
   const [resizeEpoch, setResizeEpoch] = useState(0);
   const drawerHeightRef = useRef(drawerHeight);
+  const preferredDrawerHeightRef = useRef(preferredDrawerHeight);
   const lastSyncedHeightRef = useRef(controlledDrawerHeight);
   const onHeightChangeRef = useRef(onHeightChange);
   const resizeStateRef = useRef<{
     pointerId: number;
     startY: number;
     startHeight: number;
+    startPreferredHeight: number;
   } | null>(null);
   const didResizeDuringDragRef = useRef(false);
 
@@ -1128,11 +1129,14 @@ export default function ThreadTerminalDrawer({
     drawerHeightRef.current = drawerHeight;
   }, [drawerHeight]);
 
+  useEffect(() => {
+    preferredDrawerHeightRef.current = preferredDrawerHeight;
+  }, [preferredDrawerHeight]);
+
   const syncHeight = useCallback((nextHeight: number) => {
-    const clampedHeight = clampDrawerHeight(nextHeight);
-    if (lastSyncedHeightRef.current === clampedHeight) return;
-    lastSyncedHeightRef.current = clampedHeight;
-    onHeightChangeRef.current(clampedHeight);
+    if (lastSyncedHeightRef.current === nextHeight) return;
+    lastSyncedHeightRef.current = nextHeight;
+    onHeightChangeRef.current(nextHeight);
   }, []);
 
   useEffect(() => {
@@ -1148,6 +1152,7 @@ export default function ThreadTerminalDrawer({
       pointerId: event.pointerId,
       startY: event.clientY,
       startHeight: drawerHeightRef.current,
+      startPreferredHeight: preferredDrawerHeightRef.current,
     };
   }, []);
 
@@ -1180,10 +1185,16 @@ export default function ThreadTerminalDrawer({
       if (!didResizeDuringDragRef.current) {
         return;
       }
+      // A drag that ends where it started keeps the stored preference, which may
+      // be taller than the window-capped height the drag started from.
+      if (drawerHeightRef.current === resizeState.startHeight) {
+        setDrawerHeight(resizeState.startPreferredHeight);
+        return;
+      }
       syncHeight(drawerHeightRef.current);
       setResizeEpoch((value) => value + 1);
     },
-    [syncHeight],
+    [setDrawerHeight, syncHeight],
   );
 
   useEffect(() => {
@@ -1191,34 +1202,29 @@ export default function ThreadTerminalDrawer({
       return;
     }
 
+    // A smaller window only caps the rendered height; the stored preference
+    // stays, so the drawer grows back when the window does.
     const onWindowResize = () => {
-      const clampedHeight = clampDrawerHeight(drawerHeightRef.current);
-      const changed = clampedHeight !== drawerHeightRef.current;
-      if (changed) {
-        setDrawerHeightFromWindowResize(clampedHeight);
-        drawerHeightRef.current = clampedHeight;
-      }
-      if (!resizeStateRef.current) {
-        syncHeight(clampedHeight);
-      }
+      setWindowMaxDrawerHeight(maxDrawerHeight());
       setResizeEpoch((value) => value + 1);
     };
     window.addEventListener("resize", onWindowResize);
     return () => {
       window.removeEventListener("resize", onWindowResize);
     };
-  }, [syncHeight, visible]);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) {
       return;
     }
+    setWindowMaxDrawerHeight(maxDrawerHeight());
     setResizeEpoch((value) => value + 1);
   }, [visible]);
 
   useEffect(() => {
     return () => {
-      syncHeight(drawerHeightRef.current);
+      syncHeight(preferredDrawerHeightRef.current);
     };
   }, [syncHeight]);
 
