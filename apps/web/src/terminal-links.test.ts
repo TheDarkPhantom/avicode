@@ -115,7 +115,7 @@ describe("extractTerminalLinks", () => {
     "src/żółć.ts:12:7",
     "żółć/main.ts:12",
     String.raw`żółć\main.ts:12`,
-    "src/café.ts:12",
+    "src/cafe\u0301.ts:12",
     "src/𐐀.ts:12",
   ])("keeps the complete Unicode relative path %s", (text) => {
     expect(extractTerminalLinks(`see ${text} for details`)).toEqual([
@@ -221,7 +221,63 @@ describe("collectWrappedTerminalLinkLine", () => {
   });
 });
 
+// Builds a line from terminal cells the way xterm stores them: a wide glyph fills its column and
+// leaves a zero-width cell after it, and combining marks share their base cell.
+function createCellBufferLine(cells: ReadonlyArray<string>): TerminalBufferLineLike {
+  const columns: Array<{ chars: string; width: number }> = [];
+  for (const chars of cells) {
+    const wide = /\p{Script=Han}/u.test(chars);
+    columns.push({ chars, width: wide ? 2 : 1 });
+    if (wide) columns.push({ chars: "", width: 0 });
+  }
+  const text = columns.map((cell) => cell.chars).join("");
+  return {
+    length: columns.length,
+    translateToString: (trimRight = false) => (trimRight ? text.replace(/\s+$/u, "") : text),
+    getCell: (x) => {
+      const cell = columns[x];
+      return cell && { getChars: () => cell.chars, getWidth: () => cell.width };
+    },
+  };
+}
+
 describe("resolveWrappedTerminalLinkRange", () => {
+  it("maps links after wide and combining characters to their terminal columns", () => {
+    const line = createCellBufferLine([
+      ..."ls ",
+      "文",
+      "档",
+      "/",
+      "报",
+      "告",
+      " ",
+      "c",
+      "a",
+      "f",
+      "e\u0301",
+      "/",
+      "a",
+    ]);
+    const wrappedLine = collectWrappedTerminalLinkLine(1, () => line);
+    if (!wrappedLine) throw new Error("Expected terminal line to be present.");
+
+    const [cjk, accented] = extractTerminalLinks(wrappedLine.text);
+    if (!cjk || !accented) throw new Error("Expected both path links.");
+    expect(cjk.text).toBe("文档/报告");
+    expect(accented.text).toBe("cafe\u0301/a");
+
+    // "ls " fills columns 1-3; each Han glyph spans two columns, so the link ends at column 12.
+    expect(resolveWrappedTerminalLinkRange(wrappedLine, cjk)).toEqual({
+      start: { x: 4, y: 1 },
+      end: { x: 12, y: 1 },
+    });
+    // The combining accent shares the "e" column, so "/a" still lands on columns 18-19.
+    expect(resolveWrappedTerminalLinkRange(wrappedLine, accented)).toEqual({
+      start: { x: 14, y: 1 },
+      end: { x: 19, y: 1 },
+    });
+  });
+
   it("maps wrapped URL matches back to the correct buffer rows", () => {
     const prefix = "see ";
     const firstSegment = `${prefix}https://example.com/a`;

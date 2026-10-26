@@ -862,6 +862,32 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("reads settings again after a save hit an unreadable settings file", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* serverSettings.getSettings;
+
+      // A directory in place of the file makes the read fail, like a locked file on Windows.
+      yield* fileSystem.remove(serverConfig.settingsPath, { force: true });
+      yield* fileSystem.makeDirectory(serverConfig.settingsPath);
+      const error = yield* Effect.flip(
+        serverSettings.updateSettings({ addProjectBaseDirectory: "~/Locked" }),
+      );
+      assert.equal(error.operation, "read-file");
+
+      // Reads recover as soon as the file is readable again, without waiting for a watcher event.
+      yield* fileSystem.remove(serverConfig.settingsPath, { recursive: true });
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"addProjectBaseDirectory":"~/Recovered"}',
+      );
+      const settings = yield* serverSettings.getSettings;
+      assert.equal(settings.addProjectBaseDirectory, "~/Recovered");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("moves a hand-edited Bitbucket token into the secret store on the next write", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

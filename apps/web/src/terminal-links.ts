@@ -19,9 +19,16 @@ export interface TerminalLinkBufferRange {
   end: TerminalLinkBufferPosition;
 }
 
+export interface TerminalBufferCellLike {
+  getChars(): string;
+  getWidth(): number;
+}
+
 export interface TerminalBufferLineLike {
   readonly isWrapped?: boolean;
+  readonly length?: number;
   translateToString(trimRight?: boolean): string;
+  getCell?(x: number): TerminalBufferCellLike | undefined;
 }
 
 export interface WrappedTerminalLinkLineSegment {
@@ -29,6 +36,12 @@ export interface WrappedTerminalLinkLineSegment {
   text: string;
   startIndex: number;
   endIndex: number;
+  /**
+   * First and last terminal column (0-based) of each UTF-16 unit in `text`. Wide CJK glyphs span
+   * two columns and combining marks share their base's column, so string indexes drift from
+   * columns. Absent when the line exposes no cells; columns then equal indexes.
+   */
+  columns?: ReadonlyArray<readonly [first: number, last: number]>;
 }
 
 export interface WrappedTerminalLinkLine {
@@ -217,12 +230,14 @@ export function collectWrappedTerminalLinkLine(
     const nextLine = getLine(currentBufferLineNumber);
     const hasWrappedContinuation = nextLine?.isWrapped === true;
     const text = currentLine.translateToString(!hasWrappedContinuation);
+    const columns = resolveTextColumns(currentLine, text);
 
     segments.push({
       bufferLineNumber: currentBufferLineNumber,
       text,
       startIndex: nextStartIndex,
       endIndex: nextStartIndex + text.length,
+      ...(columns ? { columns } : {}),
     });
     nextStartIndex += text.length;
 
@@ -236,22 +251,49 @@ export function collectWrappedTerminalLinkLine(
   };
 }
 
+// Maps each UTF-16 unit of `text` to the terminal columns it occupies, by walking the line's
+// cells the way xterm's translateToString does. Returns undefined when the cells are unavailable
+// or do not reproduce `text`, so callers fall back to treating indexes as columns.
+function resolveTextColumns(
+  line: TerminalBufferLineLike,
+  text: string,
+): Array<readonly [number, number]> | undefined {
+  if (!line.getCell || line.length === undefined) return undefined;
+  const columns: Array<readonly [number, number]> = [];
+  let rebuilt = "";
+  for (let x = 0; x < line.length && rebuilt.length < text.length; x += 1) {
+    const cell = line.getCell(x);
+    if (!cell) return undefined;
+    const width = cell.getWidth();
+    if (width === 0) continue;
+    const chars = cell.getChars() || " ";
+    const last = x + Math.max(width, 1) - 1;
+    for (let unit = 0; unit < chars.length; unit += 1) columns.push([x, last]);
+    rebuilt += chars;
+  }
+  return rebuilt.startsWith(text) ? columns.slice(0, text.length) : undefined;
+}
+
 function resolveCharacterPosition(
   segments: ReadonlyArray<WrappedTerminalLinkLineSegment>,
   characterIndex: number,
+  edge: "start" | "end",
 ): TerminalLinkBufferPosition {
   for (const segment of segments) {
     if (characterIndex < segment.endIndex) {
+      const offset = characterIndex - segment.startIndex;
+      const column = segment.columns?.[offset];
       return {
-        x: characterIndex - segment.startIndex + 1,
+        x: (column ? (edge === "start" ? column[0] : column[1]) : offset) + 1,
         y: segment.bufferLineNumber,
       };
     }
   }
 
   const lastSegment = segments[segments.length - 1];
+  const lastColumn = lastSegment?.columns?.at(-1)?.[1];
   return {
-    x: Math.max(lastSegment?.text.length ?? 0, 1),
+    x: Math.max(lastColumn === undefined ? (lastSegment?.text.length ?? 0) : lastColumn + 1, 1),
     y: lastSegment?.bufferLineNumber ?? 1,
   };
 }
@@ -261,8 +303,8 @@ export function resolveWrappedTerminalLinkRange(
   match: Pick<TerminalLinkMatch, "start" | "end">,
 ): TerminalLinkBufferRange {
   return {
-    start: resolveCharacterPosition(wrappedLine.segments, match.start),
-    end: resolveCharacterPosition(wrappedLine.segments, match.end - 1),
+    start: resolveCharacterPosition(wrappedLine.segments, match.start, "start"),
+    end: resolveCharacterPosition(wrappedLine.segments, match.end - 1, "end"),
   };
 }
 
