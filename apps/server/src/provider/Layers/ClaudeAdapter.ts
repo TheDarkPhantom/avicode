@@ -6,6 +6,8 @@
  *
  * @module ClaudeAdapterLive
  */
+import * as NodeOS from "node:os";
+
 import {
   type CanUseTool,
   query,
@@ -920,6 +922,60 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
       : {}),
   };
 }
+
+const decodeClaudeTranscriptLine = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ type: Schema.String })),
+);
+
+const isClaudeConversationLine = (line: string): boolean =>
+  Option.match(decodeClaudeTranscriptLine(line), {
+    onNone: () => false,
+    onSome: (entry) => entry.type === "user" || entry.type === "assistant",
+  });
+
+/**
+ * A CLI stopped before it saved the first prompt can leave a transcript with
+ * only metadata lines. Claude can neither resume that id nor create it again,
+ * so `startSession` starts a fresh session instead. Empty only when every copy
+ * of the id is empty; any message (or no transcript at all) leaves the resume
+ * to the CLI, as before.
+ */
+export const hasEmptyClaudeTranscript = Effect.fn("hasEmptyClaudeTranscript")(function* (input: {
+  readonly sessionId: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly cwd: string | undefined;
+}) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const configuredDir = input.environment.CLAUDE_CONFIG_DIR?.trim() ?? "";
+  const projectsDir = path.join(
+    configuredDir.length > 0
+      ? path.resolve(input.cwd ?? ".", configuredDir)
+      : path.join(NodeOS.homedir(), ".claude"),
+    "projects",
+  );
+  let found = false;
+  for (const project of yield* fileSystem.readDirectory(projectsDir)) {
+    const transcriptPath = path.join(projectsDir, project, `${input.sessionId}.jsonl`);
+    // Stray files beside the project dirs fail with ENOTDIR.
+    if (!(yield* fileSystem.exists(transcriptPath).pipe(Effect.orElseSucceed(() => false)))) {
+      continue;
+    }
+    const conversationLine = yield* fileSystem
+      .stream(transcriptPath)
+      .pipe(
+        Stream.decodeText,
+        Stream.splitLines,
+        Stream.filter(isClaudeConversationLine),
+        Stream.runHead,
+      );
+    if (Option.isSome(conversationLine)) {
+      return false;
+    }
+    found = true;
+  }
+  return found;
+});
 
 function classifyToolItemType(toolName: string): CanonicalItemType {
   const normalized = toolName.toLowerCase();
@@ -3862,7 +3918,33 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }
 
       const startedAt = yield* nowIso;
-      const resumeState = readClaudeResumeState(input.resumeCursor);
+      const cursorResumeState = readClaudeResumeState(input.resumeCursor);
+      const resumeHasNoConversation =
+        cursorResumeState?.resume !== undefined &&
+        (yield* hasEmptyClaudeTranscript({
+          sessionId: cursorResumeState.resume,
+          environment: claudeEnvironment,
+          cwd: input.cwd,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          // An unreadable transcript leaves the resume to the CLI, as before.
+          Effect.orElseSucceed(() => false),
+        ));
+      if (resumeHasNoConversation) {
+        yield* Effect.logWarning("claude.session.resume.empty-transcript", {
+          threadId: input.threadId,
+          sessionId: cursorResumeState?.resume,
+        });
+      }
+      const resumeState: ClaudeResumeState | undefined = resumeHasNoConversation
+        ? {
+            ...(cursorResumeState?.threadId ? { threadId: cursorResumeState.threadId } : {}),
+            ...(cursorResumeState?.turnCount !== undefined
+              ? { turnCount: cursorResumeState.turnCount }
+              : {}),
+          }
+        : cursorResumeState;
       const threadId = input.threadId;
       const existingResumeSessionId = resumeState?.resume;
       const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;

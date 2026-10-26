@@ -41,6 +41,7 @@ import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import {
   claudeUserInputQuestions,
+  hasEmptyClaudeTranscript,
   makeClaudeAdapter,
   type ClaudeAdapterLiveOptions,
 } from "./ClaudeAdapter.ts";
@@ -4027,6 +4028,80 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect("starts a fresh session when the resume transcript never saved a message", () => {
+    const configDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-claude-empty-session-"),
+    );
+    const projectDir = NodePath.join(configDir, "projects", "-workspace");
+    NodeFS.mkdirSync(projectDir, { recursive: true });
+    const emptySessionId = "550e8400-e29b-41d4-a716-446655440001";
+    // What a CLI stopped before it saved the first prompt leaves behind.
+    NodeFS.writeFileSync(
+      NodePath.join(projectDir, `${emptySessionId}.jsonl`),
+      [
+        `{"type":"last-prompt","lastPrompt":"hello","sessionId":"${emptySessionId}"}`,
+        `{"type":"cost-state","sessionId":"${emptySessionId}","totalCostUSD":0}`,
+        "",
+      ].join("\n"),
+    );
+    const harness = makeHarness({ claudeConfig: { homePath: configDir } });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: RESUME_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: {
+          threadId: "resume-thread-1",
+          resume: emptySessionId,
+          resumeSessionAt: "assistant-99",
+          turnCount: 3,
+        },
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.equal(createInput?.options.resume, undefined);
+      assert.equal(typeof createInput?.options.sessionId, "string");
+      assert.notEqual(createInput?.options.sessionId, emptySessionId);
+      assert.deepEqual(session.resumeCursor, {
+        threadId: RESUME_THREAD_ID,
+        resume: createInput?.options.sessionId,
+        turnCount: 3,
+      });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => NodeFS.rmSync(configDir, { recursive: true, force: true })),
+      ),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("keeps resuming transcripts that saved a message or are missing", () =>
+    Effect.gen(function* () {
+      const configDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-claude-saved-session-"),
+      );
+      const projectDir = NodePath.join(configDir, "projects", "-workspace");
+      NodeFS.mkdirSync(projectDir, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(projectDir, "saved.jsonl"),
+        `{"type":"user","message":{"role":"user","content":"hello"},"sessionId":"saved"}\n`,
+      );
+      const environment = { CLAUDE_CONFIG_DIR: configDir };
+      assert.equal(
+        yield* hasEmptyClaudeTranscript({ sessionId: "saved", environment, cwd: undefined }),
+        false,
+      );
+      assert.equal(
+        yield* hasEmptyClaudeTranscript({ sessionId: "missing", environment, cwd: undefined }),
+        false,
+      );
+      NodeFS.rmSync(configDir, { recursive: true, force: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 
   it.effect("passes Claude resume ids without pinning a stale assistant checkpoint", () => {
     const harness = makeHarness();
