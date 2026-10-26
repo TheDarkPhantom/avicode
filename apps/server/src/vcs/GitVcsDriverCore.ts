@@ -3064,19 +3064,27 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   /**
    * Unlinks links under `target` without following them and removes the
    * directories that leaves empty. Returns false when anything else remains.
+   * `rootDevice` is the worktree's volume: a folder on another volume is a
+   * mount point that readLink cannot see, so it is left alone, not walked.
    */
   const removeLeftoverLinks = (
     target: string,
+    rootDevice?: number,
   ): Effect.Effect<boolean, PlatformError.PlatformError | Cause.UnknownError> =>
     Effect.gen(function* () {
       if (Option.isSome(yield* fileSystem.readLink(target).pipe(Effect.option))) {
         yield* fileSystem.remove(target);
         return true;
       }
-      if ((yield* fileSystem.stat(target)).type !== "Directory") return false;
+      const info = yield* fileSystem.stat(target);
+      if (info.type !== "Directory") return false;
+      // Avi Code addition: upstream walks into volume mount points here.
+      if (rootDevice !== undefined && info.dev !== rootDevice) return false;
       let empty = true;
       for (const name of yield* fileSystem.readDirectory(target)) {
-        if (!(yield* removeLeftoverLinks(path.join(target, name)))) empty = false;
+        if (!(yield* removeLeftoverLinks(path.join(target, name), rootDevice ?? info.dev))) {
+          empty = false;
+        }
       }
       // Only an empty directory goes, so files written since the listing stay.
       return empty && (yield* removeEmptyDirectory(target));
