@@ -964,8 +964,7 @@ it.layer(
       yield* manager.open(openInput());
       yield* manager.open(openInput({ terminalId: "second" }));
       const [first, second] = ptyAdapter.processes;
-      const inspected = (process: FakePtyProcess | undefined) =>
-        inspections.get(process!.pid) ?? 0;
+      const inspected = (process: FakePtyProcess | undefined) => inspections.get(process!.pid) ?? 0;
 
       // Two unchanged idle inspections make a terminal quiet.
       yield* TestClock.adjust("2 seconds");
