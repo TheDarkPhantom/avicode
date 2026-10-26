@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Images sent on a proposed plan refine it instead of starting implementation (#281)
+- Terminal links with Chinese, Japanese, or Korean names are clickable along their full width (#286)
 
 ### Upstream t3code
 
