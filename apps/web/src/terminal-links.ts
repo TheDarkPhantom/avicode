@@ -141,7 +141,8 @@ function inferHomeFromCwd(cwd: string): string | undefined {
     return `/home/${posixHome[1]}`;
   }
 
-  const windowsUser = cwd.match(/^([A-Za-z]:\\Users\\[^\\]+)/);
+  // Windows paths are case-insensitive, so `C:\users\me` is a home too.
+  const windowsUser = cwd.match(/^([A-Za-z]:[\\/]Users[\\/][^\\/]+)/i);
   if (windowsUser?.[1]) {
     return windowsUser[1];
   }
