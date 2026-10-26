@@ -1,8 +1,15 @@
+import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
-import { describe, expect, it } from "@effect/vitest";
+import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import {
+  backgroundActivityReporterLayer,
   observeBackgroundActivitySubscription,
   retainedBackgroundScopes,
   wasRecentlyInteracted,
@@ -59,5 +66,52 @@ describe("wasRecentlyInteracted", () => {
 
       yield* Effect.all([releaseFirst, releaseSecond]);
     }),
+  );
+});
+
+describe("backgroundActivityReporterLayer", () => {
+  beforeEach(() => {
+    const target = new EventTarget();
+    const listeners = {
+      addEventListener: target.addEventListener.bind(target),
+      removeEventListener: target.removeEventListener.bind(target),
+    };
+    vi.stubGlobal("window", {
+      ...listeners,
+      localStorage: { getItem: () => "client", setItem: () => undefined },
+    });
+    vi.stubGlobal("document", { ...listeners, visibilityState: "visible", hasFocus: () => true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // As when an environment's connection is torn down while its report is in flight.
+  it.effect("keeps reporting after a report is interrupted", () =>
+    Effect.gen(function* () {
+      const entries = yield* SubscriptionRef.make(
+        new Map([[EnvironmentId.make("environment-reporter-test"), {}]]),
+      );
+      let calls = 0;
+      const registry = EnvironmentRegistry.of({
+        entries,
+        run: () => {
+          calls += 1;
+          return calls === 1 ? Effect.failCause(Cause.interrupt()) : Effect.void;
+        },
+      } as unknown as EnvironmentRegistry["Service"]);
+
+      yield* Layer.build(
+        backgroundActivityReporterLayer.pipe(
+          Layer.provide(Layer.succeed(EnvironmentRegistry, registry)),
+        ),
+      );
+      yield* TestClock.adjust("1 second");
+      expect(calls).toBe(1);
+
+      yield* TestClock.adjust("25 seconds");
+      expect(calls).toBe(2);
+    }).pipe(Effect.scoped),
   );
 });
