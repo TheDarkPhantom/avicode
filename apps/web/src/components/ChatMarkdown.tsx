@@ -78,6 +78,7 @@ import {
 import { rehypeHeadingIds, SANITIZED_FRAGMENT_PREFIX } from "../markdown-heading-ids";
 import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation";
 import { remarkKeepWindowsPaths } from "../markdown-windows-paths";
+import { extractMarkdownLinkHrefs } from "../markdown-link-hrefs";
 import { formatFilePathForClipboard } from "../lib/clipboardPath";
 import { normalizeOrderedListContinuations } from "../markdown-source-normalize";
 import { type FileSurfaceRoot } from "./files/externalFileRoot";
@@ -918,7 +919,6 @@ interface MarkdownFileLinkProps {
   className?: string | undefined;
 }
 
-const MARKDOWN_LINK_HREF_PATTERN = /\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
 const MARKDOWN_FILE_LINK_CLASS_NAME =
   "chat-markdown-file-link cursor-pointer transition-colors hover:bg-accent/70";
 
@@ -995,16 +995,6 @@ function extractInlineCodeSpans(text: string): string[] {
     }
   }
   return spans;
-}
-
-function extractMarkdownLinkHrefs(text: string): string[] {
-  const hrefs: string[] = [];
-  for (const match of text.matchAll(MARKDOWN_LINK_HREF_PATTERN)) {
-    const href = match[1]?.trim();
-    if (!href) continue;
-    hrefs.push(href);
-  }
-  return hrefs;
 }
 
 function normalizeMarkdownLinkHrefKey(href: string): string {
