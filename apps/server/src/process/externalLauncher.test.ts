@@ -1,7 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -9,10 +11,12 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 import { isAbsolutePathForPlatform } from "./launchTargetPath.ts";
+
+const windowsHost = HostProcessPlatform.defaultValue() === "win32";
 
 function makeMockDetachedHandle(onUnref: () => void = () => undefined) {
   return ChildProcessSpawner.makeHandle({
@@ -93,6 +97,122 @@ it.effect("launches the default browser through the platform command", () => {
   );
 });
 
+it.effect.skipIf(windowsHost)(
+  "launched browsers and editors do not inherit ELECTRON_RUN_AS_NODE",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
+      const codePath = path.join(binDir, "code");
+      yield* fileSystem.writeFileString(codePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(codePath, 0o755);
+
+      const spawned: ChildProcess.StandardCommand[] = [];
+      yield* Effect.gen(function* () {
+        const launcher = yield* ExternalLauncher.ExternalLauncher;
+        yield* launcher.launchBrowser("https://example.com");
+        yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace" });
+      }).pipe(
+        Effect.provide(
+          testLayer({
+            platform: "linux",
+            env: { PATH: binDir, DISPLAY: ":0" },
+            onSpawn: (command) => spawned.push(command),
+          }),
+        ),
+        Effect.provideService(HostProcessEnvironment, {
+          PATH: binDir,
+          DISPLAY: ":0",
+          ELECTRON_RUN_AS_NODE: "1",
+        }),
+      );
+
+      assert.deepEqual(
+        spawned.map((command) => ({
+          command: command.command,
+          env: command.options.env,
+          extendEnv: command.options.extendEnv,
+        })),
+        ["xdg-open", "code"].map((command) => ({
+          command,
+          env: { PATH: binDir, DISPLAY: ":0" },
+          extendEnv: false,
+        })),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("launched Windows browsers do not inherit ELECTRON_RUN_AS_NODE", () => {
+  let spawned: ChildProcess.StandardCommand | undefined;
+  return Effect.gen(function* () {
+    const launcher = yield* ExternalLauncher.ExternalLauncher;
+    yield* launcher.launchBrowser("https://example.com");
+    assert.ok(spawned);
+    assert.deepEqual(spawned.options.env, { Path: "C:\\Windows" });
+    assert.equal(spawned.options.extendEnv, false);
+  }).pipe(
+    Effect.provide(
+      testLayer({
+        platform: "win32",
+        env: { SYSTEMROOT: "C:\\Windows" },
+        onSpawn: (command) => {
+          spawned = command;
+        },
+      }),
+    ),
+    Effect.provideService(HostProcessEnvironment, {
+      Path: "C:\\Windows",
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
+  );
+});
+
+it.effect.each(["win32", "linux"] as const)(
+  "launches the browser through PowerShell on %s",
+  (platform) => {
+    let spawned: ChildProcess.StandardCommand | undefined;
+    return Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+
+      yield* launcher.launchBrowser("https://example.com/some path");
+
+      assert.ok(spawned);
+      assert.equal(
+        spawned.command,
+        platform === "win32"
+          ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+          : "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+      );
+      assert.deepEqual(spawned.args.slice(0, -1), [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+      ]);
+      const encodedCommand = spawned.args[spawned.args.length - 1] ?? "";
+      const decodedCommand = Buffer.from(encodedCommand, "base64").toString("utf16le");
+      assert.equal(
+        decodedCommand,
+        "$ProgressPreference = 'SilentlyContinue'; Start 'https://example.com/some path'",
+      );
+      // Windows PowerShell started detached exits 0 without running its command.
+      assert.equal(spawned.options.detached, platform !== "win32");
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform,
+          env: { SYSTEMROOT: "C:\\Windows", WSL_DISTRO_NAME: "Ubuntu" },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+  },
+);
+
 it.effect("launches an installed editor with platform-safe arguments", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -122,11 +242,15 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
     );
 
     assert.ok(spawned);
-    assert.equal(spawned.command, '^"C:\\Program^ Files\\Microsoft^ VS^ Code\\bin\\code.CMD^"');
-    assert.deepEqual(spawned.args, [
-      '^"--goto^"',
-      '^"C:\\workspace^ with^ spaces\\src\\index.ts:12:4^"',
-    ]);
+    assert.equal(
+      spawned.command,
+      [
+        '^"C:\\Program^ Files\\Microsoft^ VS^ Code\\bin\\code.CMD^"',
+        '^"--goto^"',
+        '^"C:\\workspace^ with^ spaces\\src\\index.ts:12:4^"',
+      ].join(" "),
+    );
+    assert.deepEqual(spawned.args, []);
     assert.equal(spawned.options.shell, true);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
@@ -153,6 +277,95 @@ it.effect("discovers editors through the service API", () =>
 
     assert.equal(editors.includes("vscode"), true);
     assert.equal(editors.includes("file-manager"), true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+const launchWindowsShimEditor = (cwd: string) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
+    yield* fileSystem.writeFileString(path.join(binDir, "code.CMD"), "@echo off\r\n");
+    let spawned: ChildProcess.StandardCommand | undefined;
+    const exit = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      return yield* launcher.launchEditor({ editor: "vscode", cwd }).pipe(Effect.exit);
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "win32",
+          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+          resolveExecutable: (command) =>
+            command === "code" ? "C:\\Program Files\\Microsoft VS Code\\bin\\code.CMD" : command,
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+    return { exit, spawned };
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+
+it.effect.each([
+  ["CRLF", "C:\\workspace\\file.ts\r\ncalc.exe"],
+  ["LF", "C:\\workspace\\file.ts\ncalc.exe"],
+  ["double quote", 'C:\\workspace\\file.ts" & calc.exe & "'],
+] as const)("does not start a Windows command shim for a path with a $0", ([, cwd]) =>
+  Effect.gen(function* () {
+    const { exit, spawned } = yield* launchWindowsShimEditor(cwd);
+    assert.equal(spawned, undefined);
+    assert.isTrue(Exit.isFailure(exit));
+    if (Exit.isFailure(exit)) {
+      assert.instanceOf(
+        Cause.squash(exit.cause),
+        ExternalLauncher.ExternalLauncherUnsupportedTargetError,
+      );
+    }
+  }),
+);
+
+it.effect("starts a Windows command shim for unicode paths with cmd metacharacters", () =>
+  Effect.gen(function* () {
+    const { exit, spawned } = yield* launchWindowsShimEditor(
+      "C:\\Users\\jö\\R&D (100%)\\naïve ^file!.ts:3:7",
+    );
+    assert.isTrue(Exit.isSuccess(exit));
+    assert.ok(spawned);
+    assert.equal(spawned.options.shell, true);
+    assert.deepEqual(spawned.args, []);
+    assert.isTrue(
+      spawned.command.endsWith(
+        ' ^"--goto^" ^"C:\\Users\\jö\\R^&D^ ^(100^%^)\\naïve^ ^^file^!.ts:3:7^"',
+      ),
+    );
+  }),
+);
+
+it.effect.skipIf(windowsHost)("passes line breaks through to editors started without a shell", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
+    const zed = path.join(binDir, "zed");
+    yield* fileSystem.writeFileString(zed, "#!/bin/sh\n");
+    yield* fileSystem.chmod(zed, 0o755);
+    let spawned: ChildProcess.StandardCommand | undefined;
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({ editor: "zed", cwd: "/workspace/odd\nname.ts" });
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: binDir, HOME: binDir },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+    assert.ok(spawned);
+    assert.deepEqual(spawned.args, ["/workspace/odd\nname.ts"]);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

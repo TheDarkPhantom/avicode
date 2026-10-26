@@ -1,4 +1,5 @@
 import * as Cache from "effect/Cache";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -29,8 +30,10 @@ import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
+import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import {
   parseRemoteNames,
   parseRemoteNamesInGitOrder,
@@ -477,6 +480,18 @@ const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
+// Matches a fetch that lost a ref update to another Git process. Git 2.53+
+// reports it as "fetching ref <ref> failed: ..."; older Git says "cannot lock ref".
+function isRefLockFailure(stderr: string): boolean {
+  return stderr
+    .split(/\r?\n/)
+    .some((line) =>
+      /^(?:(?:error|fatal): cannot lock ref\b|fatal: Unable to create ['"].+\.lock['"]:|error: fetching ref \S+ failed: (?:incorrect old value provided|reference already exists)$)/i.test(
+        line.trim(),
+      ),
+    );
+}
+
 function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
     .split(/\r?\n/)
@@ -887,11 +902,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ...input.env,
           ...trace2Monitor.env,
         };
+        const spawnEnv = { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) };
+        const resolved = yield* resolveSpawnCommand("git", [], { env: spawnEnv });
+        // A git.cmd wrapper would need cmd.exe, which cuts multi-line commit
+        // messages at the first newline; leave that case to Node's lookup.
+        const executable = resolved.shell ? "git" : resolved.command;
         const child = yield* commandSpawner
           .spawn(
-            ChildProcess.make("git", commandInput.args, {
+            ChildProcess.make(executable, commandInput.args, {
               cwd: commandInput.cwd,
-              env: { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) },
+              env: spawnEnv,
             }),
           )
           .pipe(
@@ -1007,6 +1027,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     );
 
+  const gitExitError = (
+    operation: string,
+    cwd: string,
+    args: readonly string[],
+    result: GitVcsDriver.ExecuteGitResult,
+    fallbackErrorDetail: string | undefined,
+  ): Effect.Effect<never, GitCommandError> => {
+    const reason = classifyGitFailure(result.stderr);
+    return Effect.fail(
+      new GitCommandError({
+        ...gitCommandContext({ operation, cwd, args }),
+        ...(reason === null ? {} : { reason }),
+        detail: fallbackErrorDetail ?? "Git command exited with a non-zero status.",
+        ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+      }),
+    );
+  };
+
   const executeGit = (
     operation: string,
     cwd: string,
@@ -1027,22 +1067,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         : {}),
       ...(options.progress ? { progress: options.progress } : {}),
     }).pipe(
-      Effect.flatMap((result) => {
-        if (options.allowNonZeroExit || result.exitCode === 0) {
-          return Effect.succeed(result);
-        }
-        const reason = classifyGitFailure(result.stderr);
-        return Effect.fail(
-          new GitCommandError({
-            ...gitCommandContext({ operation, cwd, args }),
-            ...(reason === null ? {} : { reason }),
-            detail: options.fallbackErrorDetail ?? "Git command exited with a non-zero status.",
-            ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
-            stdoutLength: result.stdout.length,
-            stderrLength: result.stderr.length,
-          }),
-        );
-      }),
+      Effect.flatMap((result) =>
+        options.allowNonZeroExit || result.exitCode === 0
+          ? Effect.succeed(result)
+          : gitExitError(operation, cwd, args, result, options.fallbackErrorDetail),
+      ),
     );
 
   const executeGitWithStableDiagnostics = (
@@ -2848,7 +2877,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "config",
         `branch.${input.newRefName}.gh-merge-base`,
         baseBranch,
-      ]);
+      ]).pipe(
+        Effect.catchTags({
+          GitCommandError: () =>
+            Effect.logWarning("worktree base-ref configuration failed; using base-branch fallback"),
+        }),
+      );
     }
 
     return {
@@ -2880,15 +2914,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const fetchRemote: GitVcsDriver.GitVcsDriver["Service"]["fetchRemote"] = Effect.fn("fetchRemote")(
     function* (input) {
-      yield* executeGit(
+      const args = ["fetch", "--quiet", input.remoteName];
+      const options = {
+        env: STATUS_UPSTREAM_REFRESH_ENV,
+        fallbackErrorDetail: `git fetch ${input.remoteName} failed`,
+      };
+      // Another fetch in the same repository, such as the background status
+      // poll, can win the race for a remote-tracking ref. The loser fails, but
+      // the ref is free again by the time a rerun needs it, so retry once.
+      const first = yield* executeGitWithStableDiagnostics(
         "GitVcsDriver.fetchRemote",
         input.cwd,
-        ["fetch", "--quiet", input.remoteName],
-        {
-          env: STATUS_UPSTREAM_REFRESH_ENV,
-          fallbackErrorDetail: `git fetch ${input.remoteName} failed`,
-        },
+        args,
+        { ...options, allowNonZeroExit: true },
       );
+      if (first.exitCode === 0) return;
+      if (!isRefLockFailure(first.stderr)) {
+        return yield* gitExitError(
+          "GitVcsDriver.fetchRemote",
+          input.cwd,
+          args,
+          first,
+          options.fallbackErrorDetail,
+        );
+      }
+      yield* executeGitWithStableDiagnostics("GitVcsDriver.fetchRemote", input.cwd, args, options);
     },
   );
 
@@ -3011,20 +3061,67 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { status: "conflict" as const, conflictedPaths };
     });
 
+  /**
+   * Unlinks links under `target` without following them and removes the
+   * directories that leaves empty. Returns false when anything else remains.
+   */
+  const removeLeftoverLinks = (
+    target: string,
+  ): Effect.Effect<boolean, PlatformError.PlatformError | Cause.UnknownError> =>
+    Effect.gen(function* () {
+      if (Option.isSome(yield* fileSystem.readLink(target).pipe(Effect.option))) {
+        yield* fileSystem.remove(target);
+        return true;
+      }
+      if ((yield* fileSystem.stat(target)).type !== "Directory") return false;
+      let empty = true;
+      for (const name of yield* fileSystem.readDirectory(target)) {
+        if (!(yield* removeLeftoverLinks(path.join(target, name)))) empty = false;
+      }
+      // Only an empty directory goes, so files written since the listing stay.
+      return empty && (yield* removeEmptyDirectory(target));
+    });
+
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
+    // Git also accepts a worktree's short name, which can match a different
+    // folder than the path resolved against `input.cwd`. Resolve it once so Git
+    // and the leftover cleanup below act on the same directory.
+    const target = path.resolve(input.cwd, input.path);
     // Git refuses to remove a worktree with untracked files unless forced, but
     // its check honors `status.showUntrackedFiles=no` and would delete them.
     const args = ["-c", "status.showUntrackedFiles=normal", "worktree", "remove"];
     if (input.force) {
       args.push("--force");
     }
-    args.push(input.path);
+    args.push(target);
     yield* executeGit("GitVcsDriver.removeWorktree", input.cwd, args, {
       timeoutMs: 15_000,
       fallbackErrorDetail: "git worktree remove failed",
     });
+    // Git for Windows never descends into NTFS junctions, such as pnpm's
+    // node_modules links. It reports success but leaves them and their parent
+    // directories behind, so a resumed thread would find a stub instead of
+    // recreating its checkout. Git has already unregistered the worktree, so
+    // anything left here is logged rather than returned: a retry could never
+    // succeed.
+    if (yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false))) {
+      const removed = yield* removeLeftoverLinks(target).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("GitVcsDriver.removeWorktree: failed to delete leftover links", {
+            path: target,
+            error,
+          }).pipe(Effect.as(true)),
+        ),
+      );
+      if (!removed) {
+        yield* Effect.logWarning(
+          "GitVcsDriver.removeWorktree: kept files written after git removed the worktree",
+          { path: target },
+        );
+      }
+    }
   });
 
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(

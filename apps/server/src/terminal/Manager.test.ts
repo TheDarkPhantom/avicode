@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Data from "effect/Data";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -20,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
@@ -44,6 +46,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   private readonly dataListeners = new Set<(data: string) => void>();
   private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
   killed = false;
+  onKill: ((signal?: string) => void) | undefined;
 
   constructor(pid: number) {
     this.pid = pid;
@@ -66,6 +69,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   kill(signal?: string): void {
     this.killed = true;
     this.killSignals.push(signal);
+    this.onKill?.(signal);
   }
 
   onData(callback: (data: string) => void): () => void {
@@ -86,6 +90,10 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
     for (const listener of this.dataListeners) {
       listener(data);
     }
+  }
+
+  get exitListenerCount(): number {
+    return this.exitListeners.size;
   }
 
   emitExit(event: PtyAdapter.PtyExitEvent): void {
@@ -927,6 +935,74 @@ it.layer(
     }),
   );
 
+  it.effect("inspects a quiet terminal every 30 ticks and wakes it on input or output", () =>
+    Effect.gen(function* () {
+      const inspections = new Map<number, number>();
+      const children = new Map<number, string>();
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        processKillGraceMs: 0,
+        subprocessPollIntervalMs: 1_000,
+        subprocessInspector: (terminalPid) =>
+          Effect.sync(() => {
+            inspections.set(terminalPid, (inspections.get(terminalPid) ?? 0) + 1);
+            const child = children.get(terminalPid);
+            return child === undefined
+              ? { hasRunningSubprocess: false, childCommand: null, processIds: [] }
+              : { hasRunningSubprocess: true, childCommand: child, processIds: [terminalPid, 100] };
+          }),
+      });
+      const activity = yield* Queue.unbounded<Extract<TerminalEvent, { type: "activity" }>>();
+      const output = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "activity"
+          ? Queue.offer(activity, event).pipe(Effect.asVoid)
+          : event.type === "output"
+            ? Deferred.succeed(output, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      yield* manager.open(openInput());
+      yield* manager.open(openInput({ terminalId: "second" }));
+      const [first, second] = ptyAdapter.processes;
+      const inspected = (process: FakePtyProcess | undefined) => inspections.get(process!.pid) ?? 0;
+
+      // Two unchanged idle inspections make a terminal quiet.
+      yield* TestClock.adjust("2 seconds");
+      assert.equal(inspected(first), 2);
+      assert.equal(inspected(second), 2);
+      yield* TestClock.adjust("29 seconds");
+      assert.equal(inspected(first), 2);
+      // A quiet terminal is still inspected every 30 ticks for silent children.
+      yield* TestClock.adjust("1 second");
+      assert.equal(inspected(first), 3);
+      assert.equal(inspected(second), 3);
+
+      // Input wakes only the terminal it reached.
+      children.set(second!.pid, "vim");
+      yield* manager.write({ threadId: "thread-1", terminalId: "second", data: "vim\r" });
+      yield* TestClock.adjust("1 second");
+      expect(yield* Queue.take(activity)).toMatchObject({
+        terminalId: "second",
+        hasRunningSubprocess: true,
+        label: "vim",
+      });
+      assert.equal(inspected(first), 3);
+      assert.equal(inspected(second), 4);
+
+      // Output wakes a quiet terminal too.
+      children.set(first!.pid, "node");
+      first!.emitData("server started\r\n");
+      yield* Deferred.await(output);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Queue.take(activity)).toMatchObject({
+        terminalId: DEFAULT_TERMINAL_ID,
+        hasRunningSubprocess: true,
+        label: "node",
+      });
+      assert.equal(inspected(first), 4);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("does not invoke subprocess polling until a terminal session is running", () =>
     Effect.gen(function* () {
       let checks = 0;
@@ -967,6 +1043,25 @@ it.layer(
       const reopened = yield* manager.open(openInput());
       const nonEmptyLines = reopened.history.split("\n").filter((line) => line.length > 0);
       expect(nonEmptyLines).toEqual(["line2", "line3", "line4"]);
+    }),
+  );
+
+  it.effect("retains plain Unicode and control characters around a split query", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+      const before = "café\t界🙂\u0007\u009c\u0085";
+      const after = "é\r\n";
+
+      process.emitData(before);
+      process.emitData("\u001b[5");
+      process.emitData(`n${after}`);
+      yield* manager.close({ threadId: "thread-1" });
+
+      expect((yield* manager.open(openInput())).history).toBe(before + after);
     }),
   );
 
@@ -1201,6 +1296,54 @@ it.layer(
 
       assert.equal(process.killSignals[0], "SIGTERM");
       expect(process.killSignals).toContain("SIGKILL");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("skips SIGKILL when the process exits during the grace period", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10_000 });
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const sigterm = yield* Deferred.make<void>();
+      process.onKill = (signal) => {
+        if (signal === "SIGTERM") Deferred.doneUnsafe(sigterm, Effect.void);
+      };
+
+      yield* manager.close({ threadId: "thread-1" });
+      yield* Deferred.await(sigterm);
+      process.emitExit({ exitCode: 0, signal: 15 });
+      yield* TestClock.adjust("10 seconds");
+
+      assert.deepEqual(process.killSignals, ["SIGTERM"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("releases the exit listener when kill escalation is interrupted", () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make("sequential");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        processKillGraceMs: 10_000,
+      }).pipe(Effect.provideService(Scope.Scope, scope));
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const sigterm = yield* Deferred.make<void>();
+      process.onKill = (signal) => {
+        if (signal === "SIGTERM") Deferred.doneUnsafe(sigterm, Effect.void);
+      };
+      yield* manager.close({ threadId: "thread-1" });
+      yield* Deferred.await(sigterm);
+      assert.isAbove(process.exitListenerCount, 0);
+
+      yield* Scope.close(scope, Exit.void);
+
+      assert.equal(process.exitListenerCount, 0);
+      assert.deepEqual(process.killSignals, ["SIGTERM"]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 

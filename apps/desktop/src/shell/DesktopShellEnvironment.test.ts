@@ -246,6 +246,23 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
+  it.effect("replaces a Path-spelled Windows PATH instead of adding a second key", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { Path: "C:\\Windows\\System32" };
+
+      yield* runShellEnvironment({
+        env,
+        platform: "win32",
+        handler: (command) =>
+          command._tag === "StandardCommand" && command.args.includes("-NoProfile")
+            ? envOutput({ PATH: "C:\\Shell\\Bin" })
+            : "",
+      });
+
+      assert.deepEqual(env, { PATH: "C:\\Shell\\Bin;C:\\Windows\\System32" });
+    }),
+  );
+
   it.effect("logs command failures with safe probe context and the exact cause", () => {
     const env: NodeJS.ProcessEnv = {
       SHELL: "/bin/bash",

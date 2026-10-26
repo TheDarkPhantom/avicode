@@ -55,10 +55,10 @@ const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
 
 /**
  * Escapes a single argument for `cmd.exe` shell mode (`spawn(..., { shell: true })`
- * on Windows). Node joins the command and arguments with spaces and hands the
- * resulting string to `cmd.exe` without any quoting, so every dynamic argument
- * must be escaped to survive both cmd.exe parsing and the target program's
- * `CommandLineToArgvW` parsing. Mirrors cross-spawn's argument escaping.
+ * on Windows). Node hands the command string to `cmd.exe /d /s /c "<command>"`
+ * without any quoting, so every dynamic argument must be escaped to survive both
+ * cmd.exe parsing and the target program's `CommandLineToArgvW` parsing.
+ * Mirrors cross-spawn's argument escaping.
  */
 function escapeWindowsShellArg(arg: string): string {
   // Double up backslashes that precede a double quote, then escape the quote
@@ -70,18 +70,6 @@ function escapeWindowsShellArg(arg: string): string {
   escaped = `"${escaped}"`;
   // Escape cmd.exe metacharacters so cmd passes them through verbatim.
   return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
-}
-
-/**
- * Escapes arguments for shell-mode spawns: applies {@link escapeWindowsShellArg}
- * when the platform is `win32` (where `shell: true` routes through `cmd.exe`)
- * and returns the arguments untouched everywhere else.
- */
-function sanitizeShellModeArgsForPlatform(
-  args: ReadonlyArray<string>,
-  platform: NodeJS.Platform,
-): Array<string> {
-  return platform === "win32" ? args.map(escapeWindowsShellArg) : [...args];
 }
 
 export interface ResolvedSpawnCommand {
@@ -628,6 +616,47 @@ export const resolveCommandPath = Effect.fn("shell.resolveCommandPath")(function
   });
 });
 
+// Git for Windows 2.56 moved x64 builds from mingw64 to ucrt64; ARM64 builds
+// live in clangarm64 and 32-bit ones in mingw32.
+const GIT_FOR_WINDOWS_BUILDS = ["ucrt64", "clangarm64", "mingw64", "mingw32"] as const;
+
+function isFileSync(filePath: string): boolean {
+  try {
+    return NodeFS.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Swaps Git for Windows' launcher (`<Git>\cmd\git.exe`, the only git its
+ * installer puts on PATH, or the portable build's `<Git>\bin\git.exe`) for the
+ * git.exe it starts. The launcher costs a second process on every git command,
+ * and each launch leaks a kernel token reference that slows process creation
+ * machine-wide until reboot. The real binary sets HOME itself, but adds its own
+ * folders to PATH for hooks, ssh and credential helpers only when MSYSTEM is
+ * unset, so the launcher stays when MSYSTEM is set. Anything else is returned
+ * as is.
+ */
+export function preferGitForWindowsBinary(
+  executable: string,
+  env: NodeJS.ProcessEnv,
+  isFile: (filePath: string) => boolean = isFileSync,
+): string {
+  if (env.MSYSTEM) return executable;
+  const path = NodePath.win32;
+  if (path.basename(executable).toLowerCase() !== "git.exe") return executable;
+  const launcherDirectory = path.dirname(executable);
+  const launcherFolder = path.basename(launcherDirectory).toLowerCase();
+  if (launcherFolder !== "cmd" && launcherFolder !== "bin") return executable;
+  const installRoot = path.dirname(launcherDirectory);
+  for (const build of GIT_FOR_WINDOWS_BUILDS) {
+    const candidate = path.join(installRoot, build, "bin", "git.exe");
+    if (isFile(candidate)) return candidate;
+  }
+  return executable;
+}
+
 // Avi Code addition (port of upstream #12600): the spawn-time PATH scan is
 // synchronous and runs before every child process on Windows, so a hit is
 // kept for a short window. Upstream shares its command-resolution cache here;
@@ -665,10 +694,64 @@ function spawnResolverCacheId(resolver: SpawnExecutableResolver): number {
   return id;
 }
 
+// What npm's cmd-shim writes for a package whose bin is a native executable.
+const NPM_EXECUTABLE_SHIM_PREFIX = [
+  "@ECHO off",
+  "GOTO start",
+  ":find_dp0",
+  "SET dp0=%~dp0",
+  "EXIT /b",
+  ":start",
+  "SETLOCAL",
+  "CALL :find_dp0",
+];
+const NPM_EXECUTABLE_SHIM_RUN = /^"%dp0%\\([^"%]+\.exe)" +%\*$/;
+
+function readFileSyncOrUndefined(filePath: string): string | undefined {
+  try {
+    return NodeFS.readFileSync(filePath, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The executable an npm cmd-shim runs, when the shim does nothing else.
+ * Started through the shim, the executable is a child of `cmd.exe` and so
+ * escapes the kill-on-close job libuv puts every child in: it keeps running
+ * after this process is killed. Started directly it is in the job.
+ */
+export function npmShimExecutable(
+  shimPath: string,
+  readFile: (filePath: string) => string | undefined = readFileSyncOrUndefined,
+  isFile: (filePath: string) => boolean = isFileSync,
+): string | undefined {
+  const path = NodePath.win32;
+  if (path.extname(shimPath).toLowerCase() !== ".cmd") return undefined;
+  // Compared exactly: whitespace CMD keeps, such as after `SET dp0=`, would
+  // make it run a different file than the one found here.
+  const lines = readFile(shimPath)
+    ?.split(/\r?\n/)
+    .filter((line) => line.length > 0);
+  if (lines?.length !== NPM_EXECUTABLE_SHIM_PREFIX.length + 1) return undefined;
+  if (NPM_EXECUTABLE_SHIM_PREFIX.some((expected, index) => lines[index] !== expected)) {
+    return undefined;
+  }
+  const target = NPM_EXECUTABLE_SHIM_RUN.exec(lines.at(-1)!)?.[1];
+  if (target === undefined) return undefined;
+  const executable = path.join(path.dirname(shimPath), target);
+  return isFile(executable) ? executable : undefined;
+}
+
+export interface SpawnCommandOptions extends CommandAvailabilityOptions {
+  /** Run the executable behind an npm cmd-shim directly (see `npmShimExecutable`). */
+  readonly bypassNpmShim?: boolean;
+}
+
 export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(function* (
   command: string,
   args: ReadonlyArray<string>,
-  options: CommandAvailabilityOptions = {},
+  options: SpawnCommandOptions = {},
 ): Effect.fn.Return<ResolvedSpawnCommand> {
   const platform = yield* HostProcessPlatform;
   if (platform !== "win32") {
@@ -693,6 +776,7 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
     platform,
     resolvePathEnvironmentVariable(env),
     resolveWindowsPathExtensions(env).join(";"),
+    env.MSYSTEM ? "msystem" : "",
     command,
   ].join(SPAWN_RESOLUTION_CACHE_KEY_SEPARATOR);
   const nowNanos = yield* Clock.currentTimeNanos;
@@ -701,7 +785,11 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
   if (cached !== undefined && cached.expiresAtNanos > nowNanos) {
     resolvedExecutable = cached.resolvedPath;
   } else {
-    resolvedExecutable = resolveExecutable(command, platform, env);
+    // Cached with the scan: its file checks would otherwise run before every
+    // git launch. A Git upgrade that moves the real binary can fail git for up
+    // to the cache lifetime.
+    const found = resolveExecutable(command, platform, env);
+    resolvedExecutable = found === undefined ? undefined : preferGitForWindowsBinary(found, env);
     if (!explicitPath && resolvedExecutable !== undefined) {
       if (cache.size >= SPAWN_RESOLUTION_CACHE_MAX_ENTRIES && !cache.has(cacheKey)) {
         const oldestKey = cache.keys().next().value;
@@ -718,10 +806,17 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
   if (extension !== ".cmd" && extension !== ".bat") {
     return { command: resolvedCommand, args: [...args], shell: false };
   }
+  const shimExecutable = options.bypassNpmShim ? npmShimExecutable(resolvedCommand) : undefined;
+  if (shimExecutable !== undefined) {
+    return { command: shimExecutable, args: [...args], shell: false };
+  }
 
+  // Node runs a shell spawn as `cmd.exe /d /s /c "<command> <args...>"`, but
+  // passing args with `shell: true` prints DEP0190. Build the same escaped line
+  // here and pass no args.
   return {
-    command: escapeWindowsShellArg(resolvedCommand),
-    args: sanitizeShellModeArgsForPlatform(args, platform),
+    command: [resolvedCommand, ...args].map(escapeWindowsShellArg).join(" "),
+    args: [],
     shell: true,
   };
 });
@@ -761,13 +856,26 @@ function readWindowsEnvironmentSafely(
   }
 }
 
+/** Keep one PATH spelling in copied Windows environment records. */
+export function setWindowsPath(env: NodeJS.ProcessEnv, value: string): void {
+  for (const key of Object.keys(env)) {
+    if (key.toUpperCase() === "PATH") {
+      delete env[key];
+    }
+  }
+  env.PATH = value;
+}
+
 function mergeWindowsEnv(
   currentEnv: NodeJS.ProcessEnv,
   patch: Partial<Record<string, string>>,
 ): NodeJS.ProcessEnv {
   const nextEnv: NodeJS.ProcessEnv = { ...currentEnv };
   for (const [key, value] of Object.entries(patch)) {
-    if (value !== undefined) {
+    if (value === undefined) continue;
+    if (key === "PATH") {
+      setWindowsPath(nextEnv, value);
+    } else {
       nextEnv[key] = value;
     }
   }

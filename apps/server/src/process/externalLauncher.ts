@@ -16,10 +16,11 @@ import {
   ExternalLauncherTargetNotFoundError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
+  ExternalLauncherUnsupportedTargetError,
   type EditorId,
   type LaunchEditorInput,
 } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   isCommandAvailable,
   resolveSpawnCommand,
@@ -55,6 +56,7 @@ export {
   ExternalLauncherTargetNotFoundError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
+  ExternalLauncherUnsupportedTargetError,
   isExternalLauncherError,
 } from "@t3tools/contracts";
 export type { LaunchEditorInput };
@@ -77,6 +79,14 @@ interface TargetPathAndPosition {
   readonly column: Option.Option<string>;
 }
 
+/**
+ * Windows command shims (`code.cmd`) forward arguments through `%*`, which
+ * cmd.exe parses a second time after the first escaping layer is gone: a
+ * line break ends the command there, and a double quote closes the quoting
+ * that keeps `&` or `|` literal. Neither can occur in a Windows path.
+ */
+// oxlint-disable-next-line no-control-regex
+const WINDOWS_SHIM_UNSAFE_ARG_PATTERN = /[\u0000-\u001f\u007f"]/;
 const TARGET_WITH_POSITION_PATTERN = /^(.*?):(\d+)(?::(\d+))?$/;
 const POWERSHELL_ARGUMENTS_PREFIX = [
   "-NoProfile",
@@ -85,6 +95,12 @@ const POWERSHELL_ARGUMENTS_PREFIX = [
   "Bypass",
   "-EncodedCommand",
 ] as const;
+
+// Windows PowerShell started with DETACHED_PROCESS exits 0 without running its
+// command, so native Windows launches through it stay attached. The child is
+// still unref'd with ignored stdio, so nothing waits on it. WSL interop
+// PowerShell starts from a Linux process and keeps the detached launch.
+const WINDOWS_POWERSHELL_DETACHED = false;
 
 const DETACHED_IGNORE_STDIO_OPTIONS = {
   detached: true,
@@ -218,7 +234,11 @@ function shouldUseWindowsBrowserFromWsl(
   );
 }
 
-function resolveWindowsBrowserLaunch(target: string, command: string): ProcessLaunch {
+function resolveWindowsBrowserLaunch(
+  target: string,
+  command: string,
+  detached: boolean,
+): ProcessLaunch {
   const encodedCommand = encodeUtf16LeBase64(
     `$ProgressPreference = 'SilentlyContinue'; Start ${escapePowerShellStringLiteral(target)}`,
   );
@@ -226,7 +246,7 @@ function resolveWindowsBrowserLaunch(target: string, command: string): ProcessLa
     command,
     args: [...POWERSHELL_ARGUMENTS_PREFIX, encodedCommand],
     options: {
-      detached: true,
+      detached,
       shell: false,
       stdin: "ignore",
       stdout: "ignore",
@@ -313,11 +333,15 @@ function buildBrowserLaunch(
   }
 
   if (platform === "win32") {
-    return resolveWindowsBrowserLaunch(target, resolvePowerShellPath(env));
+    return resolveWindowsBrowserLaunch(
+      target,
+      resolvePowerShellPath(env),
+      WINDOWS_POWERSHELL_DETACHED,
+    );
   }
 
   if (shouldUseWindowsBrowserFromWsl(platform, env)) {
-    return resolveWindowsBrowserLaunch(target, resolveWslPowerShellPath());
+    return resolveWindowsBrowserLaunch(target, resolveWslPowerShellPath(), true);
   }
 
   return {
@@ -456,7 +480,15 @@ const launchAndUnref = Effect.fn("externalLauncher.launchAndUnref")(function* (
   onError: (cause: unknown) => ExternalLauncherError,
 ): Effect.fn.Return<void, ExternalLauncherError, ChildProcessSpawner.ChildProcessSpawner> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const command = ChildProcess.make(launch.command, launch.args, launch.options);
+  // The desktop app runs this server with ELECTRON_RUN_AS_NODE. A launched file
+  // manager or browser passes its environment on to everything started from it,
+  // so any Electron app opened from there would start as plain Node and exit.
+  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = yield* HostProcessEnvironment;
+  const command = ChildProcess.make(launch.command, launch.args, {
+    ...launch.options,
+    env,
+    extendEnv: false,
+  });
 
   yield* spawner.spawn(command).pipe(
     Effect.flatMap((handle) => handle.unref),
@@ -498,6 +530,9 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   }
 
   const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, { env });
+  if (spawnCommand.shell && launch.args.some((arg) => WINDOWS_SHIM_UNSAFE_ARG_PATTERN.test(arg))) {
+    return yield* new ExternalLauncherUnsupportedTargetError({ editor: launch.editor });
+  }
   yield* launchAndUnref(
     {
       command: spawnCommand.command,

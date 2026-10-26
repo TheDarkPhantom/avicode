@@ -5,6 +5,7 @@ import {
   readPathFromLoginShell,
   readPathFromLaunchctl,
   resolveWindowsEnvironment,
+  setWindowsPath,
 } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -54,7 +55,10 @@ export const fixPath = Effect.fn("fixPath")(function* (): Effect.fn.Return<
       ),
     );
     for (const [key, value] of Object.entries(repairedEnvironment)) {
-      if (value !== undefined) {
+      if (value === undefined) continue;
+      if (key === "PATH") {
+        setWindowsPath(env, value);
+      } else {
         env[key] = value;
       }
     }
