@@ -49,12 +49,11 @@ function IndexDraftLanding() {
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
+  // Projects from environments that have loaded are enough to start a draft;
+  // waiting for every environment would hold the composer on a slow one.
   const mostRecentProject = useMemo(
-    () =>
-      bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
-        : null,
-    [bootstrapped, projects, threads],
+    () => sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null,
+    [projects, threads],
   );
 
   useEffect(() => {
@@ -71,9 +70,6 @@ function IndexDraftLanding() {
     });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
-  if (!bootstrapped) {
-    return null;
-  }
   if (mostRecentProject !== null) {
     return startState.failed ? (
       <DraftStartError
@@ -86,7 +82,8 @@ function IndexDraftLanding() {
       />
     ) : null;
   }
-  return <NoProjectsHero />;
+  // A pending environment cannot prove the workspace is empty.
+  return bootstrapped ? <NoProjectsHero /> : null;
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
