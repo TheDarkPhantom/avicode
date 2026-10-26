@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
@@ -932,6 +933,75 @@ it.layer(
         "1200 millis",
       );
     }),
+  );
+
+  it.effect("inspects a quiet terminal every 30 ticks and wakes it on input or output", () =>
+    Effect.gen(function* () {
+      const inspections = new Map<number, number>();
+      const children = new Map<number, string>();
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        processKillGraceMs: 0,
+        subprocessPollIntervalMs: 1_000,
+        subprocessInspector: (terminalPid) =>
+          Effect.sync(() => {
+            inspections.set(terminalPid, (inspections.get(terminalPid) ?? 0) + 1);
+            const child = children.get(terminalPid);
+            return child === undefined
+              ? { hasRunningSubprocess: false, childCommand: null, processIds: [] }
+              : { hasRunningSubprocess: true, childCommand: child, processIds: [terminalPid, 100] };
+          }),
+      });
+      const activity = yield* Queue.unbounded<Extract<TerminalEvent, { type: "activity" }>>();
+      const output = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "activity"
+          ? Queue.offer(activity, event).pipe(Effect.asVoid)
+          : event.type === "output"
+            ? Deferred.succeed(output, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      yield* manager.open(openInput());
+      yield* manager.open(openInput({ terminalId: "second" }));
+      const [first, second] = ptyAdapter.processes;
+      const inspected = (process: FakePtyProcess | undefined) =>
+        inspections.get(process!.pid) ?? 0;
+
+      // Two unchanged idle inspections make a terminal quiet.
+      yield* TestClock.adjust("2 seconds");
+      assert.equal(inspected(first), 2);
+      assert.equal(inspected(second), 2);
+      yield* TestClock.adjust("29 seconds");
+      assert.equal(inspected(first), 2);
+      // A quiet terminal is still inspected every 30 ticks for silent children.
+      yield* TestClock.adjust("1 second");
+      assert.equal(inspected(first), 3);
+      assert.equal(inspected(second), 3);
+
+      // Input wakes only the terminal it reached.
+      children.set(second!.pid, "vim");
+      yield* manager.write({ threadId: "thread-1", terminalId: "second", data: "vim\r" });
+      yield* TestClock.adjust("1 second");
+      expect(yield* Queue.take(activity)).toMatchObject({
+        terminalId: "second",
+        hasRunningSubprocess: true,
+        label: "vim",
+      });
+      assert.equal(inspected(first), 3);
+      assert.equal(inspected(second), 4);
+
+      // Output wakes a quiet terminal too.
+      children.set(first!.pid, "node");
+      first!.emitData("server started\r\n");
+      yield* Deferred.await(output);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Queue.take(activity)).toMatchObject({
+        terminalId: DEFAULT_TERMINAL_ID,
+        hasRunningSubprocess: true,
+        label: "node",
+      });
+      assert.equal(inspected(first), 4);
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("does not invoke subprocess polling until a terminal session is running", () =>

@@ -78,6 +78,8 @@ export {
 const DEFAULT_HISTORY_LINE_LIMIT = 5_000;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 40;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
+// Discover children started without terminal input or output.
+const QUIET_SUBPROCESS_INSPECT_EVERY_TICKS = 30;
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
 const DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS = 128;
 const DEFAULT_OPEN_COLS = 120;
@@ -422,6 +424,19 @@ function advanceEventSequence(session: TerminalSessionState): {
   session.eventSequence += 1;
   session.updatedAt = updatedAt;
   return { updatedAt, sequence: session.eventSequence };
+}
+
+// A command started during a process check can miss it, but its input or echo
+// still lands. Both counters only grow, so the sum changes when either one does.
+function terminalActivityMark(session: TerminalSessionState): number {
+  return session.eventSequence + session.inputCount;
+}
+
+interface QuietTerminalSession {
+  readonly process: PtyAdapter.PtyProcess | null;
+  readonly mark: number;
+  readonly idleInspections: number;
+  skippedTicks: number;
 }
 
 function cleanupProcessHandles(session: TerminalSessionState): void {
@@ -2067,12 +2082,37 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
   });
 
+  // Avi Code addition (port of upstream #21242): upstream takes one process
+  // snapshot per tick and skips the tick when every terminal is quiet. The fork
+  // inspects each terminal on its own (a full Win32_Process scan each on
+  // Windows), so a quiet terminal skips its own inspection instead. Two
+  // unchanged idle inspections cover children forked just after the first;
+  // process identity keeps a restarted shell from inheriting quiet state.
+  const quietSessions = new WeakMap<TerminalSessionState, QuietTerminalSession>();
+  const skipQuietInspection = (session: TerminalSessionState) => {
+    const quiet = quietSessions.get(session);
+    if (
+      quiet === undefined ||
+      quiet.idleInspections < 2 ||
+      quiet.process !== session.process ||
+      quiet.mark !== terminalActivityMark(session) ||
+      session.hasRunningSubprocess ||
+      quiet.skippedTicks >= QUIET_SUBPROCESS_INSPECT_EVERY_TICKS - 1
+    ) {
+      return false;
+    }
+    quiet.skippedTicks += 1;
+    return true;
+  };
+
   const pollSubprocessActivity = Effect.fn("terminal.pollSubprocessActivity")(function* () {
     const state = yield* readManagerState;
-    const runningSessions = [...state.sessions.values()].filter(
-      (session): session is TerminalSessionState & { pid: number } =>
-        session.status === "running" && Number.isInteger(session.pid),
-    );
+    const runningSessions = [...state.sessions.values()]
+      .filter(
+        (session): session is TerminalSessionState & { pid: number } =>
+          session.status === "running" && Number.isInteger(session.pid),
+      )
+      .filter((session) => !skipQuietInspection(session));
 
     if (runningSessions.length === 0) {
       return;
@@ -2082,6 +2122,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session: TerminalSessionState & { pid: number },
     ) {
       const terminalPid = session.pid;
+      const process = session.process;
+      let mark = terminalActivityMark(session);
+      const previous = quietSessions.get(session);
+      quietSessions.delete(session);
       const inspectResult = yield* subprocessInspector(terminalPid).pipe(
         Effect.map(Option.some),
         Effect.catch((reason) =>
@@ -2094,7 +2138,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         ),
       );
 
-      if (Option.isNone(inspectResult)) {
+      if (
+        Option.isNone(inspectResult) ||
+        session.status !== "running" ||
+        session.pid !== terminalPid ||
+        session.process !== process
+      ) {
         return;
       }
 
@@ -2115,8 +2164,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         );
         if (
           Option.isNone(liveSession) ||
+          liveSession.value !== session ||
           liveSession.value.status !== "running" ||
           liveSession.value.pid !== terminalPid ||
+          liveSession.value.process !== process ||
           (liveSession.value.hasRunningSubprocess === next.hasRunningSubprocess &&
             liveSession.value.childCommandLabel === nextChildLabel)
         ) {
@@ -2126,6 +2177,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         liveSession.value.hasRunningSubprocess = next.hasRunningSubprocess;
         liveSession.value.childCommandLabel = nextChildLabel;
         const eventStamp = advanceEventSequence(liveSession.value);
+        // Only this poll's own event may advance the mark without waking it.
+        mark += 1;
 
         return [
           Option.some({
@@ -2142,6 +2195,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
       if (Option.isSome(event)) {
         yield* publishEvent(event.value);
+      }
+
+      if (
+        !next.hasRunningSubprocess &&
+        session.status === "running" &&
+        session.pid === terminalPid &&
+        session.process === process &&
+        terminalActivityMark(session) === mark
+      ) {
+        quietSessions.set(session, {
+          process,
+          mark,
+          idleInspections: previous?.process === process && previous.mark === mark ? 2 : 1,
+          skippedTicks: 0,
+        });
       }
     });
 
@@ -2725,13 +2793,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             (input.terminalId === undefined || session.terminalId === input.terminalId),
         );
         if (running.length === 0) return;
-        // A command started during the process check can miss the snapshot,
-        // but its input or echo still lands. Both counters only grow, so the
-        // sum changes when either one does.
-        const activityMark = (session: TerminalSessionState) =>
-          session.eventSequence + session.inputCount;
         const marks = new Map(
-          running.map((session) => [session.terminalId, activityMark(session)]),
+          running.map((session) => [session.terminalId, terminalActivityMark(session)]),
         );
         // Inspect now instead of trusting the last poll, so a command started
         // since then keeps its terminal.
@@ -2741,7 +2804,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             subprocessInspector(session.pid).pipe(
               Effect.flatMap((result) =>
                 result.hasRunningSubprocess ||
-                activityMark(session) !== marks.get(session.terminalId)
+                terminalActivityMark(session) !== marks.get(session.terminalId)
                   ? Effect.void
                   : closeSession(input.threadId, session.terminalId, false),
               ),
