@@ -25,6 +25,7 @@ import {
   readAttachmentUpload,
   readUploadedAttachmentId,
   releaseAttachmentUpload,
+  retryAttachmentUpload,
   startAttachmentUpload,
   type UploadableComposerAttachment,
 } from "./attachmentUploadQueue";
@@ -94,7 +95,12 @@ export async function settleComposerAttachmentUploads(input: {
     return null;
   }
   for (const attachment of uploadable) {
-    startAttachmentUpload({ environmentId: input.environmentId, attachment });
+    // Send retries a failed upload, so a failure does not block sending.
+    const upload =
+      readAttachmentUpload(attachment.id)?.status === "failed"
+        ? retryAttachmentUpload
+        : startAttachmentUpload;
+    upload({ environmentId: input.environmentId, attachment });
   }
   await awaitAttachmentUploads(uploadable.map((attachment) => attachment.id));
   const failed = uploadable.find(
