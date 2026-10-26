@@ -97,6 +97,51 @@ it.effect("launches the default browser through the platform command", () => {
   );
 });
 
+it.effect.each(["win32", "linux"] as const)(
+  "launches the browser through PowerShell on %s",
+  (platform) => {
+    let spawned: ChildProcess.StandardCommand | undefined;
+    return Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+
+      yield* launcher.launchBrowser("https://example.com/some path");
+
+      assert.ok(spawned);
+      assert.equal(
+        spawned.command,
+        platform === "win32"
+          ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+          : "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+      );
+      assert.deepEqual(spawned.args.slice(0, -1), [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+      ]);
+      const encodedCommand = spawned.args[spawned.args.length - 1] ?? "";
+      const decodedCommand = Buffer.from(encodedCommand, "base64").toString("utf16le");
+      assert.equal(
+        decodedCommand,
+        "$ProgressPreference = 'SilentlyContinue'; Start 'https://example.com/some path'",
+      );
+      // Windows PowerShell started detached exits 0 without running its command.
+      assert.equal(spawned.options.detached, platform !== "win32");
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform,
+          env: { SYSTEMROOT: "C:\\Windows", WSL_DISTRO_NAME: "Ubuntu" },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+  },
+);
+
 it.effect("launches an installed editor with platform-safe arguments", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

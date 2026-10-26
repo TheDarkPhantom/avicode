@@ -96,6 +96,12 @@ const POWERSHELL_ARGUMENTS_PREFIX = [
   "-EncodedCommand",
 ] as const;
 
+// Windows PowerShell started with DETACHED_PROCESS exits 0 without running its
+// command, so native Windows launches through it stay attached. The child is
+// still unref'd with ignored stdio, so nothing waits on it. WSL interop
+// PowerShell starts from a Linux process and keeps the detached launch.
+const WINDOWS_POWERSHELL_DETACHED = false;
+
 const DETACHED_IGNORE_STDIO_OPTIONS = {
   detached: true,
   stdin: "ignore",
@@ -228,7 +234,11 @@ function shouldUseWindowsBrowserFromWsl(
   );
 }
 
-function resolveWindowsBrowserLaunch(target: string, command: string): ProcessLaunch {
+function resolveWindowsBrowserLaunch(
+  target: string,
+  command: string,
+  detached: boolean,
+): ProcessLaunch {
   const encodedCommand = encodeUtf16LeBase64(
     `$ProgressPreference = 'SilentlyContinue'; Start ${escapePowerShellStringLiteral(target)}`,
   );
@@ -236,7 +246,7 @@ function resolveWindowsBrowserLaunch(target: string, command: string): ProcessLa
     command,
     args: [...POWERSHELL_ARGUMENTS_PREFIX, encodedCommand],
     options: {
-      detached: true,
+      detached,
       shell: false,
       stdin: "ignore",
       stdout: "ignore",
@@ -323,11 +333,15 @@ function buildBrowserLaunch(
   }
 
   if (platform === "win32") {
-    return resolveWindowsBrowserLaunch(target, resolvePowerShellPath(env));
+    return resolveWindowsBrowserLaunch(
+      target,
+      resolvePowerShellPath(env),
+      WINDOWS_POWERSHELL_DETACHED,
+    );
   }
 
   if (shouldUseWindowsBrowserFromWsl(platform, env)) {
-    return resolveWindowsBrowserLaunch(target, resolveWslPowerShellPath());
+    return resolveWindowsBrowserLaunch(target, resolveWslPowerShellPath(), true);
   }
 
   return {
