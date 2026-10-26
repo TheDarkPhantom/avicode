@@ -1,3 +1,4 @@
+import { isPathWord } from "@t3tools/shared/composerTrigger";
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
@@ -287,6 +288,9 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
   if (linePrefix.startsWith("/")) {
     const commandMatch = /^\/(\S*)$/.exec(linePrefix);
+    if (commandMatch && isPathWord(text, lineStart, cursor, isWhitespace)) {
+      return null;
+    }
     if (commandMatch) {
       const commandQuery = commandMatch[1] ?? "";
       return {

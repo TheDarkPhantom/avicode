@@ -37,8 +37,12 @@ export interface WrappedTerminalLinkLine {
 }
 
 const URL_PATTERN = /https?:\/\/[^\s"'`<>]+/g;
+// Bare paths start only at a segment boundary: hover detection runs this on
+// every frame, so separator-free output must not be rescanned at every suffix.
 const FILE_PATH_PATTERN =
-  /(?:~\/|\.{1,2}\/|\/|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>]+|[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+(?::\d+){0,2}/g;
+  /(?:~[\\/]|\.{1,2}[\\/]|\/|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>]+|(?<![\p{L}\p{M}\p{N}._-])[\p{L}\p{M}\p{N}._-]+(?:[\\/][\p{L}\p{M}\p{N}._-]+)+(?::\d+){0,2}/gu;
+const QUOTED_FILE_PATH_PATTERN =
+  /(["'`])(?<path>(?:~[\\/]|\.{1,2}[\\/]|\/|[A-Za-z]:[\\/]|\\\\|[\p{L}\p{M}\p{N}._ -]+[\\/])[^\r\n]*?|[\p{L}\p{M}\p{N}._ -]+\.[\p{L}\p{M}\p{N}_-]+(?::\d+){0,2})\1(?<position>(?::\d+){0,2})/gu;
 const TRAILING_PUNCTUATION_PATTERN = /[.,;!?]+$/;
 // Paths also drop a trailing colon: compilers end `file:line:col:` with one.
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[.,;:!?]+$/;
@@ -79,11 +83,13 @@ function collectMatches(
   pattern.lastIndex = 0;
 
   for (const rawMatch of line.matchAll(pattern)) {
-    const raw = rawMatch[0];
-    const start = rawMatch.index ?? -1;
+    const quotedPath = rawMatch.groups?.path;
+    const raw =
+      quotedPath === undefined ? rawMatch[0] : quotedPath + (rawMatch.groups?.position ?? "");
+    const start = rawMatch.index + (quotedPath === undefined ? 0 : 1);
     if (start < 0 || raw.length === 0) continue;
 
-    const trimmed = trimClosingDelimiters(raw, kind);
+    const trimmed = quotedPath === undefined ? trimClosingDelimiters(raw, kind) : raw;
     if (trimmed.length === 0) continue;
     if (kind === "path" && /^https?:\/\//i.test(trimmed)) continue;
 
@@ -91,7 +97,8 @@ function collectMatches(
       kind,
       text: trimmed,
       start,
-      end: start + trimmed.length,
+      // A position outside quotes spans the closing quote in the terminal buffer.
+      end: start + trimmed.length + (rawMatch.groups?.position ? 1 : 0),
     };
 
     const collides = [...existing, ...matches].some((other) => overlaps(candidate, other));
@@ -134,7 +141,8 @@ function inferHomeFromCwd(cwd: string): string | undefined {
     return `/home/${posixHome[1]}`;
   }
 
-  const windowsUser = cwd.match(/^([A-Za-z]:\\Users\\[^\\]+)/);
+  // Windows paths are case-insensitive, so `C:\users\me` is a home too.
+  const windowsUser = cwd.match(/^([A-Za-z]:[\\/]Users[\\/][^\\/]+)/i);
   if (windowsUser?.[1]) {
     return windowsUser[1];
   }
@@ -173,8 +181,12 @@ export function splitPathAndPosition(value: string): {
 
 export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
   const urlMatches = collectMatches(line, "url", URL_PATTERN, []);
-  const pathMatches = collectMatches(line, "path", FILE_PATH_PATTERN, urlMatches);
-  return [...urlMatches, ...pathMatches].toSorted((a, b) => a.start - b.start);
+  const quotedMatches = collectMatches(line, "path", QUOTED_FILE_PATH_PATTERN, urlMatches);
+  const pathMatches = collectMatches(line, "path", FILE_PATH_PATTERN, [
+    ...urlMatches,
+    ...quotedMatches,
+  ]);
+  return [...urlMatches, ...quotedMatches, ...pathMatches].toSorted((a, b) => a.start - b.start);
 }
 
 export function collectWrappedTerminalLinkLine(
@@ -275,7 +287,7 @@ export function resolvePathLinkTarget(rawPath: string, cwd: string): string {
   const { path, line, column } = splitPathAndPosition(rawPath);
 
   let resolvedPath = path;
-  if (path.startsWith("~/")) {
+  if (path.startsWith("~/") || (isWindowsPathStyle(cwd) && path.startsWith("~\\"))) {
     const home = inferHomeFromCwd(cwd);
     if (home) {
       const separator: "/" | "\\" = isWindowsPathStyle(home) ? "\\" : "/";

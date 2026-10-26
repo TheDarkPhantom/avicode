@@ -207,6 +207,7 @@ import {
   ArrowLeftRightIcon,
 } from "lucide-react";
 import { chatContentMaxWidthCss } from "~/lib/chatContentWidth";
+import { formatFilePathForClipboard } from "~/lib/clipboardPath";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -4126,37 +4127,44 @@ function ChatViewContent(props: ChatViewProps) {
     cleanupRightPanelSurfaces(rightPanelState.surfaces);
     useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
   }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
-  const copyRightPanelFilePath = useCallback((relativePath: string) => {
-    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
-        }),
+  const copyRightPanelFilePath = useCallback(
+    (relativePath: string) => {
+      const clipboardPath = formatFilePathForClipboard(
+        relativePath,
+        gitCwd ?? activeProjectCwd ?? relativePath,
       );
-      return;
-    }
-
-    void navigator.clipboard.writeText(relativePath).then(
-      () => {
-        toastManager.add({
-          type: "success",
-          title: "Path copied",
-          description: relativePath,
-        });
-      },
-      (error) => {
+      if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Failed to copy path",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description: "Clipboard API unavailable.",
           }),
         );
-      },
-    );
-  }, []);
+        return;
+      }
+
+      void navigator.clipboard.writeText(clipboardPath).then(
+        () => {
+          toastManager.add({
+            type: "success",
+            title: "Path copied",
+            description: clipboardPath,
+          });
+        },
+        (error) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to copy path",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        },
+      );
+    },
+    [activeProjectCwd, gitCwd],
+  );
   useEffect(
     () =>
       subscribePreviewAction((action) => {

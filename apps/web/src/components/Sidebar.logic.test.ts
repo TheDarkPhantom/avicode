@@ -1316,6 +1316,65 @@ describe("resolveThreadStatusPill", () => {
       expect(pill?.tint).toBeNull();
     });
   });
+
+  const failedTurn = { ...makeLatestTurn(), state: "error" as const };
+  const stoppedSession = { ...baseThread.session, status: "error" as const, activeTurnId: null };
+
+  it("shows failed, not completed, when the unseen turn failed", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          latestTurn: failedTurn,
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          session: { ...stoppedSession, lastError: "Provider turn failed." },
+        },
+      }),
+    ).toMatchObject({ label: "Failed", pulse: false });
+  });
+
+  it("shows failed for a thread nobody has opened yet", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          latestTurn: failedTurn,
+          lastVisitedAt: undefined,
+          session: stoppedSession,
+        },
+      }),
+    ).toMatchObject({ label: "Failed" });
+  });
+
+  it("shows failed, not plan ready, when a plan turn proposed a plan and then failed", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          hasActionableProposedPlan: true,
+          latestTurn: failedTurn,
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          session: stoppedSession,
+        },
+      }),
+    ).toMatchObject({ label: "Failed" });
+  });
+
+  it("drops the failed pill once the failure has been seen", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          latestTurn: failedTurn,
+          lastVisitedAt: "2026-03-09T10:06:00.000Z",
+          session: stoppedSession,
+        },
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("resolveThreadRowClassName", () => {

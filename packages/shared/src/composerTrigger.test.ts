@@ -1,11 +1,37 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  detectComposerTrigger,
   parseComposerSideQuestionCommand,
   parseStandaloneComposerSlashCommand,
   serializeComposerFileLink,
   serializeComposerMentionPath,
 } from "./composerTrigger.ts";
+
+describe("detectComposerTrigger", () => {
+  it.each([
+    ["Run /tmp/build.sh", "Run /tmp/build.sh".length],
+    ["/etc/hosts", "/etc/hosts".length],
+    ["/src/foo.ts", "/sr".length],
+    ["Use /etc/hosts now", "Use /et".length],
+  ])("keeps the path in %j out of the slash menu", (text, cursor) => {
+    expect(detectComposerTrigger(text, cursor)).toBeNull();
+  });
+
+  it("keeps a slash in the line-leading model picker query", () => {
+    expect(detectComposerTrigger("/model openai/gpt", 17)).toMatchObject({
+      kind: "slash-model",
+      query: "openai/gpt",
+    });
+  });
+
+  it("still opens the slash menu for a command", () => {
+    expect(detectComposerTrigger("/pla", 4)).toMatchObject({
+      kind: "slash-command",
+      query: "pla",
+    });
+  });
+});
 
 describe("serializeComposerMentionPath", () => {
   it("keeps simple mention paths unquoted", () => {

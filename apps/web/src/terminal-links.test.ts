@@ -18,6 +18,62 @@ function createBufferLine(text: string, isWrapped = false): TerminalBufferLineLi
 }
 
 describe("extractTerminalLinks", () => {
+  it.each([
+    String.raw`src\index.ts:12`,
+    String.raw`.\src\index.ts:12:7`,
+    String.raw`..\src\index.ts:12`,
+    String.raw`C:\Users\Jane\project\index.ts:12`,
+    String.raw`\\server\share\index.ts:12`,
+  ])("finds Windows path %s", (text) => {
+    const line = `error at ${text}: failed`;
+    expect(extractTerminalLinks(line)).toEqual([
+      { kind: "path", text, start: 9, end: 9 + text.length },
+    ]);
+  });
+
+  it.each(['"', "'", "`"])("finds paths containing spaces enclosed in %s", (quote) => {
+    const text = String.raw`C:\Users\Jane Doe\project\index.ts:12:7`;
+    expect(extractTerminalLinks(`see ${quote}${text}${quote}.`)).toEqual([
+      { kind: "path", text, start: 5, end: 5 + text.length },
+    ]);
+  });
+
+  it.each([
+    String.raw`src\my folder\index.ts`,
+    "./my folder/index.ts",
+    "/home/Jane Doe/index.ts",
+    "/home/Jane Doe/file)",
+    String.raw`\\server\my share\index.ts`,
+  ])("keeps positions outside quotes on %s", (path) => {
+    expect(extractTerminalLinks(`"${path}":12:7: error`)).toEqual([
+      { kind: "path", text: `${path}:12:7`, start: 1, end: path.length + 7 },
+    ]);
+  });
+
+  it("does not treat quoted prose as a path", () => {
+    expect(extractTerminalLinks('error: "something went wrong"')).toEqual([]);
+    expect(extractTerminalLinks('error: "something went wrong."')).toEqual([]);
+  });
+
+  it.each([
+    ['"my file.ts":12:7', "my file.ts:12:7", 17],
+    ["'my file.ts:12:7'", "my file.ts:12:7", 16],
+    ["`my file.ts`", "my file.ts", 11],
+  ])("finds a quoted basename in %s", (line, text, end) => {
+    expect(extractTerminalLinks(line)).toEqual([{ kind: "path", text, start: 1, end }]);
+  });
+
+  it("keeps quoted paths and URLs separate without duplicate partial paths", () => {
+    const path = String.raw`C:\Jane Doe\index.ts:12`;
+    const url = "https://example.com/docs";
+    const line = `"${path}" ${url} src/index.ts`;
+    expect(extractTerminalLinks(line)).toEqual([
+      { kind: "path", text: path, start: 1, end: 1 + path.length },
+      { kind: "url", text: url, start: path.length + 3, end: path.length + 3 + url.length },
+      { kind: "path", text: "src/index.ts", start: line.length - 12, end: line.length },
+    ]);
+  });
+
   it("finds http urls and path tokens", () => {
     const line =
       "failed at https://example.com/docs and src/components/ThreadTerminalDrawer.tsx:42";
@@ -52,6 +108,18 @@ describe("extractTerminalLinks", () => {
         start: 28,
         end: 44,
       },
+    ]);
+  });
+
+  it.each([
+    "src/żółć.ts:12:7",
+    "żółć/main.ts:12",
+    String.raw`żółć\main.ts:12`,
+    "src/café.ts:12",
+    "src/𐐀.ts:12",
+  ])("keeps the complete Unicode relative path %s", (text) => {
+    expect(extractTerminalLinks(`see ${text} for details`)).toEqual([
+      { kind: "path", text, start: 4, end: 4 + text.length },
     ]);
   });
 
@@ -194,6 +262,53 @@ describe("resolveWrappedTerminalLinkRange", () => {
 });
 
 describe("resolvePathLinkTarget", () => {
+  it.each([
+    ["C:\\Users\\julius\\project", "C:\\Users\\julius\\notes.md:3"],
+    ["C:\\users\\alice\\project", "C:\\users\\alice\\notes.md:3"],
+    ["C:/uSeRs/alice/project", "C:/uSeRs/alice\\notes.md:3"],
+  ])("resolves home paths against the Windows cwd %s", (cwd, expected) => {
+    expect(resolvePathLinkTarget("~/notes.md:3", cwd)).toBe(expected);
+  });
+
+  it("keeps home paths unchanged when no supported home can be inferred", () => {
+    for (const cwd of ["C:/work/project", "/Home/alice/project", "/users/alice/project"]) {
+      expect(resolvePathLinkTarget("~/notes.md:3", cwd)).toBe("~/notes.md:3");
+    }
+  });
+
+  it("resolves a quoted terminal link against a Windows environment", () => {
+    const [link] = extractTerminalLinks(String.raw`error at "src\my folder\index.ts":12:7`);
+    expect(resolvePathLinkTarget(link?.text ?? "", String.raw`C:\Users\Jane Doe\project`)).toBe(
+      String.raw`C:\Users\Jane Doe\project\src\my folder\index.ts:12:7`,
+    );
+  });
+
+  it.each([
+    [
+      String.raw`src\index.ts:12:7`,
+      String.raw`C:\Users\Jane Doe\project`,
+      String.raw`C:\Users\Jane Doe\project\src\index.ts:12:7`,
+    ],
+    [
+      "src/index.ts:12:7",
+      "C:/Users/Jane Doe/project",
+      String.raw`C:/Users/Jane Doe/project\src\index.ts:12:7`,
+    ],
+    [
+      String.raw`.\src\index.ts:12`,
+      String.raw`\\server\share\project`,
+      String.raw`\\server\share\project\.\src\index.ts:12`,
+    ],
+    [
+      String.raw`~\index.ts:12`,
+      String.raw`C:\Users\Jane Doe\project`,
+      String.raw`C:\Users\Jane Doe\index.ts:12`,
+    ],
+    ["src/index.ts:12", "/home/jane/project", "/home/jane/project/src/index.ts:12"],
+  ])("resolves %s using the connected environment cwd %s", (path, cwd, expected) => {
+    expect(resolvePathLinkTarget(path, cwd)).toBe(expected);
+  });
+
   it("resolves relative paths against cwd", () => {
     expect(
       resolvePathLinkTarget(

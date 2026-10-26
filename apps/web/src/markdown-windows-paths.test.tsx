@@ -3,15 +3,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { describe, expect, it } from "vite-plus/test";
 
-import { remarkKeepWindowsPathDestinations } from "./markdown-windows-paths";
+import { remarkKeepWindowsPaths } from "./markdown-windows-paths";
 
 /** Rendered `href`/`src` values, unescaped and URI-decoded (hast encodes `\` as `%5C`). */
 function renderDestinations(markdown: string): string[] {
   const html = renderToStaticMarkup(
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkKeepWindowsPathDestinations]}
-      urlTransform={(url) => url}
-    >
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkKeepWindowsPaths]} urlTransform={(url) => url}>
       {markdown}
     </ReactMarkdown>,
   );
@@ -20,7 +17,7 @@ function renderDestinations(markdown: string): string[] {
   );
 }
 
-describe("remarkKeepWindowsPathDestinations", () => {
+describe("remarkKeepWindowsPaths", () => {
   it("keeps Windows path backslashes that CommonMark would read as escapes", () => {
     const destinations = renderDestinations(
       [
@@ -50,5 +47,31 @@ describe("remarkKeepWindowsPathDestinations", () => {
     expect(renderDestinations(String.raw`[docs](https://example.com/a\_b)`)).toEqual([
       "https://example.com/a_b",
     ]);
+  });
+});
+
+/** Rendered prose with `<code>` kept and every other tag dropped. */
+function renderProse(markdown: string): string {
+  const html = renderToStaticMarkup(
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkKeepWindowsPaths]}>{markdown}</ReactMarkdown>,
+  );
+  return html.replace(/<(?!\/?code>)[^>]+>/g, "");
+}
+
+describe("remarkKeepWindowsPaths in prose", () => {
+  it("keeps backslashes that CommonMark would read as escapes in prose Windows paths", () => {
+    expect(
+      renderProse(
+        String.raw`Saved to C:\Users\me\.t3\_build and (C:\.scratch) and C:/work\.config.`,
+      ),
+    ).toBe(String.raw`Saved to C:\Users\me\.t3\_build and (C:\.scratch) and C:/work\.config.`);
+    // Paths render as written, so one an agent already escaped keeps its doubled backslashes.
+    expect(renderProse(String.raw`Escaped C:\\Users\\me`)).toBe(String.raw`Escaped C:\\Users\\me`);
+    expect(renderProse(String.raw`See C:\x and \*this\* and Note:\*that\*.`)).toBe(
+      String.raw`See C:\x and *this* and Note:*that*.`,
+    );
+    expect(renderProse(String.raw`${"`"}C:\me\.t3${"`"} and C:\me\.t3`)).toBe(
+      String.raw`<code>C:\me\.t3</code> and C:\me\.t3`,
+    );
   });
 });

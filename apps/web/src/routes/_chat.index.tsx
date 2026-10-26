@@ -1,7 +1,7 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { LinkIcon, MessageSquareDashedIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
@@ -42,19 +42,23 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const router = useRouter();
+  // Read at effect time: this page stays mounted while a navigation away from
+  // "/" is still loading, but the router already points at the new location.
+  const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
+  // Projects from environments that have loaded are enough to start a draft;
+  // waiting for every environment would hold the composer on a slow one.
   const mostRecentProject = useMemo(
-    () =>
-      bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
-        : null,
-    [bootstrapped, projects, threads],
+    () => sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null,
+    [projects, threads],
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    // Starting a draft after the user has left would replace the page they picked.
+    if (mostRecentProject === null || startingRef.current || !isStillOnIndex()) {
       return;
     }
     startingRef.current = true;
@@ -66,9 +70,6 @@ function IndexDraftLanding() {
     });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
-  if (!bootstrapped) {
-    return null;
-  }
   if (mostRecentProject !== null) {
     return startState.failed ? (
       <DraftStartError
@@ -81,7 +82,8 @@ function IndexDraftLanding() {
       />
     ) : null;
   }
-  return <NoProjectsHero />;
+  // A pending environment cannot prove the workspace is empty.
+  return bootstrapped ? <NoProjectsHero /> : null;
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {

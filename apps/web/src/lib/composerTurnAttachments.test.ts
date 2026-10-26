@@ -10,6 +10,7 @@ import type {
 const uploads = vi.hoisted(() => ({
   ready: new Map<string, string>(),
   started: [] as string[],
+  retried: [] as string[],
 }));
 
 vi.mock("./attachmentUploadQueue", () => ({
@@ -19,6 +20,9 @@ vi.mock("./attachmentUploadQueue", () => ({
     uploads.ready.has(id) ? undefined : { status: "failed", reason: "Upload rejected (500)" },
   readUploadedAttachmentId: (_environmentId: string, id: string) => uploads.ready.get(id) ?? null,
   releaseAttachmentUpload: () => {},
+  retryAttachmentUpload: (input: { attachment: { id: string } }) => {
+    uploads.retried.push(input.attachment.id);
+  },
   startAttachmentUpload: (input: { attachment: { id: string } }) => {
     uploads.started.push(input.attachment.id);
   },
@@ -169,6 +173,7 @@ describe("composer turn attachments", () => {
   });
 
   it("names the failed upload and asks for a re-pick of interrupted files", async () => {
+    uploads.retried.length = 0;
     expect(
       await settleComposerAttachmentUploads({
         environmentId,
@@ -176,6 +181,8 @@ describe("composer turn attachments", () => {
         fileUploadLimit: 1024,
       }),
     ).toBe("'src.zip' did not upload (Upload rejected (500)). Retry or remove it before sending.");
+    // Send retries a failed upload instead of joining its settled failure.
+    expect(uploads.retried).toEqual([file.id]);
     expect(
       await settleComposerAttachmentUploads({
         environmentId,
