@@ -453,6 +453,20 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   return completedAt > lastVisitedAt;
 }
 
+/**
+ * A failed latest turn the person hasn't looked at since it ended. Unlike a
+ * completion, a thread nobody has opened yet (an automation's, say) counts:
+ * its failure still needs someone.
+ */
+function hasUnseenFailure(thread: ThreadStatusInput): boolean {
+  if (thread.latestTurn?.state !== "error") return false;
+  if (!thread.lastVisitedAt) return true;
+  const completedAt = Date.parse(thread.latestTurn.completedAt ?? "");
+  const lastVisitedAt = Date.parse(thread.lastVisitedAt);
+  if (Number.isNaN(completedAt) || Number.isNaN(lastVisitedAt)) return true;
+  return completedAt > lastVisitedAt;
+}
+
 export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
   if (target === null) return true;
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
@@ -969,6 +983,19 @@ export function resolveThreadStatusPill(input: {
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
       tint: null,
+    };
+  }
+
+  if (hasUnseenFailure(thread)) {
+    return {
+      label: "Failed",
+      colorClass: "text-red-600 dark:text-red-300/90",
+      dotClass: "bg-red-500 dark:bg-red-300/90",
+      pulse: false,
+      tint: {
+        bgClass: "bg-red-500/25 dark:bg-red-400/20",
+        textClass: "text-red-950 dark:text-red-50",
+      },
     };
   }
 
