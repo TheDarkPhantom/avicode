@@ -51,6 +51,41 @@ describe("desktopNetworkAccessState", () => {
     registry.dispose();
   });
 
+  it("revalidates a stale snapshot when the settings screen remounts", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+    const getServerExposureState = vi.fn(async () => serverExposureState);
+    const getAdvertisedEndpoints = vi.fn(async () => advertisedEndpoints);
+    const atom = createDesktopNetworkAccessStateAtom(() => ({
+      getAdvertisedEndpoints,
+      getServerExposureState,
+    }));
+    const registry = AtomRegistry.make();
+
+    try {
+      const unmount = registry.mount(atom);
+      await vi.waitFor(() => {
+        expect(AsyncResult.value(registry.get(atom))).toEqual(
+          expect.objectContaining({ _tag: "Some" }),
+        );
+      });
+      unmount();
+      // Let the registry process the unmount before the screen comes back.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      now.mockReturnValue(1_030_001);
+
+      const remount = registry.mount(atom);
+      // The stale snapshot still shows while the fresh endpoints load.
+      expect(AsyncResult.value(registry.get(atom))).toEqual(
+        expect.objectContaining({ _tag: "Some" }),
+      );
+      await vi.waitFor(() => expect(getAdvertisedEndpoints).toHaveBeenCalledTimes(2));
+      remount();
+    } finally {
+      registry.dispose();
+      now.mockRestore();
+    }
+  });
+
   it.each([
     {
       cause: serverExposureLoadCause,
