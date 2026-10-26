@@ -87,6 +87,24 @@ it.effect("shrinks the WAL file back to the size limit after a large write", () 
   );
 });
 
+it.effect("only fsyncs the database file at WAL checkpoints", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sqlite-sync-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const journal = yield* sql<{ readonly journal_mode: string }>`PRAGMA journal_mode`;
+    // NORMAL is only crash-safe in WAL mode.
+    assert.equal(journal[0]?.journal_mode, "wal");
+    const rows = yield* sql<{ readonly synchronous: number }>`PRAGMA synchronous`;
+    // 1 is NORMAL.
+    assert.equal(rows[0]?.synchronous, 1);
+  }).pipe(
+    Effect.provide(makeSqlitePersistenceLive(dbPath).pipe(Layer.provide(NodeServices.layer))),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
+
 it.effect("applies busy_timeout in the shared persistence setup", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
