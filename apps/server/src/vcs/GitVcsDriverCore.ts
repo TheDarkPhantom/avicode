@@ -480,6 +480,18 @@ const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
+// Matches a fetch that lost a ref update to another Git process. Git 2.53+
+// reports it as "fetching ref <ref> failed: ..."; older Git says "cannot lock ref".
+function isRefLockFailure(stderr: string): boolean {
+  return stderr
+    .split(/\r?\n/)
+    .some((line) =>
+      /^(?:(?:error|fatal): cannot lock ref\b|fatal: Unable to create ['"].+\.lock['"]:|error: fetching ref \S+ failed: (?:incorrect old value provided|reference already exists)$)/i.test(
+        line.trim(),
+      ),
+    );
+}
+
 function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
     .split(/\r?\n/)
@@ -1015,6 +1027,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     );
 
+  const gitExitError = (
+    operation: string,
+    cwd: string,
+    args: readonly string[],
+    result: GitVcsDriver.ExecuteGitResult,
+    fallbackErrorDetail: string | undefined,
+  ): Effect.Effect<never, GitCommandError> => {
+    const reason = classifyGitFailure(result.stderr);
+    return Effect.fail(
+      new GitCommandError({
+        ...gitCommandContext({ operation, cwd, args }),
+        ...(reason === null ? {} : { reason }),
+        detail: fallbackErrorDetail ?? "Git command exited with a non-zero status.",
+        ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+      }),
+    );
+  };
+
   const executeGit = (
     operation: string,
     cwd: string,
@@ -1035,22 +1067,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         : {}),
       ...(options.progress ? { progress: options.progress } : {}),
     }).pipe(
-      Effect.flatMap((result) => {
-        if (options.allowNonZeroExit || result.exitCode === 0) {
-          return Effect.succeed(result);
-        }
-        const reason = classifyGitFailure(result.stderr);
-        return Effect.fail(
-          new GitCommandError({
-            ...gitCommandContext({ operation, cwd, args }),
-            ...(reason === null ? {} : { reason }),
-            detail: options.fallbackErrorDetail ?? "Git command exited with a non-zero status.",
-            ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
-            stdoutLength: result.stdout.length,
-            stderrLength: result.stderr.length,
-          }),
-        );
-      }),
+      Effect.flatMap((result) =>
+        options.allowNonZeroExit || result.exitCode === 0
+          ? Effect.succeed(result)
+          : gitExitError(operation, cwd, args, result, options.fallbackErrorDetail),
+      ),
     );
 
   const executeGitWithStableDiagnostics = (
@@ -2856,7 +2877,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "config",
         `branch.${input.newRefName}.gh-merge-base`,
         baseBranch,
-      ]);
+      ]).pipe(
+        Effect.catchTags({
+          GitCommandError: () =>
+            Effect.logWarning("worktree base-ref configuration failed; using base-branch fallback"),
+        }),
+      );
     }
 
     return {
@@ -2888,15 +2914,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const fetchRemote: GitVcsDriver.GitVcsDriver["Service"]["fetchRemote"] = Effect.fn("fetchRemote")(
     function* (input) {
-      yield* executeGit(
+      const args = ["fetch", "--quiet", input.remoteName];
+      const options = {
+        env: STATUS_UPSTREAM_REFRESH_ENV,
+        fallbackErrorDetail: `git fetch ${input.remoteName} failed`,
+      };
+      // Another fetch in the same repository, such as the background status
+      // poll, can win the race for a remote-tracking ref. The loser fails, but
+      // the ref is free again by the time a rerun needs it, so retry once.
+      const first = yield* executeGitWithStableDiagnostics(
         "GitVcsDriver.fetchRemote",
         input.cwd,
-        ["fetch", "--quiet", input.remoteName],
-        {
-          env: STATUS_UPSTREAM_REFRESH_ENV,
-          fallbackErrorDetail: `git fetch ${input.remoteName} failed`,
-        },
+        args,
+        { ...options, allowNonZeroExit: true },
       );
+      if (first.exitCode === 0) return;
+      if (!isRefLockFailure(first.stderr)) {
+        return yield* gitExitError(
+          "GitVcsDriver.fetchRemote",
+          input.cwd,
+          args,
+          first,
+          options.fallbackErrorDetail,
+        );
+      }
+      yield* executeGitWithStableDiagnostics("GitVcsDriver.fetchRemote", input.cwd, args, options);
     },
   );
 

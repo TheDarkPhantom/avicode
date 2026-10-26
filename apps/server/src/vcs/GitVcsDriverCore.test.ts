@@ -471,6 +471,87 @@ it.effect("ignores worktree metadata for directories that no longer exist", () =
   ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect.each([
+  {
+    name: "reference lock",
+    stderr: "error: cannot lock ref 'refs/remotes/origin/main': is at abc but expected def",
+    attempts: 2,
+  },
+  {
+    name: "reference race on Git 2.53",
+    stderr: "error: fetching ref refs/remotes/origin/main failed: incorrect old value provided",
+    attempts: 2,
+  },
+  {
+    name: "held reference lock on Git 2.53",
+    stderr: "error: fetching ref refs/remotes/origin/main failed: reference already exists",
+    attempts: 2,
+  },
+  {
+    name: "unrelated failure",
+    stderr: "fatal: 'origin' does not appear to be a git repository",
+    attempts: 1,
+  },
+])("retries a fetch that lost a ref update to another Git process: $name", (scenario) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0);
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.gen(function* () {
+          if (!ChildProcess.isStandardCommand(command))
+            return yield* Effect.die("expected Git command");
+          if (command.args[0] !== "fetch") return makeNonRepositoryHandle();
+          yield* Ref.update(attempts, (count) => count + 1);
+          return ChildProcessSpawner.makeHandle({
+            ...makeNonRepositoryHandle(),
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+            stderr: Stream.encodeText(Stream.make(scenario.stderr)),
+          });
+        }),
+      );
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const cwd = yield* makeTmpDir();
+      const error = yield* driver.fetchRemote({ cwd, remoteName: "origin" }).pipe(Effect.flip);
+      assert.equal(error._tag, "GitCommandError");
+      assert.equal(yield* Ref.get(attempts), scenario.attempts);
+    }),
+  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
+it.effect("succeeds when the retried fetch wins the ref back", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0);
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.gen(function* () {
+          if (!ChildProcess.isStandardCommand(command))
+            return yield* Effect.die("expected Git command");
+          if (command.args[0] !== "fetch") return makeNonRepositoryHandle();
+          const attempt = yield* Ref.updateAndGet(attempts, (count) => count + 1);
+          if (attempt > 1) return makeSuccessfulHandle("");
+          return ChildProcessSpawner.makeHandle({
+            ...makeNonRepositoryHandle(),
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+            stderr: Stream.encodeText(
+              Stream.make(
+                "error: fetching ref refs/remotes/origin/main failed: incorrect old value provided",
+              ),
+            ),
+          });
+        }),
+      );
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const cwd = yield* makeTmpDir();
+      yield* driver.fetchRemote({ cwd, remoteName: "origin" });
+      assert.equal(yield* Ref.get(attempts), 2);
+    }),
+  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 it.effect("refreshes the current branch after an external checkout", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1689,6 +1770,38 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
             assert.equal(yield* fileSystem.exists(worktreePath), false);
           }
         }),
+    );
+
+    it.effect("still creates the worktree when the base-ref config is locked", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "locked-config");
+        yield* writeTextFile(cwd, ".git/config.lock", "");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const created = yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/locked-config",
+          baseRefName: initialBranch,
+        });
+
+        assert.equal(created.worktree.path, worktreePath);
+        assert.equal(created.worktree.refName, "feature/locked-config");
+        assert.equal(
+          yield* git(worktreePath, ["branch", "--show-current"]),
+          "feature/locked-config",
+        );
+        assert.equal(
+          yield* driver.readConfigValue(worktreePath, "branch.feature/locked-config.gh-merge-base"),
+          null,
+        );
+        assert.equal(yield* fileSystem.exists(pathService.join(cwd, ".git/config.lock")), true);
+      }),
     );
 
     it.effect("leaves a folder alone that only shares the worktree's short name", () =>
