@@ -123,6 +123,19 @@ function buildGrokDiscoveredModelsFromSessionModelState(
     .filter((model): model is ServerProviderModel => model !== undefined);
 }
 
+/**
+ * Grok checks for a newer CLI when it launches. The health probes
+ * (`grok --version`, ACP `initialize`) run periodically in the background, so
+ * an update they start is invisible, and on Windows it opens a console window
+ * for npm. Grok documents `GROK_DISABLE_AUTOUPDATER=1` as process-scoped
+ * suppression, so probes set it on a copy of the caller's environment.
+ * Sessions and text generation keep the caller's environment and update as the
+ * user configured.
+ */
+export function grokProbeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...environment, GROK_DISABLE_AUTOUPDATER: "1" };
+}
+
 const discoverGrokModelsViaAcp = (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
@@ -185,7 +198,9 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     });
   }
 
-  const versionResult = yield* runGrokVersionCommand(grokSettings, environment).pipe(
+  const probeEnvironment = grokProbeEnvironment(environment);
+
+  const versionResult = yield* runGrokVersionCommand(grokSettings, probeEnvironment).pipe(
     Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
     Effect.result,
   );
@@ -251,7 +266,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     });
   }
 
-  const discoveryExit = yield* discoverGrokModelsViaAcp(grokSettings, environment).pipe(
+  const discoveryExit = yield* discoverGrokModelsViaAcp(grokSettings, probeEnvironment).pipe(
     Effect.timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
     Effect.exit,
   );
