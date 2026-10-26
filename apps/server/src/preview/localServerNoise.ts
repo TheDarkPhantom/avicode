@@ -1,7 +1,7 @@
 /**
  * Avi Code addition: keep the browser panel to servers Avi Code started.
  *
- * The Windows probe is `Get-NetTCPConnection -State Listen`, which returns every
+ * The Windows probe is `netstat -ano`, which returns every
  * listening socket on the machine; `lsof` on macOS and Linux has the same shape.
  * On a normal desktop that is dominated by the operating system and by vendor
  * tools — lighting daemons, peripheral updaters, VPN clients, game launchers —
