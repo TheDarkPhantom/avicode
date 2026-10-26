@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -367,6 +368,80 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
           { method: "x/final", params: { text: "最後" } },
         ]);
         assert.deepEqual(rawLines, [firstLine, secondLine, finalLine]);
+      }),
+  );
+
+  it.effect.each(["newline-terminated", "unfinished"])(
+    "rejects an oversized %s message using UTF-8 bytes before logging or parsing",
+    (framing) =>
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const notifications: Array<CodexProtocol.CodexAppServerIncomingNotification> = [];
+        const logged: Array<unknown> = [];
+        const termination = yield* Deferred.make<CodexError.CodexAppServerError>();
+        let reachedEnd = false;
+        const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio: Stdio.make({
+            ...stdio,
+            stdin: stdio.stdin.pipe(
+              Stream.concat(
+                Stream.suspend(() => {
+                  reachedEnd = true;
+                  return Stream.empty;
+                }),
+              ),
+            ),
+          }),
+          maxIncomingMessageBytes: 16,
+          logIncoming: true,
+          logger: (event) =>
+            Effect.sync(() => {
+              logged.push(event.payload);
+            }),
+          onNotification: (notification) =>
+            Effect.sync(() => {
+              notifications.push(notification);
+            }),
+          onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+        });
+        const pending = yield* Effect.forEach(["thread/read", "thread/list"], (method) =>
+          transport.request(method, {}).pipe(Effect.forkScoped),
+        );
+        yield* Effect.forEach(pending, () => Queue.take(output));
+
+        // Two 16-byte lines must survive; the 17-byte line is only 15 UTF-16 code units.
+        const firstLine = '{"method":"xé"}';
+        const secondLine = '{"method":"x/a"}';
+        const bytes = encoder.encode(
+          `${firstLine}\n${secondLine}\n{"method":"éé"}${framing === "unfinished" ? "" : "\n"}`,
+        );
+        // Split a UTF-8 sequence on both sides of the byte limit.
+        const firstSplit = bytes.indexOf(0xc3) + 1;
+        yield* Queue.offer(input, bytes.subarray(0, firstSplit));
+        if (framing === "unfinished") {
+          const lastSplit = bytes.lastIndexOf(0xc3) + 1;
+          yield* Queue.offer(input, bytes.subarray(firstSplit, lastSplit));
+          yield* Queue.offer(input, bytes.subarray(lastSplit));
+        } else {
+          yield* Queue.offer(input, bytes.subarray(firstSplit));
+        }
+        yield* Queue.end(input);
+
+        const error = yield* Deferred.await(termination);
+        assert.instanceOf(error, CodexError.CodexAppServerTransportError);
+        assert.equal(error.operation, "read-input-stream");
+        assert.isFalse(reachedEnd, "Must reject the unfinished line before reading EOF");
+        for (const response of pending) {
+          const failure = yield* Fiber.join(response).pipe(
+            Effect.match({
+              onFailure: (error) => error,
+              onSuccess: () => assert.fail("Expected the oversized message to fail the request"),
+            }),
+          );
+          assert.strictEqual(failure, error);
+        }
+        assert.deepEqual(notifications, [{ method: "xé" }, { method: "x/a" }]);
+        assert.deepEqual(logged, [firstLine, { method: "xé" }, secondLine, { method: "x/a" }]);
       }),
   );
 

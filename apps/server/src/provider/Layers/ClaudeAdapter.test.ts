@@ -14,12 +14,14 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
+  UserInputQuestion,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, describe, it } from "@effect/vitest";
@@ -35,11 +37,19 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  CLAUDE_T3_MCP_AUTHORIZATION_ENV,
+  claudeUserInputQuestions,
+  hasEmptyClaudeTranscript,
+  makeClaudeAdapter,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+const decodeUserInputQuestions = Schema.decodeUnknownSync(Schema.Array(UserInputQuestion));
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
 class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(
@@ -296,6 +306,33 @@ async function readFirstPromptMessage(
 
 const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
+
+describe("claudeUserInputQuestions", () => {
+  it("fills blank AskUserQuestion descriptions from trimmed labels", () => {
+    const questions = decodeUserInputQuestions(
+      claudeUserInputQuestions({
+        questions: [
+          {
+            header: "Naming",
+            question: "Which name?",
+            options: [
+              { label: "Recorder", description: " Matches the package name. " },
+              { label: " Keep ", description: "" },
+              { label: " Other ", description: " \t\n " },
+              { label: " Ask later " },
+            ],
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(questions[0]?.options, [
+      { label: "Recorder", description: "Matches the package name." },
+      { label: "Keep", description: "Keep" },
+      { label: "Other", description: "Other" },
+      { label: "Ask later", description: "Ask later" },
+    ]);
+  });
+});
 
 describe("ClaudeAdapterLive", () => {
   it.effect("returns validation error for non-claude provider on startSession", () => {
@@ -3990,6 +4027,118 @@ describe("ClaudeAdapterLive", () => {
       yield* Stream.runHead(adapter.streamEvents);
       yield* Effect.promise(() => grepPermissionPromise);
     }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("starts a fresh session when the resume transcript never saved a message", () => {
+    const configDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-claude-empty-session-"),
+    );
+    const projectDir = NodePath.join(configDir, "projects", "-workspace");
+    NodeFS.mkdirSync(projectDir, { recursive: true });
+    const emptySessionId = "550e8400-e29b-41d4-a716-446655440001";
+    // What a CLI stopped before it saved the first prompt leaves behind.
+    NodeFS.writeFileSync(
+      NodePath.join(projectDir, `${emptySessionId}.jsonl`),
+      [
+        `{"type":"last-prompt","lastPrompt":"hello","sessionId":"${emptySessionId}"}`,
+        `{"type":"cost-state","sessionId":"${emptySessionId}","totalCostUSD":0}`,
+        "",
+      ].join("\n"),
+    );
+    const harness = makeHarness({ claudeConfig: { homePath: configDir } });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: RESUME_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: {
+          threadId: "resume-thread-1",
+          resume: emptySessionId,
+          resumeSessionAt: "assistant-99",
+          turnCount: 3,
+        },
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.equal(createInput?.options.resume, undefined);
+      assert.equal(typeof createInput?.options.sessionId, "string");
+      assert.notEqual(createInput?.options.sessionId, emptySessionId);
+      assert.deepEqual(session.resumeCursor, {
+        threadId: RESUME_THREAD_ID,
+        resume: createInput?.options.sessionId,
+        turnCount: 3,
+      });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => NodeFS.rmSync(configDir, { recursive: true, force: true })),
+      ),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("keeps resuming transcripts that saved a message or are missing", () =>
+    Effect.gen(function* () {
+      const configDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-claude-saved-session-"),
+      );
+      const projectDir = NodePath.join(configDir, "projects", "-workspace");
+      NodeFS.mkdirSync(projectDir, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(projectDir, "saved.jsonl"),
+        `{"type":"user","message":{"role":"user","content":"hello"},"sessionId":"saved"}\n`,
+      );
+      const environment = { CLAUDE_CONFIG_DIR: configDir };
+      assert.equal(
+        yield* hasEmptyClaudeTranscript({ sessionId: "saved", environment, cwd: undefined }),
+        false,
+      );
+      assert.equal(
+        yield* hasEmptyClaudeTranscript({ sessionId: "missing", environment, cwd: undefined }),
+        false,
+      );
+      NodeFS.rmSync(configDir, { recursive: true, force: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps the T3 Code MCP token out of the Claude process arguments", () => {
+    const harness = makeHarness();
+    const authorizationHeader = "Bearer mcp-secret-token";
+    return Effect.gen(function* () {
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: RESUME_THREAD_ID,
+        providerSessionId: "provider-session-1",
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        endpoint: "http://127.0.0.1:1/mcp",
+        authorizationHeader,
+      });
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: RESUME_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const options = harness.getLastCreateQueryInput()?.options;
+      const server = options?.mcpServers?.["t3-code"] as
+        | { readonly headers?: Record<string, string> }
+        | undefined;
+      // `mcpServers` rides as an inline `--mcp-config` argument; only the
+      // environment carries the credential.
+      assert.equal(server?.headers?.Authorization, `\${${CLAUDE_T3_MCP_AUTHORIZATION_ENV}}`);
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.notInclude(JSON.stringify(options?.mcpServers), "mcp-secret-token");
+      assert.equal(options?.env?.[CLAUDE_T3_MCP_AUTHORIZATION_ENV], authorizationHeader);
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(RESUME_THREAD_ID)),
+      ),
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );

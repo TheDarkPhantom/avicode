@@ -30,9 +30,10 @@
  * On layer build we:
  *   1. Read the current `ServerSettings` once and use it to seed the
  *      registry's initial state via `ProviderInstanceRegistryMutableLayer`.
- *   2. Fork a daemon fiber (lifetime tied to the layer's scope) that
- *      subscribes to `ServerSettingsService.streamChanges` and calls
- *      `ProviderInstanceRegistryMutator.reconcile` on every emission.
+ *   2. Fork a daemon fiber (lifetime tied to the layer's scope) that drains a
+ *      `ServerSettingsService.subscribeChanges` subscription taken before
+ *      step 1, re-reads current settings on every emission, and calls
+ *      `ProviderInstanceRegistryMutator.reconcile` with them.
  *
  * Failures inside the watcher are logged and swallowed so a single bad
  * settings emission cannot kill the registry. Unknown drivers and invalid
@@ -114,28 +115,32 @@ export const deriveProviderInstanceConfigMap = (
  * configs, so the only way the watcher could fail is a settings stream
  * tear-down, which logs and exits cleanly.
  */
-const SettingsWatcherLive = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const mutator = yield* ProviderInstanceRegistryMutator;
-    const serverSettings = yield* ServerSettingsService;
-    yield* serverSettings.streamChanges.pipe(
-      Stream.runForEach((next) =>
-        mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
-          .pipe(
+const SettingsWatcherLive = (settingsChanges: Stream.Stream<ServerSettings>) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const mutator = yield* ProviderInstanceRegistryMutator;
+      const serverSettings = yield* ServerSettingsService;
+      yield* settingsChanges.pipe(
+        Stream.runForEach(() =>
+          // The subscription predates the seed read, so a queued change can be
+          // older than the seed. A failed current read must leave the registry intact.
+          serverSettings.getSettings.pipe(
+            Effect.flatMap((current) =>
+              mutator.reconcile(deriveProviderInstanceConfigMap(current)),
+            ),
             Effect.catchCause((cause) =>
               Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
             ),
           ),
-      ),
-      Effect.forkScoped,
-    );
-  }),
-);
+        ),
+        Effect.forkScoped,
+      );
+    }),
+  );
 
 /**
  * Hydrate `ProviderInstanceRegistry` from `ServerSettings` and keep it in
- * sync with subsequent `streamChanges` emissions.
+ * sync with subsequent `subscribeChanges` emissions.
  *
  * The Layer's two halves:
  *   - `ProviderInstanceRegistryMutableLayer` produces the registry +
@@ -156,6 +161,8 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
 > = Layer.unwrap(
   Effect.gen(function* () {
     const serverSettings = yield* ServerSettingsService;
+    // Subscribe before the seed read so saves during registry construction are queued.
+    const settingsChanges = yield* serverSettings.subscribeChanges;
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
@@ -169,6 +176,6 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
       configMap: initialConfigMap,
     });
 
-    return SettingsWatcherLive.pipe(Layer.provideMerge(mutableLayer));
+    return SettingsWatcherLive(settingsChanges).pipe(Layer.provideMerge(mutableLayer));
   }),
 ) as Layer.Layer<ProviderInstanceRegistry, never, BuiltInDriversEnv | ServerSettingsService>;

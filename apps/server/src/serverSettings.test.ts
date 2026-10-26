@@ -816,6 +816,52 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("keeps an external settings edit that the watcher has not reloaded yet", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* serverSettings.getSettings;
+
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"addProjectBaseDirectory":"~/External"}',
+      );
+      yield* serverSettings.updateSettings({
+        observability: { otlpTracesUrl: "http://localhost:4318/v1/traces" },
+      });
+
+      const saved = yield* decodeServerSettings(
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath)),
+      );
+      assert.equal(saved.addProjectBaseDirectory, "~/External");
+      assert.equal(saved.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("refuses to save over a settings file it cannot parse", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* serverSettings.getSettings;
+      const raw = `{ "addProjectBaseDirectory": "~/External", `;
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, raw);
+
+      const error = yield* Effect.flip(
+        serverSettings.updateSettings({
+          observability: { otlpTracesUrl: "http://localhost:4318/v1/traces" },
+        }),
+      );
+
+      assert.equal(error.operation, "read-file");
+      assert.equal(error.settingsPath, serverConfig.settingsPath);
+      assert.instanceOf(error.cause, Error);
+      assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), raw);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("moves a hand-edited Bitbucket token into the secret store on the next write", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

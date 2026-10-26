@@ -395,7 +395,7 @@ function normalizeQuestionRequest(request: QuestionRequest): ReadonlyArray<UserI
     question: question.question,
     options: question.options.map((option) => ({
       label: option.label,
-      description: option.description,
+      description: option.description.trim() || option.label,
     })),
     ...(question.multiple ? { multiSelect: true } : {}),
   }));

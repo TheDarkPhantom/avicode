@@ -6,6 +6,8 @@
  *
  * @module ClaudeAdapterLive
  */
+import * as NodeOS from "node:os";
+
 import {
   type CanUseTool,
   query,
@@ -293,6 +295,39 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+}
+
+// The SDK passes `mcpServers` to the CLI as an inline `--mcp-config` argument,
+// and process arguments are readable by every local user. The credential
+// therefore travels in the child's environment, which only its owner can read,
+// and the CLI expands the `${VAR}` reference when it connects.
+export const CLAUDE_T3_MCP_AUTHORIZATION_ENV = "T3_CODE_MCP_AUTHORIZATION";
+
+/**
+ * Parse questions from the SDK's AskUserQuestion input.
+ * `id` MUST equal the full question text: Claude SDK >= 2.1.121 looks up
+ * answers by question text in `mapToolResultToToolResultBlockParam`, so the
+ * key the UI uses to keep its draft answer must match the SDK's expected
+ * lookup key. See https://github.com/pingdotgg/t3code/issues/2388
+ */
+export function claudeUserInputQuestions(
+  toolInput: Record<string, unknown>,
+): Array<UserInputQuestion> {
+  const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
+  return rawQuestions.map((q: Record<string, unknown>, idx: number) => ({
+    id: typeof q.question === "string" && q.question.length > 0 ? q.question : `q-${idx}`,
+    header: typeof q.header === "string" ? q.header : `Question ${idx + 1}`,
+    question: typeof q.question === "string" ? q.question : "",
+    options: Array.isArray(q.options)
+      ? q.options.flatMap((opt: Record<string, unknown>) => {
+          const label = typeof opt.label === "string" ? opt.label.trim() : "";
+          if (label.length === 0) return [];
+          const description = typeof opt.description === "string" ? opt.description.trim() : "";
+          return [{ label, description: description || label }];
+        })
+      : [],
+    multiSelect: typeof q.multiSelect === "boolean" ? q.multiSelect : false,
+  }));
 }
 
 function isUuid(value: string): boolean {
@@ -893,6 +928,60 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
       : {}),
   };
 }
+
+const decodeClaudeTranscriptLine = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ type: Schema.String })),
+);
+
+const isClaudeConversationLine = (line: string): boolean =>
+  Option.match(decodeClaudeTranscriptLine(line), {
+    onNone: () => false,
+    onSome: (entry) => entry.type === "user" || entry.type === "assistant",
+  });
+
+/**
+ * A CLI stopped before it saved the first prompt can leave a transcript with
+ * only metadata lines. Claude can neither resume that id nor create it again,
+ * so `startSession` starts a fresh session instead. Empty only when every copy
+ * of the id is empty; any message (or no transcript at all) leaves the resume
+ * to the CLI, as before.
+ */
+export const hasEmptyClaudeTranscript = Effect.fn("hasEmptyClaudeTranscript")(function* (input: {
+  readonly sessionId: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly cwd: string | undefined;
+}) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const configuredDir = input.environment.CLAUDE_CONFIG_DIR?.trim() ?? "";
+  const projectsDir = path.join(
+    configuredDir.length > 0
+      ? path.resolve(input.cwd ?? ".", configuredDir)
+      : path.join(NodeOS.homedir(), ".claude"),
+    "projects",
+  );
+  let found = false;
+  for (const project of yield* fileSystem.readDirectory(projectsDir)) {
+    const transcriptPath = path.join(projectsDir, project, `${input.sessionId}.jsonl`);
+    // Stray files beside the project dirs fail with ENOTDIR.
+    if (!(yield* fileSystem.exists(transcriptPath).pipe(Effect.orElseSucceed(() => false)))) {
+      continue;
+    }
+    const conversationLine = yield* fileSystem
+      .stream(transcriptPath)
+      .pipe(
+        Stream.decodeText,
+        Stream.splitLines,
+        Stream.filter(isClaudeConversationLine),
+        Stream.runHead,
+      );
+    if (Option.isSome(conversationLine)) {
+      return false;
+    }
+    found = true;
+  }
+  return found;
+});
 
 function classifyToolItemType(toolName: string): CanonicalItemType {
   const normalized = toolName.toLowerCase();
@@ -3835,7 +3924,33 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }
 
       const startedAt = yield* nowIso;
-      const resumeState = readClaudeResumeState(input.resumeCursor);
+      const cursorResumeState = readClaudeResumeState(input.resumeCursor);
+      const resumeHasNoConversation =
+        cursorResumeState?.resume !== undefined &&
+        (yield* hasEmptyClaudeTranscript({
+          sessionId: cursorResumeState.resume,
+          environment: claudeEnvironment,
+          cwd: input.cwd,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          // An unreadable transcript leaves the resume to the CLI, as before.
+          Effect.orElseSucceed(() => false),
+        ));
+      if (resumeHasNoConversation) {
+        yield* Effect.logWarning("claude.session.resume.empty-transcript", {
+          threadId: input.threadId,
+          sessionId: cursorResumeState?.resume,
+        });
+      }
+      const resumeState: ClaudeResumeState | undefined = resumeHasNoConversation
+        ? {
+            ...(cursorResumeState?.threadId ? { threadId: cursorResumeState.threadId } : {}),
+            ...(cursorResumeState?.turnCount !== undefined
+              ? { turnCount: cursorResumeState.turnCount }
+              : {}),
+          }
+        : cursorResumeState;
       const threadId = input.threadId;
       const existingResumeSessionId = resumeState?.resume;
       const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
@@ -3876,26 +3991,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ) {
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
 
-        // Parse questions from the SDK's AskUserQuestion input.
-        // `id` MUST equal the full question text — Claude SDK >= 2.1.121 looks
-        // up answers by question text in `mapToolResultToToolResultBlockParam`,
-        // so the key the UI uses to keep its draft answer must match the SDK's
-        // expected lookup key. See https://github.com/pingdotgg/t3code/issues/2388
-        const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-        const questions: Array<UserInputQuestion> = rawQuestions.map(
-          (q: Record<string, unknown>, idx: number) => ({
-            id: typeof q.question === "string" && q.question.length > 0 ? q.question : `q-${idx}`,
-            header: typeof q.header === "string" ? q.header : `Question ${idx + 1}`,
-            question: typeof q.question === "string" ? q.question : "",
-            options: Array.isArray(q.options)
-              ? q.options.map((opt: Record<string, unknown>) => ({
-                  label: typeof opt.label === "string" ? opt.label : "",
-                  description: typeof opt.description === "string" ? opt.description : "",
-                }))
-              : [],
-            multiSelect: typeof q.multiSelect === "boolean" ? q.multiSelect : false,
-          }),
-        );
+        const questions = claudeUserInputQuestions(toolInput);
 
         const answersDeferred = yield* Deferred.make<ProviderUserInputAnswers>();
         let aborted = false;
@@ -4340,7 +4436,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         canUseTool,
         onUserDialog,
         supportedDialogKinds: ["resume_return"],
-        env: claudeEnvironment,
+        env: mcpSession
+          ? {
+              ...claudeEnvironment,
+              [CLAUDE_T3_MCP_AUTHORIZATION_ENV]: mcpSession.authorizationHeader,
+            }
+          : claudeEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
@@ -4350,7 +4451,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
                   type: "http",
                   url: mcpSession.endpoint,
                   headers: {
-                    Authorization: mcpSession.authorizationHeader,
+                    Authorization: `\${${CLAUDE_T3_MCP_AUTHORIZATION_ENV}}`,
                   },
                 },
               },

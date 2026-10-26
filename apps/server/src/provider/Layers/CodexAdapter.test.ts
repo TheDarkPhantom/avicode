@@ -1187,6 +1187,10 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
                     label: "workspace-write",
                     description: "Allow workspace writes only",
                   },
+                  {
+                    label: "read-only",
+                    description: " ",
+                  },
                 ],
               },
             ],
@@ -1215,6 +1219,10 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           NodeAssert.equal(events[0].requestId, "req-user-input-1");
           NodeAssert.equal(events[0].payload.questions[0]?.id, "sandbox_mode");
           NodeAssert.equal(events[0].payload.questions[0]?.multiSelect, false);
+          NodeAssert.deepEqual(events[0].payload.questions[0]?.options, [
+            { label: "workspace-write", description: "Allow workspace writes only" },
+            { label: "read-only", description: "read-only" },
+          ]);
         }
 
         NodeAssert.equal(events[1]?.type, "user-input.resolved");

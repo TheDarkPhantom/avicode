@@ -39,6 +39,8 @@ function makeFakeCodexBinary(
     forbidArg?: string;
     stdinMustContain?: string;
     stdinMustNotContain?: string;
+    /** What `codex mcp list --json` answers; a number exits with that code instead. */
+    mcpServers?: ReadonlyArray<{ name: string; enabled: boolean }> | number;
   },
 ) {
   return Effect.gen(function* () {
@@ -52,6 +54,15 @@ function makeFakeCodexBinary(
       codexPath,
       [
         "#!/bin/sh",
+        'case " $* " in *" mcp list --json "*)',
+        ...(typeof input.mcpServers === "number"
+          ? [`  exit ${input.mcpServers}`]
+          : [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              `  printf "%s" '${JSON.stringify(input.mcpServers ?? [])}'`,
+              "  exit 0",
+            ]),
+        "esac",
         'original_args="$*"',
         'output_path=""',
         'seen_image="0"',
@@ -92,7 +103,7 @@ function makeFakeCodexBinary(
         'stdin_content="$(cat)"',
         ...(input.requireArg !== undefined
           ? [
-              `case " $original_args " in *" ${input.requireArg} "*) ;; *)`,
+              `case " $original_args " in *" ${input.requireArg.replaceAll('"', '\\"')} "*) ;; *)`,
               `  printf "%s\\n" "missing arg: ${input.requireArg}" >&2`,
               `  exit 8`,
               "esac",
@@ -189,6 +200,7 @@ function withFakeCodexEnv<A, E, R>(
     forbidArg?: string;
     stdinMustContain?: string;
     stdinMustNotContain?: string;
+    mcpServers?: ReadonlyArray<{ name: string; enabled: boolean }> | number;
     launchArgs?: string;
     environment?: NodeJS.ProcessEnv;
   },
@@ -205,6 +217,72 @@ function withFakeCodexEnv<A, E, R>(
 }
 
 it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
+  it.effect("generates titles with the user's MCP servers and plugins off", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "Remove default shapes" }),
+        mcpServers: [
+          { name: "augmenter", enabled: true },
+          { name: "my.server", enabled: true },
+          { name: "already-off", enabled: false },
+        ],
+        requireArg:
+          '--config features.plugins=false --config features.apps=false --config mcp_servers={"augmenter"={enabled=false},"my.server"={enabled=false}}',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Augmenter task 1. Use the Augmenter MCP: link_thread when you start.",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          // The fork title-cases generated thread titles.
+          expect(result.title).toBe("Remove Default Shapes");
+        }),
+    ),
+  );
+
+  it.effect("still generates when Codex cannot list its MCP servers", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ branch: "remove-default-shapes" }),
+        mcpServers: 2,
+        // Adjacent flags prove no `mcp_servers=` override rides between them.
+        requireArg: "--config features.plugins=false --config features.apps=false --ephemeral",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateBranchName({
+            cwd: process.cwd(),
+            message: "Remove default shapes from characters",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result.branch).toBe("remove-default-shapes");
+        }),
+    ),
+  );
+
+  it.effect("keeps plugins and apps off over launch args that turn them on", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "Remove default shapes" }),
+        launchArgs: "--config features.plugins=true --config features.apps=true",
+        requireArg:
+          "--config features.plugins=true --config features.apps=true --config features.plugins=false --config features.apps=false --ephemeral",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Remove default shapes from characters",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          // The fork title-cases generated thread titles.
+          expect(result.title).toBe("Remove Default Shapes");
+        }),
+    ),
+  );
+
   it.effect("generates and sanitizes commit messages without branch by default", () =>
     withFakeCodexEnv(
       {

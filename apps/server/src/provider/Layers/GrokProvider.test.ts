@@ -6,7 +6,11 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { GrokSettings } from "@t3tools/contracts";
 
-import { buildInitialGrokProviderSnapshot, checkGrokProviderStatus } from "./GrokProvider.ts";
+import {
+  buildInitialGrokProviderSnapshot,
+  checkGrokProviderStatus,
+  grokProbeEnvironment,
+} from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
@@ -36,7 +40,52 @@ describe("buildInitialGrokProviderSnapshot", () => {
   );
 });
 
+describe("grokProbeEnvironment", () => {
+  it("disables the Grok autoupdater on a copy of the caller's environment", () => {
+    const environment = { PATH: "/bin", GROK_DISABLE_AUTOUPDATER: "0" };
+    expect(grokProbeEnvironment(environment)).toEqual({
+      PATH: "/bin",
+      GROK_DISABLE_AUTOUPDATER: "1",
+    });
+    expect(environment.GROK_DISABLE_AUTOUPDATER).toBe("0");
+  });
+});
+
 it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
+  it.effect("runs the version probe with the Grok autoupdater disabled", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-updater-" });
+          const grokPath = path.join(dir, "grok");
+          // Fails unless the probe disabled the startup updater.
+          yield* fs.writeFileString(
+            grokPath,
+            [
+              "#!/bin/sh",
+              'if [ "$GROK_DISABLE_AUTOUPDATER" != "1" ]; then exit 2; fi',
+              'printf "grok-cli 0.0.99\\n"',
+              "exit 0",
+              "",
+            ].join("\n"),
+          );
+          yield* fs.chmod(grokPath, 0o755);
+
+          return yield* checkGrokProviderStatus(
+            decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
+            { ...process.env, GROK_DISABLE_AUTOUPDATER: "0" },
+          );
+        }),
+      );
+
+      expect(snapshot.installed).toBe(true);
+      expect(snapshot.message).not.toBe("Grok CLI is installed but failed to run.");
+      expect(snapshot.message).toContain("ACP startup failed");
+    }),
+  );
+
   it.effect("reports the binary as missing when the binary path does not resolve", () =>
     Effect.gen(function* () {
       const snapshot = yield* checkGrokProviderStatus(

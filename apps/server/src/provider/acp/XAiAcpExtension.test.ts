@@ -135,6 +135,28 @@ describe("XAiAcpExtension", () => {
     ]);
   });
 
+  it("fills blank option descriptions from the label", () => {
+    const questions = extractXAiAskUserQuestions({
+      sessionId: "session-1",
+      toolCallId: "tool-call-1",
+      mode: "default",
+      questions: [
+        {
+          question: "Which label?",
+          options: [
+            { label: "Alpha", description: "" },
+            { label: "Beta", description: "  " },
+          ],
+        },
+      ],
+    });
+
+    expect(questions[0]?.options).toEqual([
+      { label: "Alpha", description: "Alpha" },
+      { label: "Beta", description: "Beta" },
+    ]);
+  });
+
   it("maps UI question ids back to xAI question text in accepted responses", () => {
     const response = makeXAiAskUserQuestionResponse(
       {

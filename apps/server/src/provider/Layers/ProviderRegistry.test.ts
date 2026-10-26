@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -22,6 +23,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
+  ServerSettingsError,
   type ServerProvider,
   type ServerProviderSlashCommand,
   type ServerSettings as ContractServerSettings,
@@ -515,6 +517,22 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      it.effect(
+        "does not time out a healthy probe slower than the shared 10s auth-probe timeout",
+        () =>
+          Effect.gen(function* () {
+            const statusFiber = yield* checkCodexProviderStatus(defaultCodexSettings, () =>
+              Effect.sleep("15 seconds").pipe(Effect.as(makeCodexProbeSnapshot())),
+            ).pipe(Effect.forkChild);
+
+            yield* Effect.yieldNow;
+            yield* TestClock.adjust("15 seconds");
+
+            const status = yield* Fiber.join(statusFiber);
+            assert.strictEqual(status.status, "ready");
+          }),
+      );
+
       it.effect("closes the app-server probe scope when provider status times out", () =>
         Effect.gen(function* () {
           const killCalls = yield* Ref.make(0);
@@ -524,7 +542,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
 
           yield* Effect.yieldNow;
-          yield* TestClock.adjust("11 seconds");
+          yield* TestClock.adjust("21 seconds");
           yield* Effect.yieldNow;
 
           const status = yield* Fiber.join(statusFiber);
@@ -1853,6 +1871,142 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      const startupSettings = (instanceId?: string) =>
+        decodeServerSettings(
+          deepMerge(encodedDefaultServerSettings, {
+            providers: {
+              codex: { enabled: false },
+              claudeAgent: { enabled: false },
+              cursor: { enabled: false },
+              grok: { enabled: false },
+              opencode: { enabled: false },
+            },
+            providerInstances: (instanceId
+              ? { [instanceId]: { driver: "ghostDriver" } }
+              : {}) as unknown as ContractServerSettings["providerInstances"],
+          }),
+        );
+
+      const hydrateDuringSettingsChange = Effect.fnUntraced(function* (input: {
+        seed: ContractServerSettings;
+        saved: ContractServerSettings;
+        current: ContractServerSettings;
+        failCurrentRead?: boolean;
+      }) {
+        const changes = yield* PubSub.unbounded<ContractServerSettings | undefined>();
+        const consume = yield* Deferred.make<void>();
+        const drained: Array<Deferred.Deferred<void>> = [];
+        let readSeed = true;
+        let failCurrentRead = false;
+        const settings = yield* makeMutableServerSettingsService(input.current);
+        const serverSettings = {
+          ...settings,
+          getSettings: Effect.suspend(() => {
+            if (!readSeed) {
+              readSeed = true;
+              // A save lands between the subscription and the seed read.
+              return PubSub.publish(changes, input.saved).pipe(Effect.as(input.seed));
+            }
+            return failCurrentRead
+              ? Effect.fail(
+                  new ServerSettingsError({
+                    settingsPath: "<memory>",
+                    operation: "read-secret",
+                    cause: new Error("secret materialization failed"),
+                  }),
+                )
+              : settings.getSettings;
+          }),
+          streamChanges: Stream.empty,
+          subscribeChanges: Effect.gen(function* () {
+            const subscription = yield* PubSub.subscribe(changes);
+            const done = yield* Deferred.make<void>();
+            drained.push(done);
+            // The terminal marker acknowledges preceding reconciles, including no-op/failed reads.
+            return Stream.fromEffectRepeat(
+              Deferred.await(consume).pipe(Effect.andThen(PubSub.take(subscription))),
+            ).pipe(
+              Stream.takeWhile((next): next is ContractServerSettings => next !== undefined),
+              Stream.ensuring(Deferred.succeed(done, undefined)),
+            );
+          }),
+        } satisfies ServerSettingsModule.ServerSettingsService["Service"];
+        const dependencies = yield* Layer.build(
+          OpenCodeRuntime.OpenCodeRuntimeLive.pipe(
+            Layer.provideMerge(
+              Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
+            ),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), { prefix: "t3-provider-registry-" }),
+            ),
+            Layer.provideMerge(TestHttpClientLive),
+            Layer.provideMerge(
+              Layer.succeed(
+                ProviderEventLoggers.ProviderEventLoggers,
+                ProviderEventLoggers.NoOpProviderEventLoggers,
+              ),
+            ),
+            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
+          ),
+        );
+        readSeed = false;
+        const services = yield* Layer.build(ProviderInstanceRegistryHydrationLive).pipe(
+          Effect.provide(dependencies),
+        );
+        failCurrentRead = input.failCurrentRead ?? false;
+        yield* PubSub.publish(changes, undefined);
+        yield* Deferred.succeed(consume, undefined);
+        yield* Effect.forEach(drained, Deferred.await);
+        const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry.pipe(
+          Effect.provide(services),
+        );
+        return (yield* registry.listUnavailable).map(
+          (provider): string | undefined => provider.instanceId,
+        );
+      });
+
+      it.effect("applies a settings change saved while the provider registry starts", () =>
+        Effect.gen(function* () {
+          const saved = startupSettings("ghost_late");
+          const unavailable = yield* hydrateDuringSettingsChange({
+            seed: startupSettings(),
+            saved,
+            current: saved,
+          });
+          assert.include(unavailable, "ghost_late");
+        }),
+      );
+
+      it.effect("does not apply a queued settings change older than the registry seed", () =>
+        Effect.gen(function* () {
+          const seed = startupSettings("ghost_current");
+          const unavailable = yield* hydrateDuringSettingsChange({
+            seed,
+            saved: startupSettings("ghost_stale"),
+            current: seed,
+          });
+          assert.include(unavailable, "ghost_current");
+          assert.notInclude(unavailable, "ghost_stale");
+        }),
+      );
+
+      it.effect(
+        "retains the newer registry seed when a queued stale change cannot read current settings",
+        () =>
+          Effect.gen(function* () {
+            const seed = startupSettings("ghost_current");
+            const unavailable = yield* hydrateDuringSettingsChange({
+              seed,
+              saved: startupSettings("ghost_stale"),
+              current: seed,
+              failCurrentRead: true,
+            });
+            assert.include(unavailable, "ghost_current");
+            assert.notInclude(unavailable, "ghost_stale");
+          }),
+      );
+
       it.effect(
         "keeps cursor disabled and skips probing when the provider setting is disabled",
         () =>
@@ -1969,6 +2123,75 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      it.effect.each([
+        {
+          name: "accepts a healthy claude --version response after 19 seconds",
+          answer: Effect.sleep("19 seconds"),
+          elapsed: 19_000,
+          status: "ready",
+          version: "1.0.0",
+        },
+        {
+          name: "bounds a hung claude --version probe",
+          answer: Effect.never,
+          elapsed: 21_000,
+          status: "error",
+          version: null,
+        },
+      ])("$name", ({ answer, elapsed, status: expectedStatus, version }) =>
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const statusFiber = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          ).pipe(
+            Effect.provide(
+              Layer.succeed(
+                ChildProcessSpawner.ChildProcessSpawner,
+                ChildProcessSpawner.make((command) => {
+                  const joined = (command as unknown as { args: ReadonlyArray<string> }).args.join(
+                    " ",
+                  );
+                  if (joined === "auth status") {
+                    return Effect.succeed(
+                      mockHandle({
+                        stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                        stderr: "",
+                        code: 0,
+                      }),
+                    );
+                  }
+                  assert.strictEqual(joined, "--version");
+                  return Effect.succeed(
+                    ChildProcessSpawner.makeHandle({
+                      ...mockHandle({ stdout: "", stderr: "", code: 0 }),
+                      exitCode: answer.pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+                      stdout: Stream.fromEffect(
+                        Deferred.succeed(started, undefined).pipe(
+                          Effect.andThen(answer),
+                          Effect.as(encoder.encode("1.0.0\n")),
+                        ),
+                      ),
+                    }),
+                  );
+                }),
+              ),
+            ),
+            Effect.forkChild,
+          );
+          yield* Deferred.await(started);
+          yield* TestClock.adjust(elapsed);
+
+          const status = yield* Fiber.join(statusFiber);
+          assert.strictEqual(status.status, expectedStatus);
+          assert.strictEqual(status.installed, true);
+          assert.strictEqual(status.version, version);
+          if (expectedStatus === "error") {
+            assert.include(status.message, "Timed out while running command.");
+          }
+        }),
+      );
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
