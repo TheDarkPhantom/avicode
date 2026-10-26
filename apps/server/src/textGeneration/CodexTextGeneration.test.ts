@@ -236,7 +236,8 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             message: "Augmenter task 1. Use the Augmenter MCP: link_thread when you start.",
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
-          expect(result.title).toBe("Remove default shapes");
+          // The fork title-cases generated thread titles.
+          expect(result.title).toBe("Remove Default Shapes");
         }),
     ),
   );
@@ -276,7 +277,8 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             message: "Remove default shapes from characters",
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
-          expect(result.title).toBe("Remove default shapes");
+          // The fork title-cases generated thread titles.
+          expect(result.title).toBe("Remove Default Shapes");
         }),
     ),
   );
