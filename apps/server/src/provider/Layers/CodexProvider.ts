@@ -29,7 +29,6 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
-  AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
   type ServerProviderDraft,
@@ -40,6 +39,11 @@ import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
+// Codex's probe does a full handshake plus account, models, and skills requests, which can
+// legitimately run past the shared 10s AUTH_PROBE_TIMEOUT_MS on a loaded or slow machine
+// (most often reported on Windows). Give Codex its own longer budget instead of raising the
+// timeout for every provider.
+const CODEX_AUTH_PROBE_TIMEOUT_MS = 20_000;
 
 const CODEX_PRESENTATION = {
   displayName: "Codex",
@@ -557,7 +561,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     environment: resolvedEnvironment,
   }).pipe(
     Effect.scoped,
-    Effect.timeoutOption(Duration.millis(AUTH_PROBE_TIMEOUT_MS)),
+    Effect.timeoutOption(Duration.millis(CODEX_AUTH_PROBE_TIMEOUT_MS)),
     Effect.result,
   );
 

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -515,6 +516,22 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      it.effect(
+        "does not time out a healthy probe slower than the shared 10s auth-probe timeout",
+        () =>
+          Effect.gen(function* () {
+            const statusFiber = yield* checkCodexProviderStatus(defaultCodexSettings, () =>
+              Effect.sleep("15 seconds").pipe(Effect.as(makeCodexProbeSnapshot())),
+            ).pipe(Effect.forkChild);
+
+            yield* Effect.yieldNow;
+            yield* TestClock.adjust("15 seconds");
+
+            const status = yield* Fiber.join(statusFiber);
+            assert.strictEqual(status.status, "ready");
+          }),
+      );
+
       it.effect("closes the app-server probe scope when provider status times out", () =>
         Effect.gen(function* () {
           const killCalls = yield* Ref.make(0);
@@ -524,7 +541,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
 
           yield* Effect.yieldNow;
-          yield* TestClock.adjust("11 seconds");
+          yield* TestClock.adjust("21 seconds");
           yield* Effect.yieldNow;
 
           const status = yield* Fiber.join(statusFiber);
@@ -1969,6 +1986,75 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      it.effect.each([
+        {
+          name: "accepts a healthy claude --version response after 19 seconds",
+          answer: Effect.sleep("19 seconds"),
+          elapsed: 19_000,
+          status: "ready",
+          version: "1.0.0",
+        },
+        {
+          name: "bounds a hung claude --version probe",
+          answer: Effect.never,
+          elapsed: 21_000,
+          status: "error",
+          version: null,
+        },
+      ])("$name", ({ answer, elapsed, status: expectedStatus, version }) =>
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const statusFiber = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          ).pipe(
+            Effect.provide(
+              Layer.succeed(
+                ChildProcessSpawner.ChildProcessSpawner,
+                ChildProcessSpawner.make((command) => {
+                  const joined = (command as unknown as { args: ReadonlyArray<string> }).args.join(
+                    " ",
+                  );
+                  if (joined === "auth status") {
+                    return Effect.succeed(
+                      mockHandle({
+                        stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                        stderr: "",
+                        code: 0,
+                      }),
+                    );
+                  }
+                  assert.strictEqual(joined, "--version");
+                  return Effect.succeed(
+                    ChildProcessSpawner.makeHandle({
+                      ...mockHandle({ stdout: "", stderr: "", code: 0 }),
+                      exitCode: answer.pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+                      stdout: Stream.fromEffect(
+                        Deferred.succeed(started, undefined).pipe(
+                          Effect.andThen(answer),
+                          Effect.as(encoder.encode("1.0.0\n")),
+                        ),
+                      ),
+                    }),
+                  );
+                }),
+              ),
+            ),
+            Effect.forkChild,
+          );
+          yield* Deferred.await(started);
+          yield* TestClock.adjust(elapsed);
+
+          const status = yield* Fiber.join(statusFiber);
+          assert.strictEqual(status.status, expectedStatus);
+          assert.strictEqual(status.installed, true);
+          assert.strictEqual(status.version, version);
+          if (expectedStatus === "error") {
+            assert.include(status.message, "Timed out while running command.");
+          }
+        }),
+      );
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(

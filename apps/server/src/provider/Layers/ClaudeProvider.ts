@@ -36,7 +36,6 @@ import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
   AUTH_PROBE_TIMEOUT_MS,
-  DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -810,6 +809,8 @@ function claudeAuthStatus(
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+// Native CLI startup on Windows can exceed the shared probe deadline.
+const CLAUDE_VERSION_CHECK_TIMEOUT_MS = 20_000;
 const USAGE_PROBE_TIMEOUT_MS = 5_000;
 
 /**
@@ -1092,7 +1093,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     claudeSettings,
     ["--version"],
     resolvedEnvironment,
-  ).pipe(Effect.timeoutOption(DEFAULT_TIMEOUT_MS), Effect.result);
+  ).pipe(Effect.timeoutOption(CLAUDE_VERSION_CHECK_TIMEOUT_MS), Effect.result);
 
   if (Result.isFailure(versionProbe)) {
     const error = versionProbe.failure;
