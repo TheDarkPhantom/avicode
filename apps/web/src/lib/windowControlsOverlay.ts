@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 import { isWindowsPlatform } from "./utils";
 import { subscribeToAppZoomLevel } from "../appZoom";
 
@@ -174,6 +176,29 @@ export function syncDocumentWindowControlsOverlayClass(): () => void {
     unsubscribeFromZoom();
     clearWindowControlsOverlayGeometry();
   };
+}
+
+function subscribeTitlebarArea(listener: () => void): () => void {
+  const overlay = getWindowControlsOverlay();
+  overlay?.addEventListener("geometrychange", listener);
+  // Avi Code addition: app zoom rescales the titlebar rect in CSS px without a
+  // guaranteed geometrychange, matching syncDocumentWindowControlsOverlayClass.
+  const unsubscribeFromZoom = subscribeToAppZoomLevel(listener);
+  return () => {
+    overlay?.removeEventListener("geometrychange", listener);
+    unsubscribeFromZoom();
+  };
+}
+
+function getNativeTitlebarHeight(): number {
+  const overlay = getWindowControlsOverlay();
+  if (!overlay?.visible || typeof overlay.getTitlebarAreaRect !== "function") return 0;
+  return overlay.getTitlebarAreaRect().bottom;
+}
+
+/** Height of the strip at the top of the window where native window controls paint over the page. */
+export function useNativeTitlebarHeight(): number {
+  return useSyncExternalStore(subscribeTitlebarArea, getNativeTitlebarHeight, () => 0);
 }
 
 export function getElectronPlatformClassNames(
