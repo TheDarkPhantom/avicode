@@ -12,14 +12,20 @@ import {
   WorkflowIcon,
   WrapTextIcon,
 } from "lucide-react";
-import type { ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
+import type {
+  EditorId,
+  EnvironmentId,
+  ScopedThreadRef,
+  ServerProviderSkill,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import React, {
   Children,
   Suspense,
@@ -90,7 +96,7 @@ import { useRightPanelStore } from "../rightPanelStore";
 import { useActiveEnvironmentId } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { assetEnvironment } from "../state/assets";
-import { usePreparedConnection } from "../state/session";
+import { readPreparedConnection } from "../state/session";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -1427,6 +1433,25 @@ function areMarkdownFileLinkPropsEqual(
   );
 }
 
+const NO_MARKDOWN_EDITORS: ReadonlyArray<EditorId> = [];
+
+// The config object changes with every provider status push and snapshot. The
+// atom keeps its previous array while the editor list is equal, so those pushes
+// don't rebuild the renderers of every visible reply.
+const markdownAvailableEditorsAtom = Atom.family((environmentId: EnvironmentId | null) =>
+  Atom.make((get): ReadonlyArray<EditorId> => {
+    const next =
+      get(serverEnvironment.configValueAtom(environmentId))?.availableEditors ??
+      NO_MARKDOWN_EDITORS;
+    const previous = Option.getOrNull(get.self<ReadonlyArray<EditorId>>());
+    return previous !== null &&
+      previous.length === next.length &&
+      previous.every((editor, index) => editor === next[index])
+      ? previous
+      : next;
+  }).pipe(Atom.withLabel("markdown-available-editors")),
+);
+
 function ChatMarkdown({
   text,
   cwd,
@@ -1449,13 +1474,9 @@ function ChatMarkdown({
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
   });
-  const preparedConnection = usePreparedConnection(threadRef?.environmentId ?? null);
   const environmentId = useActiveEnvironmentId();
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const openInPreferredEditor = useOpenInPreferredEditor(
-    environmentId,
-    serverConfig?.availableEditors ?? [],
-  );
+  const availableEditors = useAtomValue(markdownAvailableEditorsAtom(environmentId));
+  const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   // Avi Code addition: recover numbered lists that continue after a heading so
   // they render as a list instead of collapsing into a paragraph. Inserted
@@ -1529,7 +1550,10 @@ function ChatMarkdown({
   );
   const openMarkdownFileInPreview = useCallback(
     (path: string) => {
-      if (!threadRef || preparedConnection._tag === "None") {
+      // Read at click time: a reconnect replaces the prepared connection, and
+      // subscribing would rebuild every renderer of every visible reply.
+      const preparedConnection = threadRef ? readPreparedConnection(threadRef.environmentId) : null;
+      if (!threadRef || preparedConnection === null) {
         return Promise.resolve(
           AsyncResult.failure<void, BrowserPreviewUnavailableError>(
             Cause.fail(
@@ -1543,12 +1567,12 @@ function ChatMarkdown({
       return openFileInPreview({
         threadRef,
         filePath: path,
-        httpBaseUrl: preparedConnection.value.httpBaseUrl,
+        httpBaseUrl: preparedConnection.httpBaseUrl,
         createAssetUrl,
         openPreview,
       });
     },
-    [createAssetUrl, openPreview, preparedConnection, threadRef],
+    [createAssetUrl, openPreview, threadRef],
   );
   const markdownComponents = useMemo<Components>(() => {
     const fileLinkChip = (
