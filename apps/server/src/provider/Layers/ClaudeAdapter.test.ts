@@ -14,6 +14,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -36,10 +37,12 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import {
+  CLAUDE_T3_MCP_AUTHORIZATION_ENV,
   claudeUserInputQuestions,
   hasEmptyClaudeTranscript,
   makeClaudeAdapter,
@@ -4102,6 +4105,44 @@ describe("ClaudeAdapterLive", () => {
       NodeFS.rmSync(configDir, { recursive: true, force: true });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  it.effect("keeps the T3 Code MCP token out of the Claude process arguments", () => {
+    const harness = makeHarness();
+    const authorizationHeader = "Bearer mcp-secret-token";
+    return Effect.gen(function* () {
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: RESUME_THREAD_ID,
+        providerSessionId: "provider-session-1",
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        endpoint: "http://127.0.0.1:1/mcp",
+        authorizationHeader,
+      });
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: RESUME_THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const options = harness.getLastCreateQueryInput()?.options;
+      const server = options?.mcpServers?.["t3-code"] as
+        | { readonly headers?: Record<string, string> }
+        | undefined;
+      // `mcpServers` rides as an inline `--mcp-config` argument; only the
+      // environment carries the credential.
+      assert.equal(server?.headers?.Authorization, `\${${CLAUDE_T3_MCP_AUTHORIZATION_ENV}}`);
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.notInclude(JSON.stringify(options?.mcpServers), "mcp-secret-token");
+      assert.equal(options?.env?.[CLAUDE_T3_MCP_AUTHORIZATION_ENV], authorizationHeader);
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(RESUME_THREAD_ID)),
+      ),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
 
   it.effect("passes Claude resume ids without pinning a stale assistant checkpoint", () => {
     const harness = makeHarness();
