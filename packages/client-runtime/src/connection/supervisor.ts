@@ -33,7 +33,15 @@ import * as ConnectionWakeups from "./wakeups.ts";
 
 const RETRY_BASE_DELAY_MS = 1_000;
 const RETRY_MAX_DELAY_MS = 300_000;
+// Budget to resolve credentials and create the session, which ends when the
+// driver reports the synchronizing stage. Reaching that stage adds its own
+// budget for the socket to open (bounded at 15 seconds by the RPC session) and
+// the server to deliver the first config snapshot. A cold server with a large
+// database can take longer than 15 seconds to answer, and that is not a reason
+// to drop a working connection.
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
+const establishmentTimeout = Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT);
+const synchronizationTimeout = Duration.fromInputUnsafe("75 seconds");
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 // Mobile resumes, explicit retries, and offline events want a fast answer:
 // the user is waiting, or the network may be gone.
@@ -305,9 +313,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     attempt: number,
     generation: number,
     lastFailure: ConnectionAttemptError | null,
+    synchronizing: Ref.Ref<boolean>,
   ) {
     return yield* driver.connect(entry, (progress) =>
-      reportProgress(attempt, generation, lastFailure, progress),
+      (progress.stage === "synchronizing" ? Ref.set(synchronizing, true) : Effect.void).pipe(
+        Effect.andThen(reportProgress(attempt, generation, lastFailure, progress)),
+      ),
     );
   });
 
@@ -360,16 +371,17 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     generation: number,
     lastFailure: ConnectionAttemptError | null,
     pendingRetry: Option.Option<PendingRetryTrace>,
+    synchronizing: Ref.Ref<boolean>,
   ) {
     if (target._tag === "RelayConnectionTarget") {
       return yield* traceRelayEstablishment(
-        establishConnection(attempt, generation, lastFailure),
+        establishConnection(attempt, generation, lastFailure, synchronizing),
         attempt,
         generation,
         pendingRetry,
       );
     }
-    return yield* establishConnection(attempt, generation, lastFailure).pipe(
+    return yield* establishConnection(attempt, generation, lastFailure, synchronizing).pipe(
       Effect.map((lease) => ({
         attemptSpan: Option.none<Tracer.Span>(),
         lease,
@@ -535,9 +547,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     ignoreOffline: boolean,
   ) {
     yield* SubscriptionRef.set(prepared, Option.none());
+    const synchronizing = yield* Ref.make(false);
     const establishment = yield* Effect.raceAllFirst([
       exitUnlessInterrupted(
-        establishTracedConnection(attempt, generation, lastFailure, pendingRetry),
+        establishTracedConnection(attempt, generation, lastFailure, pendingRetry, synchronizing),
       ).pipe(
         Effect.map(
           (exit): EstablishmentEvent => ({
@@ -554,9 +567,22 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           }),
         ),
       ),
-      Effect.sleep(CONNECTION_ESTABLISHMENT_TIMEOUT).pipe(
-        Effect.as<EstablishmentEvent>({ _tag: "TimedOut" }),
-      ),
+      // Setup gets its own budget, and reaching synchronizing adds the snapshot
+      // budget on top.
+      Effect.gen(function* () {
+        const startedAt = yield* Clock.currentTimeNanos;
+        for (;;) {
+          const deadline =
+            startedAt +
+            Duration.toNanosUnsafe(establishmentTimeout) +
+            ((yield* Ref.get(synchronizing)) ? Duration.toNanosUnsafe(synchronizationTimeout) : 0n);
+          const remaining = deadline - (yield* Clock.currentTimeNanos);
+          if (remaining <= 0n) {
+            return { _tag: "TimedOut" } as const satisfies EstablishmentEvent;
+          }
+          yield* Effect.sleep(Duration.nanos(remaining));
+        }
+      }),
     ]);
 
     if (establishment._tag === "Interrupted") {
@@ -731,9 +757,13 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       const failedProbe = yield* Ref.getAndSet(probeUnanswered, false);
       if (outcome.established) {
         generation = nextGeneration;
+        // A session came up, so no earlier failure describes the connection.
+        // Losing a live session is not a failed connection either, for example
+        // a socket the OS killed while the app was suspended: its replacement
+        // reports no failure until it fails itself.
+        latestFailure = null;
         if (outcome.stable) {
           resetRetryLadder();
-          latestFailure = null;
         }
       }
       if (outcome._tag === "Interrupted") {
@@ -746,7 +776,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
 
       const attemptSpan: Option.Option<Tracer.Span> = outcome.failure.attemptSpan;
       const error: ConnectionAttemptError = outcome.failure.error;
-      latestFailure = error;
+      if (!outcome.established) {
+        latestFailure = error;
+      }
       if (error._tag === "ConnectionBlockedError") {
         const blockedIntent = yield* Ref.get(intent);
         yield* setState({
@@ -773,7 +805,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         // of sleeping the first backoff rung. Only this first attempt skips the
         // ladder; if it fails too, normal backoff resumes.
         resetRetryLadder();
-        yield* setState(connectingState(yield* Ref.get(intent), generation, 1, error));
+        yield* setState(connectingState(yield* Ref.get(intent), generation, 1, latestFailure));
         continue;
       }
 
@@ -793,7 +825,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         stage: null,
         attempt,
         generation,
-        lastFailure: error,
+        lastFailure: latestFailure,
         retryAt: (yield* Clock.currentTimeMillis) + delayMs,
       });
       const applicationActivated = yield* waitForRetrySignal(delayMs);
