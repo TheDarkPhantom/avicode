@@ -72,6 +72,7 @@ import {
 import { rehypeHeadingIds, SANITIZED_FRAGMENT_PREFIX } from "../markdown-heading-ids";
 import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation";
 import { remarkKeepWindowsPaths } from "../markdown-windows-paths";
+import { formatFilePathForClipboard } from "../lib/clipboardPath";
 import { normalizeOrderedListContinuations } from "../markdown-source-normalize";
 import { type FileSurfaceRoot } from "./files/externalFileRoot";
 import { useProjectWorkspaceRoots } from "../state/projectWorkspaceRoots";
@@ -1283,7 +1284,8 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   }, [onOpenInBrowser, targetPath]);
 
   const handleCopy = useCallback(
-    (value: string, title: string) => {
+    (rawValue: string, title: string) => {
+      const value = formatFilePathForClipboard(rawValue, targetPath);
       if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
         toastManager.add(
           stackedThreadToast({
