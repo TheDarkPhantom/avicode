@@ -35,14 +35,13 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - The zoomed titlebar fix (#15496) covers the chat panels only. The settings, changelog and usage
     headers still read the raw titlebar values and likely misplace controls under zoom.
   - Sending on an older thread (#15059) fixes upstream's runs import, which the fork lacks.
-- Upstream sync of 2026-10-26 (#282 to #285) reviewed upstream through `8ecb607de4`; the next
-  review starts there. It hand-ported about 50 of 2,009 commits and left out:
-  - Not yet ported, pending a go-ahead: the Windows server batch. Git launcher token leak (#17707),
-    idle terminal process scans (#21242), PowerShell port scans (#18524), PowerShell browser
-    launch (#19656), `ELECTRON_RUN_AS_NODE` leaking into launched apps (#20206), worktree junction
-    cleanup (#15833), worktree creation races (#19411, #11773), settings save retries (#21062),
-    shell fixes (#19385, #19965, #19525, #21103), terminal kill and history saves (#18519, #17181,
-    #17179, #21209), and the `.cmd` editor path injection guard (#17749).
+- Upstream sync of 2026-10-26 (#282 to #288) reviewed upstream through `8ecb607de4`; the next
+  review starts there. It hand-ported about 65 of 2,009 commits and left out:
+  - The Windows server batch landed separately in #287, with review follow-ups in #286 and #288.
+    Skipped from it: the node-pty console-list patch (#18519), the PowerShell half of File
+    Explorer reveal (#19656; the fork calls `explorer.exe` directly), and upstream's mocked kill
+    fiber test and real PowerShell smoke tests. Worktree cleanup now stops at folders on another
+    volume (a fork addition; upstream walks into mount points).
   - Never port: the 14 desktop fixes upstream reverted in #22222 (including #21273, #19467,
     #21225, #19232, #15995), and migrations 061 to 066. `063_DropUnusedV1Projections` drops tables
     the fork's V1 orchestration reads.
