@@ -539,11 +539,10 @@ function toUserInputQuestions(questions: ReadonlyArray<CodexToolUserInputQuestio
         question.options
           ?.map((option) => {
             const label = trimText(option.label);
-            const description = trimText(option.description);
-            if (!label || !description) {
+            if (!label) {
               return undefined;
             }
-            return { label, description };
+            return { label, description: trimText(option.description) ?? label };
           })
           .filter((option) => option !== undefined) ?? [];
 

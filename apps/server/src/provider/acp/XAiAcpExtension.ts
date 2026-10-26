@@ -82,7 +82,7 @@ export function extractXAiAskUserQuestions(
       question.options.length > 0
         ? question.options.map((option) => ({
             label: option.label,
-            description: option.description ?? option.label,
+            description: option.description?.trim() || option.label,
           }))
         : [{ label: "OK", description: "Continue" }],
   }));

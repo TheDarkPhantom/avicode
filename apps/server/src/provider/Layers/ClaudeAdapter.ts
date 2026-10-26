@@ -295,6 +295,33 @@ export interface ClaudeAdapterLiveOptions {
   readonly nativeEventLogger?: EventNdjsonLogger;
 }
 
+/**
+ * Parse questions from the SDK's AskUserQuestion input.
+ * `id` MUST equal the full question text: Claude SDK >= 2.1.121 looks up
+ * answers by question text in `mapToolResultToToolResultBlockParam`, so the
+ * key the UI uses to keep its draft answer must match the SDK's expected
+ * lookup key. See https://github.com/pingdotgg/t3code/issues/2388
+ */
+export function claudeUserInputQuestions(
+  toolInput: Record<string, unknown>,
+): Array<UserInputQuestion> {
+  const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
+  return rawQuestions.map((q: Record<string, unknown>, idx: number) => ({
+    id: typeof q.question === "string" && q.question.length > 0 ? q.question : `q-${idx}`,
+    header: typeof q.header === "string" ? q.header : `Question ${idx + 1}`,
+    question: typeof q.question === "string" ? q.question : "",
+    options: Array.isArray(q.options)
+      ? q.options.flatMap((opt: Record<string, unknown>) => {
+          const label = typeof opt.label === "string" ? opt.label.trim() : "";
+          if (label.length === 0) return [];
+          const description = typeof opt.description === "string" ? opt.description.trim() : "";
+          return [{ label, description: description || label }];
+        })
+      : [],
+    multiSelect: typeof q.multiSelect === "boolean" ? q.multiSelect : false,
+  }));
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -3876,26 +3903,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ) {
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
 
-        // Parse questions from the SDK's AskUserQuestion input.
-        // `id` MUST equal the full question text — Claude SDK >= 2.1.121 looks
-        // up answers by question text in `mapToolResultToToolResultBlockParam`,
-        // so the key the UI uses to keep its draft answer must match the SDK's
-        // expected lookup key. See https://github.com/pingdotgg/t3code/issues/2388
-        const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-        const questions: Array<UserInputQuestion> = rawQuestions.map(
-          (q: Record<string, unknown>, idx: number) => ({
-            id: typeof q.question === "string" && q.question.length > 0 ? q.question : `q-${idx}`,
-            header: typeof q.header === "string" ? q.header : `Question ${idx + 1}`,
-            question: typeof q.question === "string" ? q.question : "",
-            options: Array.isArray(q.options)
-              ? q.options.map((opt: Record<string, unknown>) => ({
-                  label: typeof opt.label === "string" ? opt.label : "",
-                  description: typeof opt.description === "string" ? opt.description : "",
-                }))
-              : [],
-            multiSelect: typeof q.multiSelect === "boolean" ? q.multiSelect : false,
-          }),
-        );
+        const questions = claudeUserInputQuestions(toolInput);
 
         const answersDeferred = yield* Deferred.make<ProviderUserInputAnswers>();
         let aborted = false;

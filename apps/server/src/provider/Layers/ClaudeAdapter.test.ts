@@ -20,6 +20,7 @@ import {
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
+  UserInputQuestion,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, describe, it } from "@effect/vitest";
@@ -38,8 +39,13 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  claudeUserInputQuestions,
+  makeClaudeAdapter,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+const decodeUserInputQuestions = Schema.decodeUnknownSync(Schema.Array(UserInputQuestion));
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
 class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(
@@ -296,6 +302,33 @@ async function readFirstPromptMessage(
 
 const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
+
+describe("claudeUserInputQuestions", () => {
+  it("fills blank AskUserQuestion descriptions from trimmed labels", () => {
+    const questions = decodeUserInputQuestions(
+      claudeUserInputQuestions({
+        questions: [
+          {
+            header: "Naming",
+            question: "Which name?",
+            options: [
+              { label: "Recorder", description: " Matches the package name. " },
+              { label: " Keep ", description: "" },
+              { label: " Other ", description: " \t\n " },
+              { label: " Ask later " },
+            ],
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(questions[0]?.options, [
+      { label: "Recorder", description: "Matches the package name." },
+      { label: "Keep", description: "Keep" },
+      { label: "Other", description: "Other" },
+      { label: "Ask later", description: "Ask later" },
+    ]);
+  });
+});
 
 describe("ClaudeAdapterLive", () => {
   it.effect("returns validation error for non-claude provider on startSession", () => {
