@@ -89,6 +89,7 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useNowSecond } from "../hooks/useNowSecond";
 import { useIsScratchProject, useScratchProject } from "../hooks/useScratchProject";
 import { useMouseBackForwardThreadNavigation } from "../hooks/useMouseBackForwardThreadNavigation";
 import { openCommandPalette } from "../commandPaletteBus";
@@ -230,19 +231,21 @@ function JumpHintBadge(props: { label: string }) {
   );
 }
 
-// Self-ticking so only this span re-renders each second, not the whole row.
 function WorkingDuration(props: { startedAt: string | null }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (Number.isNaN(startedMs)) return;
-    const id = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
-    return () => window.clearInterval(id);
-  }, [startedMs]);
   if (Number.isNaN(startedMs)) return null;
+  return <WorkingDurationLabel startedMs={startedMs} />;
+}
+
+// Self-ticking so only this span re-renders each second, not the whole row;
+// the shared tick lands every working row's update in the same frame. The
+// clock value is read in render (not Date.now()), so the React Compiler cannot
+// cache a stale label.
+function WorkingDurationLabel(props: { startedMs: number }) {
+  const nowMs = useNowSecond();
   return (
     <span className="font-mono tabular-nums">
-      {formatWorkingDurationLabel(Date.now() - startedMs)}
+      {formatWorkingDurationLabel(nowMs - props.startedMs)}
     </span>
   );
 }
