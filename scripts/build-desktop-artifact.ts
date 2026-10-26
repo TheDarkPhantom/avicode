@@ -1610,6 +1610,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "win") {
     buildConfig.npmRebuild = false;
+    // Recreates a missing Start Menu shortcut on install/update. The shortcut
+    // name comes from electron-builder's productName, so it stays fork-branded.
+    buildConfig.nsis = { include: "apps/desktop/resources/installer.nsh" };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
