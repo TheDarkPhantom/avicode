@@ -1798,6 +1798,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                     <img
                       src={image.previewUrl}
                       alt={image.name}
+                      decoding="async"
                       className="block h-auto max-h-[220px] w-full object-cover"
                     />
                   </button>
@@ -2485,6 +2486,7 @@ function UserMessagePreviewAnnotationCard(props: {
           <img
             src={props.image.previewUrl}
             alt="Annotated preview crop"
+            decoding="async"
             className="size-full object-cover"
           />
         </button>
