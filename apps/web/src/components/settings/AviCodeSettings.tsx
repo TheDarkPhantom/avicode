@@ -59,7 +59,7 @@ import {
   setWindowTitlePrivacyEnabled,
 } from "../../lib/windowTitleMetadata";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import { readProject, useProjectRefs } from "../../state/entities";
+import { useProjectRefs } from "../../state/entities";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { primaryServerProvidersAtom, primaryServerWorktreeHealthAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -84,11 +84,8 @@ import { AviCodeShortcutsPanel } from "./AviCodeShortcuts";
 import { ChipsSettings } from "./ChipsSettings";
 import { ProjectSettingsOverridesSection } from "./ProjectSettingsOverrides";
 import { CommunicationStyleSettings } from "./CommunicationStyleSettings";
-import {
-  WorktreeCleanupDialog,
-  formatBytes,
-  type WorktreeCleanupTarget,
-} from "./WorktreeCleanupDialog";
+import { cleanupTargetsForProjects, startWorktreeCleanupScan } from "../../worktreeCleanupJob";
+import { formatBytes } from "../../worktreeCleanupJob.logic";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -698,7 +695,6 @@ function WorktreeAutomationSettings() {
 // across every project, with a read-only preview before anything is deleted.
 function WorktreeCleanupSettings() {
   const projectRefs = useProjectRefs();
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
 
   const worktreeHealth = useAtomValue(primaryServerWorktreeHealthAtom);
@@ -711,20 +707,7 @@ function WorktreeCleanupSettings() {
   const primaryEnvironment = usePrimaryEnvironment();
   const runHealthCheck = useAtomCommand(vcsEnvironment.runHealthCheck, { reportFailure: false });
 
-  const targets: ReadonlyArray<WorktreeCleanupTarget> = projectRefs.flatMap((ref) => {
-    const project = readProject(ref);
-    if (!project) {
-      return [];
-    }
-    return [
-      {
-        environmentId: project.environmentId,
-        projectId: project.id,
-        cwd: project.workspaceRoot,
-        title: project.title,
-      },
-    ];
-  });
+  const targets = cleanupTargetsForProjects(projectRefs);
 
   const handleDeadCountChange = useCallback(
     (nextValue: number | null) => {
@@ -777,7 +760,7 @@ function WorktreeCleanupSettings() {
             size="sm"
             variant="outline"
             disabled={targets.length === 0}
-            onClick={() => setDialogOpen(true)}
+            onClick={() => startWorktreeCleanupScan(targets)}
           >
             <Trash2Icon className="size-4" />
             Scan for dead worktrees
@@ -876,7 +859,6 @@ function WorktreeCleanupSettings() {
           />
         }
       />
-      <WorktreeCleanupDialog open={dialogOpen} onOpenChange={setDialogOpen} targets={targets} />
     </SettingsSection>
   );
 }

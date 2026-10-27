@@ -206,6 +206,10 @@ export type WorktreeCleanupCandidate = typeof WorktreeCleanupCandidate.Type;
 export const VcsScanCleanupInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   projectId: TrimmedNonEmptyStringSchema,
+  // Defaults to true. Clients that measure sizes afterwards with
+  // `vcs.measureWorktreeSize` pass false, so the list returns quickly; each
+  // candidate's `diskBytes` is then 0.
+  includeDiskBytes: Schema.optional(Schema.Boolean),
 });
 export type VcsScanCleanupInput = typeof VcsScanCleanupInput.Type;
 
@@ -214,6 +218,17 @@ export const VcsScanCleanupResult = Schema.Struct({
   totalBytes: NonNegativeInt,
 });
 export type VcsScanCleanupResult = typeof VcsScanCleanupResult.Type;
+
+export const VcsMeasureWorktreeSizeInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  worktreePath: TrimmedNonEmptyStringSchema,
+});
+export type VcsMeasureWorktreeSizeInput = typeof VcsMeasureWorktreeSizeInput.Type;
+
+export const VcsMeasureWorktreeSizeResult = Schema.Struct({
+  diskBytes: NonNegativeInt,
+});
+export type VcsMeasureWorktreeSizeResult = typeof VcsMeasureWorktreeSizeResult.Type;
 
 export const VcsExecuteCleanupCandidateInput = Schema.Struct({
   worktreePath: TrimmedNonEmptyStringSchema,

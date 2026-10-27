@@ -1,15 +1,11 @@
 "use client";
 
-// Avi Code addition: shared dry-run preview for deleting dead worktrees. Nothing
-// is removed until the user presses "Delete selected"; the scan is read-only and
-// the execute call is the only mutating step.
+// Avi Code addition: review screen for the background worktree cleanup job
+// (`worktreeCleanupJob.ts`). Mounted once in the root route. Closing it only
+// hides it: the scan, size measuring and delete keep running, and the top bar
+// pill reopens it. Nothing is removed until the user presses "Delete selected".
 
-import type {
-  EnvironmentId,
-  VcsExecuteCleanupResult,
-  VcsScanCleanupResult,
-  WorktreeCleanupCandidate,
-} from "@t3tools/contracts";
+import type { WorktreeCleanupCandidate } from "@t3tools/contracts";
 import {
   AlertTriangleIcon,
   HardDriveIcon,
@@ -17,13 +13,23 @@ import {
   LoaderIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-
-import { useAtomCommand } from "../../state/use-atom-command";
-import { vcsEnvironment } from "../../state/vcs";
 import { formatWorktreePathForDisplay } from "../../worktreeCleanup";
+import {
+  cancelWorktreeCleanupJob,
+  setWorktreeCleanupDialogOpen,
+  setWorktreeCleanupOption,
+  startWorktreeCleanupDelete,
+  toggleWorktreeCleanupRow,
+  useWorktreeCleanupJob,
+} from "../../worktreeCleanupJob";
+import {
+  describeRemoval,
+  formatBytes,
+  rowKey,
+  selectionStats,
+} from "../../worktreeCleanupJob.logic";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -36,49 +42,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-
-export interface WorktreeCleanupTarget {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: string;
-  readonly cwd: string;
-  readonly title: string;
-}
-
-interface WorktreeCleanupDialogProps {
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly targets: ReadonlyArray<WorktreeCleanupTarget>;
-}
-
-interface ScanGroup {
-  readonly target: WorktreeCleanupTarget;
-  readonly candidates: ReadonlyArray<WorktreeCleanupCandidate>;
-  readonly error: string | null;
-}
-
-interface CleanupSummary {
-  readonly reclaimedBytes: number;
-  readonly failures: ReadonlyArray<{ worktreePath: string; error: string }>;
-  readonly successCount: number;
-}
-
-type ScanPhase = "idle" | "scanning" | "done";
-type ExecutePhase = "idle" | "executing" | "done";
-
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"] as const;
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const rounded = unitIndex === 0 ? Math.round(value) : Math.round(value * 10) / 10;
-  return `${rounded} ${units[unitIndex]}`;
-}
 
 const REASON_LABELS: Record<WorktreeCleanupCandidate["reason"], string> = {
   archived: "Archived",
@@ -99,198 +62,45 @@ const REASON_VARIANTS: Record<
   orphaned: "outline",
 };
 
-function rowKey(target: WorktreeCleanupTarget, candidate: WorktreeCleanupCandidate): string {
-  return `${target.environmentId}:${target.projectId}:${candidate.worktreePath}`;
-}
+export function WorktreeCleanupDialog() {
+  const job = useWorktreeCleanupJob();
+  const { phase, groups, selected, sizes, summary } = job;
 
-function describeError(value: unknown): string {
-  if (value instanceof Error) {
-    return value.message;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  return "Unknown error.";
-}
+  const stats = useMemo(() => selectionStats(groups, selected, sizes), [groups, selected, sizes]);
 
-export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeCleanupDialogProps) {
-  const scanCleanup = useAtomCommand(vcsEnvironment.scanCleanup, { reportFailure: false });
-  const executeCleanup = useAtomCommand(vcsEnvironment.executeCleanup, { reportFailure: false });
-
-  const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
-  const [groups, setGroups] = useState<ReadonlyArray<ScanGroup>>([]);
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [deleteBranches, setDeleteBranches] = useState(true);
-  const [pruneCheckpoints, setPruneCheckpoints] = useState(true);
-  const [runGc, setRunGc] = useState(true);
-  const [executePhase, setExecutePhase] = useState<ExecutePhase>("idle");
-  const [summary, setSummary] = useState<CleanupSummary | null>(null);
-
-  const runScan = useCallback(async () => {
-    setScanPhase("scanning");
-    setSummary(null);
-    setExecutePhase("idle");
-
-    const results = await Promise.all(
-      targets.map(async (target): Promise<ScanGroup> => {
-        const result = await scanCleanup({
-          environmentId: target.environmentId,
-          input: { cwd: target.cwd, projectId: target.projectId },
-        });
-        if (result._tag === "Success") {
-          const value = result.value as VcsScanCleanupResult;
-          return { target, candidates: value.candidates, error: null };
-        }
-        return {
-          target,
-          candidates: [],
-          error: describeError(squashAtomCommandFailure(result)),
-        };
-      }),
-    );
-
-    const nextSelected = new Set<string>();
-    for (const group of results) {
-      for (const candidate of group.candidates) {
-        if (!candidate.isDirty && !candidate.isActive) {
-          nextSelected.add(rowKey(group.target, candidate));
-        }
-      }
-    }
-
-    setGroups(results);
-    setSelected(nextSelected);
-    setScanPhase("done");
-  }, [scanCleanup, targets]);
-
-  // Kick off a fresh scan whenever the dialog opens, and reset everything when
-  // it closes so a reopen never shows stale candidates.
-  useEffect(() => {
-    if (!open) {
-      setScanPhase("idle");
-      setGroups([]);
-      setSelected(new Set());
-      setSummary(null);
-      setExecutePhase("idle");
-      return;
-    }
-    void runScan();
-  }, [open, runScan]);
-
-  const toggleRow = useCallback((key: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
-
-  const { selectedCount, selectedBytes, totalCandidates } = useMemo(() => {
-    let count = 0;
-    let bytes = 0;
-    let total = 0;
-    for (const group of groups) {
-      for (const candidate of group.candidates) {
-        total += 1;
-        if (selected.has(rowKey(group.target, candidate))) {
-          count += 1;
-          bytes += candidate.diskBytes;
-        }
-      }
-    }
-    return { selectedCount: count, selectedBytes: bytes, totalCandidates: total };
-  }, [groups, selected]);
-
-  const handleExecute = useCallback(async () => {
-    setExecutePhase("executing");
-
-    const failures: Array<{ worktreePath: string; error: string }> = [];
-    let reclaimedBytes = 0;
-    let successCount = 0;
-
-    for (const group of groups) {
-      const chosen = group.candidates.filter((candidate) =>
-        selected.has(rowKey(group.target, candidate)),
-      );
-      if (chosen.length === 0) {
-        continue;
-      }
-
-      const result = await executeCleanup({
-        environmentId: group.target.environmentId,
-        input: {
-          cwd: group.target.cwd,
-          candidates: chosen.map((candidate) => ({
-            worktreePath: candidate.worktreePath,
-            branch: candidate.branch,
-            threadIds: candidate.threadIds,
-            diskBytes: candidate.diskBytes,
-          })),
-          deleteBranches,
-          pruneCheckpoints,
-          runGc,
-        },
-      });
-
-      if (result._tag === "Success") {
-        const value = result.value as VcsExecuteCleanupResult;
-        reclaimedBytes += value.reclaimedBytes;
-        for (const entry of value.results) {
-          if (entry.ok) {
-            successCount += 1;
-          } else {
-            failures.push({
-              worktreePath: entry.worktreePath,
-              error: entry.error ?? "Unknown error.",
-            });
-          }
-        }
-      } else {
-        const message = describeError(squashAtomCommandFailure(result));
-        for (const candidate of chosen) {
-          failures.push({ worktreePath: candidate.worktreePath, error: message });
-        }
-      }
-    }
-
-    setSummary({ reclaimedBytes, failures, successCount });
-    setExecutePhase("done");
-  }, [deleteBranches, executeCleanup, groups, pruneCheckpoints, runGc, selected]);
-
-  const isBusy = scanPhase === "scanning" || executePhase === "executing";
-  const canDelete =
-    scanPhase === "done" && executePhase !== "executing" && summary === null && selectedCount > 0;
+  const isScanning = phase === "scanning";
+  const isDeleting = phase === "deleting";
+  const showList = (phase === "scanning" || phase === "review") && stats.totalCandidates > 0;
+  const canDelete = phase === "review" && stats.selectedCount > 0;
+  const hide = () => setWorktreeCleanupDialogOpen(false);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={job.dialogOpen && phase !== "idle"} onOpenChange={setWorktreeCleanupDialogOpen}>
       <DialogPopup className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Clean up dead worktrees</DialogTitle>
           <DialogDescription>
             Review the worktrees that look safe to remove. Nothing is deleted until you press Delete
-            selected.
+            selected. You can close this window; the work keeps going and the top bar shows its
+            progress.
           </DialogDescription>
         </DialogHeader>
 
         <DialogPanel className="space-y-4">
-          {scanPhase === "scanning" ? (
-            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+          {isScanning ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <LoaderIcon className="size-4 animate-spin" />
-              Scanning for dead worktrees...
+              Scanning projects ({job.projectsScanned} of {job.projectsTotal} done)...
             </div>
           ) : null}
 
-          {scanPhase === "done" && totalCandidates === 0 ? (
+          {phase === "review" && stats.totalCandidates === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               No dead worktrees found.
             </div>
           ) : null}
 
-          {scanPhase === "done" && totalCandidates > 0 && summary === null ? (
+          {showList ? (
             <div className="space-y-4">
               {groups.map((group) =>
                 group.error === null && group.candidates.length === 0 ? null : (
@@ -310,15 +120,13 @@ export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeC
                       <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
                         {group.candidates.map((candidate) => {
                           const key = rowKey(group.target, candidate);
-                          const isChecked = selected.has(key);
-                          const warnDirty = candidate.isDirty;
-                          const warnActive = candidate.isActive;
+                          const size = sizes.get(key);
                           return (
                             <li key={key} className="flex items-start gap-3 px-3 py-2.5">
                               <Checkbox
                                 className="mt-0.5"
-                                checked={isChecked}
-                                onCheckedChange={() => toggleRow(key)}
+                                checked={selected.has(key)}
+                                onCheckedChange={() => toggleWorktreeCleanupRow(key)}
                                 aria-label={`Select ${formatWorktreePathForDisplay(candidate.worktreePath)}`}
                               />
                               <div className="min-w-0 flex-1 space-y-1">
@@ -331,7 +139,11 @@ export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeC
                                   </span>
                                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                                     <HardDriveIcon className="size-3" />
-                                    {formatBytes(candidate.diskBytes)}
+                                    {size !== undefined
+                                      ? formatBytes(size)
+                                      : job.measuringSizes || isScanning
+                                        ? "measuring..."
+                                        : "size unknown"}
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -341,13 +153,13 @@ export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeC
                                       <span className="truncate">{candidate.branch}</span>
                                     </span>
                                   ) : null}
-                                  {warnDirty ? (
+                                  {candidate.isDirty ? (
                                     <span className="inline-flex items-center gap-1 text-warning-foreground">
                                       <AlertTriangleIcon className="size-3" />
                                       Uncommitted changes
                                     </span>
                                   ) : null}
-                                  {warnActive ? (
+                                  {candidate.isActive ? (
                                     <span className="inline-flex items-center gap-1 text-warning-foreground">
                                       <AlertTriangleIcon className="size-3" />
                                       Active
@@ -367,25 +179,37 @@ export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeC
               <div className="space-y-2 rounded-lg border border-border/60 p-3">
                 <CleanupOption
                   label="Delete branches"
-                  checked={deleteBranches}
-                  onChange={setDeleteBranches}
+                  checked={job.deleteBranches}
+                  onChange={(value) => setWorktreeCleanupOption("deleteBranches", value)}
                 />
                 <CleanupOption
                   label="Prune checkpoints"
-                  checked={pruneCheckpoints}
-                  onChange={setPruneCheckpoints}
+                  checked={job.pruneCheckpoints}
+                  onChange={(value) => setWorktreeCleanupOption("pruneCheckpoints", value)}
                 />
-                <CleanupOption label="Run git gc" checked={runGc} onChange={setRunGc} />
+                <CleanupOption
+                  label="Run git gc"
+                  checked={job.runGc}
+                  onChange={(value) => setWorktreeCleanupOption("runGc", value)}
+                />
               </div>
             </div>
           ) : null}
 
-          {summary !== null ? (
+          {isDeleting ? (
+            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <LoaderIcon className="size-4 animate-spin" />
+              {job.stopRequested
+                ? "Stopping after the current worktree..."
+                : `Deleting worktree ${Math.min(job.deleteDone + 1, job.deleteTotal)} of ${job.deleteTotal}...`}
+            </div>
+          ) : null}
+
+          {phase === "done" && summary !== null ? (
             <div className="space-y-3 py-2">
               <p className="text-sm text-foreground">
-                Removed {summary.successCount}{" "}
-                {summary.successCount === 1 ? "worktree" : "worktrees"} and reclaimed{" "}
-                {formatBytes(summary.reclaimedBytes)}.
+                {summary.stopped ? "Stopped early. " : ""}
+                {describeRemoval(summary)}.
               </p>
               {summary.failures.length > 0 ? (
                 <div className="space-y-1">
@@ -411,30 +235,41 @@ export function WorktreeCleanupDialog({ open, onOpenChange, targets }: WorktreeC
 
         <DialogFooter>
           <div className="mr-auto flex items-center text-sm text-muted-foreground">
-            {scanPhase === "done" && summary === null && totalCandidates > 0
-              ? `${selectedCount} selected · ${formatBytes(selectedBytes)}`
+            {showList
+              ? `${stats.selectedCount} selected · ${formatBytes(stats.selectedKnownBytes)}${
+                  stats.selectedUnmeasured > 0
+                    ? ` (${stats.selectedUnmeasured} still measuring)`
+                    : ""
+                }`
               : null}
           </div>
-          {summary === null ? (
+          {phase === "done" ? (
+            <Button onClick={hide}>Close</Button>
+          ) : isDeleting ? (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
-                Cancel
+              <Button
+                variant="outline"
+                onClick={cancelWorktreeCleanupJob}
+                disabled={job.stopRequested}
+              >
+                Stop
+              </Button>
+              <Button onClick={hide}>Hide</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={isScanning ? hide : cancelWorktreeCleanupJob}>
+                {isScanning ? "Hide" : "Cancel"}
               </Button>
               <Button
                 variant="destructive"
-                onClick={() => void handleExecute()}
+                onClick={startWorktreeCleanupDelete}
                 disabled={!canDelete}
               >
-                {executePhase === "executing" ? (
-                  <LoaderIcon className="size-4 animate-spin" />
-                ) : (
-                  <Trash2Icon className="size-4" />
-                )}
-                {executePhase === "executing" ? "Deleting..." : "Delete selected"}
+                <Trash2Icon className="size-4" />
+                Delete selected
               </Button>
             </>
-          ) : (
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
           )}
         </DialogFooter>
       </DialogPopup>

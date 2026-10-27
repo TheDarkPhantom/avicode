@@ -1,23 +1,20 @@
 // Avi Code addition: warns when dead worktrees pile up or disk runs low. The
 // background monitor pushes a snapshot over the server config stream; when it is
-// breached this shows a warning toast with a "Clean up" action that opens the
-// existing cleanup dialog. Dismissals are remembered so it does not re-pop on
+// breached this shows a warning toast with a "Clean up" action that starts the
+// background cleanup scan. Dismissals are remembered so it does not re-pop on
 // every check (see worktreeHealthDismissal).
 import { useAtomValue } from "@effect/atom-react";
 import { HardDriveIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
-import { readProject, useProjectRefs } from "../state/entities";
+import { useProjectRefs } from "../state/entities";
 import { primaryServerWorktreeHealthAtom } from "../state/server";
 import { useWorktreeHealthDismissal } from "../worktreeHealthDismissal";
 import {
   shouldShowWorktreeHealthToast,
   worktreeHealthToastCopy,
 } from "./WorktreeHealthNotification.logic";
-import {
-  WorktreeCleanupDialog,
-  type WorktreeCleanupTarget,
-} from "./settings/WorktreeCleanupDialog";
+import { cleanupTargetsForProjects, startWorktreeCleanupScan } from "../worktreeCleanupJob";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 type WorktreeHealthToastId = ReturnType<typeof toastManager.add>;
@@ -29,24 +26,11 @@ const seenCheckedAtKeys = new Set<string>();
 export function WorktreeHealthNotification() {
   const snapshot = useAtomValue(primaryServerWorktreeHealthAtom);
   const { dismissal, recordDismissal } = useWorktreeHealthDismissal();
-  const [dialogOpen, setDialogOpen] = useState(false);
   const activeToastRef = useRef<WorktreeHealthToastId | null>(null);
 
   const projectRefs = useProjectRefs();
-  const targets: ReadonlyArray<WorktreeCleanupTarget> = projectRefs.flatMap((ref) => {
-    const project = readProject(ref);
-    if (!project) {
-      return [];
-    }
-    return [
-      {
-        environmentId: project.environmentId,
-        projectId: project.id,
-        cwd: project.workspaceRoot,
-        title: project.title,
-      },
-    ];
-  });
+  const projectRefsRef = useRef(projectRefs);
+  projectRefsRef.current = projectRefs;
 
   useEffect(() => {
     return () => {
@@ -94,7 +78,7 @@ export function WorktreeHealthNotification() {
               toastManager.close(activeToastRef.current);
               activeToastRef.current = null;
             }
-            setDialogOpen(true);
+            startWorktreeCleanupScan(cleanupTargetsForProjects(projectRefsRef.current));
           },
         },
         actionVariant: "default",
@@ -111,5 +95,5 @@ export function WorktreeHealthNotification() {
     activeToastRef.current = toastId;
   }, [snapshot, dismissal, recordCurrentDismissal]);
 
-  return <WorktreeCleanupDialog open={dialogOpen} onOpenChange={setDialogOpen} targets={targets} />;
+  return null;
 }

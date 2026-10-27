@@ -175,10 +175,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import { orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 import { ProjectMergeRunButton } from "./sidebar/ProjectMergeRunButton";
 // Avi Code addition: per-project entry point into the shared worktree cleanup flow.
-import {
-  WorktreeCleanupDialog,
-  type WorktreeCleanupTarget,
-} from "./settings/WorktreeCleanupDialog";
+import { startWorktreeCleanupScan } from "../worktreeCleanupJob";
 import { ThreadDevServerButton } from "./sidebar/ThreadDevServerButton";
 import { ProjectUnsentDraftDot, ThreadUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { SidebarLiveThought } from "./sidebar/SidebarLiveThought";
@@ -1302,11 +1299,6 @@ export default function SidebarV2() {
     },
   });
   const [projectActionsTarget, setProjectActionsTarget] = useState<SidebarProjectSnapshot | null>(
-    null,
-  );
-  // Avi Code addition: targets for the per-project worktree cleanup dialog. Null
-  // means the dialog is closed; a project's members become one target each.
-  const [cleanupTargets, setCleanupTargets] = useState<ReadonlyArray<WorktreeCleanupTarget> | null>(
     null,
   );
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
@@ -3296,15 +3288,15 @@ export default function SidebarV2() {
                 Remove project
               </Button>
             ) : null}
-            {/* Avi Code addition: scope the shared worktree cleanup flow to this
-                project's members. Closing this dialog first avoids nesting. */}
+            {/* Avi Code addition: scope the background worktree cleanup job to
+                this project's members. Closing this dialog first avoids nesting. */}
             <Button
               variant="outline"
               onClick={() => {
                 const projectGroup = projectActionsTarget;
                 if (!projectGroup) return;
                 setProjectActionsTarget(null);
-                setCleanupTargets(
+                startWorktreeCleanupScan(
                   projectGroup.memberProjects.map((member) => ({
                     environmentId: member.environmentId,
                     projectId: member.id,
@@ -3321,14 +3313,6 @@ export default function SidebarV2() {
           </DialogFooter>
         </DialogPopup>
       </Dialog>
-      {/* Avi Code addition: per-project worktree cleanup preview + execute. */}
-      <WorktreeCleanupDialog
-        open={cleanupTargets !== null}
-        onOpenChange={(open) => {
-          if (!open) setCleanupTargets(null);
-        }}
-        targets={cleanupTargets ?? []}
-      />
       <SidebarChromeFooter />
     </>
   );

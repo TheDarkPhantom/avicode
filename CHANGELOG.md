@@ -36,6 +36,15 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Worktree cleanup runs in the background, with its progress shown in the top bar (#290)
+- The cleanup list appears in seconds and disk sizes fill in afterwards (#290)
+
 ## 0.0.31-avicode.9.21 (2026-10-26)
 
 Upstream: t3code 0.0.31

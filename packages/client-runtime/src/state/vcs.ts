@@ -317,11 +317,27 @@ export function createVcsEnvironmentAtoms<R, E>(
       onSettled: invalidateRefs,
     }),
     // Avi Code addition: worktree cleanup (scan is read-only; execute mutates).
+    // The scan is read-only, so it gets its own lane instead of the shared
+    // per-cwd lane; a long scan never queues the user's git actions behind it.
     scanCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:scan-cleanup",
       tag: WS_METHODS.vcsScanCleanupCandidates,
       scheduler: vcsCommandScheduler,
-      concurrency: vcsCommandConcurrency,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, "worktree-cleanup-scan", input.cwd]),
+      },
+    }),
+    measureWorktreeSize: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:measure-worktree-size",
+      tag: WS_METHODS.vcsMeasureWorktreeSize,
+      scheduler: vcsCommandScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, "worktree-size", input.worktreePath]),
+      },
     }),
     executeCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:execute-cleanup",

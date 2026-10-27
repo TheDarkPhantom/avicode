@@ -324,3 +324,83 @@ describe("WorktreeCleanupService.classify", () => {
     }),
   );
 });
+
+describe("WorktreeCleanupService.scan", () => {
+  it.effect("skips the disk walk when includeDiskBytes is false", () =>
+    Effect.gen(function* () {
+      const counters: Counters = { pruneCalls: 0, removeWorktreeCalls: 0, gcCalls: 0 };
+      const state = emptyState();
+      const deps = makeDeps(counters, state);
+
+      yield* Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfigModule.ServerConfig;
+        const worktreePath = path.join(config.worktreesDir, "repo", "t3code-nosize01");
+        yield* fs.makeDirectory(worktreePath, { recursive: true });
+        yield* fs.writeFileString(path.join(worktreePath, "file.txt"), "x".repeat(64));
+        state.worktrees = [{ path: worktreePath, branch: null, isMain: false }];
+
+        const service = yield* WorktreeCleanup.make;
+        const fast = yield* service.scan({
+          cwd: config.cwd,
+          projectId: ProjectId.make("p1"),
+          includeDiskBytes: false,
+        });
+        const full = yield* service.scan({ cwd: config.cwd, projectId: ProjectId.make("p1") });
+
+        expect(fast.candidates[0]?.diskBytes).toBe(0);
+        expect(fast.totalBytes).toBe(0);
+        expect(full.candidates[0]?.diskBytes).toBe(64);
+      }).pipe(Effect.provide(deps));
+    }),
+  );
+});
+
+describe("WorktreeCleanupService.measureSize", () => {
+  it.effect("sums file sizes inside a managed worktree", () =>
+    Effect.gen(function* () {
+      const counters: Counters = { pruneCalls: 0, removeWorktreeCalls: 0, gcCalls: 0 };
+      const deps = makeDeps(counters, emptyState());
+
+      yield* Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfigModule.ServerConfig;
+        const worktreePath = path.join(config.worktreesDir, "repo", "t3code-measure1");
+        const nested = path.join(worktreePath, "node_modules", "pkg");
+        yield* fs.makeDirectory(nested, { recursive: true });
+        yield* fs.writeFileString(path.join(worktreePath, "a.txt"), "x".repeat(10));
+        yield* fs.writeFileString(path.join(nested, "b.js"), "y".repeat(30));
+
+        const service = yield* WorktreeCleanup.make;
+        const result = yield* service.measureSize({ cwd: config.cwd, worktreePath });
+
+        expect(result.diskBytes).toBe(40);
+      }).pipe(Effect.provide(deps));
+    }),
+  );
+
+  it.effect("refuses a path outside the managed worktrees directory", () =>
+    Effect.gen(function* () {
+      const counters: Counters = { pruneCalls: 0, removeWorktreeCalls: 0, gcCalls: 0 };
+      const deps = makeDeps(counters, emptyState());
+
+      yield* Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfigModule.ServerConfig;
+        const outside = path.join(config.baseDir, "not-a-worktree");
+        yield* fs.makeDirectory(outside, { recursive: true });
+
+        const service = yield* WorktreeCleanup.make;
+        const error = yield* Effect.flip(
+          service.measureSize({ cwd: config.cwd, worktreePath: outside }),
+        );
+
+        expect(error).toBeInstanceOf(GitCommandError);
+        expect(error.detail).toContain("outside");
+      }).pipe(Effect.provide(deps));
+    }),
+  );
+});

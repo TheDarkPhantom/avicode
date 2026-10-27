@@ -22,6 +22,7 @@ import {
 } from "~/hooks/useT3ProjectFileScripts";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Separator } from "../ui/separator";
+import { WorktreeCleanupStatusPill } from "../WorktreeCleanupStatusPill";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -168,6 +169,8 @@ export const ChatHeader = memo(function ChatHeader({
         </Tooltip>
       </div>
       <ChatHeaderActions layoutControls={layoutControls}>
+        {/* Avi Code addition: background worktree cleanup progress. */}
+        <WorktreeCleanupStatusPill />
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}

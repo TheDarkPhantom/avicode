@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
+import { WorktreeCleanupStatusPill } from "../components/WorktreeCleanupStatusPill";
 // Avi Code addition: lets Settings land on the Avi Code page when opted in.
 import { loadClientSettings } from "../hooks/useSettings";
 import { Button } from "../components/ui/button";
@@ -68,11 +69,11 @@ function SettingsContentLayout() {
           >
             <div className="flex w-full items-center gap-2">
               <span className="text-sm font-medium text-foreground">Settings</span>
-              {showRestoreDefaults ? (
-                <div className="ms-auto flex items-center gap-2">
-                  <RestoreDefaultsButton onRestored={handleRestored} />
-                </div>
-              ) : null}
+              <div className="ms-auto flex items-center gap-2">
+                {/* Avi Code addition: background worktree cleanup progress. */}
+                <WorktreeCleanupStatusPill />
+                {showRestoreDefaults ? <RestoreDefaultsButton onRestored={handleRestored} /> : null}
+              </div>
             </div>
           </header>
         )}
@@ -87,11 +88,11 @@ function SettingsContentLayout() {
             <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
               Settings
             </span>
-            {showRestoreDefaults ? (
-              <div className="ms-auto flex items-center gap-2">
-                <RestoreDefaultsButton onRestored={handleRestored} />
-              </div>
-            ) : null}
+            <div className="ms-auto flex items-center gap-2">
+              {/* Avi Code addition: background worktree cleanup progress. */}
+              <WorktreeCleanupStatusPill />
+              {showRestoreDefaults ? <RestoreDefaultsButton onRestored={handleRestored} /> : null}
+            </div>
           </div>
         )}
 

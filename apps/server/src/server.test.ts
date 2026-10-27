@@ -543,6 +543,7 @@ const buildAppUnderTest = (options?: {
     const worktreeCleanupLayer = Layer.mock(WorktreeCleanup.WorktreeCleanupService)({
       scan: () => Effect.succeed({ candidates: [], totalBytes: 0 }),
       classify: () => Effect.succeed([]),
+      measureSize: () => Effect.succeed({ diskBytes: 0 }),
       execute: () => Effect.succeed({ results: [], reclaimedBytes: 0 }),
     });
     // Avi Code addition: worktree health monitor is resolved by the ws handler.

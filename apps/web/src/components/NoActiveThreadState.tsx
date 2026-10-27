@@ -3,6 +3,7 @@ import { SidebarInset } from "./ui/sidebar";
 import { isElectron } from "../env";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { WorktreeCleanupStatusPill } from "./WorktreeCleanupStatusPill";
 
 export function NoActiveThreadState() {
   return (
@@ -15,17 +16,17 @@ export function NoActiveThreadState() {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
-          {isElectron ? (
-            <span className="text-xs text-muted-foreground/50 wco:pr-[var(--workspace-native-controls-inset)]">
-              No active thread
-            </span>
-          ) : (
-            <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 wco:pr-[var(--workspace-native-controls-inset)]">
+            {isElectron ? (
+              <span className="text-xs text-muted-foreground/50">No active thread</span>
+            ) : (
               <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
                 No active thread
               </span>
-            </div>
-          )}
+            )}
+            {/* Avi Code addition: background worktree cleanup progress. */}
+            <WorktreeCleanupStatusPill className="ms-auto" />
+          </div>
         </header>
 
         <Empty className="flex-1">
