@@ -360,6 +360,9 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
   The window is a constant (`RECENT_THREAD_ACTIVITY_MS`), not a setting. Unrecognised Claude SDK
   message kinds go to the server log instead of the work log, so a genuinely useful new kind stays
   invisible until someone maps it.
+- The background worktree cleanup job lives in the app window's memory. Restarting the app or
+  reloading the window drops a scan or delete in progress; a delete stops after the worktree it was
+  on. Disk sizes count pnpm's hardlinked files in full, so "freed" can overstate the space returned.
 
 ## Shipped
 

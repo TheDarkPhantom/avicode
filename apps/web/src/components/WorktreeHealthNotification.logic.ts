@@ -3,7 +3,7 @@
 import type { WorktreeHealthSnapshot } from "@t3tools/contracts";
 
 import type { WorktreeHealthDismissal } from "../worktreeHealthDismissal";
-import { formatBytes } from "./settings/WorktreeCleanupDialog";
+import { formatBytes } from "../worktreeCleanupJob.logic";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FREE_SPACE_WORSENED_BYTES = 1024 * 1024 * 1024; // 1 GiB

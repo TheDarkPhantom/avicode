@@ -97,6 +97,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.vcsRemoveWorktree]: AuthOrchestrationOperateScope,
   // Avi Code addition: worktree cleanup
   [WS_METHODS.vcsScanCleanupCandidates]: AuthOrchestrationReadScope,
+  [WS_METHODS.vcsMeasureWorktreeSize]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsExecuteCleanup]: AuthOrchestrationOperateScope,
   // Avi Code addition: runs cleanup, so it needs the operate scope.
   [WS_METHODS.vcsRunWorktreeHealthCheck]: AuthOrchestrationOperateScope,

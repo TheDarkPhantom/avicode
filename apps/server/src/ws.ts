@@ -2244,6 +2244,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.vcsScanCleanupCandidates, worktreeCleanup.scan(input), {
             "rpc.aggregate": "vcs",
           }),
+        [WS_METHODS.vcsMeasureWorktreeSize]: (input) =>
+          observeRpcEffect(WS_METHODS.vcsMeasureWorktreeSize, worktreeCleanup.measureSize(input), {
+            "rpc.aggregate": "vcs",
+          }),
         [WS_METHODS.vcsExecuteCleanup]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsExecuteCleanup,

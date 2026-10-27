@@ -30,6 +30,8 @@ import {
   type VcsCleanupCandidateResult,
   type VcsExecuteCleanupInput,
   type VcsExecuteCleanupResult,
+  type VcsMeasureWorktreeSizeInput,
+  type VcsMeasureWorktreeSizeResult,
   type VcsScanCleanupInput,
   type VcsScanCleanupResult,
   type WorktreeCleanupCandidate,
@@ -253,6 +255,14 @@ export class WorktreeCleanupService extends Context.Service<
     readonly classify: (
       input: VcsScanCleanupInput,
     ) => Effect.Effect<ReadonlyArray<WorktreeCleanupCandidate>, GitCommandError>;
+    /**
+     * Recursive on-disk size of one managed worktree. Clients scan with
+     * `includeDiskBytes: false` so the list shows up fast, then fill in sizes
+     * one worktree at a time with this.
+     */
+    readonly measureSize: (
+      input: VcsMeasureWorktreeSizeInput,
+    ) => Effect.Effect<VcsMeasureWorktreeSizeResult, GitCommandError>;
     readonly execute: (
       input: VcsExecuteCleanupInput,
     ) => Effect.Effect<VcsExecuteCleanupResult, GitCommandError>;
@@ -405,12 +415,15 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(
         preliminary,
         (candidate) =>
-          Effect.all([
-            options.includeDiskBytes
-              ? directorySizeBytes(candidate.worktreePath)
-              : Effect.succeed(0),
-            isDirtyFor(candidate.worktreePath),
-          ]).pipe(
+          Effect.all(
+            [
+              options.includeDiskBytes
+                ? directorySizeBytes(candidate.worktreePath)
+                : Effect.succeed(0),
+              isDirtyFor(candidate.worktreePath),
+            ],
+            { concurrency: 2 },
+          ).pipe(
             Effect.map(([diskBytes, isDirty]) => ({
               worktreePath: candidate.worktreePath,
               branch: candidate.branch,
@@ -428,7 +441,9 @@ export const make = Effect.gen(function* () {
 
   const scan: WorktreeCleanupService["Service"]["scan"] = Effect.fn("WorktreeCleanupService.scan")(
     function* (input) {
-      const candidates = yield* classifyCandidates(input, { includeDiskBytes: true });
+      const candidates = yield* classifyCandidates(input, {
+        includeDiskBytes: input.includeDiskBytes ?? true,
+      });
       const totalBytes = candidates.reduce((sum, candidate) => sum + candidate.diskBytes, 0);
       return { candidates, totalBytes } satisfies VcsScanCleanupResult;
     },
@@ -438,6 +453,21 @@ export const make = Effect.gen(function* () {
     "WorktreeCleanupService.classify",
   )(function* (input) {
     return yield* classifyCandidates(input, { includeDiskBytes: false });
+  });
+
+  const measureSize: WorktreeCleanupService["Service"]["measureSize"] = Effect.fn(
+    "WorktreeCleanupService.measureSize",
+  )(function* (input) {
+    if (!isUnderWorktreesDir(input.worktreePath, worktreesDir)) {
+      return yield* new GitCommandError({
+        operation: "WorktreeCleanupService.measureSize",
+        command: "measure-size",
+        cwd: input.cwd,
+        detail: "Refusing to measure a path outside the managed worktrees directory.",
+      });
+    }
+    const diskBytes = yield* directorySizeBytes(input.worktreePath);
+    return { diskBytes } satisfies VcsMeasureWorktreeSizeResult;
   });
 
   const execute: WorktreeCleanupService["Service"]["execute"] = Effect.fn(
@@ -505,7 +535,7 @@ export const make = Effect.gen(function* () {
     return { results, reclaimedBytes } satisfies VcsExecuteCleanupResult;
   });
 
-  return WorktreeCleanupService.of({ scan, classify, execute });
+  return WorktreeCleanupService.of({ scan, classify, measureSize, execute });
 });
 
 export const layer = Layer.effect(WorktreeCleanupService, make);

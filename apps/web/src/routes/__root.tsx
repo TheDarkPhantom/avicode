@@ -24,6 +24,7 @@ import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPrompt
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { WorktreeHealthNotification } from "../components/WorktreeHealthNotification";
+import { WorktreeCleanupDialog } from "../components/settings/WorktreeCleanupDialog";
 import { OfflineTurnOutboxFlusher } from "../components/OfflineTurnOutboxFlusher";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { Button } from "../components/ui/button";
@@ -148,6 +149,8 @@ function RootRouteView() {
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         {primaryEnvironmentAuthenticated ? <WorktreeHealthNotification /> : null}
+        {/* Avi Code addition: the one review dialog for the background cleanup job. */}
+        {primaryEnvironmentAuthenticated ? <WorktreeCleanupDialog /> : null}
         {appShell}
       </AnchoredToastProvider>
     </ToastProvider>

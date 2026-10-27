@@ -24,16 +24,37 @@ conversation; follow-up questions in the same thread need the folder.
 ## Scanning and deleting
 
 1. Open **Settings -> Avi Code -> Worktree cleanup** and choose **Scan for dead worktrees** to sweep
-   every project, or use a project's **Clean up dead worktrees** action to scan just that repo.
-2. The preview lists each candidate grouped by repo, with its reason and the disk it would free, and
-   a running total. Worktrees with uncommitted changes or an active session are listed but left
+   every project, or use a project's **Clean up worktrees** action to scan just that repo.
+2. The preview lists each candidate grouped by repo as each repo finishes, with its reason. The disk
+   each one would free fills in afterwards ("measuring..." until then), and the footer keeps a
+   running total. Worktrees with uncommitted changes or an active session are listed but left
    unchecked; tick them only if you are sure.
 3. Choose what to remove alongside the worktree directory: **delete branches**, **prune checkpoints**,
    and **run git gc** (all on by default). `git gc` repacks the repo so the freed objects actually
    leave disk.
-4. **Delete selected** removes the checked worktrees. Nothing is deleted until you confirm.
+4. **Delete selected** removes the checked worktrees, one at a time. Nothing is deleted until you
+   confirm, and you do not have to wait for sizes to finish measuring first.
 
-The summary reports how much was reclaimed and lists any worktrees that could not be removed.
+The summary reports how much was reclaimed and lists any worktrees that could not be removed. If
+some sizes were still measuring when you deleted, it says "at least" that much.
+
+## Working while it runs
+
+The scan and the delete both run in the background. Close the window (or press **Hide**) and keep
+working; a small status chip in the top bar shows where it is:
+
+- **Scanning worktrees 3/7** while repos are scanned.
+- **12 dead worktrees · Review** when the list is ready.
+- **Deleting 7/40** while worktrees are removed.
+- **Freed 8.2 GB** when it is done.
+
+Click the chip to reopen the review window. Its **x** cancels a scan, stops a delete after the
+worktree it is on, or clears a finished result. A notification also tells you when a scan or delete
+finishes while the window is closed. The scan never holds up your other git actions in the same
+project.
+
+Starting a cleanup from another place while one is running reopens the running one rather than
+starting a second. Restarting the app drops a job in progress.
 
 ## Automatic health checks
 
