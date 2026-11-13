@@ -377,7 +377,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           assert.strictEqual(status.version, "1.0.0");
           assert.strictEqual(status.auth.status, "authenticated");
           assert.strictEqual(status.auth.type, "chatgpt");
-          assert.strictEqual(status.auth.label, "ChatGPT Pro 20x Subscription");
+          assert.strictEqual(status.auth.label, "ChatGPT Pro 200 Subscription");
           assert.strictEqual(status.auth.email, "test@example.com");
           assert.strictEqual(status.quota?.windows[0]?.usedPercent, 84);
           assert.deepStrictEqual(status.models, [
