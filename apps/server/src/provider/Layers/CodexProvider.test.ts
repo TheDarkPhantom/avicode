@@ -1,6 +1,10 @@
 import { assert, it } from "@effect/vitest";
 
-import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
+import {
+  applyPreferredCodexDefaultModel,
+  codexPlanLabel,
+  mapCodexModelCapabilities,
+} from "./CodexProvider.ts";
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -143,4 +147,11 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
+});
+
+it("labels ChatGPT plans with their current names", () => {
+  assert.strictEqual(codexPlanLabel("promax"), "ChatGPT Pro 500 Subscription");
+  assert.strictEqual(codexPlanLabel("pro"), "ChatGPT Pro 200 Subscription");
+  assert.strictEqual(codexPlanLabel("prolite"), "ChatGPT Pro 100 Subscription");
+  assert.strictEqual(codexPlanLabel("some_future_plan"), undefined);
 });

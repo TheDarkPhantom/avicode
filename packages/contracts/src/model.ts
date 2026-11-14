@@ -176,8 +176,10 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "gpt-5.3-spark": "gpt-5.3-codex-spark",
   },
   [CLAUDE_DRIVER_KIND]: {
-    // Avi Code addition: Claude Fable 5.1 aliases (newest Fable wins the bare "fable" shortcut).
-    fable: "claude-fable-5-1",
+    // Avi Code addition: Claude Fable 5.2 and 5.1 aliases (newest Fable wins the bare "fable" shortcut).
+    fable: "claude-fable-5-2",
+    "fable-5.2": "claude-fable-5-2",
+    "claude-fable-5.2": "claude-fable-5-2",
     "fable-5.1": "claude-fable-5-1",
     "claude-fable-5.1": "claude-fable-5-1",
     // Avi Code addition: Claude Opus 5.5 aliases (newest Opus wins the bare "opus" shortcut).

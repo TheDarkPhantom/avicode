@@ -36,6 +36,17 @@ PR, which every entry already links to.
 Add every user-visible change to Unreleased as it lands. The release bump renames the heading.
 -->
 
+## Unreleased
+
+Upstream: t3code 0.0.31
+
+### Avi Code
+
+- Claude Fable 5.2 is available in the model picker (#292)
+- Codex connects on ChatGPT Pro Max accounts instead of failing with a payload error (#292)
+- ChatGPT Pro plans show their current names: Pro 100, Pro 200, and Pro 500 (#292)
+- Extra High effort on Claude Fable 5.1 runs at Extra High instead of Max (#292)
+
 ## 0.0.31-avicode.9.22 (2026-10-27)
 
 Upstream: t3code 0.0.31

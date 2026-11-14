@@ -62,6 +62,8 @@ const MINIMUM_CLAUDE_SONNET_5_5_VERSION = "2.1.284";
 // Avi Code addition: Claude Opus 5.5 requires Claude Code >= 2.1.280.
 const MINIMUM_CLAUDE_OPUS_5_5_VERSION = "2.1.280";
 const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
+// Avi Code addition: Claude Fable 5.2 requires Claude Code >= 2.1.290.
+const MINIMUM_CLAUDE_FABLE_5_2_VERSION = "2.1.290";
 // Avi Code addition: Claude Fable 5.1 requires Claude Code >= 2.1.257.
 const MINIMUM_CLAUDE_FABLE_5_1_VERSION = "2.1.257";
 const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
@@ -145,6 +147,38 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           options: [
             { value: "200k", label: "200k", isDefault: true },
             { value: "1m", label: "1M" },
+          ],
+        }),
+      ],
+    }),
+  },
+  // Avi Code addition: Claude Fable 5.2 (same capabilities/runtime profile as Claude Fable 5).
+  {
+    slug: "claude-fable-5-2",
+    name: "Claude Fable 5.2",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultracode", label: "Ultracode" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          options: [
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
           ],
         }),
       ],
@@ -485,6 +519,11 @@ function supportsClaudeOpus5(version: string | null | undefined): boolean {
   return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_5_VERSION) >= 0 : false;
 }
 
+// Avi Code addition: Claude Fable 5.2 gating.
+function supportsClaudeFable52(version: string | null | undefined): boolean {
+  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_FABLE_5_2_VERSION) >= 0 : false;
+}
+
 // Avi Code addition: Claude Fable 5.1 gating.
 function supportsClaudeFable51(version: string | null | undefined): boolean {
   return version ? compareSemverVersions(version, MINIMUM_CLAUDE_FABLE_5_1_VERSION) >= 0 : false;
@@ -514,6 +553,9 @@ function getBuiltInClaudeModelsForVersion(
     }
     if (model.slug === "claude-opus-5-5") {
       return supportsClaudeOpus55(version);
+    }
+    if (model.slug === "claude-fable-5-2") {
+      return supportsClaudeFable52(version);
     }
     if (model.slug === "claude-fable-5-1") {
       return supportsClaudeFable51(version);
@@ -550,6 +592,12 @@ function formatClaudeSonnet55UpgradeMessage(version: string | null): string {
 function formatClaudeOpus55UpgradeMessage(version: string | null): string {
   const versionLabel = version ? `v${version}` : "the installed version";
   return `Claude Code ${versionLabel} is too old for Claude Opus 5.5. Upgrade to v${MINIMUM_CLAUDE_OPUS_5_5_VERSION} or newer to access it.`;
+}
+
+// Avi Code addition: Claude Fable 5.2 upgrade nudge.
+function formatClaudeFable52UpgradeMessage(version: string | null): string {
+  const versionLabel = version ? `v${version}` : "the installed version";
+  return `Claude Code ${versionLabel} is too old for Claude Fable 5.2. Upgrade to v${MINIMUM_CLAUDE_FABLE_5_2_VERSION} or newer to access it.`;
 }
 
 // Avi Code addition: Claude Fable 5.1 upgrade nudge.
@@ -621,6 +669,8 @@ export function normalizeClaudeCliEffort(
   }
   if (
     effort === "xhigh" &&
+    model !== "claude-fable-5-2" &&
+    model !== "claude-fable-5-1" &&
     model !== "claude-fable-5" &&
     model !== "claude-opus-5-5" &&
     model !== "claude-opus-5" &&
@@ -1165,21 +1215,23 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   // Avi Code addition: Haiku 5.5 sits at the top of the upgrade ladder (highest min version).
   const versionUpgradeMessage = supportsClaudeHaiku55(parsedVersion)
     ? undefined
-    : supportsClaudeSonnet55(parsedVersion)
+    : supportsClaudeFable52(parsedVersion)
       ? formatClaudeHaiku55UpgradeMessage(parsedVersion)
-      : supportsClaudeOpus55(parsedVersion)
-        ? formatClaudeSonnet55UpgradeMessage(parsedVersion)
-        : supportsClaudeFable51(parsedVersion)
-          ? formatClaudeOpus55UpgradeMessage(parsedVersion)
-          : supportsClaudeOpus5(parsedVersion)
-            ? formatClaudeFable51UpgradeMessage(parsedVersion)
-            : supportsClaudeFable5(parsedVersion)
-              ? formatClaudeOpus5UpgradeMessage(parsedVersion)
-              : supportsClaudeOpus48(parsedVersion)
-                ? formatClaudeFable5UpgradeMessage(parsedVersion)
-                : supportsClaudeOpus47(parsedVersion)
-                  ? formatClaudeOpus48UpgradeMessage(parsedVersion)
-                  : formatClaudeOpus47UpgradeMessage(parsedVersion);
+      : supportsClaudeSonnet55(parsedVersion)
+        ? formatClaudeFable52UpgradeMessage(parsedVersion)
+        : supportsClaudeOpus55(parsedVersion)
+          ? formatClaudeSonnet55UpgradeMessage(parsedVersion)
+          : supportsClaudeFable51(parsedVersion)
+            ? formatClaudeOpus55UpgradeMessage(parsedVersion)
+            : supportsClaudeOpus5(parsedVersion)
+              ? formatClaudeFable51UpgradeMessage(parsedVersion)
+              : supportsClaudeFable5(parsedVersion)
+                ? formatClaudeOpus5UpgradeMessage(parsedVersion)
+                : supportsClaudeOpus48(parsedVersion)
+                  ? formatClaudeFable5UpgradeMessage(parsedVersion)
+                  : supportsClaudeOpus47(parsedVersion)
+                    ? formatClaudeOpus48UpgradeMessage(parsedVersion)
+                    : formatClaudeOpus47UpgradeMessage(parsedVersion);
 
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))

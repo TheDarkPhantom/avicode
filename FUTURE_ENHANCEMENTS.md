@@ -340,6 +340,15 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
   - Upstream's gray dashed project icon is stored on the project. The fork has no project icons, so
     the sidebar and pickers draw the dashed icon from the scratch path instead.
   - Forking a no-project thread shares the parent's folder rather than claiming a new one.
+- Fable 5.2 and Pro Max (#292) left out from upstream:
+  - Fable 5.1 stays in the picker and is not marked legacy, matching how Fable 5 stayed when 5.1
+    landed. Fable defaults to High effort; upstream defaults Fable to Medium.
+  - Upstream's separate Fable resets (9e1f81c788) and the Ultrafast tier copy from 451afcb22d.
+  - Codex plan slugs newer than upstream's label list (`sci`, `sci_plus`) connect but show no
+    plan label until they are mapped in `codexPlanLabel`.
+  - The Codex protocol bindings were edited by hand for `PlanType`. Rerunning the generator at the
+    same pinned ref rewrites about 45k lines because the generator has drifted, so the next full
+    protocol refresh is its own project.
 - Signed public Windows releases and an Avi Code website.
 - macOS/Linux branded installers after Windows stabilizes.
 
