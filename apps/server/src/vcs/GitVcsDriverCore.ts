@@ -55,6 +55,8 @@ const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 // much faster than the file count (50k files took about 30 seconds). Past this many, the
 // untracked diff is reported truncated instead.
 const REVIEW_UNTRACKED_MAX_FILES = 5_000;
+// git diff reads every untracked byte (~5 ms/MB), so larger untracked input stays out of the review index.
+const REVIEW_UNTRACKED_MAX_BYTES = 256 * 1024 * 1024;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -2411,6 +2413,30 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES) {
       return { diff: "", truncated: true };
     }
+    const sizes = yield* Effect.forEach(
+      untrackedPaths,
+      (relativePath) =>
+        // stat follows a symlink, so a link to a large file is budgeted at its target's size.
+        fileSystem.stat(path.resolve(cwd, relativePath)).pipe(
+          Effect.map((info) => (info.type === "File" ? Number(info.size) : 0)),
+          Effect.orElseSucceed(() => 0),
+          Effect.map((size) => ({ relativePath, size })),
+        ),
+      { concurrency: 16 },
+    );
+    // Smallest first, so which files fit does not depend on how their names sort.
+    const pathsToAdd: string[] = [];
+    let bytes = 0;
+    for (const { relativePath, size } of sizes.toSorted((left, right) => left.size - right.size)) {
+      bytes += size;
+      if (bytes > REVIEW_UNTRACKED_MAX_BYTES) break;
+      pathsToAdd.push(relativePath);
+    }
+    // Untracked files left out make the diff partial.
+    const omitted = pathsToAdd.length < untrackedPaths.length;
+    if (pathsToAdd.length === 0) {
+      return { diff: "", truncated: true };
+    }
 
     // A path that does not exist yet reads as an empty index; a zero-byte file would not.
     const tempIndexDir = yield* fileSystem
@@ -2443,7 +2469,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ],
       {
         env,
-        stdin: `${untrackedPaths.join("\0")}\0`,
+        stdin: `${pathsToAdd.join("\0")}\0`,
         fallbackErrorDetail: "Could not stage untracked files in the review index.",
       },
     );
@@ -2469,7 +2495,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     return {
       diff: diffResult.stdout,
-      truncated: untrackedResult.stdoutTruncated || diffResult.stdoutTruncated,
+      truncated: omitted || untrackedResult.stdoutTruncated || diffResult.stdoutTruncated,
     };
   }, Effect.scoped);
 
