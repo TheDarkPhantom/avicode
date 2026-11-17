@@ -688,6 +688,64 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("structured errors", () => {
+    it.effect("fails with a GitCommandError when spawn throws", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        // Over the OS argument limit, Node's spawn throws E2BIG synchronously.
+        const error = yield* driver
+          .execute({
+            operation: "GitVcsDriver.test.spawnThrow",
+            cwd,
+            args: ["status", "x".repeat(4 * 1024 * 1024)],
+          })
+          .pipe(Effect.flip);
+
+        assert.deepInclude(error, {
+          _tag: "GitCommandError",
+          operation: "GitVcsDriver.test.spawnThrow",
+          detail: "Failed to spawn Git process.",
+        });
+      }),
+    );
+
+    it.effect("commits a selection whose paths exceed the argument limit", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* initRepoWithCommit(cwd);
+        // Line-ending warnings for every file would overflow the output limit.
+        yield* git(cwd, ["config", "core.autocrlf", "false"]);
+        // Selected paths add up to more than Linux's default 2 MiB argument limit.
+        const dir = "d".repeat(200);
+        yield* fs.makeDirectory(path.join(cwd, dir));
+        const files = Array.from(
+          { length: 6_000 },
+          (_, index) => `${dir}/file-${String(index).padStart(5, "0")}-${"x".repeat(160)}.txt`,
+        );
+        yield* Effect.forEach(
+          files,
+          (file) => fs.writeFileString(path.join(cwd, file), "before\n"),
+          { concurrency: 16 },
+        );
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "--quiet", "-m", "files"]);
+        yield* Effect.forEach(
+          files,
+          (file) => fs.writeFileString(path.join(cwd, file), "after\n"),
+          { concurrency: 16 },
+        );
+
+        yield* driver.commit(cwd, "selected", "", { stage: { filePaths: files.slice(1) } });
+
+        assert.equal(yield* git(cwd, ["log", "-1", "--pretty=%s"]), "selected");
+        assert.equal(yield* git(cwd, ["status", "--porcelain"]), `M ${files[0]}`);
+      }),
+    );
+
     it.effect("preserves structured spawn context and the platform cause", () =>
       Effect.gen(function* () {
         const parent = yield* makeTmpDir();

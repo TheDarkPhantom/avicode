@@ -906,6 +906,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         };
         const spawnEnv = { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) };
         const resolved = yield* resolveSpawnCommand("git", [], { env: spawnEnv });
+        const spawnError = (cause: unknown) =>
+          new GitCommandError({
+            ...gitCommandContext(commandInput),
+            detail: "Failed to spawn Git process.",
+            cause,
+          });
         // A git.cmd wrapper would need cmd.exe, which cuts multi-line commit
         // messages at the first newline; leave that case to Node's lookup.
         const executable = resolved.shell ? "git" : resolved.command;
@@ -922,14 +928,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             }),
           )
           .pipe(
-            Effect.mapError(
-              (cause) =>
-                new GitCommandError({
-                  ...gitCommandContext(commandInput),
-                  detail: "Failed to spawn Git process.",
-                  cause,
-                }),
-            ),
+            Effect.mapError(spawnError),
+            // Synchronous spawn throws (such as E2BIG) arrive as defects.
+            Effect.catchDefect((cause) => Effect.fail(spawnError(cause))),
           );
 
         const [stdout, stderr, exitCode] = yield* Effect.all(
@@ -1985,15 +1986,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           { env },
         );
       } else {
-        yield* runGit("GitVcsDriver.commit.reset", cwd, ["reset"]).pipe(
+        // Quiet: listing every unstaged file can pass the output limit, and a killed reset
+        // leaves index.lock behind for the add below.
+        yield* runGit("GitVcsDriver.commit.reset", cwd, ["reset", "--quiet"]).pipe(
           Effect.catchTags({ GitCommandError: () => Effect.void }),
         );
       }
       yield* runGitWithOptions(
         "GitVcsDriver.commit.addSelected",
         cwd,
-        [...config, "--literal-pathspecs", "add", "-A", "--", ...filePaths],
-        env ? { env } : {},
+        // Paths go through stdin: a large selection on argv fails to spawn with E2BIG.
+        [
+          ...config,
+          "--literal-pathspecs",
+          "add",
+          "-A",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        {
+          ...(env ? { env } : {}),
+          stdin: filePaths.map((file) => `${file}\0`).join(""),
+        },
       );
     } else {
       yield* runGitWithOptions(
