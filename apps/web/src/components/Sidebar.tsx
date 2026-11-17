@@ -119,7 +119,6 @@ import {
   threadTraversalDirectionFromCommand,
 } from "../keybindings";
 import { isModelPickerOpen } from "../modelPickerVisibility";
-import { useShortcutModifierState } from "../shortcutModifierState";
 import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -213,7 +212,6 @@ import {
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
   sortProjectsForSidebar,
-  useThreadJumpHintVisibility,
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
@@ -227,6 +225,7 @@ import { ProjectUnsentDraftDot } from "./sidebar/UnsentDraftDot";
 import { resolveFlatSidebarThreads, SidebarFlatThreadList } from "./sidebar/SidebarFlatThreadList";
 import { FlatNewThreadButton } from "./sidebar/FlatNewThreadButton";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { useThreadJumpHintsVisible } from "./sidebar/threadJumpHints";
 // Avi Code addition: pinned rows sort ahead of the upstream activity order.
 import { isPinnedByKeys, orderPinnedFirst } from "./sidebar/sidebarPinning.logic";
 import { useIsMobile } from "~/hooks/useMediaQuery";
@@ -265,6 +264,15 @@ const SIDEBAR_LIST_ANIMATION_OPTIONS = {
   easing: "ease-out",
 } as const;
 const EMPTY_THREAD_JUMP_LABELS = new Map<string, string>();
+
+function readRouteTerminalOpen(routeThreadRef: ScopedThreadRef | null): boolean {
+  return routeThreadRef
+    ? selectThreadTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+        routeThreadRef,
+      ).terminalOpen
+    : false;
+}
 const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
   repository_path: "Group by repository path",
@@ -2928,11 +2936,6 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
-  const routeTerminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
@@ -2941,7 +2944,6 @@ export default function Sidebar() {
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
   const suppressProjectClickForContextMenuRef = useRef(false);
@@ -2949,7 +2951,6 @@ export default function Sidebar() {
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const platform = navigator.platform;
-  const shortcutModifiers = useShortcutModifierState();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentLabelById = useMemo(
@@ -3065,13 +3066,15 @@ export default function Sidebar() {
     }
     return next;
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
+  // Terminal state is read at event time: subscribing the sidebar to it
+  // re-renders the whole tree every time Ctrl+J toggles the terminal.
   const getCurrentSidebarShortcutContext = useCallback(
     () => ({
       terminalFocus: isTerminalFocused(),
-      terminalOpen: routeTerminalOpen,
+      terminalOpen: readRouteTerminalOpen(routeThreadRef),
       modelPickerOpen: isModelPickerOpen(),
     }),
-    [routeTerminalOpen],
+    [routeThreadRef],
   );
   const newThreadShortcutLabelOptions = useMemo(
     () => ({
@@ -3383,32 +3386,32 @@ export default function Sidebar() {
     () => [...threadJumpCommandByKey.keys()],
     [threadJumpCommandByKey],
   );
-  const sidebarShortcutContext = {
-    terminalFocus: false,
-    terminalOpen: routeTerminalOpen,
-    modelPickerOpen: isModelPickerOpen(),
-  };
-  const threadJumpLabelByKey = useMemo(
-    () =>
-      buildThreadJumpLabelMap({
-        keybindings,
-        platform,
-        terminalOpen: sidebarShortcutContext.terminalOpen,
-        threadJumpCommandByKey,
-      }),
-    [keybindings, platform, sidebarShortcutContext.terminalOpen, threadJumpCommandByKey],
-  );
-  const shouldShowThreadJumpHintsNow = shouldShowThreadJumpHintsForModifiers(
-    shortcutModifiers,
-    keybindings,
-    {
+  // Avi Code addition (port of upstream facd190640): the sidebar re-renders
+  // only when hint visibility flips, never on a bare modifier press.
+  const showThreadJumpHints = useThreadJumpHintsVisible((modifiers) =>
+    shouldShowThreadJumpHintsForModifiers(modifiers, keybindings, {
       platform,
-      context: sidebarShortcutContext,
-    },
+      context: {
+        terminalFocus: false,
+        terminalOpen: readRouteTerminalOpen(routeThreadRef),
+        modelPickerOpen: isModelPickerOpen(),
+      },
+    }),
   );
-  const visibleThreadJumpLabelByKey = showThreadJumpHints
-    ? threadJumpLabelByKey
-    : EMPTY_THREAD_JUMP_LABELS;
+  // Labels are only built while hints show, so reading terminal state here
+  // (instead of subscribing to it) is fresh whenever they appear.
+  const visibleThreadJumpLabelByKey = useMemo(
+    () =>
+      showThreadJumpHints
+        ? buildThreadJumpLabelMap({
+            keybindings,
+            platform,
+            terminalOpen: readRouteTerminalOpen(routeThreadRef),
+            threadJumpCommandByKey,
+          })
+        : EMPTY_THREAD_JUMP_LABELS,
+    [keybindings, platform, routeThreadRef, showThreadJumpHints, threadJumpCommandByKey],
+  );
   const orderedSidebarThreadKeys = visibleSidebarThreadKeys;
   const prewarmedSidebarThreadKeys = useMemo(
     () => getSidebarThreadIdsToPrewarm(visibleSidebarThreadKeys),
@@ -3436,10 +3439,6 @@ export default function Sidebar() {
     navigateToThread,
     shouldSuppress: isPreviewFocused,
   });
-
-  useEffect(() => {
-    updateThreadJumpHintsVisibility(shouldShowThreadJumpHintsNow);
-  }, [shouldShowThreadJumpHintsNow, updateThreadJumpHintsVisibility]);
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
