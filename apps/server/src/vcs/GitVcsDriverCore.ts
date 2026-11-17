@@ -755,7 +755,8 @@ const collectOutput = Effect.fnUntraced(function* (
   appendTruncationMarker: boolean,
   onLine: ((line: string) => Effect.Effect<void, never>) | undefined,
 ): Effect.fn.Return<{ readonly text: string; readonly truncated: boolean }, GitCommandError> {
-  const decoder = new TextDecoder();
+  // A file read through git (such as `git show`) keeps its byte-order mark.
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   let bytes = 0;
   let text = "";
   let lineBuffer = "";

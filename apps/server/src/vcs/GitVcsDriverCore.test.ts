@@ -687,6 +687,25 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
     );
   });
 
+  it.effect("keeps a byte-order mark at the start of git output", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTmpDir();
+      yield* initRepoWithCommit(cwd);
+      yield* writeTextFile(cwd, "bom.txt", "\uFEFFcontents\n");
+      yield* git(cwd, ["add", "bom.txt"]);
+      yield* git(cwd, ["commit", "-m", "bom"]);
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+
+      const result = yield* driver.execute({
+        operation: "GitVcsDriver.test.git",
+        cwd,
+        args: ["show", "HEAD:bom.txt"],
+      });
+
+      assert.strictEqual(result.stdout, "\uFEFFcontents\n");
+    }),
+  );
+
   describe("structured errors", () => {
     it.effect("fails with a GitCommandError when spawn throws", () =>
       Effect.gen(function* () {
