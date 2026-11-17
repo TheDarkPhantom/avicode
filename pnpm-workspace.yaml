@@ -99,12 +99,21 @@ overrides:
   "@effect/vitest": "catalog:"
   "@effect/vitest>vitest": "-"
   "@expo/metro-config": 56.0.14
+  # Pin patched packages so lockfile-free release installs cannot drift past the patch.
+  # Update these with patchedDependencies.
+  "@ff-labs/fff-node": 0.9.4
   "@pierre/diffs>@shikijs/transformers": ^4.2.0
+  "@react-native-menu/menu": 2.0.0
+  "@react-navigation/native-stack": 7.17.6
   "@types/node": "catalog:"
   effect: "catalog:"
   expo-modules-jsi: 56.0.10
   "expo-sharing>@expo/config-plugins": 56.0.9
   "expo-sharing>@expo/config-types": 56.0.6
+  react-native-gesture-handler: 2.31.2
+  react-native-keyboard-controller: 1.21.13
+  react-native-nitro-modules: 0.35.9
+  react-native-screens: 4.25.2
   vite: "catalog:"
   yaml: "catalog:"
 
