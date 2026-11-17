@@ -8,6 +8,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { assert, it } from "@effect/vitest";
 
 import { GitCommandError } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
@@ -108,3 +109,21 @@ it.effect("GitVcsDriver forwards execute env to the VCS process", () => {
     ),
   );
 });
+
+it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32")(
+  "GitVcsDriver detects a repository whose path contains a newline",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const parent = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-newline-repo-" });
+      const cwd = path.join(parent, "multi\nline");
+      yield* fileSystem.makeDirectory(cwd);
+      yield* runGit(cwd, ["init"]);
+      const driver = yield* GitVcsDriver.makeVcsDriverShape();
+
+      const repository = yield* driver.detectRepository(cwd);
+      assert.strictEqual(repository?.rootPath, yield* fileSystem.realPath(cwd));
+      assert.strictEqual(repository?.metadataPath, ".git");
+    }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);

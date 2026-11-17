@@ -33,6 +33,21 @@ it.effect("preserves unexpected FileFinder creation failures", () =>
   }),
 );
 
+it.effect("leaves fff's refusal to index the home directory or filesystem root in place", () =>
+  Effect.gen(function* () {
+    const create = vi.spyOn(FileFinder, "create").mockReturnValueOnce({
+      ok: false,
+      error: "refused",
+    });
+
+    yield* Effect.flip(Effect.scoped(WorkspaceSearchIndex.make("/workspace/project")));
+
+    const options = create.mock.calls[0]?.[0];
+    expect(options?.enableHomeDirScanning).toBeFalsy();
+    expect(options?.enableFsRootScanning).toBeFalsy();
+  }),
+);
+
 it.effect("keeps returned FileFinder creation diagnostics out of the cause chain", () =>
   Effect.gen(function* () {
     vi.spyOn(FileFinder, "create").mockReturnValueOnce({

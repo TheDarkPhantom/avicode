@@ -10,6 +10,7 @@ import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import type {
@@ -339,11 +340,36 @@ export const make = Effect.gen(function* () {
     return yield* updateCachedStatus(cwd, local, remote);
   });
 
+  // A refresh that started after a request saw every change that request could mean, so queued
+  // callers share it instead of each running git status again.
+  const localRefreshLocks = new Map<string, Semaphore.Semaphore>();
+  const localRefreshLockFor = (cwd: string) => {
+    const existing = localRefreshLocks.get(cwd);
+    if (existing !== undefined) return existing;
+    const created = Semaphore.makeUnsafe(1);
+    localRefreshLocks.set(cwd, created);
+    return created;
+  };
+  const localRefreshRequests = new Map<string, number>();
+  const localRefreshResults = new Map<
+    string,
+    { readonly startedAt: number; readonly local: VcsStatusLocalResult }
+  >();
   const refreshLocalStatusCore = Effect.fn("VcsStatusBroadcaster.refreshLocalStatusCore")(
     function* (cwd: string) {
-      yield* workflow.invalidateLocalStatus(cwd);
-      const local = yield* workflow.localStatus({ cwd });
-      return yield* updateCachedLocalStatus(cwd, local, { publish: true });
+      const requestedAt = (localRefreshRequests.get(cwd) ?? 0) + 1;
+      localRefreshRequests.set(cwd, requestedAt);
+      return yield* localRefreshLockFor(cwd).withPermit(
+        Effect.gen(function* () {
+          const shared = localRefreshResults.get(cwd);
+          if (shared !== undefined && shared.startedAt >= requestedAt) return shared.local;
+          const startedAt = localRefreshRequests.get(cwd) ?? requestedAt;
+          yield* workflow.invalidateLocalStatus(cwd);
+          const local = yield* workflow.localStatus({ cwd });
+          localRefreshResults.set(cwd, { startedAt, local });
+          return yield* updateCachedLocalStatus(cwd, local, { publish: true });
+        }),
+      );
     },
   );
 

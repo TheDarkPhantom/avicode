@@ -3,6 +3,7 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -30,7 +31,7 @@ import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { resolveSpawnCommand, runsGitWithoutConsole } from "@t3tools/shared/shell";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
@@ -42,6 +43,7 @@ import {
 import { ServerConfig } from "../config.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const WORKTREE_INDEX_REFRESH_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
@@ -53,6 +55,8 @@ const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 // much faster than the file count (50k files took about 30 seconds). Past this many, the
 // untracked diff is reported truncated instead.
 const REVIEW_UNTRACKED_MAX_FILES = 5_000;
+// git diff reads every untracked byte (~5 ms/MB), so larger untracked input stays out of the review index.
+const REVIEW_UNTRACKED_MAX_BYTES = 256 * 1024 * 1024;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -751,7 +755,8 @@ const collectOutput = Effect.fnUntraced(function* (
   appendTruncationMarker: boolean,
   onLine: ((line: string) => Effect.Effect<void, never>) | undefined,
 ): Effect.fn.Return<{ readonly text: string; readonly truncated: boolean }, GitCommandError> {
-  const decoder = new TextDecoder();
+  // A file read through git (such as `git show`) keeps its byte-order mark.
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   let bytes = 0;
   let text = "";
   let lineBuffer = "";
@@ -904,6 +909,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         };
         const spawnEnv = { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) };
         const resolved = yield* resolveSpawnCommand("git", [], { env: spawnEnv });
+        const spawnError = (cause: unknown) =>
+          new GitCommandError({
+            ...gitCommandContext(commandInput),
+            detail: "Failed to spawn Git process.",
+            cause,
+          });
         // A git.cmd wrapper would need cmd.exe, which cuts multi-line commit
         // messages at the first newline; leave that case to Node's lookup.
         const executable = resolved.shell ? "git" : resolved.command;
@@ -912,17 +923,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ChildProcess.make(executable, commandInput.args, {
               cwd: commandInput.cwd,
               env: spawnEnv,
+              // A detached Windows child gets no console, so these reads start
+              // no conhost.exe.
+              ...(runsGitWithoutConsole(hostPlatform, executable, commandInput.args)
+                ? { detached: true }
+                : {}),
             }),
           )
           .pipe(
-            Effect.mapError(
-              (cause) =>
-                new GitCommandError({
-                  ...gitCommandContext(commandInput),
-                  detail: "Failed to spawn Git process.",
-                  cause,
-                }),
-            ),
+            Effect.mapError(spawnError),
+            // Synchronous spawn throws (such as E2BIG) arrive as defects.
+            Effect.catchDefect((cause) => Effect.fail(spawnError(cause))),
           );
 
         const [stdout, stderr, exitCode] = yield* Effect.all(
@@ -1199,7 +1210,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return executeGit(
       "GitVcsDriver.fetchRemoteForStatus",
       fetchCwd,
-      ["--git-dir", gitCommonDir, "fetch", "--quiet", "--no-tags", "--no-auto-gc", remoteName],
+      [
+        "--git-dir",
+        gitCommonDir,
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-auto-gc",
+        // FETCH_HEAD is written without a lock; overlapping a user's `git pull` makes that pull fail.
+        "--no-write-fetch-head",
+        remoteName,
+      ],
       {
         env: STATUS_UPSTREAM_REFRESH_ENV,
         fallbackErrorDetail: "Background Git fetch exited with a non-zero status.",
@@ -1686,7 +1707,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const readStatusDetailsLocal = Effect.fn("readStatusDetailsLocal")(function* (cwd: string) {
-    const statusResult = yield* executeGitWithStableDiagnostics(
+    const readStatus = executeGitWithStableDiagnostics(
       "GitVcsDriver.statusDetails.status",
       cwd,
       ["status", "--porcelain=2", "--branch"],
@@ -1700,29 +1721,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     );
 
-    if (statusResult === null) {
-      return NON_REPOSITORY_STATUS_DETAILS;
-    }
-
-    if (statusResult.exitCode !== 0) {
-      if (isNonRepositoryGitStderr(statusResult.stderr)) {
-        return NON_REPOSITORY_STATUS_DETAILS;
-      }
-      return yield* new GitCommandError({
-        ...gitCommandContext({
-          operation: "GitVcsDriver.statusDetails.status",
-          cwd,
-          args: ["status", "--porcelain=2", "--branch"],
-        }),
-        detail: "Git status failed.",
-        exitCode: statusResult.exitCode,
-        stdoutLength: statusResult.stdout.length,
-        stderrLength: statusResult.stderr.length,
-      });
-    }
-
-    const [numstatStdout, defaultRefResult, hasPrimaryRemote] = yield* Effect.all(
+    // diff-index does not read status output, so both spawn together; a non-repository discards it.
+    const [statusResult, numstatResult, defaultRefOutcome, hasPrimaryRemote] = yield* Effect.all(
       [
+        readStatus,
         // Plumbing, because porcelain `git diff` rewrites the index even with
         // GIT_OPTIONAL_LOCKS=0. -M keeps porcelain's rename detection.
         executeGitWithStableDiagnostics(
@@ -1779,17 +1781,41 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               }),
             );
           }),
+          Effect.result,
         ),
         executeGit(
           "GitVcsDriver.statusDetails.defaultRef",
           cwd,
           ["symbolic-ref", "refs/remotes/origin/HEAD"],
           { allowNonZeroExit: true },
-        ),
+        ).pipe(Effect.result),
         originRemoteExists(cwd).pipe(Effect.orElseSucceed(() => false)),
       ],
       { concurrency: "unbounded" },
     );
+    if (statusResult === null) {
+      return NON_REPOSITORY_STATUS_DETAILS;
+    }
+
+    if (statusResult.exitCode !== 0) {
+      if (isNonRepositoryGitStderr(statusResult.stderr)) {
+        return NON_REPOSITORY_STATUS_DETAILS;
+      }
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.statusDetails.status",
+          cwd,
+          args: ["status", "--porcelain=2", "--branch"],
+        }),
+        detail: "Git status failed.",
+        exitCode: statusResult.exitCode,
+        stdoutLength: statusResult.stdout.length,
+        stderrLength: statusResult.stderr.length,
+      });
+    }
+
+    const numstatStdout = yield* Effect.fromResult(numstatResult);
+    const defaultRefResult = yield* Effect.fromResult(defaultRefOutcome);
     const statusStdout = statusResult.stdout;
     const defaultBranch =
       defaultRefResult.exitCode === 0
@@ -1858,13 +1884,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     let insertions = 0;
     let deletions = 0;
-    const files = Array.from(fileStatMap.entries())
-      .map(([filePath, stat]) => {
-        insertions += stat.insertions;
-        deletions += stat.deletions;
-        return { path: filePath, insertions: stat.insertions, deletions: stat.deletions };
-      })
-      .toSorted((a, b) => a.path.localeCompare(b.path));
+    const files = Array.from(fileStatMap.entries()).map(([filePath, stat]) => {
+      insertions += stat.insertions;
+      deletions += stat.deletions;
+      return { path: filePath, insertions: stat.insertions, deletions: stat.deletions };
+    });
 
     for (const filePath of changedFilesWithoutNumstat) {
       if (fileStatMap.has(filePath)) continue;
@@ -1965,15 +1989,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           { env },
         );
       } else {
-        yield* runGit("GitVcsDriver.commit.reset", cwd, ["reset"]).pipe(
+        // Quiet: listing every unstaged file can pass the output limit, and a killed reset
+        // leaves index.lock behind for the add below.
+        yield* runGit("GitVcsDriver.commit.reset", cwd, ["reset", "--quiet"]).pipe(
           Effect.catchTags({ GitCommandError: () => Effect.void }),
         );
       }
       yield* runGitWithOptions(
         "GitVcsDriver.commit.addSelected",
         cwd,
-        [...config, "--literal-pathspecs", "add", "-A", "--", ...filePaths],
-        env ? { env } : {},
+        // Paths go through stdin: a large selection on argv fails to spawn with E2BIG.
+        [
+          ...config,
+          "--literal-pathspecs",
+          "add",
+          "-A",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        {
+          ...(env ? { env } : {}),
+          stdin: filePaths.map((file) => `${file}\0`).join(""),
+        },
       );
     } else {
       yield* runGitWithOptions(
@@ -1989,17 +2026,45 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     Effect.fn("prepareCommitContext")(function* (cwd, filePaths) {
       return yield* Effect.scoped(
         Effect.gen(function* () {
-          const indexValue = yield* runGitStdout(
-            "GitVcsDriver.prepareCommitContext.indexPath",
+          const [indexValue = "", objectsValue = ""] = (yield* runGitStdout(
+            "GitVcsDriver.prepareCommitContext.gitPaths",
             cwd,
-            ["rev-parse", "--git-path", "index"],
-          );
+            ["rev-parse", "--git-path", "index", "--git-path", "objects"],
+          )).split("\n");
           const indexPath = path.resolve(cwd, indexValue.trim());
           const directory = yield* fileSystem.makeTempDirectoryScoped({
             prefix: "t3code-commit-index-",
           });
           const tempIndexPath = path.join(directory, "index");
-          const env = { GIT_INDEX_FILE: tempIndexPath } satisfies NodeJS.ProcessEnv;
+          // Staging writes blobs; put them in the temp directory so a draft leaves nothing behind.
+          // List every object directory Git resolved (nested and environment alternates) flat,
+          // since nesting the repository's objects one level deeper can pass Git's depth limit.
+          const objectDirectories = yield* runGitStdout(
+            "GitVcsDriver.prepareCommitContext.alternates",
+            cwd,
+            ["count-objects", "-v"],
+          );
+          // Git prints an entry C-quoted when it needs quoting; quote the rest the same way, so a
+          // path holding the list separator stays one entry (Git 2.11.1+).
+          const quoted = (entry: string) =>
+            entry.startsWith('"') ? entry : `"${entry.replace(/[\\"]/g, "\\$&")}"`;
+          const alternates = [
+            path.resolve(cwd, objectsValue.trim()),
+            ...objectDirectories
+              .split("\n")
+              .flatMap((line) =>
+                line.startsWith("alternate: ") ? [line.slice("alternate: ".length)] : [],
+              ),
+          ];
+          const tempObjectsPath = path.join(directory, "objects");
+          yield* fileSystem.makeDirectory(tempObjectsPath);
+          const env = {
+            GIT_INDEX_FILE: tempIndexPath,
+            GIT_OBJECT_DIRECTORY: tempObjectsPath,
+            GIT_ALTERNATE_OBJECT_DIRECTORIES: alternates
+              .map(quoted)
+              .join(hostPlatform === "win32" ? ";" : ":"),
+          } satisfies NodeJS.ProcessEnv;
           const config = [
             "-c",
             "core.splitIndex=false",
@@ -2032,7 +2097,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           const stagedSummary = yield* runGitStdoutWithOptions(
             "GitVcsDriver.prepareCommitContext.stagedSummary",
             cwd,
-            ["diff", "--cached", "--name-status"],
+            // cwd can be a subdirectory; diff.relative would hide changes outside it.
+            ["-c", "diff.relative=false", "diff", "--cached", "--name-status"],
             { env },
           ).pipe(Effect.map((stdout) => stdout.trim()));
           if (stagedSummary.length === 0) {
@@ -2042,7 +2108,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           const stagedPatch = yield* runGitStdoutWithOptions(
             "GitVcsDriver.prepareCommitContext.stagedPatch",
             cwd,
-            ["diff", "--no-ext-diff", "--cached", "--patch", "--minimal"],
+            [
+              "-c",
+              "diff.relative=false",
+              "diff",
+              "--no-ext-diff",
+              "--cached",
+              "--patch",
+              "--minimal",
+            ],
             {
               env,
               maxOutputBytes: PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES,
@@ -2303,7 +2377,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         runGitStdoutWithOptions(
           "GitVcsDriver.readRangeContext.diffStat",
           cwd,
-          ["diff", "--stat", range],
+          ["-c", "diff.relative=false", "diff", "--stat", range],
           {
             maxOutputBytes: RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES,
             appendTruncationMarker: true,
@@ -2312,7 +2386,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         runGitStdoutWithOptions(
           "GitVcsDriver.readRangeContext.diffPatch",
           cwd,
-          ["diff", "--no-ext-diff", "--patch", "--minimal", range],
+          ["-c", "diff.relative=false", "diff", "--no-ext-diff", "--patch", "--minimal", range],
           {
             maxOutputBytes: RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES,
             appendTruncationMarker: true,
@@ -2349,6 +2423,30 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES) {
       return { diff: "", truncated: true };
     }
+    const sizes = yield* Effect.forEach(
+      untrackedPaths,
+      (relativePath) =>
+        // stat follows a symlink, so a link to a large file is budgeted at its target's size.
+        fileSystem.stat(path.resolve(cwd, relativePath)).pipe(
+          Effect.map((info) => (info.type === "File" ? Number(info.size) : 0)),
+          Effect.orElseSucceed(() => 0),
+          Effect.map((size) => ({ relativePath, size })),
+        ),
+      { concurrency: 16 },
+    );
+    // Smallest first, so which files fit does not depend on how their names sort.
+    const pathsToAdd: string[] = [];
+    let bytes = 0;
+    for (const { relativePath, size } of sizes.toSorted((left, right) => left.size - right.size)) {
+      bytes += size;
+      if (bytes > REVIEW_UNTRACKED_MAX_BYTES) break;
+      pathsToAdd.push(relativePath);
+    }
+    // Untracked files left out make the diff partial.
+    const omitted = pathsToAdd.length < untrackedPaths.length;
+    if (pathsToAdd.length === 0) {
+      return { diff: "", truncated: true };
+    }
 
     // A path that does not exist yet reads as an empty index; a zero-byte file would not.
     const tempIndexDir = yield* fileSystem
@@ -2381,7 +2479,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ],
       {
         env,
-        stdin: `${untrackedPaths.join("\0")}\0`,
+        stdin: `${pathsToAdd.join("\0")}\0`,
         fallbackErrorDetail: "Could not stage untracked files in the review index.",
       },
     );
@@ -2395,6 +2493,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",
+        "--submodule=short",
         "--minimal",
         "--",
       ],
@@ -2407,7 +2506,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     return {
       diff: diffResult.stdout,
-      truncated: untrackedResult.stdoutTruncated || diffResult.stdoutTruncated,
+      truncated: omitted || untrackedResult.stdoutTruncated || diffResult.stdoutTruncated,
     };
   }, Effect.scoped);
 
@@ -2441,6 +2540,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",
+        "--submodule=short",
         "--minimal",
         ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
         "HEAD",
@@ -2477,6 +2577,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               "--no-color",
               "--no-ext-diff",
               "--no-textconv",
+              "--submodule=short",
               "--minimal",
               ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
               `${baseRef}...HEAD`,
@@ -2851,6 +2952,52 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     },
   );
 
+  // A checkout stamps most files in the second it writes the index, and Git re-reads every file
+  // stamped in the index's own second or later ("racily clean") on each status, diff and add.
+  // Our own git calls never rewrite a worktree's index, so refresh it once.
+  const refreshNewWorktreeIndex = Effect.fn("refreshNewWorktreeIndex")(function* (
+    worktreePath: string,
+  ) {
+    const indexPath = path.resolve(
+      worktreePath,
+      (yield* runGitStdout("GitVcsDriver.createWorktree.indexPath", worktreePath, [
+        "rev-parse",
+        "--git-path",
+        "index",
+      ])).trim(),
+    );
+    const indexSecond = fileSystem.stat(indexPath).pipe(
+      Effect.map(({ mtime }) => Option.map(mtime, (date) => Math.floor(date.getTime() / 1000))),
+      Effect.orElseSucceed(() => Option.none<number>()),
+    );
+    // Older Git (such as 2.30) skips the write when racy entries merely check out clean.
+    // A refresh re-reads every checked-out file, so allow five minutes.
+    const refresh = runGitWithOptions(
+      "GitVcsDriver.createWorktree.refreshIndex",
+      worktreePath,
+      ["update-index", "-q", "--refresh", "--force-write-index"],
+      { timeoutMs: WORKTREE_INDEX_REFRESH_TIMEOUT_MS },
+    );
+    const checkoutSecond = yield* indexSecond;
+    yield* refresh;
+    const refreshedSecond = yield* indexSecond;
+    if (
+      Option.isNone(checkoutSecond) ||
+      Option.isNone(refreshedSecond) ||
+      refreshedSecond.value > checkoutSecond.value
+    ) {
+      return;
+    }
+    // The refresh finished within the checkout's second, so its index is just as racy. Wait that
+    // second out (file timestamps can trail the clock by a kernel tick) and refresh again. Two
+    // seconds or more means this clock does not match the file timestamps, as on a share stamped
+    // by another machine, so it cannot say when that second ends.
+    const delay = (checkoutSecond.value + 1) * 1000 + 50 - (yield* Clock.currentTimeMillis);
+    if (delay >= 2_000) return;
+    if (delay > 0) yield* Effect.sleep(Duration.millis(delay));
+    yield* refresh;
+  });
+
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input) {
@@ -2865,6 +3012,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     yield* executeGit("GitVcsDriver.createWorktree", input.cwd, args, {
       fallbackErrorDetail: "git worktree add failed",
     });
+
+    // Before the worktree is returned: a refresh holds index.lock, so running it in the
+    // background would race the setup script's and the agent's own git commands.
+    yield* refreshNewWorktreeIndex(worktreePath).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning(
+          "worktree index refresh failed; Git keeps re-reading its files until the index is rewritten",
+          { worktreePath, cause },
+        ),
+      ),
+    );
 
     if (input.newRefName && input.baseRefName) {
       const remoteNames = yield* listRemoteNames(input.cwd).pipe(Effect.orElseSucceed(() => []));

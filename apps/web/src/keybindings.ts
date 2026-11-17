@@ -548,10 +548,8 @@ export function terminalNavigationShortcutData(
     return null;
   }
 
-  if (event.ctrlKey && !event.metaKey && !event.altKey) {
-    return moveWord;
-  }
-
+  // Ctrl+Arrow stays with the terminal's own encoder, so shells such as PowerShell receive the
+  // modified arrow they bind to word movement.
   if (event.altKey && !event.metaKey && !event.ctrlKey) {
     return moveWord;
   }
