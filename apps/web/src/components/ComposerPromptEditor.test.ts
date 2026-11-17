@@ -71,6 +71,37 @@ describe("registerComposerInlineTokenPaste", () => {
     );
   });
 
+  it("keeps the blank lines of CRLF clipboard text around a mention", () => {
+    vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
+    const editor = createEditor();
+    const mention = "[notes.md](docs/notes.md)";
+
+    editor.update(
+      () => {
+        const paragraph = $createParagraphNode();
+        $getRoot().append(paragraph);
+        paragraph.selectEnd();
+      },
+      { discrete: true },
+    );
+    registerComposerInlineTokenPaste(editor, {
+      createMentionNode: (path) => $createTextNode(`<mention:${path}>`),
+      getExpandedAbsoluteOffsetForPoint: () => 0,
+    });
+
+    const event = new TestClipboardEvent(`x\r\n\r\n${mention} y\rz`);
+    editor.update(
+      () => {
+        editor.dispatchCommand(PASTE_COMMAND, event as ClipboardEvent);
+      },
+      { discrete: true },
+    );
+
+    expect(editor.getEditorState().read(() => $getRoot().getTextContent())).toBe(
+      "x\n\n<mention:docs/notes.md> y\nz",
+    );
+  });
+
   it.each([
     "yarn expo install @expo/ui",
     "npm install @jane/foo.js",
