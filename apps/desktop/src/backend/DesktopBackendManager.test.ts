@@ -1451,4 +1451,44 @@ describe("DesktopBackendManager", () => {
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );
+
+  it.effect("waits out a slow startup and reports one that never becomes ready", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const reports = yield* Queue.unbounded<string>();
+        const startInstance = (status: Ref.Ref<number>, onReady?: Effect.Effect<void>) =>
+          makeTestInstance({
+            spawnerLayer: Layer.succeed(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() =>
+                Effect.succeed(makeProcess({ exitCode: Effect.never })),
+              ),
+            ),
+            httpClientLayer: httpClientLayer((request) =>
+              Ref.get(status).pipe(Effect.map((code) => responseForRequest(request, code))),
+            ),
+            backendOutputLog: {
+              persistFailureSnapshot: ({ details }) =>
+                Queue.offer(reports, details).pipe(Effect.asVoid),
+            },
+            ...(onReady ? { onReady } : {}),
+          }).pipe(Effect.tap((instance) => instance.start));
+
+        const slowStatus = yield* Ref.make(503);
+        const ready = yield* Deferred.make<void>();
+        yield* startInstance(slowStatus, Deferred.succeed(ready, undefined).pipe(Effect.asVoid));
+        yield* TestClock.adjust(Duration.seconds(66));
+        yield* Ref.set(slowStatus, 200);
+        yield* TestClock.adjust(Duration.millis(100));
+        yield* Deferred.await(ready);
+        assert.isTrue(Option.isNone(yield* Queue.poll(reports)));
+
+        yield* startInstance(yield* Ref.make(503));
+        yield* TestClock.adjust(Duration.seconds(179));
+        assert.isTrue(Option.isNone(yield* Queue.poll(reports)));
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* Queue.take(reports);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
 });
