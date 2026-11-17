@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 export interface ShortcutModifierState {
   metaKey: boolean;
@@ -26,25 +26,24 @@ export function areShortcutModifierStatesEqual(
   );
 }
 
-export function useShortcutModifierState(): ShortcutModifierState {
-  const [state, setState] = useState(EMPTY_SHORTCUT_MODIFIER_STATE);
-  const stateRef = useRef(EMPTY_SHORTCUT_MODIFIER_STATE);
+function createShortcutModifierStore() {
+  let state = EMPTY_SHORTCUT_MODIFIER_STATE;
+  const listeners = new Set<() => void>();
+  let stopTracking: (() => void) | null = null;
 
-  useEffect(() => {
-    const updateState = (next: ShortcutModifierState) => {
-      // Even a no-op state dispatch can cost work in the sidebar's large tree.
-      // Ordinary typing must return before dispatching a React update.
-      if (areShortcutModifierStatesEqual(stateRef.current, next)) return;
-      stateRef.current = next;
-      setState(next);
-    };
-    const onKeyboardEvent = (event: KeyboardEvent) => {
-      updateState(shortcutModifierStateAfterKeyboardEvent(stateRef.current, event));
-    };
-    const onWindowBlur = () => {
-      updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
-    };
-
+  const updateState = (next: ShortcutModifierState) => {
+    // Ordinary typing returns here, before any subscriber hears about it.
+    if (areShortcutModifierStatesEqual(state, next)) return;
+    state = next;
+    for (const listener of listeners) listener();
+  };
+  const onKeyboardEvent = (event: KeyboardEvent) => {
+    updateState(shortcutModifierStateAfterKeyboardEvent(state, event));
+  };
+  const onWindowBlur = () => {
+    updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
+  };
+  const startTracking = () => {
     window.addEventListener("keydown", onKeyboardEvent, true);
     window.addEventListener("keyup", onKeyboardEvent, true);
     window.addEventListener("blur", onWindowBlur);
@@ -52,10 +51,30 @@ export function useShortcutModifierState(): ShortcutModifierState {
       window.removeEventListener("keydown", onKeyboardEvent, true);
       window.removeEventListener("keyup", onKeyboardEvent, true);
       window.removeEventListener("blur", onWindowBlur);
+      state = EMPTY_SHORTCUT_MODIFIER_STATE;
     };
-  }, []);
+  };
 
-  return state;
+  return {
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      stopTracking ??= startTracking();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size > 0) return;
+        stopTracking?.();
+        stopTracking = null;
+      };
+    },
+    getSnapshot: () => state,
+  };
+}
+
+/** Shared by every subscriber; read it from a snapshot to re-render only when a derived value changes. */
+export const shortcutModifierStore = createShortcutModifierStore();
+
+export function useShortcutModifierState(): ShortcutModifierState {
+  return useSyncExternalStore(shortcutModifierStore.subscribe, shortcutModifierStore.getSnapshot);
 }
 
 function normalizeModifierKey(key: string): keyof ShortcutModifierState | null {

@@ -50,8 +50,9 @@ function isWhitespace(char: string): boolean {
 }
 
 /**
- * A slash word with a second slash, such as `/tmp/build.sh`, is a path, not a
- * command. The whole word counts, so a caret before the second slash still sees it.
+ * A slash word with a second slash or a backslash, such as `/tmp/build.sh` or
+ * `/Windows\System32`, is a path, not a command. The whole word counts, so a
+ * caret before that separator still sees it.
  */
 export function isPathWord(
   text: string,
@@ -63,7 +64,7 @@ export function isPathWord(
   while (wordEnd < text.length && !isWhitespaceChar(text[wordEnd] ?? "")) {
     wordEnd += 1;
   }
-  return text.slice(wordStart + 1, wordEnd).includes("/");
+  return /[/\\]/.test(text.slice(wordStart + 1, wordEnd));
 }
 
 /**
