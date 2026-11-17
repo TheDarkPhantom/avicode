@@ -226,7 +226,7 @@ importers:
         specifier: 'catalog:'
         version: 1.3.0-beta.10(patch_hash=7ef7cb0cbabb17c15cdb137554068b36f15f6f5265e73fb51452aa3380db91aa)(@shikijs/themes@4.2.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@react-native-menu/menu':
-        specifier: ^2.0.0
+        specifier: 2.0.0
         version: 2.0.0(patch_hash=5ea3ae4bf1d9baf5443b65c269bb09621c27a68d556f713778f37b1e8d46aaae)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3)
       '@react-navigation/elements':
         specifier: 2.9.26
