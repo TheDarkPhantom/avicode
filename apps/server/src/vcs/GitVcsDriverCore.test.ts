@@ -2121,6 +2121,31 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("commit context", () => {
+    it.effect("sees changes outside a subfolder project under diff.relative", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["config", "diff.relative", "true"]);
+        yield* git(cwd, ["checkout", "-b", "feature/relative"]);
+        yield* writeTextFile(cwd, "notes.txt", "source line\n");
+        yield* git(cwd, ["add", "notes.txt"]);
+        yield* git(cwd, ["commit", "-m", "range file"]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const projectCwd = `${cwd}/app`;
+        yield* fileSystem.makeDirectory(projectCwd);
+
+        const context = yield* driver.readRangeContext(projectCwd, initialBranch);
+        assert.include(context.diffSummary, "notes.txt");
+        assert.include(context.diffPatch, "+source line");
+
+        yield* writeTextFile(cwd, "notes.txt", "updated source line\n");
+        const staged = yield* driver.prepareCommitContext(projectCwd);
+        assert.include(staged?.stagedSummary ?? "", "notes.txt");
+        assert.include(staged?.stagedPatch ?? "", "+updated source line");
+      }),
+    );
+
     it.effect("reads history through a chain of shared clones", () =>
       Effect.gen(function* () {
         const root = yield* makeTmpDir();
