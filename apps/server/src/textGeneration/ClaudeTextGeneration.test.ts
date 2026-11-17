@@ -33,6 +33,12 @@ function makeFakeClaudeBinary(dir: string) {
         "#!/bin/sh",
         'args="$*"',
         'stdin_content="$(cat)"',
+        'if [ "$T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE" = "1" ]; then',
+        '  case "$args" in *--no-session-persistence*)',
+        '    printf "%s\\n" "error: unknown option \'--no-session-persistence\'" >&2',
+        "    exit 1",
+        "  ;; esac",
+        "fi",
         'if [ -n "$T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN" ]; then',
         '  printf "%s" "$args" | grep -F -- "$T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN" >/dev/null || {',
         '    printf "%s\\n" "args missing expected content" >&2',
@@ -71,6 +77,7 @@ function makeFakeClaudeBinary(dir: string) {
 function withFakeClaudeEnv<A, E, R>(
   input: {
     output: string;
+    rejectsNoSessionPersistence?: boolean;
     exitCode?: number;
     stderr?: string;
     argsMustContain?: string;
@@ -86,6 +93,8 @@ function withFakeClaudeEnv<A, E, R>(
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-claude-text-" });
     const binDir = yield* makeFakeClaudeBinary(tempDir);
     const previousPath = process.env.PATH;
+    const previousRejectsNoSessionPersistence =
+      process.env.T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE;
     const previousOutput = process.env.T3_FAKE_CLAUDE_OUTPUT;
     const previousExitCode = process.env.T3_FAKE_CLAUDE_EXIT_CODE;
     const previousStderr = process.env.T3_FAKE_CLAUDE_STDERR;
@@ -98,6 +107,12 @@ function withFakeClaudeEnv<A, E, R>(
       Effect.sync(() => {
         process.env.PATH = `${binDir}:${previousPath ?? ""}`;
         process.env.T3_FAKE_CLAUDE_OUTPUT = input.output;
+
+        if (input.rejectsNoSessionPersistence) {
+          process.env.T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE = "1";
+        } else {
+          delete process.env.T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE;
+        }
 
         if (input.exitCode !== undefined) {
           process.env.T3_FAKE_CLAUDE_EXIT_CODE = String(input.exitCode);
@@ -138,6 +153,13 @@ function withFakeClaudeEnv<A, E, R>(
       () =>
         Effect.sync(() => {
           process.env.PATH = previousPath;
+
+          if (previousRejectsNoSessionPersistence === undefined) {
+            delete process.env.T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE;
+          } else {
+            process.env.T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE =
+              previousRejectsNoSessionPersistence;
+          }
 
           if (previousOutput === undefined) {
             delete process.env.T3_FAKE_CLAUDE_OUTPUT;
@@ -282,6 +304,50 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               '"Reconnect failures after restart because the session state does not recover"',
             ),
           );
+        }),
+    ),
+  );
+
+  it.effect("does not save a resumable Claude session for text generation", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { title: "Reconnect failures" } }),
+        argsMustContain: "--no-session-persistence",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Investigate reconnect failures",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated.title).toBe(sanitizeThreadTitle("Reconnect failures"));
+        }),
+    ),
+  );
+
+  it.effect("retries without --no-session-persistence when the Claude CLI rejects it", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { title: "Reconnect failures" } }),
+        rejectsNoSessionPersistence: true,
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Investigate reconnect failures",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated.title).toBe(sanitizeThreadTitle("Reconnect failures"));
         }),
     ),
   );
