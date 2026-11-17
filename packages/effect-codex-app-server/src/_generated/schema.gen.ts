@@ -2125,31 +2125,8 @@ export const ServerNotification__GuardianWarningNotification = Schema.Struct({
   threadId: Schema.String.annotate({ description: "Thread target for the guardian warning." }),
 });
 
-export type ServerNotification__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const ServerNotification__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type ServerNotification__HookEventName = string;
+export const ServerNotification__HookEventName = Schema.String;
 
 export type ServerNotification__HookExecutionMode = "sync" | "async";
 export const ServerNotification__HookExecutionMode = Schema.Literals(["sync", "async"]);
@@ -4169,31 +4146,8 @@ export const V2HookCompletedNotification__AbsolutePathBuf = Schema.String.annota
     "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
 });
 
-export type V2HookCompletedNotification__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2HookCompletedNotification__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2HookCompletedNotification__HookEventName = string;
+export const V2HookCompletedNotification__HookEventName = Schema.String;
 
 export type V2HookCompletedNotification__HookExecutionMode = "sync" | "async";
 export const V2HookCompletedNotification__HookExecutionMode = Schema.Literals(["sync", "async"]);
@@ -4251,31 +4205,8 @@ export const V2HooksListResponse__HookErrorInfo = Schema.Struct({
   path: Schema.String,
 });
 
-export type V2HooksListResponse__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2HooksListResponse__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2HooksListResponse__HookEventName = string;
+export const V2HooksListResponse__HookEventName = Schema.String;
 
 export type V2HooksListResponse__HookHandlerType = "command" | "prompt" | "agent";
 export const V2HooksListResponse__HookHandlerType = Schema.Literals(["command", "prompt", "agent"]);
@@ -4320,31 +4251,8 @@ export const V2HookStartedNotification__AbsolutePathBuf = Schema.String.annotate
     "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
 });
 
-export type V2HookStartedNotification__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2HookStartedNotification__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2HookStartedNotification__HookEventName = string;
+export const V2HookStartedNotification__HookEventName = Schema.String;
 
 export type V2HookStartedNotification__HookExecutionMode = "sync" | "async";
 export const V2HookStartedNotification__HookExecutionMode = Schema.Literals(["sync", "async"]);
@@ -5494,31 +5402,8 @@ export const V2PluginReadResponse__AppTemplateUnavailableReason = Schema.Literal
   "NO_ACTIVE_WORKSPACE",
 ]);
 
-export type V2PluginReadResponse__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2PluginReadResponse__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2PluginReadResponse__HookEventName = string;
+export const V2PluginReadResponse__HookEventName = Schema.String;
 
 export type V2PluginReadResponse__PluginAuthPolicy = "ON_INSTALL" | "ON_USE";
 export const V2PluginReadResponse__PluginAuthPolicy = Schema.Literals(["ON_INSTALL", "ON_USE"]);
