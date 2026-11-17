@@ -1,7 +1,7 @@
 import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -87,6 +87,14 @@ export class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
 }) {}
 
 export const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
+
+const MAX_EXPECTED_FAILURE_RETRY_DELAY_MS = 30_000;
+
+/** Exponential backoff from `base`, capped at 30 seconds. */
+export const subscriptionRetryDelay = (base: Duration.Input, retries: number) =>
+  Duration.millis(
+    Math.min(Duration.toMillis(base) * 2 ** retries, MAX_EXPECTED_FAILURE_RETRY_DELAY_MS),
+  );
 
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
 
