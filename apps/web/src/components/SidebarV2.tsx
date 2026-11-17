@@ -67,7 +67,7 @@ import {
   threadJumpIndexFromCommand,
   threadTraversalDirectionFromCommand,
 } from "../keybindings";
-import { useShortcutModifierState } from "../shortcutModifierState";
+import { useThreadJumpHintsVisible } from "./sidebar/threadJumpHints";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -1889,7 +1889,15 @@ export default function SidebarV2() {
     }
     return mapping;
   }, [keybindings, orderedThreadKeys]);
-  const [showJumpHints, setShowJumpHints] = useState(false);
+  // Same predicate as v1: hints show only while the held modifiers exactly
+  // match a thread-jump binding. Adding Shift (screenshots) or Alt no
+  // longer matches ⌘1..9, so the overlay hides for chords like ⌘⇧4. The
+  // sidebar re-renders only when visibility flips, never on a bare modifier.
+  const showJumpHints = useThreadJumpHintsVisible((modifiers) =>
+    shouldShowThreadJumpHintsForModifiers(modifiers, keybindings, {
+      platform: navigator.platform,
+    }),
+  );
 
   // Settled threads are live shells, so opening one is plain navigation:
   // history stays readable without un-settling, and sending a message or
@@ -2609,11 +2617,6 @@ export default function SidebarV2() {
 
   // Thread jump (cmd+1..9) and prev/next traversal reuse the same commands as
   // v1 — the keybinding layer is shared, only the ordered list differs.
-  const routeTerminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat) return;
@@ -2621,7 +2624,14 @@ export default function SidebarV2() {
         platform: navigator.platform,
         context: {
           terminalFocus: isTerminalFocused(),
-          terminalOpen: routeTerminalOpen,
+          // Read at event time: subscribing the sidebar to terminal state
+          // re-renders the whole tree every time Ctrl+J toggles it.
+          terminalOpen:
+            routeThreadRef !== null &&
+            selectThreadTerminalUiState(
+              useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+              routeThreadRef,
+            ).terminalOpen,
           modelPickerOpen: isModelPickerOpen(),
         },
       });
@@ -2655,23 +2665,10 @@ export default function SidebarV2() {
     keybindings,
     navigateToThread,
     orderedThreadKeys,
-    routeTerminalOpen,
     routeThreadKey,
+    routeThreadRef,
     threadByKey,
   ]);
-
-  // Same predicate as v1: hints show only while the held modifiers exactly
-  // match a thread-jump binding. Adding Shift (screenshots) or Alt no
-  // longer matches ⌘1..9, so the overlay hides for chords like ⌘⇧4.
-  const shortcutModifiers = useShortcutModifierState();
-  const shouldShowJumpHintsNow = shouldShowThreadJumpHintsForModifiers(
-    shortcutModifiers,
-    keybindings,
-    { platform: navigator.platform },
-  );
-  useEffect(() => {
-    setShowJumpHints(shouldShowJumpHintsNow);
-  }, [shouldShowJumpHintsNow]);
 
   const attachListAutoAnimateRef = useCallback((node: HTMLUListElement | null) => {
     if (!node) return;

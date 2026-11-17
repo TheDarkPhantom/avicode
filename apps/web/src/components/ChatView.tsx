@@ -278,7 +278,7 @@ import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { projectEnvironment } from "../state/projects";
-import { useEnvironmentQuery } from "../state/query";
+import { useEnvironmentQuery, useEnvironmentQueryRefresh } from "../state/query";
 import {
   primaryServerAvailableEditorsAtom,
   primaryServerEditorDiscoveryPendingAtom,
@@ -288,7 +288,7 @@ import {
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
-import { vcsEnvironment } from "../state/vcs";
+import { chatGitStatusAtom, NO_CHAT_GIT_STATUS_ATOM, vcsEnvironment } from "../state/vcs";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
   useProject,
@@ -2940,14 +2940,17 @@ function ChatViewContent(props: ChatViewProps) {
       })
     : null;
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
-  const gitStatusQuery = useEnvironmentQuery(
+  const gitStatusAtom =
     gitStatusCwd === null
       ? null
       : vcsEnvironment.status({
           environmentId,
           input: { cwd: gitStatusCwd },
-        }),
-  );
+        });
+  const gitStatusQuery = {
+    data: useAtomValue(gitStatusAtom ? chatGitStatusAtom(gitStatusAtom) : NO_CHAT_GIT_STATUS_ATOM),
+    refresh: useEnvironmentQueryRefresh(gitStatusAtom),
+  };
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const editorDiscoveryPending = useAtomValue(primaryServerEditorDiscoveryPendingAtom);
