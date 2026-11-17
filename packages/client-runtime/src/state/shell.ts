@@ -20,7 +20,7 @@ import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
-import { subscribeDynamic } from "../rpc/client.ts";
+import { subscribeDynamic, subscriptionRetryDelay } from "../rpc/client.ts";
 import { ShellSnapshotLoader } from "./shellSnapshotHttp.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
@@ -47,6 +47,7 @@ function shellStatusForSnapshot(
 }
 
 const SHELL_SYNCHRONIZATION_ERROR_MESSAGE = "Could not synchronize environment data.";
+const SHELL_SUBSCRIPTION_RETRY_DELAY = "250 millis";
 
 export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
   const supervisor = yield* EnvironmentSupervisor;
@@ -176,7 +177,8 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   });
 
   yield* setSynchronizing;
-  yield* Effect.forkScoped(
+  let defectRetries = 0;
+  const followShell = (): Effect.Effect<void, never, EnvironmentSupervisor> =>
     subscribeDynamic(
       ORCHESTRATION_WS_METHODS.subscribeShell,
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
@@ -214,11 +216,35 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       }),
       {
         onExpectedFailure: (cause) => setStreamError(Cause.squash(cause)),
-        retryExpectedFailureAfter: "250 millis",
+        retryExpectedFailureAfter: SHELL_SUBSCRIPTION_RETRY_DELAY,
         resubscribe: foregroundResubscriptions,
       },
-    ).pipe(Stream.runForEach(applyItem)),
-  );
+    ).pipe(
+      Stream.runForEach((item) =>
+        applyItem(item).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              defectRetries = 0;
+            }),
+          ),
+        ),
+      ),
+      // A defect ends the stream and would freeze the thread list; resubscribe after a backoff
+      // rather than wait for a reconnect or wakeup.
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.interrupt
+          : setStreamError(Cause.squash(cause)).pipe(
+              Effect.andThen(
+                Effect.sleep(
+                  subscriptionRetryDelay(SHELL_SUBSCRIPTION_RETRY_DELAY, defectRetries++),
+                ),
+              ),
+              Effect.andThen(Effect.suspend(followShell)),
+            ),
+      ),
+    );
+  yield* Effect.forkScoped(followShell());
   yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {

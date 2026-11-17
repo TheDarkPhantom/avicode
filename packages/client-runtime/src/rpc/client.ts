@@ -1,7 +1,7 @@
 import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -87,6 +87,15 @@ export class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
 }) {}
 
 export const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
+
+const MAX_EXPECTED_FAILURE_RETRY_DELAY_MS = 30_000;
+const STREAM_FAILURE_RETRY_DELAY = Duration.seconds(1);
+
+/** Exponential backoff from `base`, capped at 30 seconds. */
+export const subscriptionRetryDelay = (base: Duration.Input, retries: number) =>
+  Duration.millis(
+    Math.min(Duration.toMillis(base) * 2 ** retries, MAX_EXPECTED_FAILURE_RETRY_DELAY_MS),
+  );
 
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
 
@@ -214,6 +223,8 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                 EnvironmentRpcStreamValue<TTag>,
                 EnvironmentRpcStreamFailure<TTag>
               >;
+              // Not reset by a first value: a stream can emit before every chunk failure.
+              let streamFailureRetries = 0;
               const subscribeToSession = (): Stream.Stream<
                 EnvironmentRpcStreamValue<TTag>,
                 EnvironmentRpcStreamFailure<TTag>
@@ -238,17 +249,42 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                             cause.reasons.every(
                               (reason) => reason._tag === "Fail" && isRpcClientError(reason.error),
                             );
-                          if (isTransportFailure) {
+                          // The RPC client dies with a SchemaError when one stream chunk fails to
+                          // decode, ending only that request while the socket stays open.
+                          const isChunkDecodeDefect =
+                            cause.reasons.length > 0 &&
+                            cause.reasons.every(
+                              (reason) =>
+                                reason._tag === "Die" && Schema.isSchemaError(reason.defect),
+                            );
+                          // Both end one stream while the session can stay healthy, so nothing
+                          // else would replace it. A dead session is replaced by the supervisor,
+                          // which interrupts this retry through switchMap.
+                          if (isTransportFailure || isChunkDecodeDefect) {
                             return Stream.fromEffect(
                               Effect.logWarning(
-                                "Durable RPC subscription lost its transport; waiting for the next session.",
+                                "Durable RPC subscription stream ended; resubscribing.",
                                 {
                                   cause: Cause.pretty(cause),
                                   method: tag,
                                   environmentId: supervisor.target.environmentId,
                                 },
                               ),
-                            ).pipe(Stream.drain);
+                            ).pipe(
+                              Stream.drain,
+                              Stream.concat(
+                                Stream.fromEffect(
+                                  Effect.sleep(
+                                    subscriptionRetryDelay(
+                                      options?.retryExpectedFailureAfter ??
+                                        STREAM_FAILURE_RETRY_DELAY,
+                                      streamFailureRetries++,
+                                    ),
+                                  ),
+                                ).pipe(Stream.drain),
+                              ),
+                              Stream.concat(subscribeToSession()),
+                            );
                           }
                           if (hasOnlyExpectedFailures && options?.onExpectedFailure !== undefined) {
                             const handled = Stream.fromEffect(

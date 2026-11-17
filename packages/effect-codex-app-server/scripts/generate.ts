@@ -150,7 +150,41 @@ const ManualSchemas: Record<string, Schema.Json> = {
 // whole `account/read` decode and take the provider down with it.
 const DefinitionOverrides: Record<string, Schema.Json> = {
   PlanType: { type: "string" },
+  // Newer Codex releases add hook events (e.g. `preModelRequest`); a closed enum drops their notifications.
+  HookEventName: { type: "string" },
 };
+
+type JsonSchemaNode = { readonly [key: string]: Schema.Json };
+
+function isJsonSchemaNode(value: Schema.Json | undefined): value is JsonSchemaNode {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// Newer Codex identifies a generated image by `fileId` and omits the inline `result`.
+// Requiring `result` fails the whole notification decode and drops the finished image.
+function acceptImageFileIds(schema: Schema.Json): Schema.Json {
+  if (!isJsonSchemaNode(schema) || !Array.isArray(schema.oneOf)) return schema;
+  return {
+    ...schema,
+    oneOf: schema.oneOf.map((variant: Schema.Json) => {
+      if (
+        !isJsonSchemaNode(variant) ||
+        !isJsonSchemaNode(variant.properties) ||
+        !isJsonSchemaNode(variant.properties.type) ||
+        !Array.isArray(variant.properties.type.enum) ||
+        !variant.properties.type.enum.includes("imageGeneration") ||
+        !Array.isArray(variant.required)
+      ) {
+        return variant;
+      }
+      return {
+        ...variant,
+        properties: { ...variant.properties, fileId: { type: "string" } },
+        required: variant.required.filter((key: Schema.Json) => key !== "result"),
+      };
+    }),
+  };
+}
 
 const getGeneratedPaths = Effect.fn("getGeneratedPaths")(function* () {
   const path = yield* Path.Path;
@@ -566,7 +600,10 @@ const generateFiles = Effect.fn("generateFiles")(function* () {
       aggregateSchemas[localDefinitionNames.get(definitionName)!] = stripNullDefaults(
         normalizeNullableTypes(
           rewriteExternalRefs(
-            DefinitionOverrides[definitionName] ?? definitionSchema,
+            DefinitionOverrides[definitionName] ??
+              (definitionName === "ThreadItem"
+                ? acceptImageFileIds(definitionSchema)
+                : definitionSchema),
             localDefinitionNames,
             file.namespace,
             exportNameByQualifiedName,

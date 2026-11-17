@@ -948,7 +948,7 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
-  it.effect("keeps a timed-out run active until its process exits", () =>
+  it.effect("keeps a run that outlasts its stop timeout active until its process exits", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const starts = yield* Queue.unbounded<number>();
@@ -1000,14 +1000,16 @@ describe("DesktopBackendManager", () => {
         yield* Deferred.await(teardownStarted).pipe(Effect.timeout("1 second"));
         yield* instance.start;
         yield* TestClock.adjust(Duration.millis(100));
-        yield* Fiber.join(stopFiber).pipe(Effect.timeout("1 second"));
 
+        // Past the timeout, stop still waits for the process to exit.
+        assert.isUndefined(stopFiber.pollUnsafe());
         assert.equal(startCount, 1);
         const timedOut = yield* instance.snapshot;
         assert.equal(timedOut.desiredRunning, true);
         assert.deepEqual(timedOut.activePid, Option.some(123));
 
         yield* Deferred.succeed(finishTeardown, undefined);
+        yield* Fiber.join(stopFiber).pipe(Effect.timeout("1 second"));
         yield* TestClock.adjust(Duration.millis(500));
 
         assert.equal(yield* Queue.take(starts).pipe(Effect.timeout("1 second")), 2);
@@ -1394,6 +1396,98 @@ describe("DesktopBackendManager", () => {
 
         assert.equal(yield* Queue.size(starts), 0);
         assert.equal((yield* instance.snapshot).desiredRunning, false);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("the quit stop keeps waiting for a backend that outlasts its deadline", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const spawned = yield* Deferred.make<void>();
+        const teardownStarted = yield* Deferred.make<void>();
+        const teardownFinished = yield* Deferred.make<void>();
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.gen(function* () {
+                const scope = yield* Scope.Scope;
+                yield* Deferred.succeed(spawned, undefined);
+                yield* Scope.addFinalizer(
+                  scope,
+                  Deferred.succeed(teardownStarted, undefined).pipe(
+                    Effect.andThen(Effect.sleep(Duration.seconds(10))),
+                    Effect.andThen(Deferred.succeed(teardownFinished, undefined)),
+                    Effect.asVoid,
+                  ),
+                );
+                return makeProcess({
+                  exitCode: Deferred.await(teardownFinished).pipe(
+                    Effect.as(ChildProcessSpawner.ExitCode(0)),
+                  ),
+                });
+              }),
+            ),
+          ),
+          httpClientLayer: httpClientLayer(() => Effect.never),
+        });
+        yield* instance.start;
+        yield* Deferred.await(spawned);
+
+        // App quit and the updater stop every backend with this deadline.
+        const quitDone = yield* Deferred.make<void>();
+        const quitFiber = yield* instance
+          .stop({ timeout: DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT })
+          .pipe(Effect.andThen(Deferred.succeed(quitDone, undefined)), Effect.forkChild);
+
+        yield* Deferred.await(teardownStarted);
+        // Past the quit deadline, quit must still wait for the backend to exit.
+        yield* TestClock.adjust(Duration.seconds(9));
+        assert.isFalse(yield* Deferred.isDone(quitDone));
+
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* Fiber.join(quitFiber);
+        assert.isTrue(yield* Deferred.isDone(teardownFinished));
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
+  it.effect("waits out a slow startup and reports one that never becomes ready", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const reports = yield* Queue.unbounded<string>();
+        const startInstance = (status: Ref.Ref<number>, onReady?: Effect.Effect<void>) =>
+          makeTestInstance({
+            spawnerLayer: Layer.succeed(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() =>
+                Effect.succeed(makeProcess({ exitCode: Effect.never })),
+              ),
+            ),
+            httpClientLayer: httpClientLayer((request) =>
+              Ref.get(status).pipe(Effect.map((code) => responseForRequest(request, code))),
+            ),
+            backendOutputLog: {
+              persistFailureSnapshot: ({ details }) =>
+                Queue.offer(reports, details).pipe(Effect.asVoid),
+            },
+            ...(onReady ? { onReady } : {}),
+          }).pipe(Effect.tap((instance) => instance.start));
+
+        const slowStatus = yield* Ref.make(503);
+        const ready = yield* Deferred.make<void>();
+        yield* startInstance(slowStatus, Deferred.succeed(ready, undefined).pipe(Effect.asVoid));
+        yield* TestClock.adjust(Duration.seconds(66));
+        yield* Ref.set(slowStatus, 200);
+        yield* TestClock.adjust(Duration.millis(100));
+        yield* Deferred.await(ready);
+        assert.isTrue(Option.isNone(yield* Queue.poll(reports)));
+
+        yield* startInstance(yield* Ref.make(503));
+        yield* TestClock.adjust(Duration.seconds(179));
+        assert.isTrue(Option.isNone(yield* Queue.poll(reports)));
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* Queue.take(reports);
       }).pipe(Effect.provide(TestClock.layer())),
     ),
   );

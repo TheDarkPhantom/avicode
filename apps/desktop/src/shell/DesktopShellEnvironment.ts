@@ -2,6 +2,7 @@ import { setWindowsPath } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -238,7 +239,7 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
   readonly shell?: boolean;
 }): Effect.fn.Return<string, never, ChildProcessSpawner.ChildProcessSpawner> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const output = yield* spawner
+  const fiber = yield* spawner
     .string(
       ChildProcess.make(input.command, input.args, {
         shell: input.shell ?? false,
@@ -263,8 +264,13 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
         DesktopShellEnvironmentCommandError: (error) =>
           logShellEnvironmentCommandError(error).pipe(Effect.as("")),
       }),
-      Effect.timeoutOption(input.timeout),
+      Effect.forkDetach,
     );
+  const output = yield* Fiber.join(fiber).pipe(
+    Effect.timeoutOption(input.timeout),
+    // Interrupting awaits the child's exit, which a shell stuck in the kernel never reaches.
+    Effect.ensuring(Fiber.interrupt(fiber).pipe(Effect.forkDetach)),
+  );
   if (Option.isSome(output)) {
     return output.value;
   }
