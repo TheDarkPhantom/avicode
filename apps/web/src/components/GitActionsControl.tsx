@@ -1019,7 +1019,8 @@ export default function GitActionsControl({
     () => ({ environmentId: activeEnvironmentId, cwd: gitCwd }),
     [activeEnvironmentId, gitCwd],
   );
-  let runGitActionWithToast: (input: RunGitActionWithToastInput) => Promise<void>;
+  /** Resolves true only when the action ran and succeeded. */
+  let runGitActionWithToast: (input: RunGitActionWithToastInput) => Promise<boolean>;
 
   const updateActiveProgressToast = useCallback(() => {
     const progress = activeGitActionProgressRef.current;
@@ -1325,7 +1326,7 @@ export default function GitActionsControl({
           action !== "commit_push" &&
           action !== "commit_push_pr"
         ) {
-          return;
+          return false;
         }
         setPendingDefaultBranchAction({
           action,
@@ -1335,7 +1336,7 @@ export default function GitActionsControl({
           ...(onConfirmed ? { onConfirmed } : {}),
           ...(filePaths ? { filePaths } : {}),
         });
-        return;
+        return false;
       }
       onConfirmed?.();
 
@@ -1453,7 +1454,7 @@ export default function GitActionsControl({
       if (result._tag === "Failure") {
         if (isAtomCommandInterrupted(result)) {
           toastManager.close(resolvedProgressToastId);
-          return;
+          return false;
         }
 
         const error = squashAtomCommandFailure(result);
@@ -1466,7 +1467,7 @@ export default function GitActionsControl({
             ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
           }),
         );
-        return;
+        return false;
       }
 
       const actionResult = result.value;
@@ -1528,8 +1529,15 @@ export default function GitActionsControl({
           data: successToastData,
         });
       }
+      return true;
     },
   );
+
+  // Keep a typed message for the retry unless the user already started a new one.
+  const restoreDialogCommitMessageOnFailure = (commitMessage: string) => (committed: boolean) => {
+    if (committed || !commitMessage) return;
+    setDialogCommitMessage((current) => current || commitMessage);
+  };
 
   const continuePendingDefaultBranchAction = () => {
     if (!pendingDefaultBranchAction) return;
@@ -1573,7 +1581,7 @@ export default function GitActionsControl({
       ...(!allSelected ? { filePaths: selectedFiles.map((f) => f.path) } : {}),
       featureBranch: true,
       skipDefaultBranchPrompt: true,
-    });
+    }).then(restoreDialogCommitMessageOnFailure(commitMessage));
   };
 
   const runQuickAction = () => {
@@ -1679,7 +1687,7 @@ export default function GitActionsControl({
       action: "commit",
       ...(commitMessage ? { commitMessage } : {}),
       ...(!allSelected ? { filePaths: selectedFiles.map((f) => f.path) } : {}),
-    });
+    }).then(restoreDialogCommitMessageOnFailure(commitMessage));
   };
 
   const openChangedFileInEditor = useCallback(

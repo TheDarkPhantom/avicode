@@ -1,3 +1,6 @@
+import { isNetworkPath } from "@t3tools/shared/path";
+import { defaultUrlTransform } from "react-markdown";
+
 import { resolveFileSurfaceRoot, type FileSurfaceRoot } from "./components/files/externalFileRoot";
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { resolvePathLinkTarget, splitPathAndPosition } from "./terminal-links";
@@ -117,6 +120,17 @@ export function rewriteMarkdownFileUriHref(href: string | undefined): string | n
   return `${target.path}${target.hash}`;
 }
 
+/**
+ * The chat markdown `urlTransform`. File URIs become direct paths, and an image
+ * never keeps a network-path source: rendering is not a click, and resolving
+ * `\\host\share` or `//host` can make Windows sign in to that host with the
+ * user's NTLM credentials.
+ */
+export function transformChatMarkdownUrl(url: string, key: string): string | undefined {
+  const transformed = rewriteMarkdownFileUriHref(url) ?? defaultUrlTransform(url);
+  return key === "src" && isNetworkPath(transformed) ? undefined : transformed;
+}
+
 function looksLikePosixFilesystemPath(path: string): boolean {
   if (!path.startsWith("/")) return false;
   if (POSIX_FILE_ROOT_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
@@ -158,6 +172,13 @@ function hasExternalScheme(path: string): boolean {
   return !POSITION_ONLY_PATTERN.test(rest);
 }
 
+/** `\\share\project\..\..\host\x` starts with the root but escapes it, so `..` counts as outside. */
+function isNetworkPathOutsideWorkspace(path: string, cwd: string | undefined): boolean {
+  if (!isNetworkPath(path)) return false;
+  const relativePath = workspaceRelativePathWithin(cwd, path);
+  return relativePath === null || relativePath.split("/").includes("..");
+}
+
 export function resolveMarkdownFileLinkTarget(
   href: string | undefined,
   cwd?: string,
@@ -188,7 +209,9 @@ export function resolveMarkdownFileLinkTarget(
 
   const pathWithPosition = appendLineColumnFromHash(decodedPath, decodedHash);
   if (!isRelativePath(pathWithPosition)) {
-    return pathWithPosition;
+    // Opening a network path makes Windows sign in to its host with the user's
+    // NTLM credentials, so only the project's own share becomes a file link.
+    return isNetworkPathOutsideWorkspace(decodedPath, cwd) ? null : pathWithPosition;
   }
 
   if (!cwd) return null;

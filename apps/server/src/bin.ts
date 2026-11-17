@@ -57,7 +57,15 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
 
 export const cli = makeCli();
 
+function ignoreOutputError(): void {}
+
 if (import.meta.main) {
+  // Logs go to stdout and stderr, which may be a closed desktop launcher pipe or a log file on
+  // a full disk. Node emits a failed write as an unhandled stream error that crashes the process
+  // and skips shutdown, so drop the line instead.
+  process.stdout.on("error", ignoreOutputError);
+  process.stderr.on("error", ignoreOutputError);
+
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provide(CliRuntimeLayer),

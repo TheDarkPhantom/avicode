@@ -5,7 +5,31 @@ import {
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
+  transformChatMarkdownUrl,
 } from "./markdown-links";
+
+describe("transformChatMarkdownUrl", () => {
+  // Loading these makes Windows send the user's NTLM credentials to the named host.
+  it.each([
+    "\\\\attacker.test\\share\\cat.jpg",
+    "//attacker.test/share/cat.jpg",
+    "/\\attacker.test\\share\\cat.jpg",
+    "file:////attacker.test/share/cat.jpg",
+  ])("drops network image source %s", (source) => {
+    expect(transformChatMarkdownUrl(source, "src")).toBeUndefined();
+  });
+
+  it("keeps ordinary image sources and network link hrefs", () => {
+    expect(transformChatMarkdownUrl("https://example.com/cat.jpg", "src")).toBe(
+      "https://example.com/cat.jpg",
+    );
+    expect(transformChatMarkdownUrl("file:///tmp/cat.jpg", "src")).toBe("/tmp/cat.jpg");
+    // Links resolve to file chips, which apply their own project check.
+    expect(transformChatMarkdownUrl("\\\\server\\share\\a.ts", "href")).toBe(
+      "\\\\server\\share\\a.ts",
+    );
+  });
+});
 
 describe("rewriteMarkdownFileUriHref", () => {
   it("rewrites file uri hrefs into direct path hrefs", () => {
@@ -68,6 +92,25 @@ describe("resolveMarkdownFileLinkTarget", () => {
 
   it("ignores external urls", () => {
     expect(resolveMarkdownFileLinkTarget("https://example.com/docs")).toBeNull();
+  });
+
+  it("links a network path only inside the project's share", () => {
+    const cwd = "\\\\server\\share\\project";
+    expect(resolveMarkdownFileLinkTarget("\\\\server\\share\\project\\src\\a.ts", cwd)).toBe(
+      "\\\\server\\share\\project\\src\\a.ts",
+    );
+    // Opening these sent the Windows user's NTLM credentials to attacker.test.
+    for (const href of [
+      "\\\\attacker.test\\s\\x.ts",
+      "//attacker.test/s/x.ts",
+      "/\\attacker.test\\s\\x.ts",
+      "file:////attacker.test/s/x.ts",
+      "\\\\server\\share\\project\\..\\..\\attacker.test\\s\\x.ts",
+    ]) {
+      expect(resolveMarkdownFileLinkTarget(href, cwd)).toBeNull();
+      expect(resolveInlineCodeFileLinkMeta(href, cwd)).toBeNull();
+    }
+    expect(resolveMarkdownFileLinkTarget("\\\\attacker.test\\s\\x.ts")).toBeNull();
   });
 
   it("does not double-decode file URLs", () => {
