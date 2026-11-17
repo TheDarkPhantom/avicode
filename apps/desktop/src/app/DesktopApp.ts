@@ -14,6 +14,7 @@ import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as LegacyT3Import from "./LegacyT3Import.ts";
@@ -270,9 +271,11 @@ const scopedProgram = Effect.scoped(
         // finalizer means it gets hard-killed by the OS instead of
         // receiving SIGTERM + grace. Stops run concurrently.
         const instances = yield* pool.list;
-        yield* Effect.forEach(instances, (instance) => instance.stop(), {
-          concurrency: "unbounded",
-        });
+        yield* Effect.forEach(
+          instances,
+          (instance) => instance.stop({ timeout: DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT }),
+          { concurrency: "unbounded" },
+        );
       }).pipe(Effect.ensuring(shutdown.markComplete)),
     );
 
