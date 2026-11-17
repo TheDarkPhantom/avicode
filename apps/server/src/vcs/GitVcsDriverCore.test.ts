@@ -155,6 +155,10 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
 
     assert.deepStrictEqual(commands, [
       { args: ["status", "--porcelain=2", "--branch"], lcAll: "C" },
+      // Spawned beside status, then discarded once status reports a non-repository.
+      { args: ["diff-index", "-M", "--numstat", "HEAD", "--"], lcAll: "C" },
+      { args: ["symbolic-ref", "refs/remotes/origin/HEAD"] },
+      { args: ["remote", "get-url", "origin"] },
       { args: ["rev-parse", "--abbrev-ref", "HEAD"], lcAll: "C" },
       { args: ["rev-parse", "--git-common-dir"], lcAll: "C" },
     ]);
