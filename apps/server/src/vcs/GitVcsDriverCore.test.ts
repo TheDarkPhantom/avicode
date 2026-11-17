@@ -1055,7 +1055,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           _tag: "GitCommandError",
           operation: "GitVcsDriver.removeWorktree",
           command: "git",
-          argumentCount: 5,
+          argumentCount: 6,
           cwd,
         });
         assert.notProperty(error, "cause");
@@ -1718,6 +1718,73 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           yield* fileSystem.readFileString(pathService.join(worktreePath, "notes.txt")),
           "draft\n",
         );
+      }),
+    );
+
+    it.effect("force-removes a worktree without deleting what its junctions point to", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, ".gitignore", "node_modules\n");
+        yield* git(cwd, ["add", ".gitignore"]);
+        yield* git(cwd, ["commit", "-m", "ignore node_modules"]);
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        const outside = yield* makeTmpDir("git-worktree-link-target-");
+        yield* writeTextFile(outside, "keep.txt", "keep\n");
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "linked");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/linked",
+        });
+        // Junctions on Windows, the way pnpm links packages; symlinks elsewhere.
+        NodeFS.mkdirSync(pathService.join(worktreePath, "node_modules"));
+        NodeFS.symlinkSync(
+          outside,
+          pathService.join(worktreePath, "node_modules", "dep"),
+          "junction",
+        );
+        NodeFS.symlinkSync(outside, pathService.join(worktreePath, "shared"), "junction");
+
+        yield* driver.removeWorktree({ cwd, path: worktreePath, force: true });
+
+        assert.deepEqual(NodeFS.readdirSync(pathService.dirname(worktreePath)), []);
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(outside, "keep.txt")),
+          "keep\n",
+        );
+      }),
+    );
+
+    it.effect("keeps the junctions of a worktree that git refuses to remove", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, ".gitignore", "node_modules\n");
+        yield* git(cwd, ["add", ".gitignore"]);
+        yield* git(cwd, ["commit", "-m", "ignore node_modules"]);
+        const pathService = yield* Path.Path;
+        const outside = yield* makeTmpDir("git-worktree-link-target-");
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "linked");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/linked",
+        });
+        const link = pathService.join(worktreePath, "node_modules");
+        NodeFS.symlinkSync(outside, link, "junction");
+        yield* writeTextFile(worktreePath, "notes.txt", "draft\n");
+
+        const result = yield* Effect.result(driver.removeWorktree({ cwd, path: worktreePath }));
+
+        assert.isTrue(Result.isFailure(result));
+        assert.isTrue(NodeFS.lstatSync(link).isSymbolicLink());
+        assert.deepEqual(NodeFS.readdirSync(pathService.dirname(worktreePath)), ["linked"]);
       }),
     );
 
