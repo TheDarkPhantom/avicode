@@ -17,6 +17,7 @@ import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopGpuCache from "./DesktopGpuCache.ts";
 import * as LegacyT3Import from "./LegacyT3Import.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
@@ -231,6 +232,12 @@ const startup = Effect.gen(function* () {
   yield* shellEnvironment.installIntoProcess;
   const userDataPath = yield* appIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
+  // Avi Code addition (ported from upstream): Chromium reuses GPU caches built by
+  // an older Electron, so drop them before ready when the version changes.
+  const electronVersion = process.versions.electron;
+  if (electronVersion !== undefined) {
+    yield* DesktopGpuCache.clearStaleGpuCaches({ userDataPath, electronVersion });
+  }
   yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
   yield* desktopSettings.load;
 
