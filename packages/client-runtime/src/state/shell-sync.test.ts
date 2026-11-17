@@ -5,12 +5,14 @@ import {
   type OrchestrationShellStreamItem,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -344,6 +346,97 @@ describe("environment shell synchronization", () => {
       }
       expect(yield* Ref.get(loaderCalls)).toBe(3);
       expect(yield* Ref.get(subscriptionCount)).toBe(3);
+    }),
+  );
+
+  it.effect("keeps syncing the thread list after a shell stream defect", () =>
+    Effect.gen(function* () {
+      const subscriptions = yield* Queue.unbounded<Queue.Queue<OrchestrationShellStreamItem>>();
+      const client = {
+        [ORCHESTRATION_WS_METHODS.subscribeShell]: () =>
+          Stream.unwrap(
+            Effect.gen(function* () {
+              const events = yield* Queue.unbounded<OrchestrationShellStreamItem>();
+              yield* Queue.offer(subscriptions, events);
+              return Stream.fromQueue(events);
+            }),
+          ),
+      } as unknown as WsRpcProtocolClient;
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.some(session(client))),
+        prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+      const cache = Persistence.EnvironmentCacheStore.of({
+        loadShell: () => Effect.succeed(Option.none()),
+        saveShell: () => Effect.void,
+        loadThread: () => Effect.succeed(Option.none()),
+        saveThread: () => Effect.void,
+        removeThread: () => Effect.void,
+        loadServerConfig: () => Effect.succeed(Option.none()),
+        saveServerConfig: () => Effect.void,
+        loadVcsRefs: () => Effect.succeed(Option.none()),
+        saveVcsRefs: () => Effect.void,
+        removeVcsRefs: () => Effect.void,
+        clearVcsRefs: () => Effect.void,
+        clear: () => Effect.void,
+      });
+      const loaderCalls = yield* Ref.make(0);
+      const snapshotLoader = ShellSnapshotLoader.of({
+        load: () =>
+          Ref.updateAndGet(loaderCalls, (count) => count + 1).pipe(
+            Effect.map((count) =>
+              Option.some({ ...LIVE_SHELL_SNAPSHOT, snapshotSequence: count * 10 }),
+            ),
+          ),
+      });
+      const shellState = yield* makeEnvironmentShellState().pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(Persistence.EnvironmentCacheStore, cache),
+        Effect.provideService(ShellSnapshotLoader, snapshotLoader),
+        Effect.provideService(
+          ConnectionWakeups.ConnectionWakeups,
+          ConnectionWakeups.ConnectionWakeups.of({ changes: Stream.never }),
+        ),
+      );
+      const liveAt = (snapshotSequence: number) =>
+        SubscriptionRef.changes(shellState).pipe(
+          Stream.filter(
+            (value) =>
+              value.status === "live" &&
+              Option.exists(
+                value.snapshot,
+                (snapshot) => snapshot.snapshotSequence === snapshotSequence,
+              ),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+
+      const first = yield* Queue.take(subscriptions);
+      yield* Queue.offer(first, { kind: "synchronized" });
+      yield* liveAt(10);
+
+      yield* Queue.failCause(first, Cause.die(new Error("shell invariant failed")));
+      yield* SubscriptionRef.changes(shellState).pipe(
+        Stream.filter((value) =>
+          Option.exists(
+            value.error,
+            (error) => error === "Could not synchronize environment data.",
+          ),
+        ),
+        Stream.runHead,
+      );
+
+      // Without a reconnect or wakeup, the stream resubscribes once the backoff passes.
+      yield* TestClock.adjust("250 millis");
+      const retried = yield* Queue.take(subscriptions);
+      yield* Queue.offer(retried, { kind: "synchronized" });
+      expect((yield* liveAt(20)).error).toEqual(Option.none());
     }),
   );
 });
