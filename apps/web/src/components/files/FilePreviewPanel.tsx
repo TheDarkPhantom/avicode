@@ -43,6 +43,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import FileBrowserPanel from "./FileBrowserPanel";
+import { FileExplorerPane } from "./FileExplorerPane";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -1166,14 +1167,7 @@ export default function FilePreviewPanel({
           ) : null}
         </div>
         {explorerOpen || relativePath === null ? (
-          <aside
-            className={cn(
-              "flex min-h-0 shrink-0 bg-background",
-              relativePath
-                ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60"
-                : "min-w-0 flex-1",
-            )}
-          >
+          <FileExplorerPane resizable={relativePath !== null}>
             <FileBrowserPanel
               key={`${environmentId}:${cwd}`}
               environmentId={environmentId}
@@ -1181,7 +1175,7 @@ export default function FilePreviewPanel({
               projectName={projectName}
               onOpenFile={onOpenFile}
             />
-          </aside>
+          </FileExplorerPane>
         ) : null}
       </div>
     </div>
