@@ -177,8 +177,6 @@ const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (c
         disableMmapCache: true,
         disableContentIndexing: true,
         aiMode: false,
-        enableFsRootScanning: true,
-        enableHomeDirScanning: true,
       }),
     catch: (cause) =>
       new WorkspaceSearchIndexCreateFailed({
