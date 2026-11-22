@@ -75,6 +75,36 @@ export function uploadableComposerAttachments(
 }
 
 /**
+ * Starts (or joins) the uploads a send needs without waiting for them. Returns
+ * the error to show when an attachment cannot upload at all, or null.
+ */
+export function startComposerAttachmentUploads(input: {
+  readonly environmentId: EnvironmentId;
+  readonly attachments: ReadonlyArray<ComposerSendAttachment>;
+  readonly fileUploadLimit: number | null;
+}): string | null {
+  const needsReattach = input.attachments.find(
+    (attachment): attachment is ComposerFileAttachment =>
+      attachment.type === "file" && composerFileNeedsReattach(attachment),
+  );
+  if (needsReattach) {
+    return `Attach '${needsReattach.name}' again or remove it before sending.`;
+  }
+  for (const attachment of uploadableComposerAttachments(
+    input.attachments,
+    input.fileUploadLimit,
+  )) {
+    // Send retries a failed upload, so a failure does not block sending.
+    const upload =
+      readAttachmentUpload(attachment.id)?.status === "failed"
+        ? retryAttachmentUpload
+        : startAttachmentUpload;
+    upload({ environmentId: input.environmentId, attachment });
+  }
+  return null;
+}
+
+/**
  * Starts (or joins) the uploads a send needs and waits for them. Returns the
  * error to show when any of them did not finish, or null when all are ready.
  */
@@ -83,49 +113,37 @@ export async function settleComposerAttachmentUploads(input: {
   readonly attachments: ReadonlyArray<ComposerSendAttachment>;
   readonly fileUploadLimit: number | null;
 }): Promise<string | null> {
-  const needsReattach = input.attachments.find(
-    (attachment): attachment is ComposerFileAttachment =>
-      attachment.type === "file" && composerFileNeedsReattach(attachment),
-  );
-  if (needsReattach) {
-    return `Attach '${needsReattach.name}' again or remove it before sending.`;
+  const startError = startComposerAttachmentUploads(input);
+  if (startError !== null) {
+    return startError;
   }
   const uploadable = uploadableComposerAttachments(input.attachments, input.fileUploadLimit);
-  if (uploadable.length === 0) {
-    return null;
-  }
-  for (const attachment of uploadable) {
-    // Send retries a failed upload, so a failure does not block sending.
-    const upload =
-      readAttachmentUpload(attachment.id)?.status === "failed"
-        ? retryAttachmentUpload
-        : startAttachmentUpload;
-    upload({ environmentId: input.environmentId, attachment });
-  }
   await awaitAttachmentUploads(uploadable.map((attachment) => attachment.id));
   const failed = uploadable.find(
     (attachment) => readUploadedAttachmentId(input.environmentId, attachment.id) === null,
   );
-  if (!failed) {
-    return null;
-  }
-  const upload = readAttachmentUpload(failed.id);
+  return failed ? uploadFailureMessage(failed) : null;
+}
+
+function uploadFailureMessage(attachment: { id: string; name: string }): string {
+  const upload = readAttachmentUpload(attachment.id);
   const reason = upload?.status === "failed" ? ` (${upload.reason})` : "";
-  return `'${failed.name}' did not upload${reason}. Retry or remove it before sending.`;
+  return `'${attachment.name}' did not upload${reason}. Retry or remove it before sending.`;
 }
 
 function requireUploadedId(environmentId: EnvironmentId, attachment: { id: string; name: string }) {
   const id = readUploadedAttachmentId(environmentId, attachment.id);
   if (id === null) {
-    throw new Error(`'${attachment.name}' did not finish uploading.`);
+    throw new Error(uploadFailureMessage(attachment));
   }
   return id;
 }
 
 /**
  * The turn payload for the composer's attachments. With `useUploads`, images,
- * files, and document originals reference their finished pending upload (call
- * `settleComposerAttachmentUploads` first); without it images ride inline,
+ * files, and document originals reference their pending upload: this waits for
+ * uploads still in flight (start them with `startComposerAttachmentUploads`)
+ * and rejects when one did not finish. Without it images ride inline,
  * documents as text only, and files cannot send.
  */
 export async function buildComposerTurnAttachments(input: {
@@ -141,6 +159,8 @@ export async function buildComposerTurnAttachments(input: {
         )
       : [],
   );
+  // Upstream ad9e87111f: a send may go out while its uploads are in flight.
+  await awaitAttachmentUploads([...uploadedIds]);
   return Promise.all(
     input.attachments.map(async (attachment): Promise<TurnAttachmentInput> => {
       if (attachment.type === "document") {

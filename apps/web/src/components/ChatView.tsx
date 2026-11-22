@@ -369,6 +369,7 @@ import {
   type LocalDispatchSnapshot,
   PullRequestDialogState,
   cloneComposerImageForRetry,
+  isComposerDraftEmptyForRetry,
   deriveLockedProvider,
   reconcileMountedTerminalThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
@@ -418,6 +419,7 @@ import {
   optimisticComposerAttachments,
   reloadSentAttachment,
   settleComposerAttachmentUploads,
+  startComposerAttachmentUploads,
   type ComposerSendAttachment,
 } from "../lib/composerTurnAttachments";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
@@ -6234,8 +6236,10 @@ function ChatViewContent(props: ChatViewProps) {
     });
     sendInFlightRef.current = true;
     // Upload-first: with a connected server that takes uploads, every
-    // attachment's bytes must land before the turn references them. An
-    // offline send keeps the inline payload the outbox can store.
+    // attachment's bytes must land before the turn references them. The
+    // message shows as sending right away and the turn starts once they land
+    // (upstream ad9e87111f). An offline send keeps the inline payload the
+    // outbox can store.
     const turnUsesAttachmentUploads = supportsAttachmentUploads && !activeEnvironmentUnavailable;
     if (composerFiles.length > 0 && !turnUsesAttachmentUploads) {
       sendInFlightRef.current = false;
@@ -6248,7 +6252,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     if (turnUsesAttachmentUploads) {
-      const uploadError = await settleComposerAttachmentUploads({
+      const uploadError = startComposerAttachmentUploads({
         environmentId,
         attachments: [...composerImages, ...composerFiles],
         fileUploadLimit: maxFileAttachmentBytes,
@@ -6445,7 +6449,14 @@ function ChatViewContent(props: ChatViewProps) {
         setOptimisticUserMessages((existing) =>
           existing.filter((message) => message.id !== messageIdForSend),
         );
-        setThreadError(threadIdForSend, "Could not save the message attachments for retry.");
+        // A held send waits for its uploads, so name the one that failed.
+        const attachmentError = squashAtomCommandFailure(turnAttachmentsResult);
+        setThreadError(
+          threadIdForSend,
+          turnUsesAttachmentUploads && attachmentError instanceof Error
+            ? attachmentError.message
+            : "Could not save the message attachments for retry.",
+        );
         sendInFlightRef.current = false;
         setDockedDraftHeroThreadKey((currentThreadKey) =>
           currentThreadKey === activeThreadKey ? null : currentThreadKey,
@@ -6742,18 +6753,13 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      // Uploads can keep a send waiting long enough to switch threads, so the
+      // check and the restore read the sent thread's draft, not the view's refs.
+      const stillOnSentThread = currentRouteThreadKeyRef.current === routeThreadKey;
       if (
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerFilesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0 &&
-        composerElementContextsRef.current.length === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
-          .length ?? 0) === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
-          .length ?? 0) === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.threadContextIds
-          .length ?? 0) === 0
+        isComposerDraftEmptyForRetry(
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        )
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -6763,12 +6769,14 @@ function ChatViewContent(props: ChatViewProps) {
           const next = existing.filter((message) => message.id !== messageIdForSend);
           return next.length === existing.length ? existing : next;
         });
-        promptRef.current = promptForSend;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
-        composerImagesRef.current = retryComposerImages;
-        composerFilesRef.current = composerFilesSnapshot;
-        composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        composerElementContextsRef.current = composerElementContextsSnapshot;
+        if (stillOnSentThread) {
+          promptRef.current = promptForSend;
+          composerImagesRef.current = retryComposerImages;
+          composerFilesRef.current = composerFilesSnapshot;
+          composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
+          composerElementContextsRef.current = composerElementContextsSnapshot;
+        }
         setComposerDraftPrompt(composerDraftTarget, promptForSend);
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
@@ -6777,11 +6785,13 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         setComposerDraftThreadContextIds(composerDraftTarget, composerThreadContextIdsSnapshot);
-        composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
-          prompt: promptForSend,
-          detectTrigger: true,
-        });
+        if (stillOnSentThread) {
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
+            prompt: promptForSend,
+            detectTrigger: true,
+          });
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);

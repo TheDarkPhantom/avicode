@@ -402,6 +402,27 @@ export function resolveBackgroundDraftWorkspaceOptions(input: {
   };
 }
 
+/**
+ * Avi Code addition: whether a failed send may put its message back into the
+ * sent thread's draft. Anything the user added since the send was cleared
+ * wins, so the restore never overwrites newer work.
+ */
+export function isComposerDraftEmptyForRetry(
+  draft: ComposerThreadDraftState | null | undefined,
+): boolean {
+  return (
+    !draft ||
+    (draft.prompt.length === 0 &&
+      draft.images.length === 0 &&
+      draft.files.length === 0 &&
+      draft.terminalContexts.length === 0 &&
+      draft.elementContexts.length === 0 &&
+      draft.previewAnnotations.length === 0 &&
+      draft.reviewComments.length === 0 &&
+      draft.threadContextIds.length === 0)
+  );
+}
+
 export function cloneComposerImageForRetry(image: ComposerAttachment): ComposerAttachment {
   if (typeof URL === "undefined" || !image.previewUrl.startsWith("blob:")) {
     return image;
