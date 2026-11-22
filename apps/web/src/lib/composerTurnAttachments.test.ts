@@ -11,13 +11,24 @@ const uploads = vi.hoisted(() => ({
   ready: new Map<string, string>(),
   started: [] as string[],
   retried: [] as string[],
+  awaited: [] as string[][],
+  uploading: new Set<string>(),
+  // Resolves the in-flight uploads; a test that leaves it null sees them settled.
+  inFlight: null as Promise<void> | null,
 }));
 
 vi.mock("./attachmentUploadQueue", () => ({
-  awaitAttachmentUploads: async () => {},
+  awaitAttachmentUploads: async (ids: ReadonlyArray<string>) => {
+    uploads.awaited.push([...ids]);
+    await uploads.inFlight;
+  },
   forgetAttachmentUploads: () => {},
   readAttachmentUpload: (id: string) =>
-    uploads.ready.has(id) ? undefined : { status: "failed", reason: "Upload rejected (500)" },
+    uploads.ready.has(id)
+      ? undefined
+      : uploads.uploading.has(id)
+        ? { status: "uploading", progress: 0.5 }
+        : { status: "failed", reason: "Upload rejected (500)" },
   readUploadedAttachmentId: (_environmentId: string, id: string) => uploads.ready.get(id) ?? null,
   releaseAttachmentUpload: () => {},
   retryAttachmentUpload: (input: { attachment: { id: string } }) => {
@@ -36,6 +47,7 @@ import {
   buildComposerTurnAttachments,
   optimisticComposerAttachments,
   settleComposerAttachmentUploads,
+  startComposerAttachmentUploads,
 } from "./composerTurnAttachments";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -80,6 +92,74 @@ describe("composer turn attachments", () => {
   beforeEach(() => {
     uploads.ready.clear();
     uploads.started = [];
+    uploads.awaited = [];
+    uploads.uploading.clear();
+    uploads.inFlight = null;
+  });
+
+  it("starts uploads without waiting and builds the turn once they land", async () => {
+    let finishUploads: () => void = () => {};
+    uploads.inFlight = new Promise((resolve) => {
+      finishUploads = resolve;
+    });
+    uploads.uploading.add("image-1").add("file-1");
+
+    expect(
+      startComposerAttachmentUploads({
+        environmentId,
+        attachments: [image, file],
+        fileUploadLimit: 1024,
+      }),
+    ).toBeNull();
+    expect(uploads.started).toEqual(["image-1", "file-1"]);
+    expect(uploads.awaited).toEqual([]);
+
+    let built = false;
+    const turn = buildComposerTurnAttachments({
+      environmentId,
+      attachments: [image, file],
+      useUploads: true,
+      fileUploadLimit: 1024,
+    }).then((attachments) => {
+      built = true;
+      return attachments;
+    });
+    await Promise.resolve();
+    expect(uploads.awaited).toEqual([["image-1", "file-1"]]);
+    expect(built).toBe(false);
+
+    uploads.uploading.clear();
+    uploads.ready.set("image-1", "pending-image");
+    uploads.ready.set("file-1", "pending-file-zip");
+    finishUploads();
+    expect((await turn).map((attachment) => "id" in attachment && attachment.id)).toEqual([
+      "pending-image",
+      "pending-file-zip",
+    ]);
+  });
+
+  it("rejects the turn naming an upload that failed while the send waited", async () => {
+    await expect(
+      buildComposerTurnAttachments({
+        environmentId,
+        attachments: [file],
+        useUploads: true,
+        fileUploadLimit: 1024,
+      }),
+    ).rejects.toThrow(
+      "'src.zip' did not upload (Upload rejected (500)). Retry or remove it before sending.",
+    );
+  });
+
+  it("refuses to start a send with an interrupted file", () => {
+    expect(
+      startComposerAttachmentUploads({
+        environmentId,
+        attachments: [{ ...file, file: null }],
+        fileUploadLimit: 1024,
+      }),
+    ).toBe("Attach 'src.zip' again or remove it before sending.");
+    expect(uploads.started).toEqual([]);
   });
 
   it("references pending uploads and keeps document text alongside the original", async () => {

@@ -19,9 +19,10 @@ message holds up to twelve attachments.
 ## Uploads
 
 On servers that support direct uploads, attachments upload as soon as you add them. Each tile or
-row shows its progress, and the send button becomes available once every upload finishes. A failed
-upload shows a retry button, and retries on its own when the connection comes back. Removing an
-attachment deletes its upload.
+row shows its progress. You can send before the uploads finish: the message shows as sending and
+goes out once they land. If an upload fails, the message comes back to the composer with an error
+so you can retry. A failed upload shows a retry button, and retries on its own when the connection
+comes back. Removing an attachment deletes its upload.
 
 A draft keeps its files across a reload. If a file had not finished uploading, its row says
 **Attach again**: pick the same file to replace it, or remove it to send.

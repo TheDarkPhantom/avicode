@@ -106,7 +106,6 @@ import {
   startAttachmentUpload,
   useAttachmentUploadStore,
 } from "../../lib/attachmentUploadQueue";
-import { attachmentUploadBlockReason } from "../../lib/attachmentUploadState";
 import { uploadableComposerAttachments } from "../../lib/composerTurnAttachments";
 import { fileAttachmentTooLargeMessage } from "@t3tools/client-runtime/state/attachments";
 import {
@@ -923,7 +922,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerImages = composerDraft.images;
   const composerFiles = composerDraft.files;
   // Upload-first attachments: an offline send stays inline, so only a
-  // connected server that takes uploads gates the send on them.
+  // connected server that takes uploads tracks them here.
   const attachmentUploadsActive = supportsAttachmentUploads && !environmentUnavailable;
   const uploadsByAttachmentId = useAttachmentUploadStore((state) => state.uploadsByAttachmentId);
   const uploadableAttachments = useMemo(
@@ -938,6 +937,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const fileStagingLimit = fileAttachmentStagingLimit(fileCapabilityState);
   const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
+  // Pending uploads do not block Send: the send waits for them (upstream ad9e87111f).
   const attachmentBlockReason =
     fileAttachmentCapabilityBlockReason({ ...fileCapabilityState, files: composerFiles }) ??
     (attachmentUploadsActive
@@ -945,11 +945,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? needsReattachFileCount === 1
           ? "Attach the interrupted file again or remove it"
           : "Attach the interrupted files again or remove them"
-        : attachmentUploadBlockReason({
-            attachmentIds: uploadableAttachments.map((attachment) => attachment.id),
-            uploadsByAttachmentId,
-            environmentId,
-          })
+        : null
       : composerFiles.length > 0 && environmentUnavailable
         ? "File attachments send once the server reconnects"
         : null);
