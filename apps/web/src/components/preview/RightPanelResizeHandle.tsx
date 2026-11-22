@@ -8,6 +8,8 @@ interface Props {
   maximum: number;
   active: boolean;
   className?: string;
+  /** Avi Code addition: lets other split panes (the file explorer) reuse this handle. */
+  label?: string;
 }
 
 /**
@@ -25,12 +27,13 @@ export function RightPanelResizeHandle({
   maximum,
   active,
   className,
+  label = "Resize chat and side panel",
 }: Props) {
   return (
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize chat and side panel"
+      aria-label={label}
       aria-valuemin={minimum}
       aria-valuemax={maximum}
       aria-valuenow={value}

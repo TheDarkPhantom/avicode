@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -216,6 +217,71 @@ describe("DesktopSettings", () => {
     ),
   );
 
+  it.effect("keeps saved preferences when a read fails before a bounds save", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* writeSettingsPatch({ serverExposureMode: "network-accessible" });
+        const cause = PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "readFileString",
+          pathOrDescriptor: environment.desktopSettingsPath,
+        });
+        let failRead = true;
+        const settings = yield* DesktopAppSettings.make.pipe(
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.FileSystem.of({
+              ...fileSystem,
+              readFileString: (path) =>
+                Effect.suspend(() => {
+                  if (failRead && path === environment.desktopSettingsPath) {
+                    failRead = false;
+                    return Effect.fail(cause);
+                  }
+                  return fileSystem.readFileString(path);
+                }),
+            }),
+          ),
+        );
+
+        yield* Effect.exit(settings.load);
+        yield* Effect.exit(
+          settings.setMainWindowBounds({ x: 10, y: 20, width: 900, height: 600 }, false),
+        );
+
+        const persisted = yield* decodeDesktopSettingsPatch(
+          yield* fileSystem.readFileString(environment.desktopSettingsPath),
+        );
+        assert.equal(persisted.serverExposureMode, "network-accessible");
+      }),
+    ),
+  );
+
+  it.effect("keeps readable values when another value in the file is unreadable", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.desktopSettingsPath,
+          `{ "tailscaleServeEnabled": true, "serverExposureMode": "from-a-newer-build" }\n`,
+        );
+
+        assert.isTrue((yield* settings.load).tailscaleServeEnabled);
+        yield* settings.setMainWindowBounds({ x: 10, y: 20, width: 800, height: 600 }, false);
+        assert.include(
+          yield* fileSystem.readFileString(environment.desktopSettingsPath),
+          `"tailscaleServeEnabled":true`,
+        );
+      }),
+    ),
+  );
+
   it.effect("loads lenient persisted desktop settings JSON", () =>
     withSettings(
       Effect.gen(function* () {
@@ -286,6 +352,29 @@ describe("DesktopSettings", () => {
           mainWindowMaximized: true,
           serverExposureMode: "network-accessible",
         } satisfies typeof DesktopSettingsPatch.Type);
+      }),
+    ),
+  );
+
+  it.effect("removes its temporary file when replacing the settings file fails", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* fileSystem.makeDirectory(`${environment.desktopSettingsPath}/occupied`, {
+          recursive: true,
+        });
+
+        const error = yield* settings.setServerExposureMode("network-accessible").pipe(Effect.flip);
+
+        assert.equal(error.operation, "replace-settings-file");
+        assert.deepEqual(
+          (yield* fileSystem.readDirectory(environment.stateDir)).filter((name) =>
+            name.endsWith(".tmp"),
+          ),
+          [],
+        );
       }),
     ),
   );

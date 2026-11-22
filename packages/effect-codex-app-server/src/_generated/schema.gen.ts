@@ -2125,31 +2125,8 @@ export const ServerNotification__GuardianWarningNotification = Schema.Struct({
   threadId: Schema.String.annotate({ description: "Thread target for the guardian warning." }),
 });
 
-export type ServerNotification__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const ServerNotification__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type ServerNotification__HookEventName = string;
+export const ServerNotification__HookEventName = Schema.String;
 
 export type ServerNotification__HookExecutionMode = "sync" | "async";
 export const ServerNotification__HookExecutionMode = Schema.Literals(["sync", "async"]);
@@ -4169,31 +4146,8 @@ export const V2HookCompletedNotification__AbsolutePathBuf = Schema.String.annota
     "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
 });
 
-export type V2HookCompletedNotification__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2HookCompletedNotification__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2HookCompletedNotification__HookEventName = string;
+export const V2HookCompletedNotification__HookEventName = Schema.String;
 
 export type V2HookCompletedNotification__HookExecutionMode = "sync" | "async";
 export const V2HookCompletedNotification__HookExecutionMode = Schema.Literals(["sync", "async"]);
@@ -4251,31 +4205,8 @@ export const V2HooksListResponse__HookErrorInfo = Schema.Struct({
   path: Schema.String,
 });
 
-export type V2HooksListResponse__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2HooksListResponse__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2HooksListResponse__HookEventName = string;
+export const V2HooksListResponse__HookEventName = Schema.String;
 
 export type V2HooksListResponse__HookHandlerType = "command" | "prompt" | "agent";
 export const V2HooksListResponse__HookHandlerType = Schema.Literals(["command", "prompt", "agent"]);
@@ -4320,31 +4251,8 @@ export const V2HookStartedNotification__AbsolutePathBuf = Schema.String.annotate
     "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
 });
 
-export type V2HookStartedNotification__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2HookStartedNotification__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2HookStartedNotification__HookEventName = string;
+export const V2HookStartedNotification__HookEventName = Schema.String;
 
 export type V2HookStartedNotification__HookExecutionMode = "sync" | "async";
 export const V2HookStartedNotification__HookExecutionMode = Schema.Literals(["sync", "async"]);
@@ -5494,31 +5402,8 @@ export const V2PluginReadResponse__AppTemplateUnavailableReason = Schema.Literal
   "NO_ACTIVE_WORKSPACE",
 ]);
 
-export type V2PluginReadResponse__HookEventName =
-  | "preToolUse"
-  | "permissionRequest"
-  | "postToolUse"
-  | "preCompact"
-  | "postCompact"
-  | "sessionStart"
-  | "sessionEnd"
-  | "userPromptSubmit"
-  | "subagentStart"
-  | "subagentStop"
-  | "stop";
-export const V2PluginReadResponse__HookEventName = Schema.Literals([
-  "preToolUse",
-  "permissionRequest",
-  "postToolUse",
-  "preCompact",
-  "postCompact",
-  "sessionStart",
-  "sessionEnd",
-  "userPromptSubmit",
-  "subagentStart",
-  "subagentStop",
-  "stop",
-]);
+export type V2PluginReadResponse__HookEventName = string;
+export const V2PluginReadResponse__HookEventName = Schema.String;
 
 export type V2PluginReadResponse__PluginAuthPolicy = "ON_INSTALL" | "ON_USE";
 export const V2PluginReadResponse__PluginAuthPolicy = Schema.Literals(["ON_INSTALL", "ON_USE"]);
@@ -20258,11 +20143,12 @@ export type ServerNotification__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: ServerNotification__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -20510,13 +20396,14 @@ export const ServerNotification__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([ServerNotification__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -21341,11 +21228,12 @@ export type V2ItemCompletedNotification__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ItemCompletedNotification__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -21600,13 +21488,14 @@ export const V2ItemCompletedNotification__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ItemCompletedNotification__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -21792,11 +21681,12 @@ export type V2ItemStartedNotification__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ItemStartedNotification__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -22051,13 +21941,14 @@ export const V2ItemStartedNotification__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ItemStartedNotification__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -22415,11 +22306,12 @@ export type V2ReviewStartResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ReviewStartResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -22671,13 +22563,14 @@ export const V2ReviewStartResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ReviewStartResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -22851,11 +22744,12 @@ export type V2ThreadForkResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadForkResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -23107,13 +23001,14 @@ export const V2ThreadForkResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadForkResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -23256,11 +23151,12 @@ export type V2ThreadListResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadListResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -23512,13 +23408,14 @@ export const V2ThreadListResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadListResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -23663,11 +23560,12 @@ export type V2ThreadMetadataUpdateResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadMetadataUpdateResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -23922,13 +23820,14 @@ export const V2ThreadMetadataUpdateResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadMetadataUpdateResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -24071,11 +23970,12 @@ export type V2ThreadReadResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadReadResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -24327,13 +24227,14 @@ export const V2ThreadReadResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadReadResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -24484,11 +24385,12 @@ export type V2ThreadResumeResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadResumeResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -24740,13 +24642,14 @@ export const V2ThreadResumeResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadResumeResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -24889,11 +24792,12 @@ export type V2ThreadRollbackResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadRollbackResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -25148,13 +25052,14 @@ export const V2ThreadRollbackResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadRollbackResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -25308,11 +25213,12 @@ export type V2ThreadStartedNotification__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadStartedNotification__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -25567,13 +25473,14 @@ export const V2ThreadStartedNotification__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadStartedNotification__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -25716,11 +25623,12 @@ export type V2ThreadStartResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadStartResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -25972,13 +25880,14 @@ export const V2ThreadStartResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadStartResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -26121,11 +26030,12 @@ export type V2ThreadUnarchiveResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2ThreadUnarchiveResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -26380,13 +26290,14 @@ export const V2ThreadUnarchiveResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2ThreadUnarchiveResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -26531,11 +26442,12 @@ export type V2TurnCompletedNotification__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2TurnCompletedNotification__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -26790,13 +26702,14 @@ export const V2TurnCompletedNotification__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2TurnCompletedNotification__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -26939,11 +26852,12 @@ export type V2TurnStartedNotification__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2TurnStartedNotification__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -27198,13 +27112,14 @@ export const V2TurnStartedNotification__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2TurnStartedNotification__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,
@@ -27347,11 +27262,12 @@ export type V2TurnStartResponse__ThreadItem =
   | { readonly durationMs: number; readonly id: string; readonly type: "sleep" }
   | {
       readonly id: string;
-      readonly result: string;
+      readonly result?: string;
       readonly revisedPrompt?: string | null;
       readonly savedPath?: V2TurnStartResponse__AbsolutePathBuf | null;
       readonly status: string;
       readonly type: "imageGeneration";
+      readonly fileId?: string;
     }
   | { readonly id: string; readonly review: string; readonly type: "enteredReviewMode" }
   | { readonly id: string; readonly review: string; readonly type: "exitedReviewMode" }
@@ -27599,13 +27515,14 @@ export const V2TurnStartResponse__ThreadItem = Schema.Union(
     }),
     Schema.Struct({
       id: Schema.String,
-      result: Schema.String,
+      result: Schema.optionalKey(Schema.String),
       revisedPrompt: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
       savedPath: Schema.optionalKey(
         Schema.Union([V2TurnStartResponse__AbsolutePathBuf, Schema.Null]),
       ),
       status: Schema.String,
       type: Schema.Literal("imageGeneration").annotate({ title: "ImageGenerationThreadItemType" }),
+      fileId: Schema.optionalKey(Schema.String),
     }).annotate({ title: "ImageGenerationThreadItem" }),
     Schema.Struct({
       id: Schema.String,

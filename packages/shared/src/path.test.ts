@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   isExplicitRelativePath,
+  isNetworkPath,
   isUncPath,
   isWindowsAbsolutePath,
   isWindowsDrivePath,
@@ -16,6 +17,21 @@ describe("path helpers", () => {
   it("detects UNC paths", () => {
     expect(isUncPath("\\\\server\\share\\repo")).toBe(true);
     expect(isUncPath("C:\\repo")).toBe(false);
+  });
+
+  it("detects network paths in every separator spelling", () => {
+    for (const value of [
+      "\\\\server\\share",
+      "//server/share",
+      "/\\server\\share",
+      "\\/server/share",
+      "\\\\?\\UNC\\server\\share",
+    ]) {
+      expect(isNetworkPath(value)).toBe(true);
+    }
+    for (const value of ["/repo", "C:\\repo", "\\repo", "./repo", "repo"]) {
+      expect(isNetworkPath(value)).toBe(false);
+    }
   });
 
   it("detects windows absolute paths", () => {
