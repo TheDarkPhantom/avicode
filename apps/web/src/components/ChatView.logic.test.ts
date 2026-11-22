@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { createEmptyThreadDraft } from "../composerDraftStore";
 import type { Thread, ThreadShell } from "../types";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
@@ -26,6 +27,7 @@ import {
   getStartedThreadModelChangeBlockReason,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  isComposerDraftEmptyForRetry,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
@@ -41,6 +43,22 @@ import {
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+
+describe("isComposerDraftEmptyForRetry", () => {
+  it("restores a failed send only into a draft the user left empty", () => {
+    expect(isComposerDraftEmptyForRetry(undefined)).toBe(true);
+    expect(isComposerDraftEmptyForRetry(createEmptyThreadDraft())).toBe(true);
+    expect(
+      isComposerDraftEmptyForRetry({ ...createEmptyThreadDraft(), prompt: "typed since" }),
+    ).toBe(false);
+    expect(
+      isComposerDraftEmptyForRetry({
+        ...createEmptyThreadDraft(),
+        threadContextIds: [ThreadId.make("thread-ctx")],
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("background submission from a new-thread draft", () => {
   const environmentId = EnvironmentId.make("environment-local");

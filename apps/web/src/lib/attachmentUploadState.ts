@@ -27,29 +27,6 @@ export type AttachmentUploadState =
       readonly previous?: ReadyAttachmentUpload;
     };
 
-/** Why the composer cannot send yet, or null when every upload is ready. */
-export function attachmentUploadBlockReason(input: {
-  readonly attachmentIds: ReadonlyArray<string>;
-  readonly uploadsByAttachmentId: Readonly<Record<string, AttachmentUploadState>>;
-  readonly environmentId: EnvironmentId;
-}): string | null {
-  let pending = 0;
-
-  for (const attachmentId of input.attachmentIds) {
-    const upload = input.uploadsByAttachmentId[attachmentId];
-    // Send retries failed uploads, so they must not disable it.
-    if (upload?.status === "failed" && upload.environmentId === input.environmentId) continue;
-    if (upload?.status !== "ready" || upload.environmentId !== input.environmentId) {
-      pending += 1;
-    }
-  }
-
-  if (pending > 0) {
-    return pending === 1 ? "Attachment still uploading" : "Attachments still uploading";
-  }
-  return null;
-}
-
 export function formatAttachmentUploadProgress(progress: number): string {
   const bounded = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
   return `${Math.floor(bounded * 100)}%`;
