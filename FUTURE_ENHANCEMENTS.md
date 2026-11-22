@@ -64,8 +64,12 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
     server started in the background from a shell that exits before the next scan is not
     attributed to the agent.
   - The file explorer (#300) now opens at upstream's 256px instead of about 352px until you drag it.
-  - `ProviderCommandReactor.test.ts` "closes idle terminals when a thread settles" timed out once
-    in CI and passed on rerun.
+  - The two settle tests in `ProviderCommandReactor.test.ts` ("closes idle terminals when a thread
+    settles" and "keeps terminals when the thread is un-settled...") hung to the 120s timeout three
+    times in CI on 2026-11-22 and pass on rerun. Likely cause: `start()` forks
+    `Stream.runForEach(streamDomainEvents)`, and `Stream.fromPubSub` only subscribes once that fiber
+    runs, so a dispatch right after `start()` can publish before the reactor listens. Fix by
+    subscribing before `start()` returns; the same pattern is in the other reactors.
 - Upstream sync of 2026-10-26 (#282 to #288) reviewed upstream through `8ecb607de4`; the next
   review starts there. It hand-ported about 65 of 2,009 commits and left out:
   - The Windows server batch landed separately in #287, with review follow-ups in #286 and #288.
