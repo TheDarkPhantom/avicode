@@ -33,6 +33,31 @@ function makeFakeClaudeBinary(dir: string) {
         "#!/bin/sh",
         'args="$*"',
         'stdin_content="$(cat)"',
+        'prev=""',
+        "saw_empty_tools=0",
+        "saw_disable_slash=0",
+        "saw_strict_mcp=0",
+        "saw_disable_hooks=0",
+        'for arg in "$@"; do',
+        '  if [ "$prev" = "--tools" ] && [ -z "$arg" ]; then saw_empty_tools=1; fi',
+        '  if [ "$prev" = "--settings" ]; then',
+        '    case "$arg" in *disableAllHooks?:true*) saw_disable_hooks=1 ;; esac',
+        "  fi",
+        '  case "$arg" in',
+        '    --dangerously-skip-permissions) printf "%s\n" "text generation must not bypass permissions" >&2; exit 7 ;;',
+        "    --disable-slash-commands) saw_disable_slash=1 ;;",
+        "    --strict-mcp-config) saw_strict_mcp=1 ;;",
+        "  esac",
+        '  prev="$arg"',
+        "done",
+        'if [ "$saw_empty_tools" != 1 ]; then printf "%s\n" "text generation must receive an explicit empty tool set" >&2; exit 6; fi',
+        'if [ "$saw_disable_slash" != 1 ]; then printf "%s\n" "text generation must disable skills" >&2; exit 8; fi',
+        'if [ "$saw_strict_mcp" != 1 ]; then printf "%s\n" "text generation must not load configured MCP servers" >&2; exit 9; fi',
+        'if [ "$saw_disable_hooks" != 1 ]; then printf "%s\n" "text generation must disable hooks" >&2; exit 10; fi',
+        'if [ -n "$T3_FAKE_CLAUDE_CWD_MUST_NOT_BE" ] && [ "$(pwd -P)" = "$(cd "$T3_FAKE_CLAUDE_CWD_MUST_NOT_BE" && pwd -P)" ]; then',
+        '  printf "%s\n" "text generation ran in the project directory" >&2',
+        "  exit 11",
+        "fi",
         'if [ -n "$T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN" ]; then',
         '  printf "%s" "$args" | grep -F -- "$T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN" >/dev/null || {',
         '    printf "%s\\n" "args missing expected content" >&2',
@@ -77,6 +102,7 @@ function withFakeClaudeEnv<A, E, R>(
     argsMustNotContain?: string;
     stdinMustContain?: string;
     configDirMustBe?: string;
+    cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
@@ -93,6 +119,7 @@ function withFakeClaudeEnv<A, E, R>(
     const previousArgsMustNotContain = process.env.T3_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN;
     const previousStdinMustContain = process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;
     const previousConfigDirMustBe = process.env.T3_FAKE_CLAUDE_CONFIG_DIR_MUST_BE;
+    const previousCwdMustNotBe = process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE;
 
     yield* Effect.acquireRelease(
       Effect.sync(() => {
@@ -127,6 +154,12 @@ function withFakeClaudeEnv<A, E, R>(
           process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN = input.stdinMustContain;
         } else {
           delete process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;
+        }
+
+        if (input.cwdMustNotBe !== undefined) {
+          process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE = input.cwdMustNotBe;
+        } else {
+          delete process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE;
         }
 
         if (input.configDirMustBe !== undefined) {
@@ -175,6 +208,12 @@ function withFakeClaudeEnv<A, E, R>(
             process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN = previousStdinMustContain;
           }
 
+          if (previousCwdMustNotBe === undefined) {
+            delete process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE;
+          } else {
+            process.env.T3_FAKE_CLAUDE_CWD_MUST_NOT_BE = previousCwdMustNotBe;
+          }
+
           if (previousConfigDirMustBe === undefined) {
             delete process.env.T3_FAKE_CLAUDE_CONFIG_DIR_MUST_BE;
           } else {
@@ -199,7 +238,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             body: "",
           },
         }),
-        argsMustContain: '--settings {"alwaysThinkingEnabled":false}',
+        argsMustContain: '--settings {"disableAllHooks":true,"alwaysThinkingEnabled":false}',
         argsMustNotContain: "--effort",
       },
       (textGeneration) =>
@@ -231,7 +270,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             body: "Body",
           },
         }),
-        argsMustContain: '--effort max --settings {"fastMode":true}',
+        argsMustContain: '--effort max --settings {"disableAllHooks":true,"fastMode":true}',
       },
       (textGeneration) =>
         Effect.gen(function* () {
@@ -255,33 +294,58 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates thread titles through the Claude provider", () =>
+  it.effect(
+    "generates thread titles outside the project with tools, skills, and hooks disabled",
+    () =>
+      withFakeClaudeEnv(
+        {
+          output: JSON.stringify({
+            structured_output: {
+              title:
+                '  "Reconnect failures after restart because the session state does not recover"  ',
+            },
+          }),
+          cwdMustNotBe: process.cwd(),
+          stdinMustContain: "You write concise thread titles for coding conversations.",
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const generated = yield* textGeneration.generateThreadTitle({
+              cwd: process.cwd(),
+              message: "Please investigate reconnect failures after restarting the session.",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: "claude-sonnet-4-6",
+              },
+            });
+
+            expect(generated.title).toBe(
+              sanitizeThreadTitle(
+                '"Reconnect failures after restart because the session state does not recover"',
+              ),
+            );
+          }),
+      ),
+  );
+
+  it.effect("generates branch names from skill prompts without executable capabilities", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({
-          structured_output: {
-            title:
-              '  "Reconnect failures after restart because the session state does not recover"  ',
-          },
-        }),
-        stdinMustContain: "You write concise thread titles for coding conversations.",
+        output: JSON.stringify({ structured_output: { branch: "call-script" } }),
+        stdinMustContain: "/call-script",
       },
       (textGeneration) =>
         Effect.gen(function* () {
-          const generated = yield* textGeneration.generateThreadTitle({
+          const generated = yield* textGeneration.generateBranchName({
             cwd: process.cwd(),
-            message: "Please investigate reconnect failures after restarting the session.",
+            message: "/call-script",
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
               model: "claude-sonnet-4-6",
             },
           });
 
-          expect(generated.title).toBe(
-            sanitizeThreadTitle(
-              '"Reconnect failures after restart because the session state does not recover"',
-            ),
-          );
+          expect(generated.branch).toBe("call-script");
         }),
     ),
   );

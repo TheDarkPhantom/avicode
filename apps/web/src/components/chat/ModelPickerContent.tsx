@@ -29,6 +29,7 @@ import {
 } from "../../providerInstances";
 import { getLegendListScrollNode } from "../../legendListScrollNode";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { registerModelPickerContent } from "../../modelPickerVisibility";
 
 type ModelPickerItem = {
   slug: string;
@@ -106,6 +107,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const modelListRef = useRef<LegendListRef | null>(null);
+  // Publishes this picker's mount to global keydown handlers.
+  useLayoutEffect(() => registerModelPickerContent(), []);
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
   // Avi Code addition: the rail shares the chat-row badge labels so a

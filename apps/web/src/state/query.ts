@@ -34,3 +34,10 @@ export function useEnvironmentQuery<A, E>(
     refresh,
   };
 }
+
+/** Refresh a query without subscribing to its result, for views that read it through a narrower atom. */
+export function useEnvironmentQueryRefresh(
+  atom: Atom.Atom<AsyncResult.AsyncResult<unknown, unknown>> | null,
+): () => void {
+  return useAtomRefresh(atom ?? EMPTY_ASYNC_RESULT_ATOM);
+}

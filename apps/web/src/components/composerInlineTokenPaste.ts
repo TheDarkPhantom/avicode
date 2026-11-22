@@ -16,6 +16,12 @@ interface ComposerInlineTokenPasteOptions {
   getExpandedAbsoluteOffsetForPoint: (node: LexicalNode, pointOffset: number) => number;
 }
 
+// Lexical's own plain-text paste splits on CRLF; this handler bypasses it, so
+// Windows clipboard text is normalized here or its blank lines are lost.
+export function readPastedPlainText(clipboardData: Pick<DataTransfer, "getData">): string {
+  return clipboardData.getData("text/plain").replace(/\r\n?/g, "\n");
+}
+
 export function registerComposerInlineTokenPaste(
   editor: LexicalEditor,
   options: ComposerInlineTokenPasteOptions,
@@ -29,7 +35,7 @@ export function registerComposerInlineTokenPaste(
       if (event.clipboardData.files.length > 0) {
         return false;
       }
-      const text = event.clipboardData.getData("text/plain");
+      const text = readPastedPlainText(event.clipboardData);
       if (text.length === 0) {
         return false;
       }
