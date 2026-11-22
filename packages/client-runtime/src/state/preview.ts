@@ -80,6 +80,10 @@ export function createPreviewEnvironmentAtoms<R, E>(
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
+    stopLocalServer: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:preview:stop-local-server",
+      tag: WS_METHODS.previewStopLocalServer,
+    }),
     reportStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:preview:report-status",
       tag: WS_METHODS.previewReportStatus,

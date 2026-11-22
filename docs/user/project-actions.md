@@ -18,6 +18,15 @@ The browser remains closed unless the action's preview settings open it. Once th
 port, Avi Code attributes that server to the new worktree so its sidebar and browser controls can
 open the correct server without reusing one from a sibling worktree.
 
+## Local servers
+
+With no page loaded, the desktop browser lists the local servers that a thread's terminal or its
+Claude agent started, labelled **Terminal** or **Agent**. A server the agent started stays listed
+after the agent's session ends. Select a server to open it. Hover a listed server and choose
+**Stop** to end the job that runs it; the terminal, the agent, and Avi Code keep running. A server
+the agent started from a shell that has already exited is not attributed to the agent. Stop needs
+terminal access to the environment and is available on Windows only.
+
 ## Browser screenshots
 
 In the desktop browser, **Screenshot** saves the current viewport and attaches the PNG to the

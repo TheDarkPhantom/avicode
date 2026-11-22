@@ -1,6 +1,7 @@
 import type { DiscoveredLocalServer, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useMemo } from "react";
 
+import { discoveredServerThreadId } from "./components/preview/discoveredServerOwner";
 import { previewEnvironment } from "./state/preview";
 import { useEnvironmentQuery } from "./state/query";
 
@@ -25,7 +26,7 @@ export function useThreadDiscoveredPorts(input: {
   return useMemo(
     () =>
       input.threadId
-        ? ports.filter((port) => port.terminal?.threadId === input.threadId)
+        ? ports.filter((port) => discoveredServerThreadId(port) === input.threadId)
         : EMPTY_PORTS,
     [input.threadId, ports],
   );

@@ -1,4 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off -- the Windows stop test drives real server processes.
+import * as NodeChildProcess from "node:child_process";
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it as effectIt } from "@effect/vitest";
+import { ThreadId } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -279,4 +284,272 @@ effectIt.effect("ignores a partial Windows netstat snapshot when one query exits
       ),
     ),
   ),
+);
+
+/**
+ * A Windows process tree under this server: an agent CLI (200) whose tool shell (300)
+ * runs `npm run dev` (400) and its node server (401), a terminal shell (500) and its
+ * job (600), and an operating system service (900).
+ */
+const windowsTree = (overrides: Readonly<Record<number, number>> = {}) =>
+  new Map(
+    [
+      { pid: process.pid, ppid: 1, startedAtMs: 1_000 },
+      { pid: 200, ppid: process.pid, startedAtMs: 2_000 },
+      { pid: 300, ppid: 200, startedAtMs: 3_000 },
+      { pid: 400, ppid: 300, startedAtMs: 4_000 },
+      { pid: 401, ppid: 400, startedAtMs: 4_100 },
+      { pid: 500, ppid: process.pid, startedAtMs: 5_000 },
+      { pid: 600, ppid: 500, startedAtMs: 6_000 },
+      { pid: 900, ppid: 4, startedAtMs: 500 },
+    ].map((row) => [row.pid, { ...row, startedAtMs: overrides[row.pid] ?? row.startedAtMs }]),
+  );
+
+const printTable = (table: ReadonlyMap<number, PortScanner.ProcessTableRow>) =>
+  [...table.values()].map((row) => `${row.pid} ${row.ppid} ${row.startedAtMs}`).join("\r\n");
+
+const netstatLine = (port: number, pid: number) =>
+  `  TCP    127.0.0.1:${port}         0.0.0.0:0              LISTENING       ${pid}\r\n`;
+
+/** Fakes netstat, tasklist, the PowerShell process table, and taskkill. */
+const makeWindowsHost = () => {
+  const host = {
+    listeners: [netstatLine(5173, 401), netstatLine(7000, 200), netstatLine(135, 900)],
+    table: windowsTree() as ReadonlyMap<number, PortScanner.ProcessTableRow>,
+    tableReads: 0,
+    netstatReads: 0,
+    killed: [] as Array<ReadonlyArray<string>>,
+  };
+  const layer = makeWindowsProbeLayer((input) => {
+    switch (input.command) {
+      case "netstat.exe":
+        host.netstatReads += 1;
+        return windowsProbeOutput(input.args.includes("tcpv6") ? "" : host.listeners.join(""));
+      case "tasklist.exe":
+        return windowsProbeOutput("");
+      case "powershell.exe":
+        host.tableReads += 1;
+        return windowsProbeOutput(printTable(host.table));
+      case "taskkill.exe":
+        host.killed.push(input.args);
+        return windowsProbeOutput("");
+      default:
+        return Effect.die(new Error(`unexpected command ${input.command}`));
+    }
+  });
+  return { host, layer };
+};
+
+effectIt.effect("finds the job a Windows stop kills, never a protected process", () =>
+  Effect.sync(() => {
+    const table = windowsTree();
+    const protectedPids = new Set([process.pid, 1, 200, 500]);
+    // The agent tool shell is the job under the agent CLI; a terminal job under its shell.
+    expect(PortScanner.stoppableProcess(table, 401, protectedPids)).toBe(300);
+    expect(PortScanner.stoppableProcess(table, 600, protectedPids)).toBe(600);
+    // The agent CLI, a terminal shell, and this server are never a job.
+    for (const pid of [200, 500, process.pid, 12345]) {
+      expect(PortScanner.stoppableProcess(table, pid, protectedPids)).toBeNull();
+    }
+    // An exited tool shell leaves its job as the highest live ancestor.
+    const orphaned = new Map(table);
+    orphaned.delete(300);
+    expect(PortScanner.stoppableProcess(orphaned, 401, protectedPids)).toBe(400);
+  }),
+);
+
+effectIt.effect("attributes a Windows process to the agent CLI above it", () =>
+  Effect.sync(() => {
+    const agent = { threadId: ThreadId.make("thread-agent") };
+    const roots = new Map([[200, agent]]);
+    expect(PortScanner.agentOwnerOf(windowsTree(), 401, roots)).toBe(agent);
+    // The CLI is not its own server, and other processes are not the agent's.
+    for (const pid of [200, 600, 900]) {
+      expect(PortScanner.agentOwnerOf(windowsTree(), pid, roots)).toBeNull();
+    }
+    // A parent pid reused by a newer process is not an ancestor.
+    expect(PortScanner.agentOwnerOf(windowsTree({ 300: 9_000 }), 401, roots)).toBeNull();
+    expect(
+      PortScanner.parseWindowsProcessTable("4 0 1795143637569\r\n\r\n432 4 1795143632741\r\n"),
+    ).toEqual(
+      new Map([
+        [4, { pid: 4, ppid: 0, startedAtMs: 1795143637569 }],
+        [432, { pid: 432, ppid: 4, startedAtMs: 1795143632741 }],
+      ]),
+    );
+  }),
+);
+
+effectIt.effect(
+  "lists a Windows agent's server after the agent exits, reading the process table once",
+  () => {
+    const { host, layer } = makeWindowsHost();
+    return Effect.gen(function* () {
+      const scanner = yield* PortScanner.PortDiscovery;
+      // With no terminal and no agent nothing is probed.
+      expect(yield* scanner.scan()).toEqual([]);
+      expect(host.tableReads).toBe(0);
+
+      const release = scanner.trackAgent({ threadId: "thread-agent", pid: 200, cwd: "C:\\repo" });
+      const expected = [
+        {
+          port: 5173,
+          pid: 401,
+          terminal: null,
+          agent: { threadId: "thread-agent", cwd: "C:\\repo" },
+        },
+      ];
+      expect(yield* scanner.scan()).toMatchObject(expected);
+      expect(yield* scanner.scan()).toMatchObject(expected);
+      expect(host.tableReads).toBe(1);
+
+      // The server outlives its agent. A listener that appears afterwards is nobody's,
+      // and no agent runs, so the table is not read for it.
+      release();
+      host.listeners = [...host.listeners, netstatLine(5174, 402)];
+      expect(yield* scanner.scan()).toMatchObject(expected);
+      expect(host.tableReads).toBe(1);
+
+      // Once it stops listening nothing is left to look for, so netstat stops running.
+      host.listeners = [netstatLine(135, 900)];
+      expect(yield* scanner.scan()).toEqual([]);
+      const netstatReads = host.netstatReads;
+      expect(yield* scanner.scan()).toEqual([]);
+      expect(host.netstatReads).toBe(netstatReads);
+    }).pipe(Effect.provide(layer));
+  },
+);
+
+effectIt.effect("stops a listed Windows server by killing only its job's tree", () => {
+  const { host, layer } = makeWindowsHost();
+  host.listeners = [...host.listeners, netstatLine(3000, 600), netstatLine(4000, 500)];
+  return Effect.gen(function* () {
+    const scanner = yield* PortScanner.PortDiscovery;
+    scanner.trackAgent({ threadId: "thread-agent", pid: 200 });
+    yield* scanner.registerTerminalProcesses({
+      threadId: "thread-terminal",
+      terminalId: "terminal-1",
+      processIds: [500, 600],
+    });
+    const reason = (input: { readonly pid: number; readonly port: number }) =>
+      Effect.flip(scanner.stopServer(input)).pipe(Effect.map((error) => error.reason));
+
+    yield* scanner.stopServer({ pid: 401, port: 5173 });
+    yield* scanner.stopServer({ pid: 600, port: 3000 });
+    expect(host.killed).toEqual([
+      ["/PID", "300", "/T", "/F"],
+      ["/PID", "600", "/T", "/F"],
+    ]);
+
+    // Unlisted servers and mismatched ports are refused without killing anything.
+    expect(yield* reason({ pid: 900, port: 135 })).toBe("not-found");
+    expect(yield* reason({ pid: 200, port: 7000 })).toBe("not-found");
+    expect(yield* reason({ pid: 401, port: 9999 })).toBe("not-found");
+    // A terminal shell that listens is the terminal itself.
+    expect(yield* reason({ pid: 500, port: 4000 })).toBe("shared-group");
+    // A pid that now names a different process is not the server that was attributed.
+    host.table = windowsTree({ 401: 7_000 });
+    expect(yield* reason({ pid: 401, port: 5173 })).toBe("not-found");
+    expect(host.killed).toHaveLength(2);
+  }).pipe(Effect.provide(layer));
+});
+
+effectIt.effect("refuses to stop servers off Windows", () =>
+  Effect.gen(function* () {
+    const scanner = yield* PortScanner.PortDiscovery;
+    const error = yield* Effect.flip(scanner.stopServer({ pid: 4321, port: 5173 }));
+    expect(error.reason).toBe("unsupported");
+  }).pipe(Effect.provide(makeProbeFailureLayer(() => succeedWithStdout(lsofListenerOutput)))),
+);
+
+const LIVE_SERVER_SCRIPT = `
+const server = require("node:http").createServer((_, response) => response.end("ok"));
+server.listen(0, "127.0.0.1", () => {
+  process.stdout.write(process.pid + " " + server.address().port + "\\n");
+});
+`;
+
+/** Stands in for an agent CLI: starts the server as its job, then idles. */
+const LIVE_AGENT_SCRIPT = `
+const job = require("node:child_process").spawn(process.execPath, ["-e", process.argv[1]], {
+  stdio: ["ignore", "pipe", "ignore"],
+});
+job.stdout.pipe(process.stdout);
+setInterval(() => {}, 1000);
+`;
+
+const isRunning = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** A real agent with a real server job. Release kills only the pids it started. */
+const liveAgent = () =>
+  Effect.acquireRelease(
+    Effect.callback<{
+      readonly agentPid: number;
+      readonly pid: number;
+      readonly port: number;
+    }>((resume) => {
+      const agent = NodeChildProcess.spawn(
+        process.execPath,
+        ["-e", LIVE_AGENT_SCRIPT, LIVE_SERVER_SCRIPT],
+        { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+      );
+      agent.once("error", (error) => resume(Effect.die(error)));
+      agent.stdout?.once("data", (chunk) => {
+        const [pid, port] = String(chunk).trim().split(" ").map(Number);
+        resume(Effect.succeed({ agentPid: agent.pid!, pid: pid!, port: port! }));
+      });
+    }),
+    ({ agentPid, pid }) =>
+      Effect.sync(() => {
+        for (const target of [pid, agentPid]) {
+          try {
+            process.kill(target);
+          } catch {}
+        }
+      }),
+  );
+
+effectIt.live.skipIf(HostProcessPlatform.defaultValue() !== "win32")(
+  "stops a real Windows agent server's job and leaves the agent running",
+  () =>
+    Effect.gen(function* () {
+      const scanner = yield* PortScanner.PortDiscovery;
+      const job = yield* liveAgent();
+      yield* Effect.acquireRelease(
+        Effect.sync(() => scanner.trackAgent({ threadId: "thread-live", pid: job.agentPid })),
+        (release) => Effect.sync(release),
+      );
+
+      expect(yield* scanner.scan()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            pid: job.pid,
+            port: job.port,
+            agent: { threadId: "thread-live" },
+          }),
+        ]),
+      );
+      const unlisted = yield* Effect.flip(scanner.stopServer({ pid: process.pid, port: job.port }));
+      expect(unlisted.reason).toBe("not-found");
+
+      yield* scanner.stopServer({ pid: job.pid, port: job.port });
+      expect(isRunning(job.pid)).toBe(false);
+      expect(isRunning(job.agentPid)).toBe(true);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        PortScanner.layer.pipe(
+          Layer.provide(ProcessRunner.layer),
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    ),
+  30_000,
 );
