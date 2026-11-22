@@ -23,10 +23,12 @@
  */
 import { CodexSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
@@ -197,6 +199,21 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
+
+      // `codex login` and `codex logout` rewrite auth.json outside Avi Code.
+      if (effectiveConfig.enabled) {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        const accountHome = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
+        yield* fileSystem.watch(accountHome).pipe(
+          Stream.filter((event) => pathService.basename(event.path) === "auth.json"),
+          Stream.debounce(Duration.millis(250)),
+          Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
+          Effect.catchReason("PlatformError", "NotFound", () => Effect.void),
+          Effect.ignoreCause({ log: true }),
+          Effect.forkScoped,
+        );
+      }
 
       return {
         instanceId,
