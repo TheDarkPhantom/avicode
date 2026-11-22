@@ -2382,6 +2382,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.previewReportStatus, previewManager.reportStatus(input), {
             "rpc.aggregate": "preview",
           }),
+        [WS_METHODS.previewStopLocalServer]: (input) =>
+          observeRpcEffect(WS_METHODS.previewStopLocalServer, portDiscovery.stopServer(input), {
+            "rpc.aggregate": "preview",
+          }),
         [WS_METHODS.previewAutomationConnect]: (input) =>
           observeRpcStreamEffect(
             WS_METHODS.previewAutomationConnect,

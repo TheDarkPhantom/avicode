@@ -1,6 +1,7 @@
 import type { ThreadId } from "@t3tools/contracts";
 
 import { isWithinWorkspaceRoot } from "~/workspacePathMatch";
+import { discoveredServerOwnerFolders, discoveredServerThreadId } from "./discoveredServerOwner";
 import type { PreviewableServer } from "./useDiscoveredLocalServers";
 
 /**
@@ -31,8 +32,7 @@ export function attributeLocalServer(
   server: PreviewableServer,
   input: LocalServerAttributionInput,
 ): LocalServerGroup {
-  const terminal = server.terminal;
-  if (terminal && input.threadId && terminal.threadId === input.threadId) {
+  if (input.threadId && discoveredServerThreadId(server) === input.threadId) {
     return "this-thread";
   }
 
@@ -44,10 +44,9 @@ export function attributeLocalServer(
   // the scanner found, so no amount of path matching will place them better.
   if (server.source === "recent") return "recent";
 
-  const owners = [terminal?.cwd, terminal?.worktreePath];
+  const owners = discoveredServerOwnerFolders(server);
   const roots = [input.projectRoot, input.worktreePath];
   for (const owner of owners) {
-    if (!owner) continue;
     for (const root of roots) {
       if (!root) continue;
       // Either direction counts: a worktree sits under the project, and a

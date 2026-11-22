@@ -3,6 +3,7 @@ import {
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  AuthTerminalOperateScope,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -41,6 +42,12 @@ describe("RPC authorization scopes", () => {
       AuthRelayReadScope,
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudInstallRelayClient)).toBe(AuthRelayWriteScope);
+  });
+
+  it("requires terminal access to stop a discovered local server", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.previewStopLocalServer)).toBe(
+      AuthTerminalOperateScope,
+    );
   });
 
   it("rejects unknown RPC method names", () => {

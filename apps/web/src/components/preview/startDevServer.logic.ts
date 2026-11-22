@@ -1,6 +1,7 @@
 import type { DiscoveredLocalServer, ThreadId } from "@t3tools/contracts";
 
 import { isWithinWorkspaceRoot } from "~/workspacePathMatch";
+import { discoveredServerOwnerFolders, discoveredServerThreadId } from "./discoveredServerOwner";
 
 /**
  * Avi Code addition: the discovered server this thread should open, applying the
@@ -17,7 +18,7 @@ export function findScopedDevServer(
   },
 ): DiscoveredLocalServer | null {
   // A server this exact thread started always wins, in either mode.
-  const own = servers.find((server) => server.terminal?.threadId === input.threadId);
+  const own = servers.find((server) => discoveredServerThreadId(server) === input.threadId);
   if (own) return own;
   // A worktree thread is isolated, so a sibling's server is not its to reuse.
   if (input.worktreePath) return null;
@@ -26,10 +27,7 @@ export function findScopedDevServer(
   const roots = [input.projectRoot, input.worktreePath].filter((root) => root != null);
   return (
     servers.find((server) => {
-      const owners = [server.terminal?.cwd, server.terminal?.worktreePath].filter(
-        (owner) => owner != null,
-      );
-      return owners.some((owner) =>
+      return discoveredServerOwnerFolders(server).some((owner) =>
         roots.some(
           (root) => isWithinWorkspaceRoot(root, owner) || isWithinWorkspaceRoot(owner, root),
         ),

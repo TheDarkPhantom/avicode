@@ -108,6 +108,8 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+// Avi Code addition: reports the CLI's pid so port discovery can attribute its servers.
+import { makeTrackedClaudeSpawn } from "./claudeTrackedSpawn.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJsonString);
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.UnknownFromJsonString);
 
@@ -296,6 +298,16 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  /**
+   * Avi Code addition: counts each spawned Claude CLI as its thread's agent for
+   * port discovery until the returned release runs. When absent the SDK spawns
+   * the CLI itself.
+   */
+  readonly trackAgentProcess?: (input: {
+    readonly threadId: ThreadId;
+    readonly pid: number;
+    readonly cwd: string | null;
+  }) => () => void;
 }
 
 // The SDK passes `mcpServers` to the CLI as an inline `--mcp-config` argument,
@@ -1853,6 +1865,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       : undefined);
   const managedNativeEventLogger =
     options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
+  const trackAgentProcess = options?.trackAgentProcess;
 
   const createQuery =
     options?.createQuery ??
@@ -4463,6 +4476,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             }
           : claudeEnvironment,
         additionalDirectories,
+        ...(trackAgentProcess
+          ? {
+              spawnClaudeCodeProcess: makeTrackedClaudeSpawn((pid) =>
+                trackAgentProcess({ threadId, pid, cwd: input.cwd ?? null }),
+              ),
+            }
+          : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
           ? {

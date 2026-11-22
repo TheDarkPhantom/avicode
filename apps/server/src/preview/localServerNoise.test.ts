@@ -52,6 +52,11 @@ describe("isBrowsableLocalServer", () => {
 
   it("treats a missing owner the same as an absent one", () => {
     expect(isBrowsableLocalServer({ terminal: undefined })).toBe(false);
+    expect(isBrowsableLocalServer({ terminal: null, agent: null })).toBe(false);
+  });
+
+  it("keeps a listener a thread's agent started", () => {
+    expect(isBrowsableLocalServer({ terminal: null, agent: { threadId: "thread-1" } })).toBe(true);
   });
 });
 

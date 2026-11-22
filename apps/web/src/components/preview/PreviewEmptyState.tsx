@@ -1,15 +1,29 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { Globe, Play, RadioTower } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
+import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { useEnvironment } from "~/state/environments";
+import { previewEnvironment } from "~/state/preview";
+import { useAtomCommand } from "~/state/use-atom-command";
 
 import { groupLocalServers } from "./localServerAttribution";
 import { PreviewBookmarksBar } from "./PreviewBookmarksBar";
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
-import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
+import { type PreviewableServer, useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
+
+const serverKey = (server: PreviewableServer) => `${server.pid}:${server.port}`;
+
+/** Only a live server a terminal or an agent started has a job to stop. */
+const isStoppable = (server: PreviewableServer) =>
+  server.listening && server.pid !== null && (server.terminal != null || server.agent != null);
 
 interface Props {
   environmentId: EnvironmentId;
@@ -59,6 +73,33 @@ export function PreviewEmptyState({
     [projectRoot, servers, threadId, worktreePath],
   );
 
+  // Avi Code addition: a listed server that a terminal or an agent started can be
+  // stopped from here. The server re-checks ownership and kills only that job.
+  const supportsStop =
+    useEnvironment(environmentId)?.serverConfig?.environment.capabilities.localServerStop === true;
+  const stopLocalServer = useAtomCommand(previewEnvironment.stopLocalServer, {
+    reportFailure: false,
+  });
+  const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const stopServer = async (server: PreviewableServer) => {
+    if (server.pid === null || stoppingKey !== null) return;
+    setStoppingKey(serverKey(server));
+    const result = await stopLocalServer({
+      environmentId,
+      input: { pid: server.pid, port: server.port },
+    });
+    setStoppingKey(null);
+    if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Could not stop server",
+        description: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  };
+
   // Avi Code addition: always offer Start when the project has a primary action to
   // run, even if a server is already listed below. A running dev server (often for
   // another thread or repo) no longer suppresses starting your own.
@@ -105,6 +146,13 @@ export function PreviewEmptyState({
                     key={`${server.host}:${server.port}`}
                     server={server}
                     onOpen={() => onOpenUrl(server.url)}
+                    onStop={
+                      supportsStop && isStoppable(server)
+                        ? () => void stopServer(server)
+                        : undefined
+                    }
+                    stopping={stoppingKey === serverKey(server)}
+                    stopDisabled={stoppingKey !== null}
                   />
                 ))}
               </div>

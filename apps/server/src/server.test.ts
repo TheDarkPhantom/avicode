@@ -770,6 +770,7 @@ const buildAppUnderTest = (options?: {
             retain: Effect.void,
             registerTerminalProcesses: () => Effect.void,
             unregisterTerminal: () => Effect.void,
+            trackAgent: () => () => undefined,
           }),
           Layer.mock(ThreadLiveThoughts)({
             changes: Stream.make({ thoughts: [] }),
