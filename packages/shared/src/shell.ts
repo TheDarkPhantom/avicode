@@ -657,6 +657,50 @@ export function preferGitForWindowsBinary(
   return executable;
 }
 
+// `*` is one argument that is not an option. These forms read refs or config
+// only, so git starts no hook, helper, pager, editor or lazy fetch for them.
+const CONSOLE_FREE_GIT_READS = [
+  "rev-parse --git-path index",
+  "rev-parse --git-common-dir",
+  "rev-parse --show-toplevel",
+  "rev-parse --symbolic-full-name HEAD",
+  "rev-parse --abbrev-ref --symbolic-full-name @{upstream}",
+  "symbolic-ref --quiet HEAD",
+  "symbolic-ref *",
+  "remote",
+  "remote get-url *",
+  "remote get-url -- *",
+  "config --get *",
+].map((form) => form.split(" "));
+
+/**
+ * Whether a Git for Windows command is a plain ref or config read that can run
+ * detached, so Windows starts no console host for it.
+ */
+export function runsGitWithoutConsole(
+  platform: NodeJS.Platform,
+  executable: string,
+  args: ReadonlyArray<string>,
+): boolean {
+  if (platform !== "win32") return false;
+  const { basename, dirname } = NodePath.win32;
+  const bin = dirname(executable);
+  const build = basename(dirname(bin)).toLowerCase();
+  if (basename(executable).toLowerCase() !== "git.exe" || basename(bin).toLowerCase() !== "bin") {
+    return false;
+  }
+  if (!GIT_FOR_WINDOWS_BUILDS.some((candidate) => candidate === build)) return false;
+  const rest =
+    args[0] === "--git-dir" && args[1] !== undefined && !args[1].startsWith("-")
+      ? args.slice(2)
+      : args;
+  return CONSOLE_FREE_GIT_READS.some(
+    (form) =>
+      form.length === rest.length &&
+      form.every((part, i) => part === rest[i] || (part === "*" && !rest[i]!.startsWith("-"))),
+  );
+}
+
 // Avi Code addition (port of upstream #12600): the spawn-time PATH scan is
 // synchronous and runs before every child process on Windows, so a hit is
 // kept for a short window. Upstream shares its command-resolution cache here;
