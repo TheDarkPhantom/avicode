@@ -14,7 +14,7 @@
  * tracker, a vendor debug server) really do serve pages.
  *
  * So the rule is provenance rather than shape: a listener is offered when an
- * Avi Code terminal owns the process, and otherwise it is not, whatever port it
+ * Avi Code terminal or a thread's agent owns the process, and otherwise it is not, whatever port it
  * sits on and whatever it is called. The trade-off is deliberate — a dev server
  * started outside the app no longer appears on its own, and is reached by typing
  * its URL into the panel's address bar.
@@ -25,6 +25,8 @@
 export interface LocalServerNoiseCandidate {
   /** Non-null when an Avi Code terminal owns the listening process. */
   readonly terminal: unknown;
+  /** Non-null when an agent a thread runs started the listening process. */
+  readonly agent?: unknown;
 }
 
 /**
@@ -35,7 +37,8 @@ export interface LocalServerNoiseCandidate {
  * `PreviewableServer` satisfy it.
  */
 export const isBrowsableLocalServer = (server: LocalServerNoiseCandidate): boolean =>
-  server.terminal !== null && server.terminal !== undefined;
+  (server.terminal !== null && server.terminal !== undefined) ||
+  (server.agent !== null && server.agent !== undefined);
 
 export const filterBrowsableLocalServers = <T extends LocalServerNoiseCandidate>(
   servers: ReadonlyArray<T>,

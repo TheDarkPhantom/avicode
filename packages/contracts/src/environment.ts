@@ -65,6 +65,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       when it acts for a project. Older servers drop the key, so clients hide
       the project overrides editor when this is absent. */
   aviCodeProjectSettingsOverrides: Schema.optionalKey(Schema.Boolean),
+  /** Server can stop a discovered local server a thread started. Absent on older
+      servers and, in Avi Code, on hosts other than Windows. */
+  localServerStop: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */

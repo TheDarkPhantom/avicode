@@ -37,6 +37,18 @@ describe("attributeLocalServer", () => {
     ).toBe("this-thread");
   });
 
+  it("recognises a server this thread's agent started, and a sibling agent's by folder", () => {
+    expect(attributeLocalServer(server({ agent: { threadId: THIS_THREAD } }), CONTEXT)).toBe(
+      "this-thread",
+    );
+    expect(
+      attributeLocalServer(
+        server({ agent: { threadId: OTHER_THREAD, cwd: "C:/Users/avi/dev/avicode" } }),
+        CONTEXT,
+      ),
+    ).toBe("this-project");
+  });
+
   it("recognises a sibling thread on the same project by its folder", () => {
     expect(
       attributeLocalServer(

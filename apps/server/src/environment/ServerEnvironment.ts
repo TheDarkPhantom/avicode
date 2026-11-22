@@ -152,6 +152,8 @@ export const make = Effect.gen(function* () {
       threadTitleRegeneration: true,
       // Avi Code addition.
       aviCodeProjectSettingsOverrides: true,
+      // Avi Code addition: stopping a discovered server is implemented for Windows only.
+      ...(hostPlatform === "win32" ? { localServerStop: true } : {}),
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || serverSelfUpdate === "respawn"
         ? { serverSelfUpdateProgress: true }
