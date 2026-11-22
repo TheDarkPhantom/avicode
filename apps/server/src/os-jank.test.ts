@@ -14,7 +14,7 @@ it.effect("replaces a Path-spelled Windows PATH instead of adding a second key",
     yield* fixPath().pipe(
       Effect.provideService(HostProcessPlatform, "win32"),
       Effect.provideService(HostProcessEnvironment, env),
-      Effect.provideService(WindowsShellEnvironment, () => ({ PATH: "C:\\Tools" })),
+      Effect.provideService(WindowsShellEnvironment, () => Effect.succeed({ PATH: "C:\\Tools" })),
       Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
       Effect.provide(NodeServices.layer),
     );
