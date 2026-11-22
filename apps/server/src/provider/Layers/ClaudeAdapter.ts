@@ -89,6 +89,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { claudeQuotaWindowLabel, claudeQuotaWindowMinutes } from "../claudeQuotaWindows.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { resolveClaudeToolSearchOverride } from "./ClaudeToolSearch.ts";
 import {
   getClaudeModelCapabilities,
   isClaudeUltracodeEffort,
@@ -4383,6 +4384,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "full-access": "bypassPermissions",
       };
       const permissionMode = runtimeModeToPermission[input.runtimeMode];
+      // Avi Code addition (ported from upstream): keep tool search on when the user picks auto.
+      const configuredClaudeDir = claudeEnvironment.CLAUDE_CONFIG_DIR?.trim() ?? "";
+      const toolSearchOverride = yield* resolveClaudeToolSearchOverride({
+        cwd: input.cwd,
+        userSettingsPath: path.join(
+          configuredClaudeDir.length > 0
+            ? path.resolve(input.cwd ?? ".", configuredClaudeDir)
+            : path.join(NodeOS.homedir(), ".claude"),
+          "settings.json",
+        ),
+        homeDirectory: NodeOS.homedir(),
+        environment: claudeEnvironment,
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+      );
       const settings = {
         ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
         ...(requestThinkingSummaries ? { showThinkingSummaries: true } : {}),
@@ -4391,6 +4408,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(claudeSettings.autoCompactWindow
           ? { autoCompactWindow: Number(claudeSettings.autoCompactWindow) }
           : {}),
+        ...(toolSearchOverride === undefined
+          ? {}
+          : { env: { ENABLE_TOOL_SEARCH: toolSearchOverride } }),
       };
       if (requestThinkingSummaries && extraArgs["thinking-display"] === undefined) {
         extraArgs["thinking-display"] = "summarized";
