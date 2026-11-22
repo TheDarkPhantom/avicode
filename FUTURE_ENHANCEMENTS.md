@@ -35,6 +35,37 @@ ActivityWatch is authoritative for human time; sessions and GitHub only enrich a
   - The zoomed titlebar fix (#15496) covers the chat panels only. The settings, changelog and usage
     headers still read the raw titlebar values and likely misplace controls under zoom.
   - Sending on an older thread (#15059) fixes upstream's runs import, which the fork lacks.
+- Upstream sync of 2026-11-14 (#295 to #302) reviewed upstream through `56fd98be52`; the next
+  review starts there. It hand-ported about 60 of 4,076 commits and left out:
+  - About 100 Claude and Codex fixes that only touch upstream's orchestration V2
+    (`*AdapterV2.ts`, `Orchestrator.ts`, `EffectWorker.ts`). These may also affect the fork's V1
+    adapters and are worth checking one by one: Claude streaming by paragraph (`1a5d3737b7`), Codex
+    Force stop (`b5b470542a`), Codex auto-compact looping (`8b21cbdf1e`), a Codex subagent interrupt
+    freezing other threads (`6919aa4cf1`), and an orphaned Claude process (`5ffe045931`).
+  - Commits needing dependencies the fork has not taken: fff 0.11 (`8cd8a3ca5a`, `7b17bdbcef`,
+    `51b1858b0e`), `@legendapp/list` 3.3.5 (`05b697f6a2`), Electron 44, and `@pierre/diffs` 1.7.
+  - Large features too far from the fork: side chats (`50c1c5dc53`), pinned and archived projects
+    (`ffaa1dba76`), the indexed Cmd+K thread search (`bb7783e295`), local commit review in the Diff
+    pane (`5ef56853ef`), the combined model and effort picker (`c96c1b69f5`), keep the computer
+    awake (`587deab7d3`), agent theming (`42057b82d0`), and UI translations.
+  - Not needed in the fork: clone errors already hide the URL (`1cc9d413a5`), checkpoints have no
+    ignored-file probe (`e5b0718a8a`), the protocol has no request handler limit (`13c7de296c`),
+    V1 Codex already restarts its app-server (`b88da91397`), and both sidebars already keep row
+    callbacks stable (`a0056dddb1`). Ctrl+W already moved to Ctrl+Shift+W (`a86c05f977`).
+  - Needs new fork infrastructure first: commits during a branch switch (`2c3779762b`, the fork's
+    `switchRef` takes no lock), sidebar branch labels without full status (`0d809db501`, new RPCs),
+    branch Changes totals (`f5d0be65fe`, `4be96e0514`, `b0d2a86dd8`, `370b9ae793`), incremental
+    terminal history (`65716ba1d7`) and the CSI sanitizer fix (`d772115e0d`), a launcher-loss
+    detector (`2936b90883`), and the composer and timeline render cuts (`bcc6c08d75`,
+    `5cbc207d8c`, `ad0b2a9d2f`, the timeline half of `29f33af7d7`).
+  - The dev server list (#302) tracks only Claude agents, as upstream does, and stops servers only
+    on Windows. Every Claude session now starts through `claudeTrackedSpawn.ts`, a copy of the
+    SDK's default spawn, so recheck it when the Claude SDK changes how it launches the CLI. A
+    server started in the background from a shell that exits before the next scan is not
+    attributed to the agent.
+  - The file explorer (#300) now opens at upstream's 256px instead of about 352px until you drag it.
+  - `ProviderCommandReactor.test.ts` "closes idle terminals when a thread settles" timed out once
+    in CI and passed on rerun.
 - Upstream sync of 2026-10-26 (#282 to #288) reviewed upstream through `8ecb607de4`; the next
   review starts there. It hand-ported about 65 of 2,009 commits and left out:
   - The Windows server batch landed separately in #287, with review follow-ups in #286 and #288.
