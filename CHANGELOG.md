@@ -40,6 +40,10 @@ Add every user-visible change to Unreleased as it lands. The release bump rename
 
 Upstream: t3code 0.0.31
 
+### Avi Code
+
+- Agents finish work they left running in the background instead of stopping silently (#304)
+
 ### Upstream t3code
 
 - Claude names threads and branches about twice as fast, without loading your plugins (#4169 by Maxwell Young)
