@@ -140,6 +140,8 @@ describe("ProviderSessionReaper", () => {
     readonly stopSessionImplementation?: (input: {
       readonly threadId: ThreadId;
     }) => ReturnType<ProviderServiceShape["stopSession"]>;
+    readonly openTaskThreadIds?: ReadonlyArray<ThreadId>;
+    readonly openTaskCeilingMs?: number;
   }) {
     const stoppedThreadIds = new Set<ThreadId>();
     const stopSession = vi.fn<ProviderServiceShape["stopSession"]>(
@@ -181,6 +183,8 @@ describe("ProviderSessionReaper", () => {
         });
       },
       rollbackConversation: () => unsupported(),
+      hasOpenTasks: (threadId) =>
+        Effect.succeed(input.openTaskThreadIds?.includes(threadId) ?? false),
       streamEvents: Stream.empty,
     };
 
@@ -193,6 +197,9 @@ describe("ProviderSessionReaper", () => {
     const layer = makeProviderSessionReaperLive({
       inactivityThresholdMs: 1_000,
       sweepIntervalMs: 60_000,
+      ...(input.openTaskCeilingMs !== undefined
+        ? { openTaskCeilingMs: input.openTaskCeilingMs }
+        : {}),
     }).pipe(
       Layer.provideMerge(providerSessionDirectoryLayer),
       Layer.provideMerge(runtimeRepositoryLayer),
@@ -325,6 +332,77 @@ describe("ProviderSessionReaper", () => {
     expect(harness.stopSession).not.toHaveBeenCalled();
     const remaining = await runtime!.runPromise(repository.getByThreadId({ threadId }));
     expect(Option.isSome(remaining)).toBe(true);
+  });
+
+  async function seedIdleSession(threadId: ThreadId, lastSeenAt: string) {
+    const repository = await runtime!.runPromise(
+      Effect.service(ProviderSessionRuntime.ProviderSessionRuntimeRepository),
+    );
+    await runtime!.runPromise(
+      repository.upsert({
+        threadId,
+        providerName: "claudeAgent",
+        providerInstanceId: null,
+        adapterKey: "claudeAgent",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt,
+        resumeCursor: null,
+        runtimePayload: null,
+      }),
+    );
+  }
+
+  function idleSessionReadModel(threadId: ThreadId) {
+    return makeReadModel([
+      {
+        id: threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "claudeAgent",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    ]);
+  }
+
+  it("keeps idle sessions alive while they have open background tasks", async () => {
+    const threadId = ThreadId.make("thread-reaper-open-task");
+    const harness = await createHarness({
+      readModel: idleSessionReadModel(threadId),
+      openTaskThreadIds: [threadId],
+      openTaskCeilingMs: 60_000,
+    });
+    const nowMs = await runtime!.runPromise(Clock.currentTimeMillis);
+    await seedIdleSession(threadId, DateTime.formatIso(DateTime.makeUnsafe(nowMs - 5_000)));
+
+    const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await runtime!.runPromise(drainFibers);
+
+    expect(harness.stopSession).not.toHaveBeenCalled();
+  });
+
+  it("reaps sessions with open tasks once idle past the open-task ceiling", async () => {
+    const threadId = ThreadId.make("thread-reaper-open-task-ceiling");
+    const harness = await createHarness({
+      readModel: idleSessionReadModel(threadId),
+      openTaskThreadIds: [threadId],
+      openTaskCeilingMs: 60_000,
+    });
+    await seedIdleSession(threadId, "2026-04-14T00:00:00.000Z");
+
+    const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
+
+    await waitFor(() => harness.stopSession.mock.calls.length === 1);
+    expect(harness.stopSession.mock.calls[0]?.[0]).toEqual({ threadId });
   });
 
   it("does not reap sessions that are still within the inactivity threshold", async () => {

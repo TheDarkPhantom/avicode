@@ -130,6 +130,7 @@ function createProviderServiceHarness(
         },
       }),
     rollbackConversation,
+    hasOpenTasks: () => Effect.succeed(false),
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
     },

@@ -15,10 +15,15 @@ import { ProviderService } from "../Services/ProviderService.ts";
 
 const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+// Avi Code addition: how long open tasks may hold an idle session alive. Long
+// enough for a full test suite or build; short enough that a task which never
+// reports completion cannot pin a provider process indefinitely.
+const DEFAULT_OPEN_TASK_CEILING_MS = 4 * 60 * 60 * 1000;
 
 export interface ProviderSessionReaperLiveOptions {
   readonly inactivityThresholdMs?: number;
   readonly sweepIntervalMs?: number;
+  readonly openTaskCeilingMs?: number;
 }
 
 const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =>
@@ -32,6 +37,10 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
       options?.inactivityThresholdMs ?? DEFAULT_INACTIVITY_THRESHOLD_MS,
     );
     const sweepIntervalMs = Math.max(1, options?.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS);
+    const openTaskCeilingMs = Math.max(
+      inactivityThresholdMs,
+      options?.openTaskCeilingMs ?? DEFAULT_OPEN_TASK_CEILING_MS,
+    );
 
     const sweep = Effect.gen(function* () {
       // Stopped rows stay for their resume cursors and far outnumber live
@@ -63,6 +72,19 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
           yield* Effect.logDebug("provider.session.reaper.skipped-active-turn", {
             threadId: binding.threadId,
             activeTurnId: thread.session.activeTurnId,
+            idleDurationMs,
+          });
+          continue;
+        }
+
+        // Avi Code addition: a backgrounded command or subagent is still
+        // running. Stopping now would kill it and the agent would never resume.
+        if (
+          idleDurationMs < openTaskCeilingMs &&
+          (yield* providerService.hasOpenTasks(binding.threadId))
+        ) {
+          yield* Effect.logDebug("provider.session.reaper.skipped-open-tasks", {
+            threadId: binding.threadId,
             idleDurationMs,
           });
           continue;
@@ -122,6 +144,7 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
         yield* Effect.logInfo("provider.session.reaper.started", {
           inactivityThresholdMs,
           sweepIntervalMs,
+          openTaskCeilingMs,
         });
       });
 

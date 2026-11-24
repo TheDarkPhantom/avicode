@@ -58,6 +58,7 @@ import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
+import { makeProviderSessionActivity } from "./providerSessionActivity.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
@@ -288,6 +289,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     );
   // Avi Code addition: `/compact` bookkeeping, ported from upstream #9293.
   const compaction = makeProviderCompaction({ publishRuntimeEvent });
+  // Avi Code addition: keeps the idle reaper off sessions that are still
+  // working (see providerSessionActivity.ts).
+  const sessionActivity = makeProviderSessionActivity({ directory });
 
   const requireBindingInstanceId = (
     operation: string,
@@ -344,7 +348,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         increment(providerRuntimeEventsTotal, {
           provider: canonicalEvent.provider,
           eventType: canonicalEvent.type,
-        }).pipe(Effect.andThen(compaction.routeRuntimeEvent(source.instanceId, canonicalEvent))),
+        }).pipe(
+          Effect.andThen(sessionActivity.observe(canonicalEvent)),
+          Effect.andThen(compaction.routeRuntimeEvent(source.instanceId, canonicalEvent)),
+        ),
       ),
     );
 
@@ -1240,6 +1247,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,
+    hasOpenTasks: (threadId) => Effect.sync(() => sessionActivity.hasOpenTasks(threadId)),
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
     // independently receive all runtime events.

@@ -132,6 +132,13 @@ export interface ProviderServiceShape {
   }) => Effect.Effect<void, ProviderServiceError>;
 
   /**
+   * Avi Code addition: whether the provider reported tasks (backgrounded
+   * commands, subagents) for this thread that have not finished yet. The idle
+   * reaper keeps such sessions alive so the work can complete and wake the agent.
+   */
+  readonly hasOpenTasks: (threadId: ThreadId) => Effect.Effect<boolean>;
+
+  /**
    * Canonical provider runtime event stream.
    *
    * Fan-out is owned by ProviderService (not by a standalone event-bus service).
