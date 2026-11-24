@@ -377,13 +377,13 @@ describe("ProviderSessionReaper", () => {
       openTaskThreadIds: [threadId],
       openTaskCeilingMs: 60_000,
     });
-    const nowMs = await Effect.runPromise(Clock.currentTimeMillis);
+    const nowMs = await runtime!.runPromise(Clock.currentTimeMillis);
     await seedIdleSession(threadId, DateTime.formatIso(DateTime.makeUnsafe(nowMs - 5_000)));
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
-    scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
-    await Effect.runPromise(drainFibers);
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await runtime!.runPromise(drainFibers);
 
     expect(harness.stopSession).not.toHaveBeenCalled();
   });
@@ -398,8 +398,8 @@ describe("ProviderSessionReaper", () => {
     await seedIdleSession(threadId, "2026-04-14T00:00:00.000Z");
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
-    scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
 
     await waitFor(() => harness.stopSession.mock.calls.length === 1);
     expect(harness.stopSession.mock.calls[0]?.[0]).toEqual({ threadId });
