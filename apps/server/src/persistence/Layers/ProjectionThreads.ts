@@ -19,6 +19,8 @@ import { ModelSelection } from "@t3tools/contracts";
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    // Avi Code addition
+    pendingBackgroundTaskIds: Schema.optional(Schema.fromJsonString(Schema.Array(Schema.String))),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -56,6 +58,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          pending_background_task_ids_json,
           deleted_at
         )
         VALUES (
@@ -84,6 +87,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.pendingApprovalCount},
           ${row.pendingUserInputCount},
           ${row.hasActionableProposedPlan},
+          ${JSON.stringify(row.pendingBackgroundTaskIds ?? [])},
           ${row.deletedAt}
         )
         ON CONFLICT (thread_id)
@@ -112,6 +116,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count = excluded.pending_approval_count,
           pending_user_input_count = excluded.pending_user_input_count,
           has_actionable_proposed_plan = excluded.has_actionable_proposed_plan,
+          pending_background_task_ids_json = excluded.pending_background_task_ids_json,
           deleted_at = excluded.deleted_at
       `,
   });
@@ -147,6 +152,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          pending_background_task_ids_json AS "pendingBackgroundTaskIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -184,6 +190,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          pending_background_task_ids_json AS "pendingBackgroundTaskIds",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE project_id = ${projectId}

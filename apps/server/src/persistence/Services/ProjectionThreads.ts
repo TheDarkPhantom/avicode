@@ -52,6 +52,10 @@ export const ProjectionThread = Schema.Struct({
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,
+  // Avi Code addition: provider background tasks still running (see
+  // orchestration/backgroundTasks.ts). Optional so callers that never touch it
+  // keep compiling; the upsert writes [] when absent.
+  pendingBackgroundTaskIds: Schema.optional(Schema.Array(Schema.String)),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionThread = typeof ProjectionThread.Type;

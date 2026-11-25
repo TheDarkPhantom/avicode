@@ -43,6 +43,7 @@ Upstream: t3code 0.0.31
 ### Avi Code
 
 - Agents finish work they left running in the background instead of stopping silently (#304)
+- Threads with a background job running show Waiting, not Completed (#305)
 
 ### Upstream t3code
 

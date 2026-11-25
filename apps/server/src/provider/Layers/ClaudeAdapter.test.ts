@@ -5112,6 +5112,66 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  // Avi Code addition: background tasks die with the process and no
+  // task_notification follows, so the thread would show pending work forever.
+  it.effect("closes open background tasks when the session stops", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "bg", attachments: [] });
+
+      for (const taskId of ["bg-open", "bg-done"]) {
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: taskId,
+          description: `Run ${taskId}`,
+          task_type: "local_bash",
+          session_id: "sdk-session-1",
+          uuid: `started-${taskId}`,
+        } as unknown as SDKMessage);
+      }
+      harness.query.emit({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "bg-done",
+        status: "completed",
+        summary: "done",
+        output_file: "",
+        session_id: "sdk-session-1",
+        uuid: "notification-bg-done",
+      } as unknown as SDKMessage);
+      // Let the stream handle the emitted messages before stopping.
+      yield* Effect.yieldNow;
+      yield* adapter.stopSession(session.threadId);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const completed = runtimeEvents.flatMap((event) =>
+        event.type === "task.completed"
+          ? [{ taskId: String(event.payload.taskId), status: event.payload.status }]
+          : [],
+      );
+      assert.deepEqual(completed, [
+        { taskId: "bg-done", status: "completed" },
+        { taskId: "bg-open", status: "stopped" },
+      ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("closes an open question when the session stops, so no prompt outlives it", () => {
     // The question is durable but the SDK callback is not. Without this the
     // activity log keeps the request open and every client renders a prompt

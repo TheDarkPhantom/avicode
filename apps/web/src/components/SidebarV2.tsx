@@ -505,7 +505,8 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
   // findable. In-flight rows recede the same as read-ready ones (inbox-zero:
   // working threads aren't your problem yet) — only the colored status label
   // stands out.
-  const isInFlight = status === "working" || status === "approval" || status === "input";
+  const isInFlight =
+    status === "working" || status === "waiting" || status === "approval" || status === "input";
   const shouldRecede =
     (status === "ready" || isInFlight) && !isUnread && !isWoke && !props.isActive && !isSelected;
   // Status hues follow the system-wide convention set by sidebar v1 and the
@@ -578,7 +579,7 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
             }
           : effectiveStatus === "input"
             ? {
-                label: "Waiting",
+                label: "Awaiting Input",
                 icon: null,
                 chip: false,
                 className: "text-indigo-600 dark:text-indigo-300",
@@ -605,38 +606,46 @@ const SidebarV2Row = memo(function SidebarV2Row(props: {
                       chip: true,
                       className: "text-violet-700 dark:text-violet-300",
                     }
-                  : isWoke
+                  : // Avi Code addition: background work will wake the agent.
+                    effectiveStatus === "waiting"
                     ? {
-                        label: "Woke",
-                        icon: "woke" as const,
+                        label: "Waiting",
+                        icon: null,
                         chip: false,
-                        className: "text-amber-700 dark:text-amber-300",
+                        className: "text-muted-foreground",
                       }
-                    : isUnread
+                    : isWoke
                       ? {
-                          label: "Done",
-                          icon: "done" as const,
-                          chip: true,
-                          className: "text-emerald-700 dark:text-emerald-300",
+                          label: "Woke",
+                          icon: "woke" as const,
+                          chip: false,
+                          className: "text-amber-700 dark:text-amber-300",
                         }
-                      : // Avi Code addition: a settled PR is an outcome, not activity, so
-                        // it sits below Working and below an unseen completion instead of
-                        // masking either one.
-                        changeRequestStatus === "merged"
+                      : isUnread
                         ? {
-                            label: "Merged",
-                            icon: "merged" as const,
-                            chip: false,
-                            className: "text-violet-700 dark:text-violet-300",
+                            label: "Done",
+                            icon: "done" as const,
+                            chip: true,
+                            className: "text-emerald-700 dark:text-emerald-300",
                           }
-                        : changeRequestStatus === "closed"
+                        : // Avi Code addition: a settled PR is an outcome, not activity, so
+                          // it sits below Working and below an unseen completion instead of
+                          // masking either one.
+                          changeRequestStatus === "merged"
                           ? {
-                              label: "Closed",
-                              icon: "closed" as const,
+                              label: "Merged",
+                              icon: "merged" as const,
                               chip: false,
-                              className: "text-red-700 dark:text-red-300",
+                              className: "text-violet-700 dark:text-violet-300",
                             }
-                          : null;
+                          : changeRequestStatus === "closed"
+                            ? {
+                                label: "Closed",
+                                icon: "closed" as const,
+                                chip: false,
+                                className: "text-red-700 dark:text-red-300",
+                              }
+                            : null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,

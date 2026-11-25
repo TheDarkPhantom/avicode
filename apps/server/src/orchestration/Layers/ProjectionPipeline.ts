@@ -54,6 +54,10 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import {
+  applyBackgroundTaskActivity,
+  sessionStatusClearsBackgroundTasks,
+} from "../backgroundTasks.ts";
 import { isCompactCommandMessage } from "../compactCommand.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
@@ -619,6 +623,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
+            pendingBackgroundTaskIds: [],
             deletedAt: null,
           });
           return;
@@ -654,6 +659,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
+            pendingBackgroundTaskIds: [],
             deletedAt: null,
           });
           return;
@@ -838,6 +844,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             deletedAt: event.payload.deletedAt,
+            pendingBackgroundTaskIds: [],
             updatedAt: event.payload.deletedAt,
           });
           return;
@@ -856,6 +863,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
+            // Avi Code addition: track backgrounded provider tasks.
+            ...(event.type === "thread.activity-appended"
+              ? {
+                  pendingBackgroundTaskIds: applyBackgroundTaskActivity(
+                    existingRow.value.pendingBackgroundTaskIds ?? [],
+                    event.payload.activity,
+                  ),
+                }
+              : {}),
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);
@@ -874,6 +890,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             // Avi Code addition: ready/stopped session events have no active
             // turn, but the latest completed turn remains thread history.
             latestTurnId: event.payload.session.activeTurnId ?? existingRow.value.latestTurnId,
+            // Avi Code addition: a dead provider process takes its background
+            // tasks with it.
+            ...(sessionStatusClearsBackgroundTasks(event.payload.session.status)
+              ? { pendingBackgroundTaskIds: [] }
+              : {}),
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);
@@ -928,6 +949,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             latestTurnId,
+            pendingBackgroundTaskIds: [],
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);

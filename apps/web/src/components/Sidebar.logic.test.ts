@@ -175,13 +175,19 @@ describe("isAttentionStatus", () => {
   const pill = (label: string) => ({ label }) as Parameters<typeof isAttentionStatus>[0];
 
   it("is true for the labels that mean the chat needs you", () => {
-    for (const label of ["Pending Approval", "Waiting", "Needs Resume", "Failed", "Plan Ready"]) {
+    for (const label of [
+      "Pending Approval",
+      "Awaiting Input",
+      "Needs Resume",
+      "Failed",
+      "Plan Ready",
+    ]) {
       expect(isAttentionStatus(pill(label))).toBe(true);
     }
   });
 
   it("is false for progress labels and for no status", () => {
-    for (const label of ["Working", "Connecting", "Merging", "Completed"]) {
+    for (const label of ["Working", "Connecting", "Merging", "Waiting", "Completed"]) {
       expect(isAttentionStatus(pill(label))).toBe(false);
     }
     expect(isAttentionStatus(null)).toBe(false);
@@ -844,6 +850,17 @@ describe("resolveSidebarV2Status", () => {
     );
   });
 
+  // Avi Code addition
+  it("reports waiting while background work will wake the agent", () => {
+    const ready = { ...session, status: "ready" as const, activeTurnId: null };
+    expect(
+      resolveSidebarV2Status({ ...idle, session: ready, hasPendingBackgroundTasks: true }),
+    ).toBe("waiting");
+    expect(resolveSidebarV2Status({ ...idle, session, hasPendingBackgroundTasks: true })).toBe(
+      "working",
+    );
+  });
+
   it("prioritizes awaiting input over a running session, below approval", () => {
     expect(resolveSidebarV2Status({ ...idle, hasPendingUserInput: true, session })).toBe("input");
     expect(
@@ -1127,7 +1144,55 @@ describe("resolveThreadStatusPill", () => {
           hasPendingUserInput: true,
         },
       }),
-    ).toMatchObject({ label: "Waiting", pulse: false });
+    ).toMatchObject({ label: "Awaiting Input", pulse: false });
+  });
+
+  // Avi Code addition: turn over, a backgrounded task still running.
+  describe("pending background tasks", () => {
+    const readySession = { ...baseThread.session, status: "ready" as const, activeTurnId: null };
+    const backgrounded = {
+      ...baseThread,
+      interactionMode: "default" as const,
+      hasPendingBackgroundTasks: true,
+      latestTurn: makeLatestTurn(),
+      lastVisitedAt: "2026-03-09T10:04:00.000Z",
+      session: readySession,
+    };
+
+    it("shows a quiet Waiting instead of Completed", () => {
+      expect(resolveThreadStatusPill({ thread: backgrounded })).toEqual({
+        label: "Waiting",
+        colorClass: "text-muted-foreground",
+        dotClass: "bg-muted-foreground",
+        pulse: false,
+        tint: null,
+      });
+      expect(hasUnseenCompletion(backgrounded)).toBe(false);
+    });
+
+    it("shows Completed once the background work drains", () => {
+      expect(
+        resolveThreadStatusPill({ thread: { ...backgrounded, hasPendingBackgroundTasks: false } }),
+      ).toMatchObject({ label: "Completed" });
+    });
+
+    it("yields to a live turn, a pending approval, and a failure", () => {
+      expect(
+        resolveThreadStatusPill({ thread: { ...backgrounded, session: baseThread.session } }),
+      ).toMatchObject({ label: "Working" });
+      expect(
+        resolveThreadStatusPill({ thread: { ...backgrounded, hasPendingApprovals: true } }),
+      ).toMatchObject({ label: "Pending Approval" });
+      expect(
+        resolveThreadStatusPill({
+          thread: {
+            ...backgrounded,
+            latestTurn: { ...makeLatestTurn(), state: "error" as const },
+            session: { ...readySession, status: "error" as const },
+          },
+        }),
+      ).toMatchObject({ label: "Failed" });
+    });
   });
 
   it("falls back to working when the thread is actively running without blockers", () => {
@@ -1228,7 +1293,7 @@ describe("resolveThreadStatusPill", () => {
       const waiting = resolveThreadStatusPill({
         thread: { ...baseThread, hasPendingUserInput: true },
       });
-      expect(waiting?.label).toBe("Waiting");
+      expect(waiting?.label).toBe("Awaiting Input");
       expect(waiting?.tint?.bgClass).toContain("indigo");
     });
 

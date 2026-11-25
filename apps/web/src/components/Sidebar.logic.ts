@@ -257,6 +257,7 @@ export interface ThreadStatusPill {
     | "Failed"
     | "Completed"
     | "Pending Approval"
+    | "Awaiting Input"
     | "Waiting"
     | "Plan Ready";
   colorClass: string;
@@ -272,13 +273,14 @@ export interface ThreadStatusPill {
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
-  Waiting: 4,
+  "Awaiting Input": 4,
   "Needs Resume": 4,
   Failed: 4,
   Merging: 3,
   Working: 3,
   Connecting: 3,
   "Plan Ready": 2,
+  Waiting: 2,
   Completed: 1,
 };
 
@@ -286,6 +288,7 @@ type ThreadStatusInput = Pick<
   SidebarThreadSummary,
   | "hasActionableProposedPlan"
   | "hasPendingApprovals"
+  | "hasPendingBackgroundTasks"
   | "hasPendingUserInput"
   | "interactionMode"
   | "latestTurn"
@@ -357,6 +360,9 @@ export function resolveSidebarStageBadgeLabel(input: {
 }
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
+  // Avi Code addition: the agent wakes again when its background work ends,
+  // so the turn that just finished is not the thread finishing.
+  if (thread.hasPendingBackgroundTasks) return false;
   if (!thread.latestTurn?.completedAt) return false;
   const completedAt = Date.parse(thread.latestTurn.completedAt);
   if (Number.isNaN(completedAt)) return false;
@@ -671,6 +677,8 @@ export type SidebarV2Status =
   | "needs_resume"
   | "working"
   | "plan_ready"
+  // Avi Code addition: turn over, background work still running.
+  | "waiting"
   | "failed"
   | "ready";
 
@@ -678,7 +686,12 @@ type SidebarV2StatusInput = Pick<
   SidebarThreadSummary,
   "hasPendingApprovals" | "hasPendingUserInput" | "latestTurn" | "session"
 > &
-  Partial<Pick<SidebarThreadSummary, "hasActionableProposedPlan" | "interactionMode">>;
+  Partial<
+    Pick<
+      SidebarThreadSummary,
+      "hasActionableProposedPlan" | "hasPendingBackgroundTasks" | "interactionMode"
+    >
+  >;
 
 export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2Status {
   if (thread.hasPendingApprovals) {
@@ -713,6 +726,11 @@ export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2S
   }
   if (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) {
     return "plan_ready";
+  }
+  // Avi Code addition: background work will wake the agent, so the thread is
+  // still busy (a merge run must not pick up its worktree yet).
+  if (thread.hasPendingBackgroundTasks) {
+    return "waiting";
   }
   return "ready";
 }
@@ -855,7 +873,7 @@ export function resolveThreadStatusPill(input: {
 
   if (thread.hasPendingUserInput) {
     return {
-      label: "Waiting",
+      label: "Awaiting Input",
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
       pulse: false,
@@ -913,6 +931,18 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
+  // Avi Code addition: the turn ended but a backgrounded command or subagent is
+  // still running, and the agent wakes when it finishes. Not done, not working.
+  if (thread.hasPendingBackgroundTasks) {
+    return {
+      label: "Waiting",
+      colorClass: "text-muted-foreground",
+      dotClass: "bg-muted-foreground",
+      pulse: false,
+      tint: null,
+    };
+  }
+
   const hasPlanReadyPrompt =
     !thread.hasPendingUserInput &&
     thread.interactionMode === "plan" &&
@@ -952,7 +982,7 @@ export function resolveThreadStatusPill(input: {
 // folder. Working/Connecting/Merging/Completed are progress, not a prompt.
 const ATTENTION_STATUS_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
   "Pending Approval",
-  "Waiting",
+  "Awaiting Input",
   "Needs Resume",
   "Failed",
   "Plan Ready",
