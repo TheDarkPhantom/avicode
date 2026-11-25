@@ -6,8 +6,12 @@ label display setting only changes how that state looks.
 ## Status rules
 
 - **Working** means a provider turn is starting or running.
+- **Waiting** (gray) means the turn ended but the agent left a command or subagent running in the
+  background. The agent picks up again when it finishes, so Completed and its chime wait until
+  then. Stopping the session or restarting Avi Code clears it.
 - **Plan Ready** means plan mode has a saved plan awaiting refine, implement, or discard.
 - **Completed** means the latest finished turn has not been opened on this client.
+- **Awaiting Input** means the agent asked a question.
 - Approval, input, failure, and resume states take priority over these labels.
 
 While a thread is Working, its row also shows the first sentence of the agent's latest thought as

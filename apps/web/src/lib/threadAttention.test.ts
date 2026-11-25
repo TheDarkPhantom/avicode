@@ -93,6 +93,35 @@ function snapshot(
   return new Map(Object.entries(entries));
 }
 
+// Avi Code addition: turn over, a backgrounded task still running.
+describe("pending background tasks", () => {
+  it("reports background instead of done while background work is pending", () => {
+    expect(
+      resolveThreadAttention(makeThread({ hasPendingBackgroundTasks: true }), BEFORE_COMPLETION),
+    ).toBe("background");
+  });
+
+  it("never chimes on entering or draining background work", () => {
+    expect(
+      resolveAttentionChimes({
+        previous: snapshot({ a: null, b: "background" }),
+        current: snapshot({ a: "background", b: "done" }),
+        suppressedThreadKey: null,
+      }),
+    ).toEqual([]);
+  });
+
+  it("chimes when the wake turn completes", () => {
+    expect(
+      resolveAttentionChimes({
+        previous: snapshot({ a: null }),
+        current: snapshot({ a: "done" }),
+        suppressedThreadKey: null,
+      }),
+    ).toEqual(["a"]);
+  });
+});
+
 describe("resolveAttentionChimes", () => {
   it("chimes when a thread enters an attention state", () => {
     expect(

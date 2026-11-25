@@ -7,19 +7,24 @@ import type { SidebarThreadSummary } from "../types";
  * Deliberately a subset of, and derived from, the sidebar status model: the
  * chime is supposed to mean "one of those labels just appeared", so anything
  * that changes what the sidebar shows has to change this too. `approval` and
- * `input` are the sidebar's Pending Approval / Waiting; `done` is the
+ * `input` are the sidebar's Pending Approval / Awaiting Input; `done` is the
  * unread-completion state the sidebar labels Completed (v1) or Done (v2).
  *
  * Working, Connecting, Plan Ready, Failed and Needs Resume are intentionally
  * absent — the first two are the agent's problem, not the user's, and the
  * others were left out of the audible set by choice.
+ *
+ * Avi Code addition: `background` is the sidebar's Waiting (turn over, a
+ * backgrounded task still running). It never chimes; it exists so the drain
+ * that follows is not heard as a completion (see `resolveAttentionChimes`).
  */
-export type ThreadAttentionKind = "approval" | "input" | "done";
+export type ThreadAttentionKind = "approval" | "input" | "background" | "done";
 
 export type ThreadAttentionInput = Pick<
   SidebarThreadSummary,
   | "hasActionableProposedPlan"
   | "hasPendingApprovals"
+  | "hasPendingBackgroundTasks"
   | "hasPendingUserInput"
   | "interactionMode"
   | "latestTurn"
@@ -42,6 +47,9 @@ export function resolveThreadAttention(
   if (thread.hasPendingApprovals) return "approval";
   if (thread.hasPendingUserInput) return "input";
   if (thread.session?.status === "running" || thread.session?.status === "starting") return null;
+  if (thread.latestTurn?.state !== "running" && thread.hasPendingBackgroundTasks) {
+    return "background";
+  }
   if (hasUnseenCompletion({ ...thread, lastVisitedAt })) return "done";
   return null;
 }
@@ -72,7 +80,12 @@ export function resolveAttentionChimes(input: {
     if (kind === null) continue;
     if (threadKey === input.suppressedThreadKey) continue;
     if (!input.previous.has(threadKey)) continue;
-    if (input.previous.get(threadKey) === kind) continue;
+    const previousKind = input.previous.get(threadKey);
+    if (previousKind === kind) continue;
+    // Avi Code addition: Waiting is silent, and so is the drain out of it: the
+    // agent wakes seconds later and its own turn chimes when it completes.
+    if (kind === "background") continue;
+    if (kind === "done" && previousKind === "background") continue;
     chimes.push(threadKey);
   }
   return chimes;

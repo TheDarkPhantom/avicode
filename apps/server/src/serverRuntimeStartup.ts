@@ -6,6 +6,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationReadModel,
   type OrchestrationSession,
+  type OrchestrationThreadShell,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -336,6 +337,70 @@ export const reconcileOrphanedRunningSessions = Effect.gen(function* () {
   return settledCount;
 });
 
+// Avi Code addition: background tasks die with the provider process, and a crash
+// or shutdown never reports them finished. Threads whose session was not running
+// (so the reconcile above left it alone) would keep showing Waiting forever.
+// Marking the session stopped clears the pending set in the projector.
+export function selectThreadsWithOrphanedBackgroundTasks(
+  threads: ReadonlyArray<OrchestrationThreadShell>,
+): ReadonlyArray<{ readonly threadId: ThreadId; readonly session: OrchestrationSession }> {
+  return threads.flatMap((thread) => {
+    const session = thread.session;
+    return thread.hasPendingBackgroundTasks === true &&
+      session !== null &&
+      session.status !== "running" &&
+      session.status !== "starting"
+      ? [{ threadId: thread.id, session }]
+      : [];
+  });
+}
+
+export const reconcileOrphanedBackgroundTasks = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
+  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const projectionReadModelQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+
+  const [active, archived] = yield* Effect.all([
+    projectionReadModelQuery.getShellSnapshot(),
+    projectionReadModelQuery.getArchivedShellSnapshot(),
+  ]);
+  const orphaned = selectThreadsWithOrphanedBackgroundTasks([
+    ...active.threads,
+    ...archived.threads,
+  ]);
+  if (orphaned.length === 0) {
+    return 0;
+  }
+
+  const outcomes = yield* Effect.forEach(orphaned, ({ threadId, session }) =>
+    Effect.gen(function* () {
+      const now = DateTime.formatIso(yield* DateTime.now);
+      const commandId = CommandId.make(yield* crypto.randomUUIDv4);
+      yield* orchestrationEngine.dispatch({
+        type: "thread.session.set",
+        commandId,
+        threadId,
+        session: { ...session, status: "stopped", activeTurnId: null, updatedAt: now },
+        createdAt: now,
+      });
+      return 1;
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("failed to clear orphaned background tasks", {
+          threadId,
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as(0)),
+      ),
+    ),
+  );
+  const clearedCount = outcomes.reduce((sum, value) => sum + value, 0);
+  yield* Effect.logInfo("cleared orphaned background tasks on startup", {
+    total: orphaned.length,
+    cleared: clearedCount,
+  });
+  return clearedCount;
+});
+
 const resolveStartupBrowserTarget = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -446,6 +511,16 @@ export const make = Effect.gen(function* () {
       reconcileOrphanedRunningSessions.pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("failed to reconcile orphaned running sessions", {
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.as(0)),
+        ),
+      ),
+    );
+    yield* runStartupPhase(
+      "sessions.reconcile-background-tasks",
+      reconcileOrphanedBackgroundTasks.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to clear orphaned background tasks", {
             cause: Cause.pretty(cause),
           }).pipe(Effect.as(0)),
         ),

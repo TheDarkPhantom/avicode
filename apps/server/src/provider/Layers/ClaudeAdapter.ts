@@ -243,6 +243,12 @@ interface ClaudeSessionContext {
   }>;
   readonly inFlightTools: Map<number, ToolInFlight>;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
+  /**
+   * Avi Code addition: SDK tasks (backgrounded commands, subagents) started and
+   * not yet reported finished. Stopping the session closes each one so the
+   * thread stops showing them as pending.
+   */
+  readonly openTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
@@ -3414,6 +3420,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "task_started":
+        context.openTaskIds.add(message.task_id);
         yield* offerRuntimeEvent({
           ...base,
           type: "task.started",
@@ -3451,6 +3458,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "task_updated":
         return;
       case "task_notification":
+        context.openTaskIds.delete(message.task_id);
         yield* emitThreadTokenUsage(
           context,
           normalizeClaudeTaskProgressTokenUsage(message.usage, context),
@@ -3823,6 +3831,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       yield* Deferred.succeed(pending.answers, {} as ProviderUserInputAnswers);
     }
     context.pendingUserInputs.clear();
+
+    // Avi Code addition: the process dies with its background tasks, and no
+    // task_notification will follow. Close them so the thread stops showing
+    // pending background work. Emitted regardless of emitExitEvent: session
+    // replacement passes false and reports no status of its own.
+    for (const taskId of context.openTaskIds) {
+      const stamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "task.completed",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        createdAt: stamp.createdAt,
+        threadId: context.session.threadId,
+        ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+        payload: {
+          taskId: RuntimeTaskId.make(taskId),
+          status: "stopped",
+          summary: "Stopped with the session",
+        },
+        providerRefs: nativeProviderRefs(context),
+      });
+    }
+    context.openTaskIds.clear();
 
     if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Session stopped.");
@@ -4573,6 +4604,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         turns: [],
         inFlightTools,
         claudeTasks,
+        openTaskIds: new Set(),
         turnState: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,

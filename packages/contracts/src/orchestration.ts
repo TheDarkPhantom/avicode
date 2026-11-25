@@ -623,6 +623,10 @@ export const OrchestrationThreadShell = Schema.Struct({
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
   hasActionableProposedPlan: Schema.Boolean,
+  // Avi Code addition: a backgrounded command or subagent the provider has not
+  // reported finished. The agent will wake when it ends, so the sidebar shows
+  // Waiting instead of Completed. Sent only when true.
+  hasPendingBackgroundTasks: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 

@@ -407,6 +407,12 @@ update` runs with the server's environment, so an instance with its own `GROK_HO
 - The background worktree cleanup job lives in the app window's memory. Restarting the app or
   reloading the window drops a scan or delete in progress; a delete stops after the worktree it was
   on. Disk sizes count pnpm's hardlinked files in full, so "freed" can overstate the space returned.
+- The sidebar's gray Waiting holds any unfinished Claude background task, including a dev server
+  the agent left running, until Claude's own background time limit stops it or the session ends.
+  Upstream holds commands only when the agent marks them awaited through its `t3_background_wait`
+  MCP tool, which the fork lacks. Completed can show for about three seconds between the task
+  finishing and Claude's wake turn starting. Claude's `task_updated` terminal patches are not
+  mapped, since its `task_notification` follows and mapping both would log every task twice.
 
 ## Shipped
 

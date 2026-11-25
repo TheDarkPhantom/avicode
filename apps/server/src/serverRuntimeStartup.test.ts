@@ -6,6 +6,7 @@ import {
   type OrchestrationReadModel,
   type OrchestrationSession,
   type OrchestrationThread,
+  type OrchestrationThreadShell,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -313,6 +314,53 @@ it("selectOrphanedRunningSessions returns only running and starting sessions", (
   assert.deepStrictEqual(
     orphaned.map((entry) => entry.threadId),
     [runningThreadId, startingThreadId],
+  );
+});
+
+// Avi Code addition
+it("selectThreadsWithOrphanedBackgroundTasks picks idle sessions still holding background tasks", () => {
+  const shell = (
+    id: string,
+    status: OrchestrationSession["status"] | null,
+    hasPendingBackgroundTasks: boolean,
+  ): OrchestrationThreadShell => {
+    const threadId = ThreadId.make(id);
+    return {
+      id: threadId,
+      projectId: ProjectId.make("project-1"),
+      title: "Thread",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      latestTurn: null,
+      createdAt: RECONCILE_NOW,
+      updatedAt: RECONCILE_NOW,
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      session: status === null ? null : makeReconcileSession(threadId, status, null),
+      latestUserMessageAt: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+      ...(hasPendingBackgroundTasks ? { hasPendingBackgroundTasks: true } : {}),
+    };
+  };
+
+  const selected = ServerRuntimeStartup.selectThreadsWithOrphanedBackgroundTasks([
+    shell("ready-with-tasks", "ready", true),
+    shell("idle-with-tasks", "idle", true),
+    shell("running-with-tasks", "running", true),
+    shell("starting-with-tasks", "starting", true),
+    shell("ready-no-tasks", "ready", false),
+    shell("no-session", null, true),
+  ]);
+
+  assert.deepStrictEqual(
+    selected.map((entry) => entry.threadId),
+    [ThreadId.make("ready-with-tasks"), ThreadId.make("idle-with-tasks")],
   );
 });
 

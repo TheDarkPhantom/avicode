@@ -60,6 +60,7 @@ import Migration0040 from "./Migrations/040_BackfillProjectionThreadsLatestTurn.
 import Migration0041 from "./Migrations/041_ProjectionThreadProposedPlanDiscardedAt.ts";
 // Upstream shipped this as 054; renumbered to follow the fork's 041.
 import Migration0042 from "./Migrations/042_ProjectionThreadsAutoSettleDisabledAt.ts";
+import Migration0043 from "./Migrations/043_ProjectionThreadsPendingBackgroundTasks.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -114,6 +115,7 @@ export const migrationEntries = [
   [40, "BackfillProjectionThreadsLatestTurn", Migration0040],
   [41, "ProjectionThreadProposedPlanDiscardedAt", Migration0041],
   [42, "ProjectionThreadsAutoSettleDisabledAt", Migration0042],
+  [43, "ProjectionThreadsPendingBackgroundTasks", Migration0043],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
