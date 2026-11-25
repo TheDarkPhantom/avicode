@@ -155,3 +155,63 @@ Read the matching doc before changing code in that area; code review enforces th
 - No continuously repainting animations; they peg the GPU on high-refresh displays.
 - Security matters, but do not over-index on dev-mode or maintainer-only features. Read [SECURITY.md](SECURITY.md) before auditing or triaging reports.
 - If a rule here fights the task in front of you, say so loudly and get a human sign-off before breaking it.
+
+# Avi Code overrides
+
+Everything above is upstream T3 Code text, kept verbatim so upstream syncs merge cleanly. This repo is
+Avi Code 2, an unofficial fork. Where this section and the text above disagree, this section wins.
+The plan and decisions live in `docs/AVICODE2_PLAN.md`.
+
+## Identity and data
+
+- The app is **Avi Code 2**: appId `com.advisoravi.avicode2`, data home `~/.avicode2`. It installs
+  next to the old Avi Code (`~/.avicode`), whose code is frozen on `legacy/v1`.
+- **Never write `~/.avicode/userdata`.** It is the old app's live data. Read or copy only, and take
+  database snapshots with `VACUUM INTO` from a read-only connection. Never start a server against
+  it. Avi Code 2's own `~/.avicode2/userdata` gets the treatment upstream gives `~/.t3/userdata`.
+- **No "T3 Code" in fork-owned user-visible text.** Upstream's [TRADEMARK.md](TRADEMARK.md) requires
+  our own branding. Factual attribution ("based on T3 Code") is fine.
+
+## Desktop only
+
+- Never build, test or verify `apps/mobile`. Shared packages still compile for every consumer, so
+  don't break mobile's build; just don't build mobile features. Upstream mobile code merges as is.
+- `apps/web` matters as the desktop renderer. In "Hit every surface", the clients that count are
+  desktop and its renderer, and the integrated client pass in "Verifying" is desktop only.
+
+## Shipping is the default
+
+This overrides upstream's "Never make a PR unless the developer explicitly asks".
+
+- Finished work goes to `main` through a PR without asking. Ask only when genuinely ambiguous.
+- Branch off `main` as `feat/`, `fix/`, `chore/` or `docs/<slug>`.
+- Stage only the files you changed. Never `git add -A`.
+- `git push -u origin HEAD`, `gh pr create --base main`, then `gh pr merge --merge --delete-branch`.
+- `origin` is `TheDarkPhantom/avicode`. Never push to `upstream` (`pingdotgg/t3code`).
+- **Never push tags.** Old upstream tags carry a release workflow with no repository guard. Push
+  explicit branch refs only.
+
+## Fork conventions
+
+- Prefer new files to edits. Edits to upstream files stay at single call sites, marked
+  "Avi Code addition".
+- Fork settings live in their own Avi Code settings page and use key names distinct from upstream's.
+- **Fork database changes never go in `effect_sql_migrations`.** Upstream's migrator skips every id
+  at or below the highest recorded one, so any fork id there eventually hides an upstream
+  migration. Fork schema changes use the separate `avicode_migrations` ledger, run once after
+  upstream's migrations.
+- Unwanted upstream workflows are disabled in repo settings, never deleted, so syncs don't conflict.
+  See `docs/UPSTREAM_SYNC.md`.
+- Before porting an old fork optimization, check the problem still exists upstream. If not, drop it.
+
+## Changelog
+
+- User-visible changes get an entry in `CHANGELOG.md` under `## Unreleased`, `### Avi Code`.
+- One outcome per entry, not a commit subject: present tense, no em or en dashes, 100 characters
+  max. A test parses the real file and rejects violations.
+
+## Plans
+
+`docs/AVICODE2_PLAN.md` and `docs/REFORK_LEDGER.md` are committed on purpose, overriding upstream's
+"do not commit implementation plans". Keep them current when a step lands. Other plans and scratch
+files still stay out of the repo.
