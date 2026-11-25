@@ -1,3 +1,4 @@
+import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import { pipe } from "effect/Function";
 import * as DateTime from "effect/DateTime";
@@ -607,7 +608,7 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv => ({
-  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: CODEX_CLIENT_NAME,
+  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: AVICODE_IDENTITY.sessionOriginator,
   ...environment,
 });
 
