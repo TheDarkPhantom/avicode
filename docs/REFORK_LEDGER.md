@@ -1,8 +1,8 @@
 # Avi Code re-fork ledger
 
-Avi Code is being rebuilt on today's upstream T3 Code (`next` branch, started from upstream
+Avi Code is being rebuilt as Avi Code 2 on today's upstream T3 Code (started from upstream
 `9827aba4b4`, v0.1.12). This ledger records every fork feature from `legacy/v1` and whether it
-moves over. **Nothing gets ported until the owner calls below are decided.**
+moves over. Decisions are in section 1.
 
 Short version:
 
@@ -10,51 +10,77 @@ Short version:
 - **Upstream already does about half of them**, often better (V2 orchestration, background work,
   side chats, forks, usage page, themes, voice, worktree cleanup, quota meters).
 - **About 25 are real gaps worth porting**, mostly small and fork-owned.
-- **13 need your call**, because they are expensive on V2 or are a taste choice between your
-  version and upstream's.
 - **Your history carries over.** A converted copy of your 9.1 GB database (1,684 threads, 163k
   messages) migrated cleanly through upstream's 117 migrations, and old threads open through
   upstream's V1 importer.
 
-## 1. Owner calls
+## 1. Decisions (made 2026-11-25)
 
-Decide these first; each one changes what gets built.
+**Repo, releases, identity**
 
-| #   | Question                                                                                                                                                              | Default if you don't care           |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| 1   | Named sidebar folders and the flat "all threads by recent activity" list. Rebuild them on top of upstream's new pinned/working/snoozed/settled sidebar, or drop them? | Rebuild folders, drop flat list     |
-| 2   | Reply styles per turn (communication style presets). Needs a new turn-start field in V2.                                                                              | Port later                          |
-| 3   | Codex plan review and sending findings back.                                                                                                                          | Drop                                |
-| 4   | Agent's latest thought on sidebar rows (needs a V2 event fold and a new RPC).                                                                                         | Port later                          |
-| 5   | Offline outbox (messages typed while disconnected are sent on reconnect). Upstream says "try again once connected".                                                   | Drop                                |
-| 6   | Preview split view, tab drag and background tabs.                                                                                                                     | Drop                                |
-| 7   | Files panel create / rename / delete (needs fork filesystem RPCs).                                                                                                    | Port later                          |
-| 8   | Per-repo and per-credential usage breakdown (upstream's usage page has per-day/provider/model).                                                                       | Port later                          |
-| 9   | Colour themes: port Oxblood/Midnight/Forest/Violet/Graphite as custom themes in upstream's theme system?                                                              | Yes                                 |
-| 10  | Ctrl+W and Ctrl+Shift+T: fork meaning (close thread / reopen archived) or upstream's (close panel / reopen closed view)?                                              | Upstream's                          |
-| 11  | Telemetry: upstream sends analytics to `ingest.t3.codes` by default.                                                                                                  | Off in Avi Code                     |
-| 12  | Codex originator: keep `avicode_desktop` (ALFRED reads it) in Next?                                                                                                   | Keep                                |
-| 13  | Translations: upstream ships 10 locales with ~142 "T3 Code" strings each. Rebrand all, or English only?                                                               | Rebrand at the `i18n:generate` step |
+- **Branch layout:** the re-fork becomes `main`. The old fork is frozen on `legacy/v1` and gets no
+  new versions.
+- **App identity (permanent, not a transition name):** name "Avi Code 2", appId
+  `com.advisoravi.avicode2`, protocol `avicode2://`, executable `AviCode2.exe`, data home
+  `~/.avicode2`, CLI command `avicode`. It installs next to the old Avi Code.
+- **Releases:** same repo. Avi Code 2 releases must never become the GitHub "Latest" release the old
+  app's updater reads (`allowPrerelease = false` on `latest`), and Avi Code 2's own updater reads
+  them explicitly.
+- **Versions:** `0.1.12-avicode.1`, counter restarts when the upstream version changes.
+
+**History import**
+
+- One-time import from `~/.avicode` on first launch. No repeat "Import latest".
+- Map fork `thread_context_json` to upstream `context_json` where the shapes match. Keep the 12,904
+  `provider_instance_usage` rows in a side table for the later per-repo usage port.
+- Copy provider instances, keybindings, secrets, client settings and attachments. Skip window and
+  layout state.
+
+**Upstream services**
+
+- Telemetry off by default.
+- Keep upstream's hourly remote model list; fork model additions layer on top.
+- Hide T3 Connect, hosted app and relay. Tailscale and LAN keep working.
+- Repoint the admin policy file and registry key to Avi Code paths.
+- Keep the `avicode_desktop` Codex originator.
+- Rebrand all 10 translation files at the `i18n:generate` step.
+
+**Features**
+
+| Feature                                                     | Decision                               |
+| ----------------------------------------------------------- | -------------------------------------- |
+| Per-repo and per-credential usage                           | Port later (rows kept by the importer) |
+| Sidebar folders / flat list                                 | Rebuild folders later; drop flat list  |
+| Reply styles per turn                                       | Port later                             |
+| Codex plan review                                           | Drop                                   |
+| Latest agent thought on sidebar rows                        | Port later                             |
+| Offline outbox                                              | Drop                                   |
+| Preview split view, tab drag, background tabs               | Drop                                   |
+| Files panel create / rename / delete                        | Port later                             |
+| Colour themes (Oxblood, Midnight, Forest, Violet, Graphite) | Port as upstream theme data            |
+| Ctrl+W closes thread, Ctrl+Shift+T reopens archived         | **Port the fork version**              |
+| Notification sound picker, plan mode default                | Port (already on the list)             |
+| Full-row status colour, jump to plan top                    | Drop                                   |
 
 ## 2. Port list, in order
 
 Free means a fork-owned file with little coupling; cheap means one call site in upstream code.
 
-**Identity first (needed to install Avi Code Next side by side).**
+**Identity first (needed to install Avi Code 2 side by side).**
 
-| Feature                                                          | Cost                          | Notes                                                                         |
-| ---------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| `avicodeIdentity.ts` plus every consumer                         | cheap module, many call sites | See section 4 for the full checklist                                          |
-| Data home `~/.avicode-next`, userData `avicode-next`             | cheap                         | Upstream `DesktopStatePaths.ts:19`, `DesktopUserData.ts:43-65`                |
-| appId, protocol, executable `AviCodeNext.exe`, updater cache dir | cheap                         | `scripts/build-desktop-artifact.ts:66,2803,2970`, `ElectronProtocol.ts:16-17` |
-| Brand assets and exporter                                        | cheap                         | Add upstream's new 192/512 web icons                                          |
-| Renderer branding (`branding.ts`, favicons, title)               | cheap                         |                                                                               |
-| Release repo pin and manual-only release workflow                | expensive                     | Upstream split release into `release.yml` + `release-desktop.yml`             |
-| CI on GitHub-hosted runners                                      | cheap                         | Upstream uses `blacksmith-*` runners, so PR checks never start on the fork    |
-| Guardrails checker, `check:avicode` / `test:avicode`             | cheap                         | Replace the deleted `test:desktop-smoke` step                                 |
-| Changelog page and `CHANGELOG.md` format                         | free                          | Restart numbering at `0.1.12-avicode.1`                                       |
-| Window title metadata and its privacy toggle                     | cheap                         | ALFRED and time trackers rely on it                                           |
-| Slim Avi Code settings page                                      | cheap                         | New `_chat.settings.avicode.tsx`; most old rows map to upstream settings      |
+| Feature                                                       | Cost                          | Notes                                                                         |
+| ------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| `avicodeIdentity.ts` plus every consumer                      | cheap module, many call sites | See section 4 for the full checklist                                          |
+| Data home `~/.avicode2`, userData `avicode2`                  | cheap                         | Upstream `DesktopStatePaths.ts:19`, `DesktopUserData.ts:43-65`                |
+| appId, protocol, executable `AviCode2.exe`, updater cache dir | cheap                         | `scripts/build-desktop-artifact.ts:66,2803,2970`, `ElectronProtocol.ts:16-17` |
+| Brand assets and exporter                                     | cheap                         | Add upstream's new 192/512 web icons                                          |
+| Renderer branding (`branding.ts`, favicons, title)            | cheap                         |                                                                               |
+| Release repo pin and manual-only release workflow             | expensive                     | Upstream split release into `release.yml` + `release-desktop.yml`             |
+| CI on GitHub-hosted runners                                   | cheap                         | Upstream uses `blacksmith-*` runners, so PR checks never start on the fork    |
+| Guardrails checker, `check:avicode` / `test:avicode`          | cheap                         | Replace the deleted `test:desktop-smoke` step                                 |
+| Changelog page and `CHANGELOG.md` format                      | free                          | Restart numbering at `0.1.12-avicode.1`                                       |
+| Window title metadata and its privacy toggle                  | cheap                         | ALFRED and time trackers rely on it                                           |
+| Slim Avi Code settings page                                   | cheap                         | New `_chat.settings.avicode.tsx`; most old rows map to upstream settings      |
 
 **Then features.**
 
@@ -79,7 +105,7 @@ Every optimization gets re-checked on V2 before porting. If the problem is gone,
 
 ## 3. Upstream wins or drop
 
-Upstream has these, or V2 made them obsolete. Retest the ones marked _retest_ once Next runs.
+Upstream has these, or V2 made them obsolete. Retest the ones marked _retest_ once Avi Code 2 runs.
 
 - **Provider and orchestration:** background tasks keep a thread Waiting, stuck "running" after a
   crash, stop without an error, plan-mode write denial, question answers with attachments, plan
@@ -121,21 +147,24 @@ Upstream hardcodes identity in many places since July. Each needs `AVICODE_IDENT
 - **Repoint or turn off:** telemetry (`AnalyticsService.ts:71-77`), remote model manifest fetched
   hourly from `pingdotgg/t3code` (`ModelManifest.ts:29`), T3 Connect and hosted app URLs
   (`connectAuth.ts:10`, `cloud/publicConfig.ts`), install URLs, managed policy file and registry
-  key (Next would obey T3 Code's admin policy), mobile app settings row.
+  key (Avi Code 2 would obey T3 Code's admin policy), mobile app settings row.
 
 ## 5. Release and CI safety
 
-- **The installed Avi Code would update itself into a Next build** if a Next release became the
-  non-prerelease "Latest" on `TheDarkPhantom/avicode`: `0.1.12-avicode.1` sorts above
-  `0.0.31-avicode.9.23`. **Fix: publish Next releases to a separate repo** (for example
-  `TheDarkPhantom/avicode-next`) via `releaseRepository`. Next can then auto-update itself
-  without touching the old app. At cutover, the old repo gets one release that moves users over.
+- **The old app's updater reads the "Latest" release on this repo.** `0.1.12-avicode.1` sorts above
+  `0.0.31-avicode.9.23`, so an Avi Code 2 release marked Latest would be downloaded by the old app
+  (as a separate app, repeatedly). Avi Code 2 releases are therefore never marked Latest, and Avi
+  Code 2's updater is configured to read them anyway.
 - **Never push tags.** Old upstream tags (for example `v0.1.0`) carry a release workflow with no
   repository guard. Push explicit branch refs only.
-- Pushing `next` fires nothing: every upstream `push:` trigger is filtered to `main`.
-- PRs into `next` run `next`'s workflows, and upstream's run on Blacksmith runners, so checks
-  hang until CI is ported. Port CI before the first PR into `next`.
-- `sync-upstream.yml` must target `next` (or be off) until cutover.
+- Upstream's workflows run on Blacksmith runners, which this repo doesn't have, so their jobs queue
+  forever. Port CI to GitHub-hosted runners before relying on PR checks.
+- `main` is protected and requires the checks `Check`, `Test`, `Release Smoke`, `AviCode
+  boundaries`, `AviCode desktop smoke` and `AviCode Windows x64 package`. The ported CI must keep
+  these names, or the protection rule must be updated in the same step.
+- Unguarded upstream schedules (`pr-limits`, `stale-needs-more-info`) and mobile, relay and preview
+  workflows get disabled in repo settings (`gh workflow disable`), not deleted, so upstream syncs
+  don't conflict on them.
 
 ## 6. Data: importer, not a fresh start
 
@@ -161,8 +190,8 @@ DB records fork migrations at ids 35-42 (43 on newer builds), so upstream would 
 task ids, and `provider_instance_usage` (12,904 usage rows). Provider instances, keybindings and
 secrets live in files and need copying alongside.
 
-**Importer design for Next:** on first launch, snapshot `~/.avicode/userdata/state.sqlite` with
-`VACUUM INTO` into Next's data home, run the conversion above, copy settings, keybindings, secrets
+**Importer design:** on first launch, snapshot `~/.avicode/userdata/state.sqlite` with
+`VACUUM INTO` into `~/.avicode2`, run the conversion above, copy settings, keybindings, secrets
 and attachments, then let upstream's normal startup take over. The source is never written.
 `scripts/avicode/convert-legacy-db.mjs` is the tested starting point.
 
@@ -175,6 +204,6 @@ changes go in a separate fork-owned ledger table** (`avicode_migrations`), run o
 
 ## 8. Branches
 
-- `legacy/v1`: frozen copy of the old fork (`ce6e1d2c75`). Old `main` can still ship hotfixes.
-- `next`: upstream `9827aba4b4` plus this ledger. Porting lands here.
-- Cutover: `git merge -s ours main` on `next`, then fast-forward `main`. No force push.
+- `legacy/v1`: the frozen old fork (`ce6e1d2c75`). No new versions.
+- `main`: becomes the re-fork, via a `git merge -s ours` of the old `main` so history is kept and
+  nothing is force-pushed. Until then the re-fork lives on `next`.
