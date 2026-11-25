@@ -12,6 +12,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerConfig } from "../../config.ts";
@@ -23,6 +24,10 @@ import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
+
+const decodePendingIds = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+);
 
 const TestLayer = Layer.mergeAll(
   OrchestrationProjectionPipelineLive,
@@ -46,7 +51,7 @@ it.layer(TestLayer)("projection pending background tasks", (it) => {
       let seq = 0;
       const base = () => {
         seq += 1;
-        const at = new Date(Date.UTC(2026, 0, 1, 0, 0, seq)).toISOString();
+        const at = `2026-01-01T00:${String(Math.floor(seq / 60)).padStart(2, "0")}:${String(seq % 60).padStart(2, "0")}.000Z`;
         const id = `${name}-${seq}`;
         return {
           at,
@@ -129,7 +134,7 @@ it.layer(TestLayer)("projection pending background tasks", (it) => {
           FROM projection_threads
           WHERE thread_id = ${threadId}
         `;
-        return JSON.parse(rows[0]?.ids ?? "null") as ReadonlyArray<string>;
+        return yield* decodePendingIds(rows[0]?.ids);
       });
       const shellFlag = snapshotQuery
         .getThreadShellById(threadId)
