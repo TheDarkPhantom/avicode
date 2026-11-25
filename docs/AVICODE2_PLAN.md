@@ -10,16 +10,16 @@ feature inventory behind it.
 
 ## Status
 
-| Step | What                                                                              | State                          |
-| ---- | --------------------------------------------------------------------------------- | ------------------------------ |
-| 1    | Inventory every old fork feature against upstream                                 | Done (`docs/REFORK_LEDGER.md`) |
-| 2    | Prove old history can carry over                                                  | Done, works                    |
-| 3    | Branches: freeze the old fork, make the re-fork `main`                            | Done (PR #307)                 |
-| 4    | Identity and CI: Avi Code 2 installs side by side, checks run again               | Next                           |
-| 5    | Feature ports                                                                     | After step 4                   |
-| 6    | One-time history import on first launch                                           | After step 4                   |
-| 7    | Restore `main` protection, turn the right workflows back on, weekly upstream sync | With step 4                    |
-| 8    | Use Avi Code 2 daily next to the old app, then uninstall the old app              | Last                           |
+| Step | What                                                                 | State                          |
+| ---- | -------------------------------------------------------------------- | ------------------------------ |
+| 1    | Inventory every old fork feature against upstream                    | Done (`docs/REFORK_LEDGER.md`) |
+| 2    | Prove old history can carry over                                     | Done, works                    |
+| 3    | Branches: freeze the old fork, make the re-fork `main`               | Done (PR #307)                 |
+| 4    | Identity and CI: Avi Code 2 installs side by side, checks run again  | Next                           |
+| 5    | Feature ports                                                        | After step 4                   |
+| 6    | One-time history import on first launch                              | After step 4                   |
+| 7    | Restore `main` protection, turn the right workflows back on          | With step 4                    |
+| 8    | Use Avi Code 2 daily next to the old app, then uninstall the old app | Last                           |
 
 ## Why re-fork
 
@@ -57,11 +57,20 @@ Made 2026-11-25.
 **Releases and versions**
 
 - Same repo, `TheDarkPhantom/avicode`.
+- **No auto-updates.** New versions go out as installers sent by hand, as before. Avi Code 2's
+  updater is turned off.
 - Avi Code 2 releases are never marked GitHub "Latest". The old app's updater reads Latest, and
-  `0.1.12` sorts above `0.0.31`, so a Latest release would be pulled by the old app. Avi Code 2's
-  own updater is configured to read its releases explicitly.
+  `0.1.12` sorts above `0.0.31`, so a Latest release would make old installs pull Avi Code 2.
 - Versions are `0.1.12-avicode.1`, with the counter restarting when the upstream version changes.
 - Never push tags. Old upstream tags carry a release workflow with no repository guard.
+
+**Upstream syncs**
+
+- On request, not scheduled. Say "sync upstream" and an agent merges upstream `main` into a branch
+  and opens a PR. No `UPSTREAM_SYNC_TOKEN` secret; the scheduled `Sync upstream` workflow is
+  disabled in repo settings.
+- Sync every few weeks at most. The thin-fork rules keep merges clean only while the gap stays
+  small; a gap of months brings back cherry-picking.
 
 **History import**
 
@@ -137,7 +146,7 @@ T3 Code.
 3. appId, protocol, `AviCode2.exe`, own updater cache folder, `avicode` CLI command.
 4. Brand assets and exporter, plus upstream's 192/512 web icons.
 5. Avi Code 2 name, favicons and window title in the UI.
-6. Release workflow: manual only, same repo, never marked Latest; updater pinned to this repo.
+6. Release workflow: manual only, same repo, never marked Latest; updater turned off.
 7. CI on GitHub-hosted runners, with job names matching the six required checks.
 8. Guardrails checker plus `check:avicode` and `test:avicode`.
 9. In-app changelog page and `CHANGELOG.md` format, starting at `0.1.12-avicode.1`.
@@ -148,8 +157,7 @@ T3 Code.
 13. Fork docs: `CLAUDE.md` and the Avi Code overrides in `AGENTS.md`, `docs/UPSTREAM_SYNC.md`
     rewritten for this model.
 
-Then: restore the six required checks, re-enable CI and Release, and port `sync-upstream.yml`
-targeting `main`.
+Then: restore the six required checks and re-enable Release.
 
 ## Step 5: feature ports
 
