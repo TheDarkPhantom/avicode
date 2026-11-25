@@ -13,11 +13,11 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Beta)";
+const APP_DISPLAY_NAME = isDevelopment ? "Avi Code 2 (Dev)" : "Avi Code 2";
 const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
+  ? `com.advisoravi.avicode2.dev.${devBundleIdSuffix || "local"}`
+  : "com.advisoravi.avicode2";
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["avicode2-dev"] : ["avicode2"];
 const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
