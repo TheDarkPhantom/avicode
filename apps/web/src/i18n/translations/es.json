@@ -12970,5 +12970,12 @@
   "201490988858b511": "retirada por {by}",
   "99451a5d2d40440f": "Retirada por {by}.",
   "3ee30a50b70fffab": "Retirada por {by}: {reason}",
-  "92e129bf413a1220": "retirada"
+  "92e129bf413a1220": "retirada",
+  "95916f5b6dff5bb7": "Sin publicar",
+  "442cfaf3794fd363": "Instalada",
+  "9d037a5e13556861": "Basada en {upstream} {version}",
+  "3230203820653db1": "Registro de cambios",
+  "ce831ba6bf54da86": "Cada versión indica qué cambió {fork} y qué trajo la sincronización con {upstream}, con el crédito de quien lo escribió.",
+  "08a8d3e436c4a95f": "Todavía no se ha registrado ninguna versión.",
+  "4c383bef3119c376": "Consulta qué cambió en cada versión."
 }
