@@ -1,9 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { AVICODE_IDENTITY } from "../../../packages/shared/src/avicodeIdentity.ts";
 import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { enablePreparedServerCache } from "../../../scripts/lib/server-compile-cache.ts";
+
+// Mirrors AVICODE_IDENTITY.cacheDirectoryName; this boot-time entry is built outside the main bundle.
+const CACHE_DIRECTORY_NAME = "avicode2";
 
 // Linux /tmp is shared; macOS and Windows temp dirs are per user.
 // AppImage mounts change paths each launch, so Node's path-keyed cache would miss and accumulate copies.
