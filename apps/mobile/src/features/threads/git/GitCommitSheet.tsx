@@ -1,31 +1,43 @@
+import { FitSheet } from "../../../components/ui/FitSheet";
+import { SheetHeader } from "../../../components/ui/SheetHeader";
+import { Button } from "../../../components/ui/Button";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useCallback, useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { T, useGT, Var } from "gt-react-native";
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 
-import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
-import { AppText as Text, AppTextInput as TextInput } from "../../../components/AppText";
+import { SymbolView } from "../../../components/ui/AppSymbol";
+import { AppText as Text, AppTextInput as TextInput } from "../../../components/ui/AppText";
 import { cn } from "../../../lib/cn";
 import { useEnvironmentQuery } from "../../../state/query";
+import {
+  gitRepositoryTargetFromRoute,
+  type GitRepositoryRouteParams,
+} from "../../../state/thread-git-target";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-worktree";
 import { vcsEnvironment } from "../../../state/vcs";
-import { SheetActionButton } from "./gitSheetComponents";
 
-type GitCommitSheetProps = StaticScreenProps<{
-  readonly environmentId: string;
-  readonly threadId: string;
-}>;
+type GitCommitSheetProps = StaticScreenProps<
+  {
+    readonly environmentId: string;
+    readonly threadId: string;
+  } & GitRepositoryRouteParams
+>;
 
-export function GitCommitSheet(_props: GitCommitSheetProps) {
+export function GitCommitSheet(props: GitCommitSheetProps) {
+  const repository = gitRepositoryTargetFromRoute(props.route.params);
+  const gt = useGT();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
   const { selectedThread } = useThreadSelection();
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const threadWorktree = useSelectedThreadWorktree();
+  const selectedThreadCwd = repository?.cwd ?? threadWorktree.selectedThreadCwd;
+  const gitState = useSelectedThreadGitState(repository);
+  const gitActions = useSelectedThreadGitActions(repository);
+  const { canWriteSourceControl, canCreateFeatureBranch } = gitActions;
 
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -42,192 +54,183 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
 
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
   const [excludedFiles, setExcludedFiles] = useState<ReadonlySet<string>>(new Set());
-  const [isEditingFiles, setIsEditingFiles] = useState(false);
 
   const selectedFiles = allFiles.filter((file) => !excludedFiles.has(file.path));
   const allSelected = excludedFiles.size === 0;
   const noneSelected = selectedFiles.length === 0;
   const selectedInsertions = selectedFiles.reduce((sum, file) => sum + file.insertions, 0);
   const selectedDeletions = selectedFiles.reduce((sum, file) => sum + file.deletions, 0);
-  const selectedFilePreview = selectedFiles.slice(0, 3);
 
-  const runCommitAction = useCallback(
-    async (featureBranch: boolean) => {
-      const commitMessage = dialogCommitMessage.trim();
-      navigation.goBack();
-      await gitActions.onRunSelectedThreadGitAction({
-        action: "commit",
-        featureBranch,
-        ...(commitMessage ? { commitMessage } : {}),
-        ...(!allSelected ? { filePaths: selectedFiles.map((file) => file.path) } : {}),
-      });
-    },
-    [allSelected, dialogCommitMessage, gitActions, navigation, selectedFiles],
-  );
+  const runCommitAction = async (featureBranch: boolean) => {
+    if (!canWriteSourceControl || (featureBranch && !canCreateFeatureBranch)) return;
+    const commitMessage = dialogCommitMessage.trim();
+    navigation.goBack();
+    await gitActions.onRunSelectedThreadGitAction({
+      action: "commit",
+      featureBranch,
+      ...(commitMessage ? { commitMessage } : {}),
+      ...(!allSelected ? { filePaths: selectedFiles.map((file) => file.path) } : {}),
+    });
+  };
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <AndroidSheetHeader title="Commit changes" onBack={() => navigation.goBack()} />
+    <FitSheet
+      header={
+        <SheetHeader
+          title={gt("Commit changes")}
+          subtitle={[repository?.name, gitStatus.data?.refName ?? gt("(detached HEAD)")]
+            .filter(Boolean)
+            .join(" · ")}
+          onCancel={() => navigation.goBack()}
+          accessibilityLabel={gt("Cancel commit")}
+        />
+      }
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
+      contentContainerClassName="px-5 pt-4 gap-5"
+    >
+      {isDefaultRef ? (
+        <Text className="text-sm text-warning-foreground">
+          <T>You’re on the default branch. You can create a new branch when committing.</T>
+        </Text>
       ) : null}
-      <ScrollView
-        className="flex-1"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
-        contentContainerClassName="gap-4 px-5 pt-2"
-      >
-        <View className="gap-3 rounded-[22px] border border-border bg-card px-4 py-4">
-          <View className="flex-row items-center justify-between gap-3">
-            <Text className="text-foreground-muted text-sm font-medium">Branch</Text>
-            <Text className="text-foreground text-base font-t3-bold">
-              {gitStatus.data?.refName ?? "(detached HEAD)"}
+      <View className="gap-2">
+        <Text className="text-sm font-t3-medium text-foreground">
+          <T>Commit message</T>
+        </Text>
+        <TextInput
+          multiline
+          accessibilityLabel={gt("Commit message")}
+          value={dialogCommitMessage}
+          onChangeText={setDialogCommitMessage}
+          placeholder={gt("Describe your changes…")}
+          textAlignVertical="top"
+          className="min-h-24 rounded-xl bg-subtle px-4 py-3 text-base"
+        />
+        <Text className="text-xs text-foreground-muted">
+          <T>Leave empty to generate a message automatically.</T>
+        </Text>
+      </View>
+      <View>
+        <View className="flex-row items-center justify-between gap-2 pb-2">
+          <View className="flex-1 gap-1">
+            <Text className="text-base font-t3-bold text-foreground">
+              <T>Changed files</T>
+            </Text>
+            <Text className="text-xs text-foreground-muted">
+              <T>
+                <Var>{selectedFiles.length}</Var> of <Var>{allFiles.length}</Var> selected · +
+                <Var>{formatDiffCount(selectedInsertions)}</Var> −
+                <Var>{formatDiffCount(selectedDeletions)}</Var>
+              </T>
             </Text>
           </View>
-          {isDefaultRef ? (
-            <Text className="text-xs leading-normal text-amber-700 dark:text-amber-400">
-              Warning: this is the default branch.
-            </Text>
+          {allFiles.length > 0 ? (
+            <Button
+              label={
+                allSelected
+                  ? gt("Deselect all")
+                  : gt("Select all", { $context: "selects every changed file to commit" })
+              }
+              tone="text"
+              onPress={() =>
+                setExcludedFiles(
+                  allSelected ? new Set(allFiles.map((file) => file.path)) : new Set(),
+                )
+              }
+            />
           ) : null}
         </View>
-
-        <View className="gap-3 rounded-[22px] border border-border bg-card px-4 py-4">
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="gap-1">
-              <Text className="text-foreground text-base font-t3-bold">Files</Text>
-              <Text className="text-foreground-muted text-xs leading-normal">
-                {selectedFiles.length} selected · +{selectedInsertions} / -{selectedDeletions}
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              {!allSelected && isEditingFiles ? (
-                <Pressable
-                  className="bg-subtle rounded-full px-3 py-2"
-                  onPress={() => setExcludedFiles(new Set())}
-                >
-                  <Text className="text-foreground text-2xs font-t3-bold uppercase">Reset</Text>
-                </Pressable>
-              ) : null}
+        {allFiles.length === 0 ? (
+          <Text className="py-4 text-sm text-foreground-muted">
+            <T>No changed files to commit.</T>
+          </Text>
+        ) : (
+          allFiles.map((file) => {
+            const included = !excludedFiles.has(file.path);
+            const slash = file.path.lastIndexOf("/");
+            const name = file.path.slice(slash + 1);
+            const directory = slash >= 0 ? file.path.slice(0, slash) : null;
+            return (
               <Pressable
-                className="bg-subtle rounded-full px-3 py-2"
-                onPress={() => setIsEditingFiles((current) => !current)}
+                key={file.path}
+                className="min-h-16 flex-row items-center gap-3 border-t border-border-subtle py-3"
+                accessibilityRole="checkbox"
+                accessibilityLabel={file.path}
+                accessibilityState={{ checked: included }}
+                onPress={() =>
+                  setExcludedFiles((current) => {
+                    const next = new Set(current);
+                    if (next.has(file.path)) next.delete(file.path);
+                    else next.add(file.path);
+                    return next;
+                  })
+                }
               >
-                <Text className="text-foreground text-2xs font-t3-bold uppercase">
-                  {isEditingFiles ? "Done" : "Edit"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {allFiles.length === 0 ? (
-            <Text className="text-foreground-secondary text-sm leading-normal">
-              No changed files are available to commit.
-            </Text>
-          ) : !isEditingFiles ? (
-            <View className="gap-2">
-              {selectedFilePreview.map((file) => (
-                <View key={file.path} className="flex-row items-center justify-between gap-3">
-                  <Text className="text-foreground flex-1 text-sm font-medium" numberOfLines={1}>
-                    {file.path}
-                  </Text>
-                  <Text className="text-xs font-t3-bold text-emerald-500">+{file.insertions}</Text>
-                  <Text className="text-xs font-t3-bold text-rose-500">-{file.deletions}</Text>
-                </View>
-              ))}
-              {selectedFiles.length > selectedFilePreview.length ? (
-                <Text className="text-foreground-muted text-xs leading-snug">
-                  +{selectedFiles.length - selectedFilePreview.length} more files
-                </Text>
-              ) : null}
-            </View>
-          ) : (
-            <View className="gap-2">
-              {allFiles.map((file) => {
-                const included = !excludedFiles.has(file.path);
-                return (
-                  <Pressable
-                    key={file.path}
-                    className={cn(
-                      "rounded-[18px] border px-4 py-3",
-                      included ? "border-border" : "border-border-subtle",
-                    )}
-                    onPress={() => {
-                      setExcludedFiles((current) => {
-                        const next = new Set(current);
-                        if (next.has(file.path)) {
-                          next.delete(file.path);
-                        } else {
-                          next.add(file.path);
-                        }
-                        return next;
-                      });
-                    }}
-                  >
-                    <View
-                      className={`absolute inset-0 rounded-[18px] ${included ? "bg-card" : "bg-subtle"}`}
+                <View
+                  className={cn(
+                    "size-5 items-center justify-center rounded-full",
+                    included ? "bg-primary" : "border border-input-border",
+                  )}
+                >
+                  {included ? (
+                    <SymbolView
+                      name="checkmark"
+                      size={13}
+                      tintColorClassName="accent-primary-foreground"
                     />
-                    <View className="flex-row items-start justify-between gap-3">
-                      <View className="flex-1 gap-1">
-                        <Text
-                          selectable
-                          className={`text-sm font-t3-bold ${included ? "text-foreground" : "text-foreground-muted"}`}
-                        >
-                          {file.path}
-                        </Text>
-                        {!included ? (
-                          <Text className="text-foreground-muted text-2xs leading-normal">
-                            Excluded from this commit
-                          </Text>
-                        ) : null}
-                      </View>
-                      <View className="items-end gap-1">
-                        <Text className="text-xs font-t3-bold text-emerald-500">
-                          +{file.insertions}
-                        </Text>
-                        <Text className="text-xs font-t3-bold text-rose-500">
-                          -{file.deletions}
-                        </Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        <View className="gap-2">
-          <Text className="text-foreground text-sm font-t3-bold">Commit message</Text>
-          <TextInput
-            multiline
-            value={dialogCommitMessage}
-            onChangeText={setDialogCommitMessage}
-            placeholder="Leave empty to auto-generate"
-            textAlignVertical="top"
-            className="min-h-[128px] rounded-[20px] px-4 py-3.5"
-          />
-        </View>
-
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <SheetActionButton
-              icon="arrow.branch"
-              label="Commit on new branch"
-              disabled={noneSelected || busy}
-              onPress={() => void runCommitAction(true)}
-            />
-          </View>
-          <View className="flex-1">
-            <SheetActionButton
-              icon="checkmark.circle"
-              label="Commit"
-              tone="primary"
-              disabled={noneSelected || busy}
-              onPress={() => void runCommitAction(false)}
-            />
-          </View>
-        </View>
-      </ScrollView>
-    </View>
+                  ) : null}
+                </View>
+                <View className="flex-1 gap-1">
+                  <Text
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                    className="text-sm font-t3-medium text-foreground"
+                  >
+                    {name}
+                  </Text>
+                  {directory ? (
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="middle"
+                      className="text-xs text-foreground-muted"
+                    >
+                      {directory}
+                    </Text>
+                  ) : null}
+                </View>
+                <View className="flex-row gap-2">
+                  <Text className="text-xs text-adaptive-emerald-700-300">
+                    +{formatDiffCount(file.insertions)}
+                  </Text>
+                  <Text className="text-xs text-adaptive-rose-700-300">
+                    −{formatDiffCount(file.deletions)}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })
+        )}
+      </View>
+      <View className="gap-2">
+        <Button
+          label={gt("Commit changes")}
+          icon="checkmark"
+          tone="primary"
+          fullWidth
+          disabled={!canWriteSourceControl || noneSelected || busy}
+          onPress={() => void runCommitAction(false)}
+        />
+        <Button
+          label={gt("Commit on a new branch")}
+          icon="arrow.branch"
+          tone="text"
+          fullWidth
+          disabled={!canWriteSourceControl || !canCreateFeatureBranch || noneSelected || busy}
+          onPress={() => void runCommitAction(true)}
+        />
+      </View>
+    </FitSheet>
   );
 }

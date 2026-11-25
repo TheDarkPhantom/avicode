@@ -2,63 +2,57 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import {
-  VcsCreateWorktreeInput,
-  GitPreparePullRequestThreadInput,
-  GitRunStackedActionResult,
+  GitCommandError,
+  GitPreparePullRequestThreadResult,
   GitRunStackedActionInput,
-  GitResolvePullRequestResult,
-  WorktreeHealthSnapshot,
+  VcsCreateWorktreeInput,
+  VcsRef,
 } from "./git.ts";
+import { WorktreeMcpHandoffInput } from "./worktreeMcp.ts";
+import { PullRequestDiffFileContentsInput } from "./pullRequest.ts";
+import { ReviewDiffFileContentsInput } from "./review.ts";
 
+const encodeVcsRef = Schema.encodeUnknownSync(VcsRef);
+const decodeVcsRef = Schema.decodeUnknownSync(VcsRef);
+const encodeCreateWorktreeInput = Schema.encodeUnknownSync(VcsCreateWorktreeInput);
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInput);
-const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
-  GitPreparePullRequestThreadInput,
+const decodeWorktreeHandoffInput = Schema.decodeUnknownSync(WorktreeMcpHandoffInput);
+const decodeGitCommandError = Schema.decodeUnknownSync(Schema.toCodecJson(GitCommandError));
+const decodePreparePullRequestThreadResult = Schema.decodeUnknownSync(
+  GitPreparePullRequestThreadResult,
 );
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
-const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
-const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
+const encodeRunStackedActionInput = Schema.encodeUnknownSync(GitRunStackedActionInput);
+const decodeReviewDiffFileContentsInput = Schema.decodeUnknownSync(ReviewDiffFileContentsInput);
+const encodeReviewDiffFileContentsInput = Schema.encodeUnknownSync(ReviewDiffFileContentsInput);
+const decodePullRequestDiffFileContentsInput = Schema.decodeUnknownSync(
+  PullRequestDiffFileContentsInput,
+);
+const encodePullRequestDiffFileContentsInput = Schema.encodeUnknownSync(
+  PullRequestDiffFileContentsInput,
+);
 
-describe("VcsCreateWorktreeInput", () => {
-  it("accepts omitted newRefName for existing-refName worktrees", () => {
-    const parsed = decodeCreateWorktreeInput({
+describe("GitCommandError", () => {
+  it("decodes an unknown failure reason as absent", () => {
+    const error = decodeGitCommandError({
+      _tag: "GitCommandError",
+      operation: "GitVcsDriver.createWorktree",
+      command: "git",
       cwd: "/repo",
-      refName: "feature/existing",
-      path: "/tmp/worktree",
+      detail: "git worktree add failed",
+      reason: "added_by_a_newer_server",
     });
 
-    expect(parsed.newRefName).toBeUndefined();
-    expect(parsed.refName).toBe("feature/existing");
-  });
-
-  it("accepts baseRefName metadata for a new worktree ref", () => {
-    const parsed = decodeCreateWorktreeInput({
-      cwd: "/repo",
-      refName: "0123456789abcdef",
-      newRefName: "feature/new",
-      baseRefName: "origin/main",
-      path: "/tmp/worktree",
-    });
-
-    expect(parsed.baseRefName).toBe("origin/main");
-  });
-});
-
-describe("GitPreparePullRequestThreadInput", () => {
-  it("accepts pull request references and mode", () => {
-    const parsed = decodePreparePullRequestThreadInput({
-      cwd: "/repo",
-      reference: "#42",
-      mode: "worktree",
-    });
-
-    expect(parsed.reference).toBe("#42");
-    expect(parsed.mode).toBe("worktree");
+    expect(error.reason).toBeUndefined();
+    expect(error.message).toBe(
+      "Git command failed in GitVcsDriver.createWorktree (/repo): git worktree add failed",
+    );
   });
 });
 
-describe("GitResolvePullRequestResult", () => {
-  it("decodes resolved pull request metadata", () => {
-    const parsed = decodeResolvePullRequestResult({
+describe("GitPreparePullRequestThreadResult", () => {
+  it("defaults legacy responses to the pull request head", () => {
+    const parsed = decodePreparePullRequestThreadResult({
       pullRequest: {
         number: 42,
         title: "PR threads",
@@ -67,116 +61,81 @@ describe("GitResolvePullRequestResult", () => {
         headBranch: "feature/pr-threads",
         state: "open",
       },
+      branch: "feature/pr-threads",
+      worktreePath: "/tmp/pr-threads",
     });
 
-    expect(parsed.pullRequest.number).toBe(42);
-    expect(parsed.pullRequest.headBranch).toBe("feature/pr-threads");
+    expect(parsed.isOnPullRequestHead).toBe(true);
   });
 });
 
-describe("GitRunStackedActionInput", () => {
-  it("accepts explicit stacked actions and requires a client-provided actionId", () => {
-    const parsed = decodeRunStackedActionInput({
-      actionId: "action-1",
-      cwd: "/repo",
-      action: "create_pr",
-    });
-
-    expect(parsed.actionId).toBe("action-1");
-    expect(parsed.action).toBe("create_pr");
+describe("Git file paths", () => {
+  it.each([
+    {
+      operation: "commit",
+      decode: decodeRunStackedActionInput,
+      encode: encodeRunStackedActionInput,
+      input: {
+        actionId: "action-1",
+        cwd: "/repo",
+        action: "commit",
+        filePaths: [" leading.txt", "trailing.txt "],
+      },
+    },
+    {
+      operation: "local diff expansion",
+      decode: decodeReviewDiffFileContentsInput,
+      encode: encodeReviewDiffFileContentsInput,
+      input: {
+        cwd: "/repo",
+        sourceKind: "working-tree",
+        changeType: "rename-changed",
+        baseRef: "HEAD",
+        headRef: null,
+        oldPath: " leading.txt",
+        newPath: "trailing.txt ",
+      },
+    },
+    {
+      operation: "pull request diff expansion",
+      decode: decodePullRequestDiffFileContentsInput,
+      encode: encodePullRequestDiffFileContentsInput,
+      input: {
+        projectId: "project-1",
+        repository: "owner/repo",
+        number: 1,
+        changeType: "rename-changed",
+        oldPath: " leading.txt",
+        newPath: "trailing.txt ",
+      },
+    },
+  ])("preserves leading and trailing whitespace for $operation", ({ decode, encode, input }) => {
+    expect(decode(input)).toEqual(input);
+    expect(encode(input)).toEqual(input);
   });
 });
 
-describe("GitRunStackedActionResult", () => {
-  it("decodes a server-authored completion toast", () => {
-    const parsed = decodeRunStackedActionResult({
-      action: "commit_push",
-      branch: {
-        status: "created",
-        name: "feature/server-owned-toast",
-      },
-      commit: {
-        status: "created",
-        commitSha: "89abcdef01234567",
-        subject: "feat: move toast state into git manager",
-      },
-      push: {
-        status: "pushed",
-        branch: "feature/server-owned-toast",
-        upstreamBranch: "origin/feature/server-owned-toast",
-      },
-      pr: {
-        status: "skipped_not_requested",
-      },
-      toast: {
-        title: "Pushed 89abcde to origin/feature/server-owned-toast",
-        description: "feat: move toast state into git manager",
-        cta: {
-          kind: "run_action",
-          label: "Create PR",
-          action: {
-            kind: "create_pr",
-          },
-        },
-      },
-    });
+describe("Git ref names", () => {
+  it.each(["origin/release/v2\u3000", "\u00a0release", "\u3000"])(
+    "keeps Unicode whitespace at the edges of %j across the wire",
+    (name) => {
+      const ref = { name, upstreamRef: `refs/remotes/${name}`, current: false, isDefault: false };
+      const wireRef = encodeVcsRef({ ...ref, worktreePath: null });
+      expect(decodeVcsRef(wireRef)).toMatchObject(ref);
 
-    expect(parsed.toast.cta.kind).toBe("run_action");
-    if (parsed.toast.cta.kind === "run_action") {
-      expect(parsed.toast.cta.action.kind).toBe("create_pr");
-    }
-  });
-});
+      const input = { cwd: "/repo", refName: name, newRefName: name, baseRefName: name };
+      const wireInput = encodeCreateWorktreeInput({ ...input, path: null });
+      expect(decodeCreateWorktreeInput(wireInput)).toMatchObject(input);
 
-describe("WorktreeHealthSnapshot", () => {
-  const decode = Schema.decodeUnknownSync(WorktreeHealthSnapshot);
-  const encode = Schema.encodeSync(WorktreeHealthSnapshot);
+      const handoff = { branch: name, baseRef: name, startFromOrigin: true };
+      expect(decodeWorktreeHandoffInput(handoff)).toEqual(handoff);
+    },
+  );
 
-  it("round-trips a breached snapshot with an auto-cleanup summary", () => {
-    const value = {
-      checkedAt: "2026-09-24T00:00:00.000Z",
-      trigger: "interval" as const,
-      freeBytes: 30 * 1024 * 1024 * 1024,
-      totalBytes: 500 * 1024 * 1024 * 1024,
-      deadCount: 90,
-      deadCleanCount: 0,
-      deadDirtyCount: 3,
-      perProject: [
-        {
-          projectId: "p1",
-          cwd: "/repo/one",
-          deadCleanCount: 0,
-          deadDirtyCount: 3,
-          error: null,
-        },
-      ],
-      thresholds: { deadCountThreshold: 80, lowDiskGb: 20 },
-      breached: true,
-      breachReasons: ["dead-count" as const, "low-disk" as const],
-      autoCleanup: { removedCount: 88, failedCount: 0, freedBytes: 20 * 1024 * 1024 * 1024 },
-    };
-    const parsed = decode(value);
-    expect(parsed.breachReasons).toEqual(["dead-count", "low-disk"]);
-    expect(parsed.autoCleanup?.removedCount).toBe(88);
-    expect(encode(parsed)).toEqual(value);
-  });
-
-  it("accepts null disk numbers and no auto-cleanup", () => {
-    const parsed = decode({
-      checkedAt: "2026-09-24T00:00:00.000Z",
-      trigger: "manual",
-      freeBytes: null,
-      totalBytes: null,
-      deadCount: 0,
-      deadCleanCount: 0,
-      deadDirtyCount: 0,
-      perProject: [],
-      thresholds: { deadCountThreshold: 80, lowDiskGb: 0 },
-      breached: false,
-      breachReasons: [],
-      autoCleanup: null,
-    });
-    expect(parsed.freeBytes).toBeNull();
-    expect(parsed.autoCleanup).toBeNull();
+  it("still trims ASCII whitespace and rejects a blank name", () => {
+    expect(
+      decodeCreateWorktreeInput({ cwd: "/repo", refName: " \tmain\n", path: null }).refName,
+    ).toBe("main");
+    expect(() => decodeCreateWorktreeInput({ cwd: "/repo", refName: " \t", path: null })).toThrow();
   });
 });

@@ -6,7 +6,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as PlatformError from "effect/PlatformError";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as CodexError from "../errors.ts";
 import * as CodexProtocol from "../protocol.ts";
@@ -59,23 +59,6 @@ describe("Codex App Server child process termination", () => {
         error.message,
         "Codex App Server process exited with code 1: Error: invalid config",
       );
-    }),
-  );
-
-  it.effect("retains the process identifier with the exit code", () =>
-    Effect.gen(function* () {
-      const error = yield* makeTerminationError(
-        {
-          pid: ChildProcessSpawner.ProcessId(51),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(9)),
-        },
-        Effect.succeed(""),
-      );
-
-      assert.instanceOf(error, CodexError.CodexAppServerProcessExitedError);
-      assert.equal(error.pid, 51);
-      assert.equal(error.code, 9);
-      assert.equal(error.message, "Codex App Server process exited with code 9");
     }),
   );
 
@@ -182,6 +165,45 @@ describe("Codex App Server stderr excerpt", () => {
       name: "unlabelled message",
       stderr: "WARNING: proceeding without PATH aliases\nMissing OpenAI API key.\n",
       excerpt: "Missing OpenAI API key.",
+    },
+    {
+      name: "launcher exit summary after a DNS failure",
+      stderr: [
+        "Starting provider",
+        'проверить токен LLM: Get "https://llm-gateway.example/api/models": dial tcp: lookup llm-gateway.example: no such host',
+        "не удалось отправить метрики на сервер: no such host",
+        "Ошибка: ошибка запуска плагина: exit status 1",
+      ].join("\n"),
+      excerpt:
+        'проверить токен LLM: Get "https://llm-gateway.example/api/models": dial tcp: lookup llm-gateway.example: no such host | не удалось отправить метрики на сервер: no such host | Ошибка: ошибка запуска плагина: exit status 1',
+    },
+    {
+      name: "labelled launcher exit summary after an authentication failure",
+      stderr: [
+        'oauth2: "invalid_request" "Errors.OIDCSession.RefreshTokenInvalid"',
+        "Error: provider launcher exited with code 1.",
+      ].join("\n"),
+      excerpt:
+        'oauth2: "invalid_request" "Errors.OIDCSession.RefreshTokenInvalid" | Error: provider launcher exited with code 1.',
+    },
+    {
+      name: "final launcher summary takes precedence over an earlier error label",
+      stderr: [
+        "Error: starting provider",
+        "lookup failed: no such host",
+        "Ошибка: exit status 1",
+      ].join("\n"),
+      excerpt: "Error: starting provider | lookup failed: no such host | Ошибка: exit status 1",
+    },
+    {
+      name: "launcher summary alone",
+      stderr: "Error: command failed with exit code 1\n",
+      excerpt: "Error: command failed with exit code 1",
+    },
+    {
+      name: "launcher diagnostics remain bounded",
+      stderr: `${"x".repeat(1_000)}\noauth2: invalid_request\nError: launcher exited with code 1\n`,
+      excerpt: `…${`${"x".repeat(1_000)} | oauth2: invalid_request | Error: launcher exited with code 1`.slice(-511)}`,
     },
     {
       name: "ANSI color, carriage returns and repeated whitespace",

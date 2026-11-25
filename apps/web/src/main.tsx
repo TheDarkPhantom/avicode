@@ -1,58 +1,53 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ClerkProvider } from "@clerk/react";
-import { passkeys } from "@clerk/electron/passkeys";
-import { ClerkProvider as ElectronClerkProvider } from "@clerk/electron/react";
-import { createHashHistory, createBrowserHistory } from "@tanstack/react-router";
 
-import "@fontsource-variable/dm-sans/index.css";
-import "@fontsource/jetbrains-mono/400.css";
-import "@fontsource/jetbrains-mono/500.css";
-import "@xterm/xterm/css/xterm.css";
+import "@fontsource-variable/inter";
 import "./index.css";
 
-import { restorePersistedAppZoomLevel } from "./appZoom";
-import { isElectron } from "./env";
-import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
+import { trackKeyboardLayout } from "./keyboardLayout";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
-import { getRouter } from "./router";
-import {
-  syncDocumentElectronPlatformClasses,
-  syncDocumentWindowControlsOverlayClass,
-} from "./lib/windowControlsOverlay";
+import { isElectron } from "./env";
+import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
+import { whenLocaleReady } from "./i18n/runtime";
+import { chunkLoadState } from "./lib/chunkReloadGuard";
 
-// Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-const history = isElectron ? createHashHistory() : createBrowserHistory();
+const stopTrackingKeyboardLayout = trackKeyboardLayout();
+import.meta.hot?.dispose(stopTrackingKeyboardLayout);
 
-const router = getRouter(history);
-
-if (isElectron) {
-  syncDocumentElectronPlatformClasses(navigator.platform);
-  syncDocumentWindowControlsOverlayClass();
-  // Electron resets the frame to 100% on every load, so the persisted level has
-  // to be re-applied before first paint to avoid a visible resize.
-  restorePersistedAppZoomLevel();
-}
+const router = startAppServices();
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 const app = <AppRoot router={router} />;
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    {clerkPublishableKey && hasCloudPublicConfig() ? (
-      isElectron ? (
-        <ElectronClerkProvider publishableKey={clerkPublishableKey} passkeys={passkeys}>
-          <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>
-        </ElectronClerkProvider>
-      ) : (
-        <ClerkProvider publishableKey={clerkPublishableKey}>
-          <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>
-        </ClerkProvider>
-      )
-    ) : (
-      app
-    )}
-  </React.StrictMode>,
-);
+// Split by runtime to keep Clerk out of local startup and clerk-js out of browser builds.
+const managedAuthShellModule =
+  clerkPublishableKey && hasCloudPublicConfig()
+    ? isElectron
+      ? import("./components/clerk/ElectronManagedAuthShell")
+      : import("./components/clerk/BrowserManagedAuthShell")
+    : null;
+
+export const startup = Promise.all([
+  managedAuthShellModule?.then((module) => module.default) ?? null,
+  // Chained so settings have usually hydrated; English resolves without a chunk load.
+  router.load().then(whenLocaleReady),
+])
+  .then(([ManagedAuthShell]) => {
+    // Route chunk failures resolve router.load() and surface later through the error boundary.
+    if (chunkLoadState.reloadScheduled) return;
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode>
+        {ManagedAuthShell && clerkPublishableKey ? (
+          <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
+        ) : (
+          app
+        )}
+      </React.StrictMode>,
+    );
+  })
+  .catch((error: unknown) => {
+    if (chunkLoadState.reloadScheduled) return;
+    throw error;
+  });

@@ -6,70 +6,57 @@ import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  attachmentFileExtension,
-  attachmentRelativePath,
-  attachmentRelativePaths,
+  chatAttachmentStableKey,
   createAttachmentId,
+  createDeterministicAttachmentId,
   createPendingAttachmentId,
-  documentHasOriginal,
   parseAttachmentUuid,
-  parseAttachmentFileExtension,
   planAttachmentClaim,
   parseThreadSegmentFromAttachmentId,
-  resolveAttachmentPathById,
   sweepStalePendingAttachments,
+  threadHtmlRenderAttachmentIds,
 } from "./attachmentStore.ts";
 
 describe("attachmentStore", () => {
-  it("stores extracted documents as local text rather than original binaries", () => {
-    expect(
-      attachmentRelativePath({
-        type: "document",
-        id: "thread-1-00000000-0000-4000-8000-000000000001",
-        name: "brief.pdf",
-        mimeType: "application/pdf",
-        sizeBytes: 1024,
-        extractedChars: 42,
-      }),
-    ).toMatch(/\.txt$/);
+  it("derives stable attachment ids for idempotent message retries", () => {
+    const first = createDeterministicAttachmentId("thread-1", "message-1:0");
+    const retry = createDeterministicAttachmentId("thread-1", "message-1:0");
+    const next = createDeterministicAttachmentId("thread-1", "message-1:1");
+
+    expect(first).toBe(retry);
+    expect(next).not.toBe(first);
+    expect(first && parseThreadSegmentFromAttachmentId(first)).toBe("thread-1");
   });
 
-  // Avi Code addition: a document with a stored original points at the
-  // original and also owns its extracted-text sidecar.
-  it("points documents with a stored original at the original file", () => {
-    const document = {
-      type: "document" as const,
-      id: "thread-1-00000000-0000-4000-8000-000000000001-pdf",
-      name: "brief.pdf",
-      mimeType: "application/pdf" as const,
-      sizeBytes: 1024,
-      extractedChars: 42,
-    };
-    expect(documentHasOriginal(document)).toBe(true);
-    expect(attachmentRelativePath(document)).toBe(`${document.id}.pdf`);
-    expect(attachmentRelativePaths(document)).toEqual([`${document.id}.pdf`, `${document.id}.txt`]);
+  it("gives a queued edit's new image its own id instead of an earlier image's", () => {
+    const imageA = new Uint8Array([1, 2, 3]);
+    const imageB = new Uint8Array([4, 5, 6]);
+    const sent = createDeterministicAttachmentId(
+      "thread-1",
+      chatAttachmentStableKey("message-1", 0, imageA),
+    );
+    const retried = createDeterministicAttachmentId(
+      "thread-1",
+      chatAttachmentStableKey("message-1", 0, imageA),
+    );
+    const edited = createDeterministicAttachmentId(
+      "thread-1",
+      chatAttachmentStableKey("message-1", 0, imageB),
+    );
 
-    const textDocument = { ...document, id: `${document.id.slice(0, -4)}-txt`, name: "notes.txt" };
-    expect(attachmentRelativePaths(textDocument)).toEqual([`${textDocument.id}.txt`]);
-
-    const legacy = { ...document, id: "thread-1-00000000-0000-4000-8000-000000000002" };
-    expect(documentHasOriginal(legacy)).toBe(false);
-    expect(attachmentRelativePaths(legacy)).toEqual([`${legacy.id}.txt`]);
+    expect(retried).toBe(sent);
+    expect(edited).not.toBe(sent);
   });
 
-  it("sanitizes thread ids when creating attachment ids", () => {
-    const attachmentId = createAttachmentId("thread.folder/unsafe space");
-    expect(attachmentId).toBeTruthy();
-    if (!attachmentId) {
-      return;
-    }
+  it("keeps deterministic ids distinct when sanitized thread segments collide", () => {
+    const dotted = createDeterministicAttachmentId("thread.a", "message-1:0");
+    const dashed = createDeterministicAttachmentId("thread-a", "message-1:0");
 
-    const threadSegment = parseThreadSegmentFromAttachmentId(attachmentId);
-    expect(threadSegment).toBeTruthy();
-    expect(threadSegment).toMatch(/^[a-z0-9_-]+$/i);
-    expect(threadSegment).not.toContain(".");
-    expect(threadSegment).not.toContain("%");
-    expect(threadSegment).not.toContain("/");
+    expect(dotted).toBeTruthy();
+    expect(dashed).toBeTruthy();
+    expect(dotted).not.toBe(dashed);
+    expect(dotted && parseThreadSegmentFromAttachmentId(dotted)).toBe("thread-a");
+    expect(dashed && parseThreadSegmentFromAttachmentId(dashed)).toBe("thread-a");
   });
 
   it("parses exact thread segments from attachment ids without prefix collisions", () => {
@@ -80,15 +67,6 @@ describe("attachmentStore", () => {
     expect(parseThreadSegmentFromAttachmentId(fooBarId)).toBe("foo-bar");
   });
 
-  it("normalizes created thread segments to lowercase", () => {
-    const attachmentId = createAttachmentId("Thread.Foo");
-    expect(attachmentId).toBeTruthy();
-    if (!attachmentId) {
-      return;
-    }
-    expect(parseThreadSegmentFromAttachmentId(attachmentId)).toBe("thread-foo");
-  });
-
   it("reserves the pending attachment segment", () => {
     const pendingId = createPendingAttachmentId();
     expect(parseThreadSegmentFromAttachmentId(pendingId)).toBe("pending");
@@ -97,70 +75,6 @@ describe("attachmentStore", () => {
     expect(parseThreadSegmentFromAttachmentId(createAttachmentId("pending_thread")!)).toBe(
       "pending_thread",
     );
-  });
-
-  it("preserves safe file extensions in attachment ids and paths", () => {
-    const attachmentId = createPendingAttachmentId(".PDF");
-
-    expect(parseThreadSegmentFromAttachmentId(attachmentId)).toBe("pending");
-    expect(parseAttachmentUuid(attachmentId)).toMatch(/^[a-f0-9-]{36}$/);
-    expect(parseAttachmentFileExtension(attachmentId)).toBe("pdf");
-    expect(attachmentFileExtension("report.PDF")).toBe(".pdf");
-    expect(attachmentFileExtension("report")).toBe(".bin");
-    expect(attachmentFileExtension("report.extensiontoolong")).toBe(".bin");
-    // ".part" is the in-flight upload suffix; storing it would make the file
-    // look like a stale partial to the sweep.
-    expect(attachmentFileExtension("archive.part")).toBe(".bin");
-    expect(createAttachmentId("x".repeat(80), ".abcdefghij")?.length).toBeLessThanOrEqual(128);
-  });
-
-  it("resolves attachment path by id using the extension that exists on disk", () => {
-    const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
-    );
-    try {
-      const attachmentId = "thread-1-attachment";
-      const pngPath = NodePath.join(attachmentsDir, `${attachmentId}.png`);
-      NodeFS.writeFileSync(pngPath, Buffer.from("hello"));
-
-      const resolved = resolveAttachmentPathById({
-        attachmentsDir,
-        attachmentId,
-      });
-      expect(resolved).toBe(pngPath);
-    } finally {
-      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
-    }
-  });
-
-  it("returns null when no attachment file exists for the id", () => {
-    const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
-    );
-    try {
-      const resolved = resolveAttachmentPathById({
-        attachmentsDir,
-        attachmentId: "thread-1-missing",
-      });
-      expect(resolved).toBeNull();
-    } finally {
-      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
-    }
-  });
-
-  it("resolves generic attachments without scanning the attachment directory", () => {
-    const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-file-attachment-"),
-    );
-    try {
-      const attachmentId = "thread-1-00000000-0000-4000-8000-000000000001-zip";
-      const archivePath = NodePath.join(attachmentsDir, `${attachmentId}.zip`);
-      NodeFS.writeFileSync(archivePath, Buffer.from("archive"));
-
-      expect(resolveAttachmentPathById({ attachmentsDir, attachmentId })).toBe(archivePath);
-    } finally {
-      NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
-    }
   });
 
   it("plans pending attachment claims with direct filename lookups", () => {
@@ -219,20 +133,81 @@ describe("attachmentStore", () => {
       const uuid = "00000000-0000-4000-8000-000000000002";
       const pendingPath = NodePath.join(attachmentsDir, `pending-${uuid}.png`);
       const pendingFilePath = NodePath.join(attachmentsDir, `pending-${uuid}-pdf.pdf`);
+      const sidecarPath = `${pendingFilePath}.txt`;
       const threadPath = NodePath.join(attachmentsDir, `thread-1-${uuid}.png`);
       const partialPath = NodePath.join(attachmentsDir, `${uuid}.part`);
-      for (const filePath of [pendingPath, pendingFilePath, threadPath, partialPath]) {
+      for (const filePath of [pendingPath, pendingFilePath, sidecarPath, threadPath, partialPath]) {
         NodeFS.writeFileSync(filePath, Buffer.from("pixels"));
         NodeFS.utimesSync(filePath, oldTimeSeconds, oldTimeSeconds);
       }
 
-      expect(sweepStalePendingAttachments({ attachmentsDir, nowMs: now })).toEqual({ deleted: 3 });
+      expect(sweepStalePendingAttachments({ attachmentsDir, nowMs: now })).toEqual({ deleted: 4 });
       expect(NodeFS.existsSync(pendingPath)).toBe(false);
       expect(NodeFS.existsSync(pendingFilePath)).toBe(false);
+      expect(NodeFS.existsSync(sidecarPath)).toBe(false);
       expect(NodeFS.existsSync(partialPath)).toBe(false);
       expect(NodeFS.existsSync(threadPath)).toBe(true);
     } finally {
       NodeFS.rmSync(attachmentsDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("threadHtmlRenderAttachmentIds", () => {
+  it("returns pages this thread published and skips other threads' and failed calls", () => {
+    const own = createAttachmentId("thread-a", "html")!;
+    const other = createAttachmentId("thread-b", "html")!;
+    const render = (attachmentId: string, extra = {}) => ({
+      toolName: "mcp__t3-code__html_render",
+      output: [
+        {
+          type: "text",
+          text: JSON.stringify({ htmlRender: { attachmentId, title: "x", height: 300 }, ...extra }),
+        },
+      ],
+    });
+    expect(
+      threadHtmlRenderAttachmentIds("thread-a", [
+        render(own),
+        render(other),
+        render(createAttachmentId("thread-a", "html")!, { isError: true }),
+        { toolName: "mcp__t3-code__html_preview", output: render(own).output },
+      ]),
+    ).toEqual([own]);
+  });
+
+  it("includes pages an OpenCode Code Mode execute script returned", () => {
+    const own = createAttachmentId("thread-a", "html")!;
+    expect(
+      threadHtmlRenderAttachmentIds("thread-a", [
+        {
+          toolName: "execute",
+          output: JSON.stringify({
+            htmlRender: { attachmentId: own, title: "x", height: 300 },
+            message: "Shown to the reader above your reply.",
+          }),
+        },
+      ]),
+    ).toEqual([own]);
+  });
+
+  it("includes captured MCP App documents from any tool", () => {
+    const app = createAttachmentId("thread-a", "html")!;
+    expect(
+      threadHtmlRenderAttachmentIds("thread-a", [
+        {
+          toolName: "weather.get_weather",
+          output: {
+            t3McpApp: {
+              attachmentId: app,
+              server: "weather",
+              tool: "get_weather",
+              resourceUri: "ui://weather/dashboard",
+            },
+            result: { content: [] },
+          },
+        },
+      ]),
+    ).toEqual([app]);
   });
 });

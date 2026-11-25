@@ -1,15 +1,18 @@
 import { useSyncExternalStore } from "react";
 
-import { isWindowsPlatform } from "./utils";
-import { subscribeToAppZoomLevel } from "../appZoom";
+import { isElectron } from "~/env";
+
+import { isMacPlatform, isWindowsPlatform } from "./utils";
 
 const WCO_CLASS_NAME = "wco";
 const ELECTRON_CLASS_NAME = "electron";
 const ELECTRON_WINDOWS_CLASS_NAME = "electron-windows";
+// macOS has no overlay API; traffic lights stay inside this topbar at every zoom level.
+const MACOS_TITLEBAR_HEIGHT = 52;
 
 interface WindowControlsOverlayLike {
   readonly visible: boolean;
-  getTitlebarAreaRect?(): DOMRect;
+  getTitlebarAreaRect(): DOMRect;
   addEventListener(type: "geometrychange", listener: EventListener): void;
   removeEventListener(type: "geometrychange", listener: EventListener): void;
 }
@@ -26,66 +29,22 @@ function getWindowControlsOverlay(): WindowControlsOverlayLike | null {
   return (navigator as NavigatorWithWindowControlsOverlay).windowControlsOverlay ?? null;
 }
 
-const OVERLAY_STYLE_PROPERTIES = [
-  "--workspace-topbar-height",
-  "--workspace-controls-top",
-  "--workspace-controls-left",
-  "--workspace-controls-right",
-  "--workspace-native-controls-inset",
-] as const;
-
-export function resolveWindowControlsOverlayGeometry(input: {
-  readonly rect: Pick<DOMRect, "height" | "width" | "x" | "y">;
-  readonly viewportWidth: number;
-}) {
-  const x = Math.max(0, input.rect.x);
-  const y = Math.max(0, input.rect.y);
-  const width = Math.max(0, input.rect.width);
-  const height = Math.max(0, input.rect.height);
-  const rightInset = Math.max(0, input.viewportWidth - x - width);
-  return { height, rightInset, x, y } as const;
+/** Height of the native caption strip drawn over the page, or 0 when the window has none. */
+export function windowControlsOverlayHeight(): number {
+  const overlay = getWindowControlsOverlay();
+  return overlay?.visible ? overlay.getTitlebarAreaRect().height : 0;
 }
 
-function clearWindowControlsOverlayGeometry(): void {
-  for (const property of OVERLAY_STYLE_PROPERTIES) {
-    document.documentElement.style.removeProperty(property);
+export function onWindowControlsOverlayGeometryChange(listener: () => void): () => void {
+  const overlay = getWindowControlsOverlay();
+  if (!overlay) {
+    return () => {};
   }
-}
 
-/**
- * Avi Code addition: decide whether a freshly measured caption-button inset is safe to
- * apply. Opening the right panel grows the native window asynchronously; during the grow
- * `window.innerWidth` updates a frame or two before `getTitlebarAreaRect()` catches up, so
- * a resize-driven read briefly reports a much larger `rightInset` and shoves the panel
- * toggle inward. The native-controls band never widens on a plain resize, so reject a
- * non-authoritative read that inflates the inset above the last stable value and wait for
- * the authoritative `geometrychange` snapshot. The first value (no prior) always applies.
- */
-export function shouldApplyWindowControlsOverlayInset(input: {
-  readonly candidateRightInset: number;
-  readonly lastAppliedRightInset: number | null;
-  readonly authoritative: boolean;
-}): boolean {
-  if (input.authoritative || input.lastAppliedRightInset === null) {
-    return true;
-  }
-  return input.candidateRightInset <= input.lastAppliedRightInset;
-}
-
-function applyResolvedWindowControlsOverlayGeometry(
-  geometry: ReturnType<typeof resolveWindowControlsOverlayGeometry>,
-): void {
-  const style = document.documentElement.style;
-  // Avi Code addition: same 40px floor as the `.wco` fallback in index.css, so a zoomed-in
-  // titlebar band (fewer CSS px) does not crush the top bar.
-  style.setProperty("--workspace-topbar-height", `max(40px, ${geometry.height}px)`);
-  style.setProperty("--workspace-controls-top", `${geometry.y}px`);
-  style.setProperty("--workspace-controls-left", `calc(${geometry.x}px + 0.75rem)`);
-  style.setProperty("--workspace-controls-right", `calc(${geometry.rightInset}px + 0.75rem)`);
-  style.setProperty(
-    "--workspace-native-controls-inset",
-    `calc(${geometry.rightInset}px + 0.75rem)`,
-  );
+  overlay.addEventListener("geometrychange", listener);
+  return () => {
+    overlay.removeEventListener("geometrychange", listener);
+  };
 }
 
 export function syncDocumentWindowControlsOverlayClass(): () => void {
@@ -94,114 +53,31 @@ export function syncDocumentWindowControlsOverlayClass(): () => void {
   }
 
   const overlay = getWindowControlsOverlay();
-
-  const syncClass = () => {
+  const update = () => {
     document.documentElement.classList.toggle(WCO_CLASS_NAME, overlay !== null && overlay.visible);
   };
 
-  // Avi Code addition: coalesce geometry reads into a frame and reject mid-grow transients
-  // (see shouldApplyWindowControlsOverlayInset). `geometrychange` and zoom are authoritative
-  // self-consistent snapshots; a bare `resize` may read a stale titlebar rect.
-  let frame: number | null = null;
-  let pendingAuthoritative = false;
-  let lastAppliedRightInset: number | null = null;
-
-  const applyGeometry = () => {
-    frame = null;
-    const authoritative = pendingAuthoritative;
-    pendingAuthoritative = false;
-    if (!overlay || !overlay.visible || typeof overlay.getTitlebarAreaRect !== "function") {
-      clearWindowControlsOverlayGeometry();
-      lastAppliedRightInset = null;
-      return;
-    }
-    const geometry = resolveWindowControlsOverlayGeometry({
-      rect: overlay.getTitlebarAreaRect(),
-      viewportWidth: window.innerWidth,
-    });
-    if (geometry.height === 0) {
-      clearWindowControlsOverlayGeometry();
-      lastAppliedRightInset = null;
-      return;
-    }
-    if (
-      !shouldApplyWindowControlsOverlayInset({
-        candidateRightInset: geometry.rightInset,
-        lastAppliedRightInset,
-        authoritative,
-      })
-    ) {
-      return;
-    }
-    applyResolvedWindowControlsOverlayGeometry(geometry);
-    lastAppliedRightInset = geometry.rightInset;
-  };
-
-  const scheduleGeometry = (authoritative: boolean) => {
-    if (authoritative) {
-      pendingAuthoritative = true;
-    }
-    if (frame !== null) {
-      return;
-    }
-    frame =
-      typeof requestAnimationFrame === "function"
-        ? requestAnimationFrame(applyGeometry)
-        : (applyGeometry(), null);
-  };
-
-  const onAuthoritative = () => {
-    syncClass();
-    scheduleGeometry(true);
-  };
-  const onResize = () => {
-    syncClass();
-    scheduleGeometry(false);
-  };
-
-  onAuthoritative();
-  if (!overlay) {
-    return () => {};
-  }
-
-  overlay.addEventListener("geometrychange", onAuthoritative);
-  window.addEventListener("resize", onResize);
-  const unsubscribeFromZoom = subscribeToAppZoomLevel(onAuthoritative);
-  return () => {
-    if (frame !== null && typeof cancelAnimationFrame === "function") {
-      cancelAnimationFrame(frame);
-    }
-    overlay.removeEventListener("geometrychange", onAuthoritative);
-    window.removeEventListener("resize", onResize);
-    unsubscribeFromZoom();
-    clearWindowControlsOverlayGeometry();
-  };
+  update();
+  return onWindowControlsOverlayGeometryChange(update);
 }
 
 function subscribeTitlebarArea(listener: () => void): () => void {
   const overlay = getWindowControlsOverlay();
   overlay?.addEventListener("geometrychange", listener);
-  // Avi Code addition: app zoom rescales the titlebar rect in CSS px without a
-  // guaranteed geometrychange, matching syncDocumentWindowControlsOverlayClass.
-  const unsubscribeFromZoom = subscribeToAppZoomLevel(listener);
-  return () => {
-    overlay?.removeEventListener("geometrychange", listener);
-    unsubscribeFromZoom();
-  };
+  return () => overlay?.removeEventListener("geometrychange", listener);
 }
 
 function getNativeTitlebarHeight(): number {
+  if (isElectron && isMacPlatform(navigator.platform)) return MACOS_TITLEBAR_HEIGHT;
   const overlay = getWindowControlsOverlay();
-  if (!overlay?.visible || typeof overlay.getTitlebarAreaRect !== "function") return 0;
-  return overlay.getTitlebarAreaRect().bottom;
+  return overlay?.visible ? overlay.getTitlebarAreaRect().bottom : 0;
 }
 
-/** Height of the strip at the top of the window where native window controls paint over the page. */
 export function useNativeTitlebarHeight(): number {
   return useSyncExternalStore(subscribeTitlebarArea, getNativeTitlebarHeight, () => 0);
 }
 
-export function getElectronPlatformClassNames(
+function getElectronPlatformClassNames(
   platform: string,
 ):
   | readonly [typeof ELECTRON_CLASS_NAME]

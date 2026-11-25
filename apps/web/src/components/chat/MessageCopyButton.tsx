@@ -1,59 +1,38 @@
+import { useGT } from "gt-react";
 import { memo, useRef } from "react";
-import { CopyIcon, CheckIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { cn } from "~/lib/utils";
-import { anchoredToastManager } from "../ui/toast";
+import {
+  ANCHORED_COPY_TOAST_TIMEOUT_MS,
+  showAnchoredCopyErrorToast,
+} from "../ui/anchoredCopyToast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-const ANCHORED_TOAST_TIMEOUT_MS = 1000;
-const onCopy = (ref: React.RefObject<HTMLButtonElement | null>) => {
-  if (ref.current) {
-    anchoredToastManager.add({
-      data: {
-        tooltipStyle: true,
-      },
-      positionerProps: {
-        anchor: ref.current,
-      },
-      timeout: ANCHORED_TOAST_TIMEOUT_MS,
-      title: "Copied!",
-    });
-  }
-};
-
-const onCopyError = (ref: React.RefObject<HTMLButtonElement | null>, error: Error) => {
-  if (ref.current) {
-    anchoredToastManager.add({
-      data: {
-        tooltipStyle: true,
-      },
-      positionerProps: {
-        anchor: ref.current,
-      },
-      timeout: ANCHORED_TOAST_TIMEOUT_MS,
-      title: "Failed to copy",
-      description: error.message,
-    });
-  }
-};
 
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
+  label: labelProp,
+  icon: Icon = CopyIcon,
+  extraFlavors,
   size = "xs",
   variant = "outline",
   className,
 }: {
   text: string;
+  label?: string;
+  icon?: LucideIcon;
+  extraFlavors?: Readonly<Record<string, string>>;
   size?: "xs" | "icon-xs";
   variant?: "outline" | "ghost";
   className?: string;
 }) {
+  const gt = useGT();
+  const label = labelProp ?? gt("Copy message");
   const ref = useRef<HTMLButtonElement>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
-    onCopy: () => onCopy(ref),
-    onError: (error: Error) => onCopyError(ref, error),
-    timeout: ANCHORED_TOAST_TIMEOUT_MS,
+    onError: (error: Error) => showAnchoredCopyErrorToast(ref, error),
+    timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
+    ...(extraFlavors ? { extraFlavors } : {}),
   });
 
   return (
@@ -61,21 +40,21 @@ export const MessageCopyButton = memo(function MessageCopyButton({
       <TooltipTrigger
         render={
           <Button
-            aria-label="Copy link"
+            aria-label={label}
             disabled={isCopied}
             onClick={() => copyToClipboard(text)}
             ref={ref}
             type="button"
             size={size}
-            variant={variant}
-            className={cn("text-muted-foreground hover:text-foreground", className)}
+            variant={variant === "ghost" ? "ghost-muted" : variant}
+            className={className}
           />
         }
       >
-        {isCopied ? <CheckIcon className="size-3 text-primary" /> : <CopyIcon className="size-3" />}
+        {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
       </TooltipTrigger>
       <TooltipPopup>
-        <p>Copy to clipboard</p>
+        <p>{label}</p>
       </TooltipPopup>
     </Tooltip>
   );

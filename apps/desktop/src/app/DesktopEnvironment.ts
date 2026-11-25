@@ -10,11 +10,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import { AVICODE_IDENTITY, formatAviCodeDisplayName } from "@t3tools/shared/avicodeIdentity";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
+import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
+import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
+import type { OtlpProtocol } from "@t3tools/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
   readonly dirname: string;
@@ -52,11 +54,11 @@ export class DesktopEnvironment extends Context.Service<
     readonly browserArtifactsDir: string;
     readonly rootDir: string;
     readonly appRoot: string;
+    readonly serverRoot: string;
     readonly backendEntryPath: string;
+    readonly clientAssetsDir: string;
     readonly backendCwd: string;
     readonly preloadPath: string;
-    // Avi Code addition (ported from upstream): preload that turns on the V8
-    // compile cache for the local backend.
     readonly compileCachePath: string;
     readonly appUpdateYmlPath: string;
     readonly devServerUrl: Option.Option<URL>;
@@ -64,23 +66,26 @@ export class DesktopEnvironment extends Context.Service<
     readonly configuredBackendPort: Option.Option<number>;
     readonly commitHashOverride: Option.Option<string>;
     readonly otlpTracesUrl: Option.Option<string>;
+    readonly otlpMetricsUrl: Option.Option<string>;
+    readonly otlpLogsUrl: Option.Option<string>;
     readonly otlpExportIntervalMs: number;
+    readonly otlpHeaders: Option.Option<Record<string, string>>;
+    readonly otlpProtocol: OtlpProtocol;
     readonly branding: DesktopAppBranding;
     readonly displayName: string;
     readonly appUserModelId: string;
     readonly linuxDesktopEntryName: string;
-    readonly linuxWmClass: string;
-    readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
+    readonly linuxApplicationsDir: string;
+    readonly desktopLauncherPath: Option.Option<string>;
+    readonly appImagePath: Option.Option<string>;
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
     readonly resolveResourcePathCandidates: (fileName: string) => readonly string[];
-    readonly developmentDockIconPath: string;
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = AVICODE_IDENTITY.productName;
+const APP_BASE_NAME = "T3 Code";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -90,10 +95,10 @@ function resolveDesktopAppStageLabel(input: {
     return "Dev";
   }
 
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
+  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Beta";
 }
 
-function resolveDesktopAppBranding(input: {
+export function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
 }): DesktopAppBranding {
@@ -101,7 +106,7 @@ function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: formatAviCodeDisplayName(stageLabel),
+    displayName: `${APP_BASE_NAME} (${stageLabel})`,
   };
 }
 
@@ -151,25 +156,32 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
-  const configuredBaseDir = config.t3Home;
-  const baseDir = Option.getOrElse(configuredBaseDir, () =>
-    path.join(homeDirectory, AVICODE_IDENTITY.homeDirectoryName),
-  );
+  const baseDir = resolveDesktopBaseDir({
+    homeDirectory,
+    joinPath: path.join,
+    t3Home: config.t3Home,
+  });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
+  const serverRoot =
+    input.isPackaged && input.platform === "win32"
+      ? path.join(input.resourcesPath, "server.asar")
+      : appRoot;
   const branding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
-  const stateDir = path.join(
+  const stateDir = resolveDesktopStateDir({
     baseDir,
-    isDevelopment && Option.isNone(configuredBaseDir) ? "dev" : "userdata",
+    isDevelopment,
+    joinPath: path.join,
+    t3Home: config.t3Home,
+  });
+  const linuxApplicationsDir = path.join(
+    Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
+    "applications",
   );
-  const userDataDirName = isDevelopment
-    ? AVICODE_IDENTITY.developmentUserDataDirectoryName
-    : AVICODE_IDENTITY.userDataDirectoryName;
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
@@ -194,7 +206,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     browserArtifactsDir: path.join(stateDir, "browser-artifacts"),
     rootDir,
     appRoot,
-    backendEntryPath: path.join(appRoot, "apps/server/dist/bin.mjs"),
+    serverRoot,
+    backendEntryPath: path.join(serverRoot, "apps/server/dist/bin.mjs"),
+    clientAssetsDir: path.join(serverRoot, "apps/server/dist/client"),
     backendCwd: input.isPackaged ? homeDirectory : appRoot,
     preloadPath: path.join(input.dirname, "preload.cjs"),
     compileCachePath: path.join(input.dirname, "compileCache.cjs"),
@@ -206,16 +220,20 @@ const make = Effect.fn("desktop.environment.make")(function* (
     configuredBackendPort: config.configuredBackendPort,
     commitHashOverride: config.commitHashOverride,
     otlpTracesUrl: config.otlpTracesUrl,
+    otlpMetricsUrl: config.otlpMetricsUrl,
+    otlpLogsUrl: config.otlpLogsUrl,
     otlpExportIntervalMs: config.otlpExportIntervalMs,
+    otlpHeaders: config.otlpHeaders,
+    otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? AVICODE_IDENTITY.developmentAppId : AVICODE_IDENTITY.appId,
+      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
     ),
-    linuxDesktopEntryName: isDevelopment ? "avicode-dev.desktop" : "avicode.desktop",
-    linuxWmClass: isDevelopment ? "avicode-dev" : "avicode",
-    userDataDirName,
-    legacyUserDataDirName,
+    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+    linuxApplicationsDir,
+    desktopLauncherPath: config.desktopLauncherPath,
+    appImagePath: config.appImagePath,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,
@@ -253,7 +271,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
       path.join(resourcesPath, "resources", fileName),
       path.join(resourcesPath, fileName),
     ],
-    developmentDockIconPath: path.join(rootDir, "assets", "dev", "blueprint-macos-1024.png"),
   });
 });
 

@@ -1,178 +1,106 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { Globe, Play, RadioTower } from "lucide-react";
-import { useMemo, useState } from "react";
+import { T } from "gt-react";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { parseUrl } from "@t3tools/shared/url";
+import { Globe, History, RadioTower } from "lucide-react";
 
-import { Button } from "~/components/ui/button";
+import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
-import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { useEnvironment } from "~/state/environments";
-import { previewEnvironment } from "~/state/preview";
-import { useAtomCommand } from "~/state/use-atom-command";
+import { DiscoveryList } from "../ui/discovery-list";
 
-import { groupLocalServers } from "./localServerAttribution";
-import { PreviewBookmarksBar } from "./PreviewBookmarksBar";
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
-import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
-import { type PreviewableServer, useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
-
-const serverKey = (server: PreviewableServer) => `${server.pid}:${server.port}`;
-
-/** Only a live server a terminal or an agent started has a job to stop. */
-const isStoppable = (server: PreviewableServer) =>
-  server.listening && server.pid !== null && (server.terminal != null || server.agent != null);
+import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
+import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
 
 interface Props {
+  threadRef: ScopedThreadRef;
   environmentId: EnvironmentId;
-  configuredUrls?: ReadonlyArray<ConfiguredPreviewUrl> | undefined;
-  recentlySeenUrls?: ReadonlyArray<string> | undefined;
-  /**
-   * Avi Code addition: which thread and project this panel belongs to, so the
-   * list can say which of these servers is the one you opened the browser for.
-   */
-  threadId?: ThreadId | null;
-  projectRoot?: string | null;
-  worktreePath?: string | null;
-  /**
-   * Avi Code addition: the project's primary action, so this panel can start the
-   * dev server itself when the thread does not have one running yet.
-   */
-  startDevServerLabel?: string | null;
-  onStartDevServer?: (() => void) | undefined;
+  configuredUrls?: ReadonlyArray<string> | undefined;
+  recentEntries: ReadonlyArray<BrowserHistoryEntry>;
+  onRemoveRecent: (url: string) => void;
   onOpenUrl: (url: string) => void;
-  /**
-   * Avi Code addition: opens a bookmark, normalizing it like a typed URL (the
-   * discovered-server `onOpenUrl` path resolves local ports, not external URLs).
-   */
-  onOpenBookmarkUrl: (url: string) => void;
 }
 
 export function PreviewEmptyState({
+  threadRef,
   environmentId,
   configuredUrls,
-  recentlySeenUrls,
-  threadId = null,
-  projectRoot = null,
-  worktreePath = null,
-  startDevServerLabel = null,
-  onStartDevServer,
+  recentEntries,
+  onRemoveRecent,
   onOpenUrl,
-  onOpenBookmarkUrl,
 }: Props) {
   const servers = useDiscoveredLocalServers({
     environmentId,
     configuredUrls,
-    recentlySeenUrls,
   });
+  const recents = recentEntries.filter((entry) => parseUrl(entry.url) !== null).slice(0, 8);
 
-  const sections = useMemo(
-    () => groupLocalServers(servers, { threadId, projectRoot, worktreePath }),
-    [projectRoot, servers, threadId, worktreePath],
-  );
-
-  // Avi Code addition: a listed server that a terminal or an agent started can be
-  // stopped from here. The server re-checks ownership and kills only that job.
-  const supportsStop =
-    useEnvironment(environmentId)?.serverConfig?.environment.capabilities.localServerStop === true;
-  const stopLocalServer = useAtomCommand(previewEnvironment.stopLocalServer, {
-    reportFailure: false,
-  });
-  const [stoppingKey, setStoppingKey] = useState<string | null>(null);
-  const stopServer = async (server: PreviewableServer) => {
-    if (server.pid === null || stoppingKey !== null) return;
-    setStoppingKey(serverKey(server));
-    const result = await stopLocalServer({
-      environmentId,
-      input: { pid: server.pid, port: server.port },
-    });
-    setStoppingKey(null);
-    if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-    const error = squashAtomCommandFailure(result);
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title: "Could not stop server",
-        description: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  };
-
-  // Avi Code addition: always offer Start when the project has a primary action to
-  // run, even if a server is already listed below. A running dev server (often for
-  // another thread or repo) no longer suppresses starting your own.
-  const canStart = onStartDevServer != null;
-
-  const startButton = canStart ? (
-    <Button size="sm" onClick={() => onStartDevServer?.()}>
-      <Play className="size-4" />
-      {startDevServerLabel ? `Start ${startDevServerLabel}` : "Start dev server"}
-    </Button>
-  ) : null;
-
-  const content =
-    servers.length === 0 ? (
+  if (servers.length === 0 && recents.length === 0) {
+    return (
       <Empty>
         <EmptyMedia variant="icon">
           <Globe className="size-4.5 text-muted-foreground" />
         </EmptyMedia>
-        <EmptyTitle>No preview yet</EmptyTitle>
+        <EmptyTitle>
+          <T>No preview yet</T>
+        </EmptyTitle>
         <EmptyDescription>
-          {/* Avi Code addition: the list is limited to servers this app started, so the
-              old promise of every listening localhost port would be a lie. */}
-          Type a URL above, or run a dev script. Servers you start here show up automatically.
+          <T>
+            Type a URL above, or run a dev script. Local servers this thread starts will show up
+            here automatically.
+          </T>
         </EmptyDescription>
-        {startButton}
       </Empty>
-    ) : (
-      <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
-        <div className="m-auto flex w-full max-w-xl flex-col gap-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <RadioTower className="size-4 shrink-0" />
-            <h2 className="font-medium">Local servers</h2>
-          </div>
-          {startButton ? <div className="flex">{startButton}</div> : null}
-          {sections.map((section) => (
-            <div key={section.group} className="flex flex-col gap-1.5">
-              {/* Only worth a heading once there is more than one group to tell apart. */}
-              {sections.length > 1 ? (
-                <h3 className="px-1 text-xs font-medium text-muted-foreground">{section.title}</h3>
-              ) : null}
-              <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
-                {section.servers.map((server) => (
-                  <PreviewLocalServerCard
-                    key={`${server.host}:${server.port}`}
-                    server={server}
-                    onOpen={() => onOpenUrl(server.url)}
-                    onStop={
-                      supportsStop && isStoppable(server)
-                        ? () => void stopServer(server)
-                        : undefined
-                    }
-                    stopping={stoppingKey === serverKey(server)}
-                    stopDisabled={stoppingKey !== null}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-          <p className="px-1 text-xs text-muted-foreground">
-            Select a listening port to open it in this browser tab.
-          </p>
-        </div>
-      </div>
     );
+  }
 
-  // Avi Code addition: the bookmarks bar sits above the empty-state content and
-  // only exists here, so it shows exactly when no page is loaded.
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-border/60 px-4 py-2">
-        <PreviewBookmarksBar onOpen={onOpenBookmarkUrl} />
+    <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
+        {recents.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <History className="size-4 shrink-0" />
+              <h2 className="font-medium">
+                <T>Recently used</T>
+              </h2>
+            </div>
+            <DiscoveryList>
+              {recents.map((entry) => (
+                <PreviewRecentUrlCard
+                  key={entry.url}
+                  threadRef={threadRef}
+                  entry={entry}
+                  onOpen={() => onOpenUrl(entry.url)}
+                  onRemove={() => onRemoveRecent(entry.url)}
+                />
+              ))}
+            </DiscoveryList>
+          </div>
+        ) : null}
+        {servers.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <RadioTower className="size-4 shrink-0" />
+              <h2 className="font-medium">
+                <T>Local servers</T>
+              </h2>
+            </div>
+            <DiscoveryList>
+              {servers.map((server) => (
+                <PreviewLocalServerCard
+                  key={`${server.host}:${server.port}`}
+                  threadRef={threadRef}
+                  server={server}
+                  onOpen={() => onOpenUrl(server.requestedUrl)}
+                />
+              ))}
+            </DiscoveryList>
+            <p className="px-1 text-xs text-muted-foreground">
+              <T>Select a live local server to open it in this browser tab.</T>
+            </p>
+          </div>
+        ) : null}
       </div>
-      <div className="min-h-0 flex-1">{content}</div>
     </div>
   );
 }

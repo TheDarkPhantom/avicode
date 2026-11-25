@@ -1,21 +1,5 @@
 # Brand icons
 
-> **Avi Code note.** Everything below is upstream's pipeline and it needs Icon Composer, which is
-> macOS only. This fork is Windows-only, so it cannot run `icons:export` or `icons:check` at all,
-> and the development slots were still holding upstream's blueprint "T3" art because of it.
->
-> The development variant is therefore generated from an SVG instead:
->
-> - Source: `dev/avicode-dev-logo.svg` (the production mark, recoloured blue so a dev build is
->   still obvious in the taskbar)
-> - Command: `node scripts/avicode/generate-dev-icons.mjs`
-> - Writes: `apps/web/public/{favicon.ico,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png}`
->   and `apps/desktop/resources/{icon.png,icon.ico,icon.icns}`
->
-> `prod/` already holds the Avi Code mark and is what packaged builds stage from, so production is
-> unaffected. `nightly/` is left on upstream's art because this fork never builds that channel.
-> Consequently `icons:check` will report the development assets as stale; that is expected here.
-
 The three Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`
@@ -24,7 +8,7 @@ The three Icon Composer projects are the source of truth for full application ic
 
 Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
 
-Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
+Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon, web app manifest icons, and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
 Exporting requires Icon Composer 2 or newer on macOS. The script selects the newest compatible exporter from Xcode or a standalone Icon Composer installation and pins design generation 26. Set `ICON_COMPOSER_TOOL` to the full path of `Icon Composer.app/Contents/Executables/ictool` to override automatic discovery.
 
@@ -64,3 +48,20 @@ Verify every result is 1024×1024 and has the classic macOS safe area: an 824×8
 ```
 
 Do not edit the generated PNG or ICO files directly.
+
+## Android launcher and splash artwork
+
+Android masks the central 72dp of a 108dp adaptive canvas, and the Android 12+ splash screen masks
+the central two thirds of a 288dp canvas, so the Icon Composer exports cannot be used directly:
+their rounded-square silhouette gets framed again and the wordmark is cropped. The Android artwork
+is instead rendered from the same Icon Composer SVG sources by `vp run icons:export:android`:
+
+- `apps/mobile/assets/android-icon-foreground.png`: the shared transparent wordmark, sized to stay
+  inside the safe zone
+- `apps/mobile/assets/android-icon-background-dev.png` and `-nightly.png`: full-bleed variant
+  artwork (blueprint grid and annotations; night sky and clouds). Production uses a solid color.
+- `apps/mobile/assets/android-splash-icon-*.png`: the two layers composed into one 288dp image, so
+  the splash mask reproduces the launcher icon's framing.
+
+Rerun the export after changing a layer SVG. `android-icon-mark.png` remains a flat silhouette for
+Android's monochrome themed icon.

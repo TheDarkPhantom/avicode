@@ -1,16 +1,34 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { releaseDraftAttachments } from "./attachmentUploadQueue";
 
-/**
- * Deletes the pending uploads a discarded draft still holds, including a
- * hydrated file's persisted upload. Call before the draft is cleared:
- * afterwards there is nothing left to read the ids from.
- */
 export function releaseComposerDraftUploads(target: ScopedThreadRef | DraftId): void {
   const draft = useComposerDraftStore.getState().getComposerDraft(target);
   if (draft) {
     releaseDraftAttachments([...draft.images, ...draft.files]);
+  }
+}
+
+export function releaseProjectDraftUploads(
+  projectRef: ScopedProjectRef,
+  projectThreadRefs: ReadonlyArray<ScopedThreadRef> = [],
+): void {
+  const store = useComposerDraftStore.getState();
+  for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
+    if (
+      session.environmentId === projectRef.environmentId &&
+      session.projectId === projectRef.projectId
+    ) {
+      const draft = store.draftsByThreadKey[draftKey];
+      releaseDraftAttachments(draft ? [...draft.images, ...draft.files] : []);
+    }
+  }
+  for (const threadRef of projectThreadRefs) {
+    const draft = store.draftsByThreadKey[scopedThreadKey(threadRef)];
+    if (draft) {
+      releaseDraftAttachments([...draft.images, ...draft.files]);
+    }
   }
 }

@@ -1,23 +1,31 @@
+import { imageMimeType } from "@t3tools/shared/image";
 import type {
   ChatFileAttachment as ContractChatFileAttachment,
   ChatImageAttachment as ContractChatImageAttachment,
-  ChatDocumentAttachment as ContractChatDocumentAttachment,
   ChatUnknownAttachment as ContractChatUnknownAttachment,
-  OrchestrationCheckpointFile,
-  OrchestrationCheckpointSummary,
-  OrchestrationLatestTurn,
-  OrchestrationMessage,
-  OrchestrationProposedPlan,
-  OrchestrationSession,
+  MessageId,
+  OrchestrationV2Actor,
+  OrchestrationV2CreationSource,
+  OrchestrationV2PlanArtifact,
+  OrchestrationV2UserMessageInputIntent,
+  PlanId,
   ProjectScript as ContractProjectScript,
   ProviderInteractionMode,
+  RunId,
   RuntimeMode,
+  OrchestrationV2LinkedSender,
+  ScheduledTaskId,
+  ThreadId,
 } from "@t3tools/contracts";
 import type {
   EnvironmentProject,
-  EnvironmentThread,
   EnvironmentThreadShell,
+  ThreadRuntimeSummary,
 } from "@t3tools/client-runtime/state/shell";
+import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+import { videoMimeType } from "@t3tools/shared/video";
+
+export { videoMimeType } from "@t3tools/shared/video";
 
 export type SessionPhase = "disconnected" | "connecting" | "ready" | "running";
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
@@ -38,117 +46,65 @@ export interface ChatImageAttachment extends ContractChatImageAttachment {
   readonly previewUrl?: string;
 }
 
-export type ChatDocumentAttachment = ContractChatDocumentAttachment;
-// Generic files render as download rows. `previewUrl` is a resolved asset URL
-// when the timeline has one; `downloadable: false` marks an optimistic copy
-// whose bytes the server has not claimed yet.
 export interface ChatFileAttachment extends ContractChatFileAttachment {
   readonly previewUrl?: string;
   readonly downloadable?: boolean;
+  readonly htmlRender?: boolean;
 }
 
-// Attachment types this build does not know pass through with the contract
-// shape. The UI renders them as inert rows so a newer server cannot crash an
-// older client.
+// Render unknown attachment contracts as inert rows so newer servers cannot crash older clients.
 export type ChatUnknownAttachment = ContractChatUnknownAttachment;
 
-export type ChatAttachment =
-  | ChatImageAttachment
-  | ChatDocumentAttachment
-  | ChatFileAttachment
-  | ChatUnknownAttachment;
+export type ChatAttachment = ChatImageAttachment | ChatFileAttachment | ChatUnknownAttachment;
 
-// The union has an open member (`type: string`), so a literal comparison does
-// not narrow. Use these guards wherever type-specific fields are read.
 export function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {
-  return attachment.type === "image";
-}
-
-/** Avi Code addition: the fork's extracted-text documents. */
-export function isDocumentAttachment(
-  attachment: ChatAttachment,
-): attachment is ChatDocumentAttachment {
-  return attachment.type === "document";
+  // Legacy file attachments can be images; unknown types must never be reclassified by name.
+  if (attachment.type === "image") return true;
+  return attachment.type === "file" && imageMimeType(attachment) !== null;
 }
 
 export function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAttachment {
-  return attachment.type === "file";
+  // Keep disjoint from isImageAttachment so independently filtered sets do not render legacy images twice.
+  return attachment.type === "file" && !isImageAttachment(attachment);
 }
 
-const VIDEO_MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
-  avi: "video/x-msvideo",
-  m4v: "video/mp4",
-  mkv: "video/x-matroska",
-  mov: "video/quicktime",
-  mp4: "video/mp4",
-  ogv: "video/ogg",
-  webm: "video/webm",
-};
-
-/**
- * The video type of a file attachment, from its mime or, when the browser
- * handed over a generic type, its extension. Null for anything else.
- */
-export function videoMimeType(attachment: {
-  readonly name: string;
-  readonly mimeType: string;
-}): string | null {
-  const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-  if (mimeType.startsWith("video/")) return mimeType;
-  const dotIndex = attachment.name.lastIndexOf(".");
-  return dotIndex < 0
-    ? null
-    : (VIDEO_MIME_TYPE_BY_EXTENSION[attachment.name.slice(dotIndex + 1).toLowerCase()] ?? null);
-}
-
-export function isVideoAttachment(attachment: {
-  readonly name: string;
-  readonly mimeType: string;
-}): boolean {
+export function isVideoAttachment(attachment: ChatFileAttachment): boolean {
   return videoMimeType(attachment) !== null;
 }
 
-// Persisted ids carry the original's extension when the server kept the
-// original bytes of a document: `<thread>-<uuid>-pdf`.
-const ATTACHMENT_ID_WITH_EXTENSION =
-  /-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[a-z0-9]{1,10}$/i;
-
-/**
- * Avi Code addition: whether a sent document's original bytes were stored
- * next to its extracted text, so its asset URL serves the original.
- */
-export function documentHasStoredOriginal(attachment: { readonly id: string }): boolean {
-  return ATTACHMENT_ID_WITH_EXTENSION.test(attachment.id);
-}
-
-/** A PDF or HTML file the file viewer can render in place. */
-export function isBrowserPreviewAttachment(attachment: {
-  readonly name: string;
-  readonly mimeType: string;
-}): boolean {
-  const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase();
-  return (
-    /\.(?:html?|pdf)$/i.test(attachment.name) ||
-    mimeType === "application/pdf" ||
-    mimeType === "text/html"
-  );
-}
-
-export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
+export interface ChatMessage {
+  readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
+  readonly id: MessageId;
+  readonly role: "user" | "assistant" | "system";
+  readonly text: string;
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
+  readonly runId: RunId | null;
+  readonly streaming: boolean;
+  readonly createdBy?: OrchestrationV2Actor;
+  readonly creationSource?: OrchestrationV2CreationSource;
+  readonly scheduledTaskId?: ScheduledTaskId;
+  readonly senderThreadId?: ThreadId;
+  readonly linkedSender?: OrchestrationV2LinkedSender;
+  readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly inputIntent?: OrchestrationV2UserMessageInputIntent | undefined;
 }
 
-export type ProposedPlan = OrchestrationProposedPlan;
-export type TurnDiffFileChange = OrchestrationCheckpointFile;
-export type TurnDiffSummary = OrchestrationCheckpointSummary;
+export interface ProposedPlan {
+  readonly id: PlanId;
+  readonly runId: RunId | null;
+  readonly planMarkdown: string;
+  readonly status: OrchestrationV2PlanArtifact["status"];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+export type TurnDiffFileChange = ThreadCheckpointSummary["files"][number];
+export type TurnDiffSummary = ThreadCheckpointSummary;
 
 export type Project = EnvironmentProject;
-export type Thread = EnvironmentThread;
+export type Thread = EnvironmentThreadShell;
 export type ThreadShell = EnvironmentThreadShell;
 
-export interface ThreadTurnState {
-  latestTurn: OrchestrationLatestTurn | null;
-}
-
 export type SidebarThreadSummary = EnvironmentThreadShell;
-export type ThreadSession = OrchestrationSession;
+export type ThreadSession = ThreadRuntimeSummary;

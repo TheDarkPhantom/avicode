@@ -5,13 +5,21 @@ import type {
   DesktopUpdateState,
 } from "@t3tools/contracts";
 
-export function nextStatusAfterDownloadFailure(
+function nextStatusAfterDownloadFailure(
   currentState: DesktopUpdateState,
 ): DesktopUpdateState["status"] {
   return currentState.availableVersion ? "available" : "error";
 }
 
-export function getCanRetryAfterDownloadFailure(currentState: DesktopUpdateState): boolean {
+// A mismatch describes only the check that found it.
+function withoutTrackMismatch({
+  trackMismatch: _trackMismatch,
+  ...state
+}: DesktopUpdateState): DesktopUpdateState {
+  return state;
+}
+
+function getCanRetryAfterDownloadFailure(currentState: DesktopUpdateState): boolean {
   return currentState.availableVersion !== null;
 }
 
@@ -31,6 +39,7 @@ export function createInitialDesktopUpdateState(
     availableVersion: null,
     downloadedVersion: null,
     releaseNotes: [],
+    omittedReleaseCount: 0,
     downloadPercent: null,
     checkedAt: null,
     message: null,
@@ -43,13 +52,15 @@ export function reduceDesktopUpdateStateOnCheckStart(
   state: DesktopUpdateState,
   checkedAt: string,
 ): DesktopUpdateState {
+  const hasDownloadedUpdate = state.downloadedVersion !== null;
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "checking",
     checkedAt,
-    releaseNotes: [],
+    releaseNotes: hasDownloadedUpdate ? state.releaseNotes : [],
+    omittedReleaseCount: hasDownloadedUpdate ? state.omittedReleaseCount : 0,
     message: null,
-    downloadPercent: null,
+    downloadPercent: hasDownloadedUpdate ? 100 : null,
     errorContext: null,
     canRetry: false,
   };
@@ -59,15 +70,29 @@ export function reduceDesktopUpdateStateOnCheckFailure(
   state: DesktopUpdateState,
   message: string,
   checkedAt: string,
+  trackMismatch?: DesktopUpdateState["trackMismatch"],
 ): DesktopUpdateState {
+  if (state.downloadedVersion !== null) {
+    return {
+      ...withoutTrackMismatch(state),
+      status: "downloaded",
+      message: null,
+      checkedAt,
+      downloadPercent: 100,
+      errorContext: null,
+      canRetry: true,
+    };
+  }
+
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "error",
     message,
     checkedAt,
     downloadPercent: null,
     errorContext: "check",
     canRetry: true,
+    ...(trackMismatch === undefined ? {} : { trackMismatch }),
   };
 }
 
@@ -76,18 +101,22 @@ export function reduceDesktopUpdateStateOnUpdateAvailable(
   version: string,
   checkedAt: string,
   releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote> = [],
+  omittedReleaseCount = 0,
 ): DesktopUpdateState {
+  const isDownloadedVersion = state.downloadedVersion === version;
+  const preserveReleaseNotes = isDownloadedVersion && releaseNotes.length === 0;
   return {
-    ...state,
-    status: "available",
+    ...withoutTrackMismatch(state),
+    status: isDownloadedVersion ? "downloaded" : "available",
     availableVersion: version,
-    downloadedVersion: null,
-    releaseNotes,
-    downloadPercent: null,
+    downloadedVersion: isDownloadedVersion ? version : null,
+    releaseNotes: preserveReleaseNotes ? state.releaseNotes : releaseNotes,
+    omittedReleaseCount: preserveReleaseNotes ? state.omittedReleaseCount : omittedReleaseCount,
+    downloadPercent: isDownloadedVersion ? 100 : null,
     checkedAt,
     message: null,
     errorContext: null,
-    canRetry: false,
+    canRetry: isDownloadedVersion,
   };
 }
 
@@ -95,12 +124,26 @@ export function reduceDesktopUpdateStateOnNoUpdate(
   state: DesktopUpdateState,
   checkedAt: string,
 ): DesktopUpdateState {
+  if (state.downloadedVersion !== null) {
+    return {
+      ...withoutTrackMismatch(state),
+      status: "downloaded",
+      availableVersion: state.downloadedVersion,
+      downloadPercent: 100,
+      checkedAt,
+      message: null,
+      errorContext: null,
+      canRetry: true,
+    };
+  }
+
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "up-to-date",
     availableVersion: null,
     downloadedVersion: null,
     releaseNotes: [],
+    omittedReleaseCount: 0,
     downloadPercent: null,
     checkedAt,
     message: null,
@@ -113,7 +156,7 @@ export function reduceDesktopUpdateStateOnDownloadStart(
   state: DesktopUpdateState,
 ): DesktopUpdateState {
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "downloading",
     downloadPercent: 0,
     message: null,
@@ -127,7 +170,7 @@ export function reduceDesktopUpdateStateOnDownloadFailure(
   message: string,
 ): DesktopUpdateState {
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: nextStatusAfterDownloadFailure(state),
     message,
     downloadPercent: null,
@@ -141,7 +184,7 @@ export function reduceDesktopUpdateStateOnDownloadProgress(
   percent: number,
 ): DesktopUpdateState {
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "downloading",
     downloadPercent: percent,
     message: null,
@@ -155,7 +198,7 @@ export function reduceDesktopUpdateStateOnDownloadComplete(
   version: string,
 ): DesktopUpdateState {
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "downloaded",
     availableVersion: version,
     downloadedVersion: version,
@@ -166,15 +209,45 @@ export function reduceDesktopUpdateStateOnDownloadComplete(
   };
 }
 
+export function reduceDesktopUpdateStateOnDownloadLost(
+  state: DesktopUpdateState,
+): DesktopUpdateState {
+  if (state.downloadedVersion === null) return state;
+  return {
+    ...withoutTrackMismatch(state),
+    status: "available",
+    availableVersion: state.downloadedVersion,
+    downloadedVersion: null,
+    downloadPercent: null,
+    message: null,
+    errorContext: null,
+    canRetry: false,
+  };
+}
+
 export function reduceDesktopUpdateStateOnInstallFailure(
   state: DesktopUpdateState,
   message: string,
 ): DesktopUpdateState {
   return {
-    ...state,
+    ...withoutTrackMismatch(state),
     status: "downloaded",
     message,
     errorContext: "install",
     canRetry: true,
   };
+}
+
+export interface DesktopUpdateInstallRecord {
+  readonly fromVersion: string;
+  readonly targetVersion: string;
+}
+
+export function resolveNotAppliedInstallVersion(
+  record: DesktopUpdateInstallRecord,
+  appVersion: string,
+): string | null {
+  return record.fromVersion === appVersion && record.targetVersion !== appVersion
+    ? record.targetVersion
+    : null;
 }

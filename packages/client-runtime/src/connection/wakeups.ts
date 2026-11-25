@@ -5,20 +5,39 @@ import type * as Stream from "effect/Stream";
 export type ConnectionWakeup =
   | "application-active"
   | "application-active-probe"
-  | "application-active-reconnect"
-  | "credentials-changed";
+  | "application-active-long"
+  | "application-focused"
+  | "credentials-changed"
+  | "network-changed";
 
-export function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
+function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
   return (
     reason === "application-active" ||
     reason === "application-active-probe" ||
-    reason === "application-active-reconnect"
+    reason === "application-active-long"
   );
 }
 
-// A long resume replaces the session, and the new session subscribes on its own.
+export function resetsRetryBackoff(reason: ConnectionWakeup): boolean {
+  return isApplicationActiveWakeup(reason) || reason === "network-changed";
+}
+
 export function shouldResubscribeAfterWakeup(reason: ConnectionWakeup): boolean {
-  return reason === "application-active" || reason === "application-active-probe";
+  return isApplicationActiveWakeup(reason);
+}
+
+// A brief app switch (the mobile probe) does not justify listing the whole account again.
+export function shouldRelistAccountAfterWakeup(reason: ConnectionWakeup): boolean {
+  return (
+    reason === "application-active" ||
+    reason === "application-active-long" ||
+    reason === "application-focused"
+  );
+}
+
+// Focus fires on every window switch; any wakeup would arm a running probe's silent-socket check.
+export function reachesConnectionSupervisor(reason: ConnectionWakeup): boolean {
+  return reason !== "application-focused";
 }
 
 export class ConnectionWakeups extends Context.Service<
@@ -28,7 +47,7 @@ export class ConnectionWakeups extends Context.Service<
   }
 >()("@t3tools/client-runtime/connection/wakeups/ConnectionWakeups") {}
 
-export const make = (service: ConnectionWakeups["Service"]) => ConnectionWakeups.of(service);
+const make = (service: ConnectionWakeups["Service"]) => ConnectionWakeups.of(service);
 
 export const layer = (service: ConnectionWakeups["Service"]) =>
   Layer.succeed(ConnectionWakeups, make(service));

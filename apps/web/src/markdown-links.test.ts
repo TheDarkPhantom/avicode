@@ -1,49 +1,49 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isLocalEditorFileHref,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
-  resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
-  transformChatMarkdownUrl,
 } from "./markdown-links";
+import {
+  markdownFileCopyPaths,
+  markdownFileEditorTarget,
+  resolveMarkdownFileHostPath,
+} from "./markdownFileHostPath";
 
-describe("transformChatMarkdownUrl", () => {
-  // Loading these makes Windows send the user's NTLM credentials to the named host.
-  it.each([
-    "\\\\attacker.test\\share\\cat.jpg",
-    "//attacker.test/share/cat.jpg",
-    "/\\attacker.test\\share\\cat.jpg",
-    "file:////attacker.test/share/cat.jpg",
-  ])("drops network image source %s", (source) => {
-    expect(transformChatMarkdownUrl(source, "src")).toBeUndefined();
+describe("isLocalEditorFileHref", () => {
+  it("accepts absolute file deep links of known editors", () => {
+    for (const href of [
+      "cursor://file/Users/me/repo/file.md:186",
+      "vscode://file/Users/me/repo/file.md:3:7",
+      "vscode-insiders://file/Users/me/repo/file.md",
+      "VSCODE://file/C:/Users/me/repo/file.md:3",
+    ]) {
+      expect(isLocalEditorFileHref(href), href).toBe(true);
+    }
   });
 
-  it("keeps ordinary image sources and network link hrefs", () => {
-    expect(transformChatMarkdownUrl("https://example.com/cat.jpg", "src")).toBe(
-      "https://example.com/cat.jpg",
-    );
-    expect(transformChatMarkdownUrl("file:///tmp/cat.jpg", "src")).toBe("/tmp/cat.jpg");
-    // Links resolve to file chips, which apply their own project check.
-    expect(transformChatMarkdownUrl("\\\\server\\share\\a.ts", "href")).toBe(
-      "\\\\server\\share\\a.ts",
-    );
+  it("rejects other hosts, userinfo, relative paths, and unknown schemes", () => {
+    for (const href of [
+      "cursor://anysphere.cursor-deeplink/prompt?text=hi",
+      "vscode://user@file/Users/me/repo/file.md",
+      "vscode://file:8080/Users/me/repo/file.md",
+      "vscode://vscode-remote/ssh-remote+example.com/home/user/project",
+      "cursor://file",
+      "cursor:file/Users/me/repo/file.md",
+      "foo://file/Users/me/repo/file.md",
+      "zed://file/Users/me/repo/file.md",
+      "javascript:alert(1)",
+      "./file.md",
+      "",
+    ]) {
+      expect(isLocalEditorFileHref(href), href).toBe(false);
+    }
   });
 });
 
 describe("rewriteMarkdownFileUriHref", () => {
-  it("rewrites file uri hrefs into direct path hrefs", () => {
-    expect(rewriteMarkdownFileUriHref("file:///Users/julius/project/src/main.ts#L42")).toBe(
-      "/Users/julius/project/src/main.ts#L42",
-    );
-  });
-
-  it("preserves encoded octets so file paths are decoded only once later", () => {
-    expect(rewriteMarkdownFileUriHref("file:///Users/julius/project/file%2520name.md")).toBe(
-      "/Users/julius/project/file%2520name.md",
-    );
-  });
-
   it("normalizes file uri hrefs for windows drive paths", () => {
     expect(
       rewriteMarkdownFileUriHref(
@@ -51,197 +51,25 @@ describe("rewriteMarkdownFileUriHref", () => {
       ),
     ).toBe("D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx#L69");
   });
-
-  it("unwraps angle-bracketed file uri hrefs", () => {
-    expect(
-      rewriteMarkdownFileUriHref(" <file:///D:/Programme/t3code/apps/web/src/markdown-links.ts> "),
-    ).toBe("D:/Programme/t3code/apps/web/src/markdown-links.ts");
-  });
 });
 
-describe("resolveMarkdownFileLinkTarget", () => {
-  it("resolves absolute posix file paths", () => {
-    expect(resolveMarkdownFileLinkTarget("/Users/julius/project/AGENTS.md")).toBe(
-      "/Users/julius/project/AGENTS.md",
-    );
-  });
-
-  it("resolves relative file paths against cwd", () => {
-    expect(resolveMarkdownFileLinkTarget("src/processRunner.ts:71", "/Users/julius/project")).toBe(
-      "/Users/julius/project/src/processRunner.ts:71",
-    );
-  });
-
-  it("does not treat filename line references as external schemes", () => {
-    expect(resolveMarkdownFileLinkTarget("script.ts:10", "/Users/julius/project")).toBe(
-      "/Users/julius/project/script.ts:10",
-    );
-  });
-
-  it("resolves bare file names against cwd", () => {
-    expect(resolveMarkdownFileLinkTarget("AGENTS.md", "/Users/julius/project")).toBe(
-      "/Users/julius/project/AGENTS.md",
-    );
-  });
-
-  it("maps #L line anchors to editor line suffixes", () => {
-    expect(resolveMarkdownFileLinkTarget("/Users/julius/project/src/main.ts#L42C7")).toBe(
-      "/Users/julius/project/src/main.ts:42:7",
-    );
-  });
-
-  it("ignores external urls", () => {
-    expect(resolveMarkdownFileLinkTarget("https://example.com/docs")).toBeNull();
-  });
-
-  it("links a network path only inside the project's share", () => {
-    const cwd = "\\\\server\\share\\project";
-    expect(resolveMarkdownFileLinkTarget("\\\\server\\share\\project\\src\\a.ts", cwd)).toBe(
-      "\\\\server\\share\\project\\src\\a.ts",
-    );
-    // Opening these sent the Windows user's NTLM credentials to attacker.test.
-    for (const href of [
-      "\\\\attacker.test\\s\\x.ts",
-      "//attacker.test/s/x.ts",
-      "/\\attacker.test\\s\\x.ts",
-      "file:////attacker.test/s/x.ts",
-      "\\\\server\\share\\project\\..\\..\\attacker.test\\s\\x.ts",
-    ]) {
-      expect(resolveMarkdownFileLinkTarget(href, cwd)).toBeNull();
-      expect(resolveInlineCodeFileLinkMeta(href, cwd)).toBeNull();
-    }
-    expect(resolveMarkdownFileLinkTarget("\\\\attacker.test\\s\\x.ts")).toBeNull();
-  });
-
-  it("does not double-decode file URLs", () => {
-    expect(resolveMarkdownFileLinkTarget("file:///Users/julius/project/file%2520name.md")).toBe(
-      "/Users/julius/project/file%20name.md",
-    );
-  });
-
-  it("formats tooltip display paths relative to the cwd when possible", () => {
-    expect(
-      resolveMarkdownFileLinkMeta(
-        "file:///C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts#L501",
-        "C:/Users/mike/dev-stuff/t3code",
-      ),
-    ).toMatchObject({
-      displayPath: "t3code/apps/web/src/session-logic.ts:501",
-      workspaceRelativePath: "apps/web/src/session-logic.ts",
-    });
-  });
-
-  it("formats tooltip display paths relative to the cwd for slash-prefixed windows paths", () => {
-    expect(
-      resolveMarkdownFileLinkMeta(
-        "/C:/Users/mike/dev-stuff/t3code/apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
-        "C:/Users/mike/dev-stuff/t3code",
-      ),
-    ).toMatchObject({
-      displayPath:
-        "t3code/apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
-      workspaceRelativePath:
-        "apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
-    });
-  });
-
-  it("does not create a preview path for files outside the workspace", () => {
-    expect(resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project")).toMatchObject({
+describe("relative links inside a rendered host file", () => {
+  it("anchor to the file's directory while workspace membership follows cwd", () => {
+    const meta = resolveMarkdownFileLinkMeta("appendix.md", "/repo", "/tmp/report");
+    expect(meta).toMatchObject({
+      filePath: "/tmp/report/appendix.md",
       workspaceRelativePath: null,
     });
-  });
-
-  // Avi Code addition: a file outside the thread's workspace used to be
-  // unopenable, so clicking it left the app for an external editor.
-  it("resolves a root of its own for a file in another registered project", () => {
-    expect(
-      resolveMarkdownFileLinkMeta("/repo/other/docs/notes.md", "/repo/project", [
-        "/repo/project",
-        "/repo/other",
-      ]),
-    ).toMatchObject({
-      workspaceRelativePath: null,
-      fileRoot: { root: "/repo/other", relativePath: "docs/notes.md" },
+    const inline = resolveInlineCodeFileLinkMeta("Makefile:12", "/repo", "/tmp/report");
+    expect(inline).toMatchObject({ filePath: "/tmp/report/Makefile", line: 12 });
+    expect(resolveMarkdownFileLinkMeta("src/main.ts", "/repo", "/repo/docs")).toMatchObject({
+      filePath: "/repo/docs/src/main.ts",
+      workspaceRelativePath: "docs/src/main.ts",
     });
-  });
-
-  it("falls back to the containing folder for a file in no registered project", () => {
-    expect(
-      resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project", ["/repo/project"]),
-    ).toMatchObject({
-      workspaceRelativePath: null,
-      fileRoot: { root: "/tmp", relativePath: "report.ts" },
-    });
-  });
-
-  it("leaves fileRoot unset for a file already inside the workspace", () => {
-    expect(
-      resolveMarkdownFileLinkMeta("/repo/project/src/index.ts", "/repo/project", ["/repo/project"]),
-    ).toMatchObject({
-      workspaceRelativePath: "src/index.ts",
-      fileRoot: null,
-    });
-  });
-
-  it("normalizes slash-prefixed windows drive paths before resolving", () => {
-    expect(
-      resolveMarkdownFileLinkTarget(
-        "/D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx#L69",
-      ),
-    ).toBe("D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx:69");
-  });
-
-  it("resolves angle-bracketed windows drive paths", () => {
-    expect(
-      resolveMarkdownFileLinkTarget(
-        "</D:/Programme/t3code/apps/web/src/components/ChatMarkdown.tsx:1>",
-      ),
-    ).toBe("D:/Programme/t3code/apps/web/src/components/ChatMarkdown.tsx:1");
-  });
-
-  it("does not treat app routes as file links", () => {
-    expect(resolveMarkdownFileLinkTarget("/chat/settings")).toBeNull();
   });
 });
 
 describe("resolveInlineCodeFileLinkMeta", () => {
-  it("links relative paths with file extensions", () => {
-    expect(
-      resolveInlineCodeFileLinkMeta(".plans/worktree-management-v1.md", "/Users/julius/project"),
-    ).toMatchObject({
-      targetPath: "/Users/julius/project/.plans/worktree-management-v1.md",
-      basename: "worktree-management-v1.md",
-    });
-  });
-
-  it("links absolute posix paths", () => {
-    expect(resolveInlineCodeFileLinkMeta("/Users/julius/project/AGENTS.md")).toMatchObject({
-      targetPath: "/Users/julius/project/AGENTS.md",
-    });
-    expect(resolveInlineCodeFileLinkMeta("/usr/local/bin/tool")).toMatchObject({
-      targetPath: "/usr/local/bin/tool",
-    });
-    expect(resolveInlineCodeFileLinkMeta("/workspace/Makefile")).toMatchObject({
-      basename: "Makefile",
-    });
-    expect(resolveInlineCodeFileLinkMeta("/chat/settings")).toBeNull();
-  });
-
-  it("links windows drive paths", () => {
-    expect(resolveInlineCodeFileLinkMeta("C:\\Users\\mike\\project\\src\\main.ts")).toMatchObject({
-      basename: "main.ts",
-    });
-  });
-
-  it("links relative paths with line positions", () => {
-    expect(
-      resolveInlineCodeFileLinkMeta("src/processRunner.ts:71", "/Users/julius/project"),
-    ).toMatchObject({
-      targetPath: "/Users/julius/project/src/processRunner.ts:71",
-      line: 71,
-    });
-  });
-
   it("links bare filenames only when a line suffix marks them as file references", () => {
     expect(resolveInlineCodeFileLinkMeta("script.ts:10", "/Users/julius/project")).toMatchObject({
       targetPath: "/Users/julius/project/script.ts:10",
@@ -250,17 +78,12 @@ describe("resolveInlineCodeFileLinkMeta", () => {
     expect(resolveInlineCodeFileLinkMeta("AGENTS.md", "/Users/julius/project")).toBeNull();
   });
 
-  it("links extensionless bare filenames with a line suffix", () => {
-    expect(resolveInlineCodeFileLinkMeta("Makefile:12", "/Users/julius/project")).toMatchObject({
-      targetPath: "/Users/julius/project/Makefile:12",
-      basename: "Makefile",
-      line: 12,
+  it("opens a line range at its first line and keeps the range for the label", () => {
+    expect(resolveInlineCodeFileLinkMeta("src/http.ts:42-64", "/repo")).toMatchObject({
+      targetPath: "/repo/src/http.ts:42",
+      line: 42,
+      endLine: 64,
     });
-    expect(resolveInlineCodeFileLinkMeta("Dockerfile:8:2", "/Users/julius/project")).toMatchObject({
-      line: 8,
-      column: 2,
-    });
-    expect(resolveInlineCodeFileLinkMeta("Makefile:12")).toBeNull();
   });
 
   it("does not treat arbitrary name:digits shapes as files", () => {
@@ -268,27 +91,11 @@ describe("resolveInlineCodeFileLinkMeta", () => {
     expect(resolveInlineCodeFileLinkMeta("TODO:12", "/Users/julius/project")).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("exit:0", "/Users/julius/project")).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("port:3000", "/Users/julius/project")).toBeNull();
+    expect(resolveInlineCodeFileLinkMeta("port:3000-3010", "/Users/julius/project")).toBeNull();
+    expect(
+      resolveInlineCodeFileLinkMeta("localhost:3000-3010", "/Users/julius/project"),
+    ).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("http:80", "/Users/julius/project")).toBeNull();
-  });
-
-  it("links dot-prefixed relative paths without extensions", () => {
-    expect(
-      resolveInlineCodeFileLinkMeta("./scripts/deploy", "/Users/julius/project"),
-    ).toMatchObject({
-      basename: "deploy",
-    });
-  });
-
-  it("links relative windows-style paths by normalizing backslashes", () => {
-    expect(resolveInlineCodeFileLinkMeta("src\\main.ts", "/Users/julius/project")).toMatchObject({
-      targetPath: "/Users/julius/project/src/main.ts",
-      basename: "main.ts",
-    });
-    expect(
-      resolveInlineCodeFileLinkMeta(".\\scripts\\deploy", "/Users/julius/project"),
-    ).toMatchObject({
-      basename: "deploy",
-    });
   });
 
   it("ignores hosts, ports, and versions", () => {
@@ -306,45 +113,26 @@ describe("resolveInlineCodeFileLinkMeta", () => {
       resolveInlineCodeFileLinkMeta("example.uk/index.html", "/Users/julius/project"),
     ).toBeNull();
   });
+});
 
-  it("still links files whose extension merely resembles a tld", () => {
-    expect(resolveInlineCodeFileLinkMeta("script.ts:10", "/Users/julius/project")).not.toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("src/setup.sh:3", "/Users/julius/project")).not.toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("Makefile.in:12", "/Users/julius/project")).not.toBeNull();
-    expect(
-      resolveInlineCodeFileLinkMeta("conf.d/nginx.conf", "/Users/julius/project"),
-    ).not.toBeNull();
-  });
+describe("chat file chip paths", () => {
+  const cwd = String.raw`C:\Users\alice\project`;
 
-  it("prefers file over country-code host when a line suffix is present", () => {
-    expect(resolveInlineCodeFileLinkMeta("script.pl:10", "/Users/julius/project")).toMatchObject({
-      targetPath: "/Users/julius/project/script.pl:10",
-      line: 10,
+  it("opens and copies the indexed file for a bare filename, preserving its line and column", async () => {
+    const meta = resolveMarkdownFileLinkMeta("user.ts:261:7", cwd);
+    if (!meta) throw new Error("Expected a file link");
+    const hostPath = await resolveMarkdownFileHostPath({
+      meta,
+      cwd,
+      findWorkspaceMatch: async () => "src/discord/events/user.ts",
     });
-    expect(resolveInlineCodeFileLinkMeta("model.pt:3", "/Users/julius/project")).not.toBeNull();
-    expect(
-      resolveInlineCodeFileLinkMeta("example.pl/index.html", "/Users/julius/project"),
-    ).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("example.com:8080", "/Users/julius/project")).toBeNull();
-  });
 
-  it("ignores commands, flags, and expressions", () => {
-    expect(resolveInlineCodeFileLinkMeta("git worktree list --porcelain")).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("node.meta", "/Users/julius/project")).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("pnpm install", "/Users/julius/project")).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("src/**/*.ts", "/Users/julius/project")).toBeNull();
-  });
-
-  it("ignores extension-less relative segments like git refs and directories", () => {
-    expect(resolveInlineCodeFileLinkMeta("origin/main", "/Users/julius/project")).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("apps/web", "/Users/julius/project")).toBeNull();
-  });
-
-  it("ignores external urls", () => {
-    expect(resolveInlineCodeFileLinkMeta("https://example.com/docs.html")).toBeNull();
-  });
-
-  it("ignores relative paths without a cwd to resolve against", () => {
-    expect(resolveInlineCodeFileLinkMeta(".plans/worktree-management-v1.md")).toBeNull();
+    expect(markdownFileEditorTarget(meta, hostPath)).toBe(
+      String.raw`C:\Users\alice\project\src\discord\events\user.ts:261:7`,
+    );
+    expect(markdownFileCopyPaths(meta, hostPath, cwd)).toEqual({
+      fullPath: String.raw`C:\Users\alice\project\src\discord\events\user.ts:261:7`,
+      relativePath: "src/discord/events/user.ts:261:7",
+    });
   });
 });

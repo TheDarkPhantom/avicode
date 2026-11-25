@@ -1,12 +1,23 @@
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import {
+  clampFileAttachmentUploadBytes,
+  fileAttachmentTooLargeMessage,
+} from "@t3tools/client-runtime/state/attachments";
+import {
+  isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import type { ResolvedSharePayload, SharePayload } from "expo-sharing";
+import { msg } from "gt-react-native";
 
-import { DraftComposerImageAttachmentSchema } from "../../lib/composer-image-schema";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import { m } from "../../i18n/messages";
+
+import { DraftComposerAttachmentSchema } from "../../lib/composer-image-schema";
+import { fitComposerImage } from "../../lib/composerImageFit";
+import type { DraftComposerAttachment } from "../../lib/composerImages";
 import { estimateBase64ByteSize } from "../../lib/base64";
 
 export interface IncomingShareDraft {
@@ -15,7 +26,7 @@ export interface IncomingShareDraft {
   readonly createdAt: string;
   readonly destination?: IncomingShareDestination;
   readonly text: string;
-  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly warnings: ReadonlyArray<string>;
 }
 
@@ -35,7 +46,7 @@ export const IncomingShareDraftSchema = Schema.Struct({
   createdAt: Schema.String,
   destination: Schema.optional(IncomingShareDestinationSchema),
   text: Schema.String,
-  attachments: Schema.Array(DraftComposerImageAttachmentSchema),
+  attachments: Schema.Array(DraftComposerAttachmentSchema),
   warnings: Schema.Array(Schema.String),
 });
 
@@ -45,9 +56,143 @@ export function decodeIncomingShareDraft(value: unknown): IncomingShareDraft {
   return decodeIncomingShareDraftSync(value);
 }
 
+/** Strip iOS /private so /var and /private/var paths compare equally. */
+function normalizedFileUriPath(uri: string): string | null {
+  try {
+    const url = new URL(uri);
+    if (url.protocol !== "file:") {
+      return null;
+    }
+    const path = decodeURIComponent(url.pathname);
+    // URL parsing leaves encoded separators; reject decoded .. segments before lexical containment checks.
+    if (path.split("/").includes("..")) {
+      return null;
+    }
+    return path.startsWith("/private/var/") ? path.slice("/private".length) : path;
+  } catch {
+    return null;
+  }
+}
+
+/** Delete only inside app-owned roots; iOS shares may reference the sender's original. */
+export function isShareFileUriUnderOwnedRoots(
+  uri: string,
+  ownedRootUris: ReadonlyArray<string>,
+): boolean {
+  const path = normalizedFileUriPath(uri);
+  if (path === null) {
+    return false;
+  }
+  return ownedRootUris.some((rootUri) => {
+    const rootPath = normalizedFileUriPath(rootUri);
+    if (rootPath === null) {
+      return false;
+    }
+    const root = rootPath.endsWith("/") ? rootPath : `${rootPath}/`;
+    return path.startsWith(root) && path.length > root.length;
+  });
+}
+
+/**
+ * On Android only the native resolver's `expo-sharing/<uuid>` copies are this app's to delete; other
+ * shared URIs are not copies.
+ */
+export function isOwnedShareFileUri(
+  uri: string,
+  owned: {
+    readonly platform: string;
+    readonly cacheUri: string;
+    readonly otherRootUris: ReadonlyArray<string>;
+  },
+): boolean {
+  if (owned.platform !== "android") {
+    return isShareFileUriUnderOwnedRoots(uri, [owned.cacheUri, ...owned.otherRootUris]);
+  }
+  // The resolver reports its copy by canonical path, where `/data/user/0` is `/data/data`.
+  const canonical = (fileUri: string) =>
+    normalizedFileUriPath(fileUri)?.replace(/^\/data\/user\/0\//, "/data/data/");
+  const path = canonical(uri);
+  const cachePath = canonical(owned.cacheUri)?.replace(/\/*$/, "/");
+  return (
+    path !== undefined &&
+    cachePath !== undefined &&
+    path.startsWith(cachePath) &&
+    /^expo-sharing\/[\da-f-]{36}\/[^/]+$/i.test(path.slice(cachePath.length))
+  );
+}
+
 export interface IncomingShareFileReader {
   readonly readBase64: (uri: string) => Promise<string>;
   readonly removeOwnedFile: (uri: string) => Promise<void> | void;
+  readonly persistFile?: (uri: string, name: string) => Promise<string>;
+  readonly readSize?: (uri: string) => Promise<number | null>;
+}
+
+export function selectIncomingShareAttachments(input: {
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly maxFileAttachmentBytes: number | null;
+}): {
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly warnings: ReadonlyArray<string>;
+} {
+  const attachments: DraftComposerAttachment[] = [];
+  const warnings: string[] = [];
+
+  for (const attachment of input.attachments) {
+    if (attachment.type === "image") {
+      attachments.push(attachment);
+      continue;
+    }
+    if (input.maxFileAttachmentBytes === null) {
+      warnings.push(
+        m(
+          msg("''{name}'' was skipped because this server does not support files.", {
+            name: attachment.name,
+          }),
+        ),
+      );
+      continue;
+    }
+    const maxFileAttachmentBytes = clampFileAttachmentUploadBytes(input.maxFileAttachmentBytes);
+    if (attachment.sizeBytes > maxFileAttachmentBytes) {
+      warnings.push(fileAttachmentTooLargeMessage(attachment.name, maxFileAttachmentBytes, m));
+      continue;
+    }
+    attachments.push(attachment);
+  }
+
+  return { attachments, warnings };
+}
+
+export function selectIncomingShareAttachmentsForServer(input: {
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly serverConfig: {
+    readonly environment: {
+      readonly capabilities: {
+        readonly fileAttachments?: { readonly maxUploadBytes: number };
+      };
+    };
+  } | null;
+}):
+  | { readonly status: "pending" }
+  | {
+      readonly status: "ready";
+      readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+      readonly warnings: ReadonlyArray<string>;
+    } {
+  const hasFiles = input.attachments.some((attachment) => attachment.type === "file");
+  if (hasFiles && input.serverConfig === null) {
+    return { status: "pending" };
+  }
+  const capabilities = input.serverConfig?.environment.capabilities;
+  const maxFileAttachmentBytes = capabilities?.fileAttachments?.maxUploadBytes ?? null;
+  return {
+    status: "ready",
+    ...selectIncomingShareAttachments({
+      attachments: input.attachments,
+      maxFileAttachmentBytes,
+    }),
+  };
 }
 
 function sharedText(payloads: ReadonlyArray<SharePayload>): string {
@@ -102,10 +247,7 @@ async function releaseOwnedFiles(
   for (const uri of new Set(uris.filter((candidate): candidate is string => Boolean(candidate)))) {
     try {
       await fileReader.removeOwnedFile(uri);
-    } catch {
-      // Temporary-file cleanup is best-effort and must never discard content
-      // that was successfully converted into a durable composer attachment.
-    }
+    } catch {}
   }
 }
 
@@ -115,11 +257,12 @@ function fallbackName(uri: string, index: number, mimeType: string): string {
     if (pathName) {
       return decodeURIComponent(pathName);
     }
-  } catch {
-    // Fall through to a deterministic attachment name.
-  }
-  const extension = mimeType.split("/")[1]?.replace(/[^a-z0-9.+-]/gi, "") || "png";
-  return `shared-image-${index + 1}.${extension}`;
+  } catch {}
+  const family = mimeType.split("/")[0]?.toLowerCase();
+  const kind = family === "image" || family === "audio" || family === "video" ? family : "file";
+  const extension =
+    mimeType.split("/")[1]?.replace(/[^a-z0-9.+-]/gi, "") || (kind === "image" ? "png" : "bin");
+  return `shared-${kind}-${index + 1}.${extension}`;
 }
 
 export async function buildIncomingShareDraft(input: {
@@ -129,13 +272,18 @@ export async function buildIncomingShareDraft(input: {
   readonly id: string;
   readonly createdAt: string;
 }): Promise<IncomingShareDraft> {
-  const attachments: DraftComposerImageAttachment[] = [];
+  const attachments: DraftComposerAttachment[] = [];
   const warnings: string[] = [];
   const consumedResolvedPayloadIndexes = new Set<number>();
   let warnedAttachmentLimit = false;
 
   for (const [index, payload] of input.payloads.entries()) {
-    if (payload.shareType !== "image") {
+    if (
+      payload.shareType !== "image" &&
+      payload.shareType !== "file" &&
+      payload.shareType !== "audio" &&
+      payload.shareType !== "video"
+    ) {
       continue;
     }
     const resolved = resolvedImageFor(
@@ -148,7 +296,18 @@ export async function buildIncomingShareDraft(input: {
     if (attachments.length >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       if (!warnedAttachmentLimit) {
         warnings.push(
-          `Only the first ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} shared images were attached.`,
+          payload.shareType === "image"
+            ? m(
+                msg(
+                  "{count, plural, other {Only the first {count} shared images were attached.}}",
+                  { count: PROVIDER_SEND_TURN_MAX_ATTACHMENTS },
+                ),
+              )
+            : m(
+                msg("{count, plural, other {Only the first {count} shared files were attached.}}", {
+                  count: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+                }),
+              ),
         );
         warnedAttachmentLimit = true;
       }
@@ -156,9 +315,112 @@ export async function buildIncomingShareDraft(input: {
       continue;
     }
 
-    const mimeType = (resolved?.contentMimeType ?? payload.mimeType ?? "image/png").toLowerCase();
+    const mimeType = (
+      resolved?.contentMimeType ??
+      payload.mimeType ??
+      (payload.shareType === "image" ? "image/png" : "application/octet-stream")
+    ).toLowerCase();
+    if (payload.shareType !== "image") {
+      const sharedFileName =
+        typeof payload.originalName === "string" && payload.originalName.trim().length > 0
+          ? payload.originalName
+          : undefined;
+      const name = resolved?.originalName ?? sharedFileName ?? fallbackName(uri, index, mimeType);
+      if (!uri) {
+        warnings.push(m(msg("One shared file could not be read.")));
+        continue;
+      }
+      let persistedFileUri: string | undefined;
+      let retainedFileUri: string | undefined;
+      try {
+        let sizeBytes = resolved?.contentSize ?? (await input.fileReader.readSize?.(uri)) ?? null;
+        if (
+          (sizeBytes === null || (sizeBytes === 0 && uri.startsWith("content:"))) &&
+          input.fileReader.persistFile
+        ) {
+          persistedFileUri = await input.fileReader.persistFile(uri, name);
+          sizeBytes = (await input.fileReader.readSize?.(persistedFileUri)) ?? null;
+        }
+        if (sizeBytes === null) {
+          warnings.push(m(msg("The size of ''{name}'' could not be determined.", { name })));
+          if (persistedFileUri) {
+            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
+          }
+          continue;
+        }
+        if (sizeBytes <= 0) {
+          warnings.push(m(msg("''{name}'' is empty or could not be read.", { name })));
+          if (persistedFileUri) {
+            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
+          }
+          continue;
+        }
+        if (sizeBytes > PROVIDER_SEND_TURN_MAX_FILE_BYTES) {
+          warnings.push(fileAttachmentTooLargeMessage(name, PROVIDER_SEND_TURN_MAX_FILE_BYTES, m));
+          if (persistedFileUri) {
+            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
+          }
+          continue;
+        }
+        if (persistedFileUri === undefined && input.fileReader.persistFile) {
+          persistedFileUri = await input.fileReader.persistFile(uri, name);
+          // Android content sources can misreport size; record the stored copy's measured size.
+          const storedSize = (await input.fileReader.readSize?.(persistedFileUri)) ?? null;
+          if (storedSize !== null) {
+            sizeBytes = storedSize;
+          }
+          if (sizeBytes <= 0) {
+            warnings.push(m(msg("''{name}'' is empty or could not be read.", { name })));
+            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
+            continue;
+          }
+          if (sizeBytes > PROVIDER_SEND_TURN_MAX_FILE_BYTES) {
+            warnings.push(
+              fileAttachmentTooLargeMessage(name, PROVIDER_SEND_TURN_MAX_FILE_BYTES, m),
+            );
+            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
+            continue;
+          }
+        }
+        attachments.push({
+          id: `${input.id}-file-${index}`,
+          type: "file",
+          name,
+          mimeType,
+          sizeBytes,
+          fileUri: persistedFileUri ?? uri,
+        });
+        retainedFileUri = persistedFileUri ?? uri;
+      } catch (error) {
+        warnings.push(
+          error instanceof Error
+            ? (errorDisplayMessage(error, m) ?? error.message)
+            : m(msg("Could not read ''{name}''.", { name })),
+        );
+        if (persistedFileUri !== undefined) {
+          await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
+        }
+      } finally {
+        await releaseOwnedFiles(
+          input.fileReader,
+          [uri, payload.value].filter((candidate) => candidate !== retainedFileUri),
+        );
+      }
+      continue;
+    }
     if (!uri || !mimeType.startsWith("image/")) {
-      warnings.push("One shared item was not a supported image.");
+      warnings.push(m(msg("One shared item was not a supported image.")));
+      await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
+      continue;
+    }
+    if (!isProviderSendTurnSupportedImageMimeType(mimeType)) {
+      warnings.push(
+        m(
+          msg("''{name}'' is not a supported image type.", {
+            name: resolved?.originalName ?? fallbackName(uri, index, mimeType),
+          }),
+        ),
+      );
       await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
       continue;
     }
@@ -168,37 +430,76 @@ export async function buildIncomingShareDraft(input: {
       resolved.contentSize > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
     ) {
       warnings.push(
-        `'${resolved.originalName ?? fallbackName(uri, index, mimeType)}' exceeds the 10 MB attachment limit.`,
+        m(
+          msg("''{name}'' exceeds the 10 MB attachment limit.", {
+            name: resolved.originalName ?? fallbackName(uri, index, mimeType),
+          }),
+        ),
       );
       await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
       continue;
     }
 
+    const name = resolved?.originalName ?? fallbackName(uri, index, mimeType);
+    let persistedImageUri: string | undefined;
+    let retainedImageUri: string | undefined;
     try {
-      const base64 = await input.fileReader.readBase64(uri);
-      const sizeBytes = resolved?.contentSize ?? estimateBase64ByteSize(base64);
-      if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        warnings.push(
-          `'${resolved?.originalName ?? fallbackName(uri, index, mimeType)}' exceeds the 10 MB attachment limit.`,
-        );
+      const sharedBase64 = await input.fileReader.readBase64(uri);
+      // Use already-read bytes because native image loaders may not read the provider's file.
+      const fitted = await fitComposerImage({
+        uri: `data:${mimeType};base64,${sharedBase64}`,
+        mimeType,
+        base64: sharedBase64,
+      });
+      const base64 = fitted?.base64 ?? sharedBase64;
+      const decodedSize = estimateBase64ByteSize(base64);
+      if (decodedSize <= 0 || decodedSize > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        warnings.push(m(msg("''{name}'' exceeds the 10 MB attachment limit.", { name })));
+        continue;
+      }
+      if (input.fileReader.persistFile) {
+        persistedImageUri = await input.fileReader.persistFile(fitted?.uri ?? uri, name);
+        const sizeBytes = (await input.fileReader.readSize?.(persistedImageUri)) ?? null;
+        if (sizeBytes === null || sizeBytes <= 0) {
+          warnings.push(m(msg("''{name}'' is empty or could not be read.", { name })));
+          continue;
+        }
+        if (sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+          warnings.push(fileAttachmentTooLargeMessage(name, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, m));
+          continue;
+        }
+        attachments.push({
+          id: `${input.id}-image-${index}`,
+          type: "image",
+          name,
+          mimeType,
+          sizeBytes,
+          fileUri: persistedImageUri,
+          previewUri: persistedImageUri,
+        });
+        retainedImageUri = persistedImageUri;
         continue;
       }
       const dataUrl = `data:${mimeType};base64,${base64}`;
       attachments.push({
-        id: `${input.id}:image:${index}`,
+        id: `${input.id}-image-${index}`,
         type: "image",
-        name: resolved?.originalName ?? fallbackName(uri, index, mimeType),
+        name,
         mimeType,
-        sizeBytes,
+        sizeBytes: decodedSize,
         dataUrl,
-        // The share provider's file is temporary. A data-backed preview keeps
-        // the composer valid after its source file and App Group entry are gone.
+        // Data-backed previews outlive temporary share files and App Group entries.
         previewUri: dataUrl,
       });
     } catch {
-      warnings.push(`Could not read '${fallbackName(uri, index, mimeType)}'.`);
+      warnings.push(m(msg("Could not read ''{name}''.", { name })));
     } finally {
-      await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
+      await releaseOwnedFiles(
+        input.fileReader,
+        [uri, payload.value, persistedImageUri].filter(
+          (candidate) => candidate !== retainedImageUri,
+        ),
+      );
     }
   }
 

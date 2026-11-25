@@ -1,4 +1,4 @@
-const NIGHTLY_SERVER_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
+const NIGHTLY_SERVER_VERSION_PATTERN = /^[^-+]+-(?:nightly|preview)\.\d{8}\.\d+$/;
 
 export function formatAppDisplayName(input: {
   readonly baseName: string;
@@ -11,49 +11,21 @@ export function formatAppDisplayName(input: {
   return `${input.baseName} (${input.stageLabel})`;
 }
 
-/**
- * Whether the sidebar v2 beta is on by default for a build stage.
- *
- * Nightly and local dev opt in; Alpha and Latest stay on v1. This is resolved
- * from the client's own stage label rather than the connected server's version:
- * v2 only exists in the client, so a stable client on a nightly server has
- * nothing to turn on.
- */
-export function resolveSidebarV2Default(stageLabel: string): boolean {
-  const stage = stageLabel.trim().toLowerCase();
-  return stage === "nightly" || stage === "dev";
+export function resolveHostedAppChannelLabel(channel: string | null | undefined): string | null {
+  const normalized = channel?.trim().toLowerCase();
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- release channel name, part of the product name
+  return normalized === "nightly" ? "Nightly" : normalized === "latest" ? "Latest" : null;
 }
 
-/**
- * Resolved sidebar v2 state: an explicit choice if the user has made one,
- * otherwise the default for this build stage.
- *
- * A stored `enabled: true` counts as an explicit choice even without the
- * companion flag. `true` was never the schema default, so it can only have come
- * from the Settings → Beta toggle — settings written before that flag existed
- * would otherwise lose the opt-in and drop such users back to v1 on production.
- * Mirrors how `normalizeDesktopSettingsDocument` treats a legacy stored
- * `updateChannel: "nightly"` as user-configured.
- *
- * `settingsHydrated` guards the startup window: client settings load
- * asynchronously and the pre-hydration snapshot is just the schema defaults, so
- * resolving against it would mount one sidebar and swap it out a tick later,
- * remounting the tree. While hydrating, hold v1 — where both paths already
- * start.
- */
-export function resolveSidebarV2Enabled(input: {
-  readonly enabled: boolean;
-  readonly configuredByUser: boolean;
-  readonly settingsHydrated: boolean;
-  readonly stageLabel: string;
-}): boolean {
-  if (!input.settingsHydrated) {
-    return false;
-  }
-
-  return input.configuredByUser || input.enabled
-    ? input.enabled
-    : resolveSidebarV2Default(input.stageLabel);
+/** Stage label of a web build. vite.config.ts stamps it into index.html's title too. */
+export function resolveWebAppStageLabel(input: {
+  readonly hostedAppChannel: string | null | undefined;
+  readonly development: boolean;
+}): string {
+  return (
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- release channel name, part of the product name
+    resolveHostedAppChannelLabel(input.hostedAppChannel) ?? (input.development ? "Dev" : "Beta")
+  );
 }
 
 export function resolveServerBackedAppStageLabel(input: {
@@ -62,7 +34,8 @@ export function resolveServerBackedAppStageLabel(input: {
 }): string {
   return input.primaryServerVersion &&
     NIGHTLY_SERVER_VERSION_PATTERN.test(input.primaryServerVersion)
-    ? "Nightly"
+    ? // oxlint-disable-next-line t3code/no-untranslated-copy -- release channel name, part of the product name
+      "Nightly"
     : input.fallbackStageLabel;
 }
 
@@ -80,4 +53,33 @@ export function resolveServerBackedAppDisplayName(input: {
   return stageLabel === input.fallbackStageLabel
     ? input.fallbackDisplayName
     : formatAppDisplayName({ baseName: input.baseName, stageLabel });
+}
+
+/**
+ * Names the open thread: `project / thread` on desktop, where the OS already
+ * shows the app, with the app name appended in browser tabs.
+ */
+export function resolveWindowTitle(input: {
+  readonly appDisplayName: string;
+  readonly projectTitle: string | null;
+  readonly threadTitle: string | null;
+  /** The screen reader title: status, then thread, then project, since a screen reader reads from the start. */
+  readonly screenReader?: { readonly threadStatus: string | null };
+  readonly desktop: boolean;
+}): string {
+  const threadTitle = input.threadTitle?.trim() ?? "";
+  const status = input.screenReader?.threadStatus;
+  if (threadTitle === "") {
+    return status ? `${status}: ${input.appDisplayName}` : input.appDisplayName;
+  }
+
+  const projectTitle = input.projectTitle?.trim() ?? "";
+  const context =
+    projectTitle === ""
+      ? threadTitle
+      : input.screenReader
+        ? `${threadTitle} - ${projectTitle}`
+        : `${projectTitle} / ${threadTitle}`;
+  const title = status ? `${status}: ${context}` : context;
+  return input.desktop ? title : `${title} - ${input.appDisplayName}`;
 }

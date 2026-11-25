@@ -1,29 +1,14 @@
-export function proposedPlanTitle(planMarkdown: string): string | null {
-  const heading = planMarkdown.match(/^\s{0,3}#{1,6}\s+(.+)$/m)?.[1]?.trim();
-  return heading && heading.length > 0 ? heading : null;
-}
+import { stripDisplayedPlanMarkdown, proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
+import { msg } from "gt-react";
 
-export function stripDisplayedPlanMarkdown(planMarkdown: string): string {
-  const lines = planMarkdown.trimEnd().split(/\r?\n/);
-  const sourceLines = lines[0] && /^\s{0,3}#{1,6}\s+/.test(lines[0]) ? lines.slice(1) : [...lines];
-  while (sourceLines[0]?.trim().length === 0) {
-    sourceLines.shift();
-  }
-  const firstHeadingMatch = sourceLines[0]?.match(/^\s{0,3}#{1,6}\s+(.+)$/);
-  if (firstHeadingMatch?.[1]?.trim().toLowerCase() === "summary") {
-    sourceLines.shift();
-    while (sourceLines[0]?.trim().length === 0) {
-      sourceLines.shift();
-    }
-  }
-  return sourceLines.join("\n");
-}
+import { m, type MessageResolver } from "./i18n/messages";
 
 export function buildCollapsedProposedPlanPreviewMarkdown(
   planMarkdown: string,
   options?: {
     maxLines?: number;
   },
+  resolve: MessageResolver = m,
 ): string {
   const maxLines = options?.maxLines ?? 8;
   const lines = stripDisplayedPlanMarkdown(planMarkdown)
@@ -51,7 +36,7 @@ export function buildCollapsedProposedPlanPreviewMarkdown(
   }
 
   if (previewLines.length === 0) {
-    return proposedPlanTitle(planMarkdown) ?? "Plan preview unavailable.";
+    return proposedPlanTitle(planMarkdown) ?? resolve(msg("Plan preview unavailable."));
   }
 
   if (hasMoreContent) {
@@ -70,91 +55,7 @@ function sanitizePlanFileSegment(input: string): string {
   return sanitized.length > 0 ? sanitized : "plan";
 }
 
-/** Prefix of the message the app sends when the user approves a plan. */
 export const PLAN_IMPLEMENTATION_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:\n";
-
-export function buildPlanImplementationPrompt(planMarkdown: string): string {
-  return `${PLAN_IMPLEMENTATION_PROMPT_PREFIX}${planMarkdown.trim()}`;
-}
-
-/**
- * Avi Code addition: opening line of the plan review prompt, so prompt recall
- * can recognise the app-composed send.
- */
-export const PLAN_REVIEW_PROMPT_PREFIX =
-  "Review the proposed plan below as an independent senior engineer.\n";
-
-export function buildPlanReviewPrompt(planMarkdown: string): string {
-  return `${PLAN_REVIEW_PROMPT_PREFIX}
-Stay in read-only plan mode. Inspect the repository to validate the plan's assumptions, but do not edit files or implement the plan.
-
-Evaluate:
-- correctness and fit with the current architecture
-- missing requirements, edge cases, and failure modes
-- unsafe sequencing, compatibility, migration, and rollout risks
-- whether the proposed tests and acceptance criteria are sufficient
-
-Do not merely restate the plan. Produce a concise Markdown audit with:
-1. Verdict: approve, approve with changes, or revise
-2. Blocking findings
-3. Non-blocking improvements
-4. Missing tests and acceptance criteria
-5. Concrete recommended amendments
-6. Repository evidence with file paths where useful
-
-PROPOSED PLAN:
-${planMarkdown.trim()}`;
-}
-
-/** Avi Code addition: the refine prompt sent when feedback is attachments with no text. */
-export const PLAN_REFINE_ATTACHMENTS_ONLY_PROMPT =
-  "Refine the plan using the attached file(s) as feedback.";
-
-/**
- * Decides whether a plan follow-up refines or implements. Typed text or any
- * attachment (Avi Code addition) counts as feedback; only a fully empty
- * composer implements.
- */
-export function resolvePlanFollowUpSubmission(input: {
-  draftText: string;
-  planMarkdown: string;
-  attachmentCount: number;
-}): {
-  text: string;
-  interactionMode: "default" | "plan";
-} {
-  const trimmedDraftText = input.draftText.trim();
-  if (trimmedDraftText.length > 0) {
-    return {
-      text: trimmedDraftText,
-      interactionMode: "plan",
-    };
-  }
-  if (input.attachmentCount > 0) {
-    return {
-      text: PLAN_REFINE_ATTACHMENTS_ONLY_PROMPT,
-      interactionMode: "plan",
-    };
-  }
-
-  return {
-    text: buildPlanImplementationPrompt(input.planMarkdown),
-    interactionMode: "default",
-  };
-}
-
-export function buildPlanImplementationThreadTitle(planMarkdown: string): string {
-  const title = proposedPlanTitle(planMarkdown);
-  if (!title) {
-    return "Implement plan";
-  }
-  return `Implement ${title}`;
-}
-
-export function buildPlanReviewThreadTitle(planMarkdown: string): string {
-  const title = proposedPlanTitle(planMarkdown);
-  return title ? `Review ${title}` : "Review plan";
-}
 
 export function buildProposedPlanMarkdownFilename(planMarkdown: string): string {
   const title = proposedPlanTitle(planMarkdown);

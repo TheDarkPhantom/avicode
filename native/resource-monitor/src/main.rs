@@ -8,7 +8,7 @@ use sysinfo::{
     MINIMUM_CPU_UPDATE_INTERVAL, Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind,
 };
 
-const PROTOCOL_VERSION: u32 = 2;
+const PROTOCOL_VERSION: u32 = 3;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 250;
 const MAX_SAMPLE_INTERVAL_MS: u64 = 60_000;
 const PROCESS_START_TIME_PRECISION_MS: u64 = 1_000;
@@ -21,6 +21,11 @@ const MAX_PROCESS_NAME_BYTES: usize = 1_024;
 const MAX_PROCESS_COMMAND_BYTES: usize = 16 * 1_024;
 const MAX_PROCESS_STATUS_BYTES: usize = 256;
 const HISTORY_CHUNK_SNAPSHOTS: usize = 32;
+const TWO_STAGE_PROCESS_REFRESH: bool = cfg!(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows"
+));
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +71,10 @@ enum Command {
         version: u32,
         request_id: String,
     },
+    ProcessTable {
+        version: u32,
+        request_id: String,
+    },
     ReadHistory {
         version: u32,
         request_id: String,
@@ -84,6 +93,7 @@ impl Command {
             | Self::SetSampleInterval { version, .. }
             | Self::SetStreaming { version, .. }
             | Self::SampleNow { version, .. }
+            | Self::ProcessTable { version, .. }
             | Self::ReadHistory { version, .. }
             | Self::Shutdown { version } => *version,
         }
@@ -144,6 +154,24 @@ struct ProcessSample {
     io_read_bytes: u64,
     io_write_bytes: u64,
     io_semantics: IoSemantics,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessTableEntry {
+    pid: u32,
+    ppid: u32,
+    name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessTableEvent<'a> {
+    version: u32,
+    #[serde(rename = "type")]
+    event_type: &'static str,
+    request_id: &'a str,
+    processes: Vec<ProcessTableEntry>,
 }
 
 impl ProcessSample {
@@ -250,6 +278,10 @@ impl HistoryRecorder {
         max_retained_entries: usize,
         max_retained_bytes: usize,
     ) {
+        let clock_moved_backward = self
+            .snapshots
+            .back()
+            .is_some_and(|previous| previous.sampled_at_unix_ms > snapshot.sampled_at_unix_ms);
         let mut retained = snapshot.clone();
         retained.request_id = None;
         self.retained_entry_count = self
@@ -264,6 +296,7 @@ impl HistoryRecorder {
             max_snapshots,
             max_retained_entries,
             max_retained_bytes,
+            clock_moved_backward,
         );
     }
 
@@ -273,20 +306,24 @@ impl HistoryRecorder {
         max_snapshots: usize,
         max_retained_entries: usize,
         max_retained_bytes: usize,
+        clock_moved_backward: bool,
     ) {
-        let mut future_entry_count = 0usize;
-        let mut future_bytes = 0usize;
-        self.snapshots.retain(|snapshot| {
-            let keep = snapshot.sampled_at_unix_ms <= now_ms;
-            if !keep {
-                future_entry_count =
-                    future_entry_count.saturating_add(snapshot.retained_entry_count());
-                future_bytes = future_bytes.saturating_add(snapshot.estimated_history_bytes());
-            }
-            keep
-        });
-        self.retained_entry_count = self.retained_entry_count.saturating_sub(future_entry_count);
-        self.retained_bytes = self.retained_bytes.saturating_sub(future_bytes);
+        if clock_moved_backward {
+            let mut future_entry_count = 0usize;
+            let mut future_bytes = 0usize;
+            self.snapshots.retain(|snapshot| {
+                let keep = snapshot.sampled_at_unix_ms <= now_ms;
+                if !keep {
+                    future_entry_count =
+                        future_entry_count.saturating_add(snapshot.retained_entry_count());
+                    future_bytes = future_bytes.saturating_add(snapshot.estimated_history_bytes());
+                }
+                keep
+            });
+            self.retained_entry_count =
+                self.retained_entry_count.saturating_sub(future_entry_count);
+            self.retained_bytes = self.retained_bytes.saturating_sub(future_bytes);
+        }
 
         while self.snapshots.front().is_some_and(|snapshot| {
             snapshot.sampled_at_unix_ms < now_ms.saturating_sub(HISTORY_RETENTION_MS)
@@ -318,6 +355,12 @@ impl HistoryRecorder {
     }
 }
 
+struct Discovery {
+    external_processes: Vec<ExternalProcess>,
+    tracked: HashSet<u32>,
+    scanned_process_count: usize,
+}
+
 struct Collector {
     system: System,
     sequence: u64,
@@ -333,50 +376,25 @@ impl Collector {
         }
     }
 
-    fn prime_cpu_usage(&mut self) {
-        self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            process_refresh_kind(),
-        );
-        self.cpu_baseline_refreshed_at = Some(Instant::now());
+    fn prime_cpu_usage(&mut self, config: &CollectorConfig) {
+        self.discover(config);
     }
 
-    fn sample(&mut self, config: &CollectorConfig, request_id: Option<String>) -> SnapshotEvent {
-        if let Some(delay) =
-            remaining_cpu_measurement_delay(self.cpu_baseline_refreshed_at.take(), Instant::now())
-        {
-            thread::sleep(delay);
-        }
-        let collection_started = Instant::now();
-        self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            process_refresh_kind(),
-        );
-        self.cpu_baseline_refreshed_at = Some(Instant::now());
-
-        let rows = self
-            .system
-            .processes()
+    fn discover(&mut self, config: &CollectorConfig) -> Discovery {
+        let (rows, scanned_process_count) = self.discovery_rows(config);
+        let start_time_ms_by_pid = rows
             .iter()
-            .map(|(pid, process)| {
-                let pid = pid.as_u32();
-                let ppid = process.parent().map(Pid::as_u32).unwrap_or(0);
-                (pid, ppid, process.start_time().saturating_mul(1_000))
-            })
-            .collect::<Vec<_>>();
+            .map(|(pid, _, start_time_ms)| (*pid, *start_time_ms))
+            .collect::<HashMap<_, _>>();
         let external_processes = config
             .external_processes
             .iter()
             .filter_map(|(pid, expected_start_time_ms)| {
-                let (_, _, actual_start_time_ms) = rows
-                    .iter()
-                    .find(|(candidate_pid, _, _)| candidate_pid == pid)?;
-                matches_external_identity(*actual_start_time_ms, *expected_start_time_ms).then_some(
+                let actual_start_time_ms = *start_time_ms_by_pid.get(pid)?;
+                matches_external_identity(actual_start_time_ms, *expected_start_time_ms).then_some(
                     ExternalProcess {
                         pid: *pid,
-                        start_time_ms: Some(*actual_start_time_ms),
+                        start_time_ms: Some(actual_start_time_ms),
                     },
                 )
             })
@@ -387,16 +405,245 @@ impl Collector {
             .collect::<HashSet<_>>();
         roots.insert(config.root_pid);
         let tracked = select_tracked_pids(&rows, &roots);
+        #[cfg(target_os = "windows")]
+        self.refresh_tracked_cpu(&tracked);
+        self.cpu_baseline_refreshed_at = Some(Instant::now());
+        Discovery {
+            external_processes,
+            tracked,
+            scanned_process_count,
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn discovery_rows(&mut self, _config: &CollectorConfig) -> (Vec<(u32, u32, u64)>, usize) {
+        self.system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            process_discovery_refresh_kind(),
+        );
+        let rows = self
+            .system
+            .processes()
+            .iter()
+            .map(|(pid, process)| {
+                let pid = pid.as_u32();
+                let ppid = process.parent().map(Pid::as_u32).unwrap_or(0);
+                (pid, ppid, process.start_time().saturating_mul(1_000))
+            })
+            .collect::<Vec<_>>();
+        let scanned_process_count = rows.len();
+        (rows, scanned_process_count)
+    }
+
+    // sysinfo opens every process it lists with PROCESS_VM_READ, which anti-cheat
+    // software flags. List with Toolhelp instead and open only possible T3 descendants.
+    #[cfg(target_os = "windows")]
+    fn discovery_rows(&mut self, config: &CollectorConfig) -> (Vec<(u32, u32, u64)>, usize) {
+        let listed = windows_processes::list();
+        let parent_rows = listed
+            .iter()
+            .map(|process| (process.pid, process.ppid, 0))
+            .collect::<Vec<_>>();
+        let mut candidate_roots = config
+            .external_processes
+            .keys()
+            .copied()
+            .collect::<HashSet<_>>();
+        candidate_roots.insert(config.root_pid);
+        // With equal start times every descendant is a candidate.
+        let candidates = select_tracked_pids(&parent_rows, &candidate_roots);
+        let rows = parent_rows
+            .into_iter()
+            .filter(|(pid, _, _)| candidates.contains(pid))
+            .map(|(pid, ppid, _)| {
+                let start_time = windows_processes::start_time(pid).unwrap_or(0);
+                (pid, ppid, start_time.saturating_mul(1_000))
+            })
+            .collect::<Vec<_>>();
+        (rows, listed.len())
+    }
+
+    // CPU usage needs a baseline per process, so the long-lived System holds the
+    // tracked tree only. A live process that left the tree is dropped by starting over.
+    #[cfg(target_os = "windows")]
+    fn refresh_tracked_cpu(&mut self, tracked: &HashSet<u32>) {
+        let mut keep = tracked
+            .iter()
+            .copied()
+            .map(Pid::from_u32)
+            .collect::<HashSet<_>>();
+        keep.insert(Pid::from_u32(std::process::id()));
+        let held = self
+            .system
+            .processes()
+            .keys()
+            .copied()
+            .chain(keep.iter().copied())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        self.system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&held),
+            true,
+            process_discovery_refresh_kind(),
+        );
+        if self
+            .system
+            .processes()
+            .keys()
+            .any(|pid| !keep.contains(pid))
+        {
+            self.system = System::new();
+            let keep = keep.into_iter().collect::<Vec<_>>();
+            self.system.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&keep),
+                true,
+                process_discovery_refresh_kind(),
+            );
+        }
+    }
+
+    // Terminal polling asks for this every second while a shell is open. On
+    // Linux one read of /proc/<pid>/stat has everything; sysinfo also opens
+    // /proc/<pid>/status and builds a full record per process, ~3x the CPU.
+    #[cfg(target_os = "linux")]
+    fn process_table(&self) -> Vec<ProcessTableEntry> {
+        use std::io::Read;
+
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        let mut buffer = Vec::with_capacity(512);
+        let mut processes = entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let pid = entry.file_name().to_str()?.parse::<u32>().ok()?;
+                buffer.clear();
+                std::fs::File::open(entry.path().join("stat"))
+                    .ok()?
+                    .read_to_end(&mut buffer)
+                    .ok()?;
+                let (name, ppid) = parse_proc_stat(&buffer)?;
+                Some(ProcessTableEntry { pid, ppid, name })
+            })
+            .collect::<Vec<_>>();
+        processes.sort_by_key(|process| process.pid);
+        processes
+    }
+
+    #[cfg(target_os = "windows")]
+    fn process_table(&self) -> Vec<ProcessTableEntry> {
+        let mut processes = windows_processes::list()
+            .into_iter()
+            // Kernel idle PID 0 would fail the server's positive-PID event schema.
+            .filter(|process| process.pid != 0)
+            .map(|process| ProcessTableEntry {
+                pid: process.pid,
+                ppid: process.ppid,
+                name: truncate_utf8(process.name, MAX_PROCESS_NAME_BYTES),
+            })
+            .collect::<Vec<_>>();
+        processes.sort_by_key(|process| process.pid);
+        processes
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    fn process_table(&self) -> Vec<ProcessTableEntry> {
+        // A separate System preserves snapshot CPU baselines.
+        let mut process_table_system = System::new();
+        process_table_system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().without_tasks(),
+        );
+        let mut processes = process_table_system
+            .processes()
+            .iter()
+            .filter_map(|(pid, process)| {
+                let pid = pid.as_u32();
+                // Kernel idle PID 0 would fail the server's positive-PID event schema.
+                if pid == 0 {
+                    return None;
+                }
+                Some(ProcessTableEntry {
+                    pid,
+                    ppid: process.parent().map(Pid::as_u32).unwrap_or(0),
+                    name: truncate_utf8(
+                        process.name().to_string_lossy().into_owned(),
+                        MAX_PROCESS_NAME_BYTES,
+                    ),
+                })
+            })
+            .collect::<Vec<_>>();
+        processes.sort_by_key(|process| process.pid);
+        processes
+    }
+
+    fn sample(&mut self, config: &CollectorConfig, request_id: Option<String>) -> SnapshotEvent {
+        if let Some(delay) =
+            remaining_cpu_measurement_delay(self.cpu_baseline_refreshed_at.take(), Instant::now())
+        {
+            thread::sleep(delay);
+        }
+        let collection_started = Instant::now();
+        let Discovery {
+            external_processes,
+            tracked,
+            scanned_process_count,
+        } = self.discover(config);
         let tracked_process_count = tracked.len();
+        let process_details = if TWO_STAGE_PROCESS_REFRESH && !tracked.is_empty() {
+            let monitor_pid = Pid::from_u32(std::process::id());
+            let mut detail_pids = tracked
+                .iter()
+                .copied()
+                .map(Pid::from_u32)
+                .collect::<Vec<_>>();
+            if !tracked.contains(&monitor_pid.as_u32()) {
+                detail_pids.push(monitor_pid);
+            }
+            // Detail fields need no baseline. Drop command data and OS handles after each sample.
+            let mut details = System::new();
+            details.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&detail_pids),
+                true,
+                process_refresh_kind().without_cpu(),
+            );
+            // This process cannot be replaced during collection. Its start time
+            // exposes any boot-epoch shift between the two System instances.
+            let start_time_offset = self.system.process(monitor_pid).and_then(|process| {
+                details.process(monitor_pid).map(|detail| {
+                    i128::from(detail.start_time()) - i128::from(process.start_time())
+                })
+            });
+            Some((details, start_time_offset))
+        } else {
+            None
+        };
+        let sample_details = process_details
+            .as_ref()
+            .map_or(&self.system, |(details, _)| details);
+        let start_time_offset = process_details
+            .as_ref()
+            .map_or(Some(0), |(_, offset)| *offset);
         let mut processes = tracked
             .into_iter()
             .filter_map(|pid| {
                 let process = self.system.process(Pid::from_u32(pid))?;
-                let disk_usage = process.disk_usage();
-                let command = if process.cmd().is_empty() {
+                let details = sample_details.process(Pid::from_u32(pid))?;
+                if !matches_process_start_time(
+                    process.start_time(),
+                    details.start_time(),
+                    start_time_offset?,
+                ) {
+                    return None;
+                }
+                let disk_usage = details.disk_usage();
+                let command = if details.cmd().is_empty() {
                     process.name().to_string_lossy().into_owned()
                 } else {
-                    process
+                    details
                         .cmd()
                         .iter()
                         .map(|part| part.to_string_lossy())
@@ -420,14 +667,15 @@ impl Collector {
                     ),
                     cpu_percent: process.cpu_usage(),
                     cpu_time_ms: process.accumulated_cpu_time(),
-                    resident_bytes: process.memory(),
-                    virtual_bytes: process.virtual_memory(),
+                    resident_bytes: details.memory(),
+                    virtual_bytes: details.virtual_memory(),
                     io_read_bytes: disk_usage.total_read_bytes,
                     io_write_bytes: disk_usage.total_written_bytes,
                     io_semantics: io_semantics(),
                 })
             })
             .collect::<Vec<_>>();
+        drop(process_details);
         processes.sort_by_key(|process| process.pid);
         self.sequence = self.sequence.saturating_add(1);
 
@@ -437,7 +685,7 @@ impl Collector {
             sequence: self.sequence,
             sampled_at_unix_ms: unix_time_ms(),
             collection_duration_micros: collection_started.elapsed().as_micros() as u64,
-            scanned_process_count: self.system.processes().len(),
+            scanned_process_count,
             retained_process_count: processes.len(),
             inaccessible_process_count: inaccessible_process_count(
                 tracked_process_count,
@@ -450,6 +698,75 @@ impl Collector {
     }
 }
 
+#[cfg(target_os = "windows")]
+mod windows_processes {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    pub struct ListedProcess {
+        pub pid: u32,
+        pub ppid: u32,
+        pub name: String,
+    }
+
+    pub fn list() -> Vec<ListedProcess> {
+        let mut processes = Vec::new();
+        let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+            return processes;
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut next = unsafe { Process32FirstW(snapshot, &mut entry) };
+        while next.is_ok() {
+            let name_len = entry
+                .szExeFile
+                .iter()
+                .position(|&unit| unit == 0)
+                .unwrap_or(entry.szExeFile.len());
+            processes.push(ListedProcess {
+                pid: entry.th32ProcessID,
+                ppid: entry.th32ParentProcessID,
+                name: String::from_utf16_lossy(&entry.szExeFile[..name_len]),
+            });
+            next = unsafe { Process32NextW(snapshot, &mut entry) };
+        }
+        let _ = unsafe { CloseHandle(snapshot) };
+        processes
+    }
+
+    /// Seconds since the Unix epoch, computed as sysinfo's `Process::start_time` is.
+    pub fn start_time(pid: u32) -> Option<u64> {
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        let times =
+            unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+        let _ = unsafe { CloseHandle(handle) };
+        times.ok()?;
+        let ticks = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+        (ticks / 10_000_000).checked_sub(11_644_473_600)
+    }
+}
+
+// Keep CPU baselines separate. Even a metadata refresh resets Linux process times.
+fn process_discovery_refresh_kind() -> ProcessRefreshKind {
+    if TWO_STAGE_PROCESS_REFRESH {
+        ProcessRefreshKind::nothing().with_cpu().without_tasks()
+    } else {
+        process_refresh_kind()
+    }
+}
+
 fn process_refresh_kind() -> ProcessRefreshKind {
     ProcessRefreshKind::nothing()
         .with_memory()
@@ -459,8 +776,30 @@ fn process_refresh_kind() -> ProcessRefreshKind {
         .without_tasks()
 }
 
+/// Name and parent pid from `/proc/<pid>/stat`: `pid (comm) state ppid ...`.
+/// The name may itself contain spaces and parentheses, so it ends at the last `)`.
+#[cfg(any(target_os = "linux", test))]
+fn parse_proc_stat(stat: &[u8]) -> Option<(String, u32)> {
+    let open = stat.iter().position(|&byte| byte == b'(')?;
+    let close = stat.iter().rposition(|&byte| byte == b')')?;
+    let name = stat.get(open + 1..close)?;
+    let mut fields = stat.get(close + 1..)?.split(|&byte| byte == b' ');
+    fields.next()?;
+    fields.next()?;
+    let ppid = std::str::from_utf8(fields.next()?).ok()?.parse().ok()?;
+    let name = truncate_utf8(
+        String::from_utf8_lossy(name).into_owned(),
+        MAX_PROCESS_NAME_BYTES,
+    );
+    Some((name, ppid))
+}
+
 fn inaccessible_process_count(selected: usize, materialized: usize) -> usize {
     selected.saturating_sub(materialized)
+}
+
+fn matches_process_start_time(discovered: u64, detail: u64, epoch_offset: i128) -> bool {
+    i128::from(detail) - epoch_offset == i128::from(discovered)
 }
 
 fn remaining_cpu_measurement_delay(
@@ -476,9 +815,7 @@ fn matches_external_identity(
     actual_start_time_ms: u64,
     expected_start_time_ms: Option<u64>,
 ) -> bool {
-    // sysinfo reports process starts at whole-second precision. Normalize the
-    // higher-resolution Electron timestamp to that same bucket instead of
-    // accepting adjacent seconds, which could attach a quickly reused PID.
+    // Match sysinfo's whole-second precision without admitting reused PIDs from adjacent seconds.
     expected_start_time_ms.is_none_or(|expected| {
         actual_start_time_ms == expected - (expected % PROCESS_START_TIME_PRECISION_MS)
     })
@@ -749,7 +1086,9 @@ fn main() -> io::Result<()> {
                                 .map(|process| (process.pid, process.start_time_ms))
                                 .collect(),
                         });
-                        collector.prime_cpu_usage();
+                        if let Some(current) = config.as_ref() {
+                            collector.prime_cpu_usage(current);
+                        }
                         next_sample_at = sample_interval.map(|_| Instant::now());
                     }
                     Command::SetExternalProcesses { processes, .. } => {
@@ -805,6 +1144,15 @@ fn main() -> io::Result<()> {
                                 true,
                             )?;
                         }
+                    }
+                    Command::ProcessTable { request_id, .. } => {
+                        let event = ProcessTableEvent {
+                            version: PROTOCOL_VERSION,
+                            event_type: "processTable",
+                            request_id: &request_id,
+                            processes: collector.process_table(),
+                        };
+                        write_event(&mut writer, &event)?;
                     }
                     Command::ReadHistory {
                         request_id,
@@ -874,16 +1222,152 @@ mod tests {
 
     #[test]
     fn validates_external_process_start_identity() {
-        assert!(matches_external_identity(10_000, None));
-        assert!(matches_external_identity(10_000, Some(10_999)));
-        assert!(!matches_external_identity(10_000, Some(11_000)));
-        assert!(!matches_external_identity(10_000, Some(9_999)));
+        for (actual, expected, matches) in [
+            (10_000, None, true),
+            (10_000, Some(10_000), true),
+            (10_000, Some(10_999), true),
+            (10_000, Some(11_000), false),
+            (10_000, Some(9_999), false),
+            (0, Some(999), true),
+            (0, Some(1_000), false),
+            (u64::MAX, None, true),
+            (u64::MAX, Some(u64::MAX), false),
+        ] {
+            assert_eq!(matches_external_identity(actual, expected), matches);
+        }
+    }
+
+    #[test]
+    fn loads_details_when_an_existing_process_becomes_selected() {
+        let mut collector = Collector::new();
+        let mut config = CollectorConfig {
+            root_pid: u32::MAX,
+            sample_interval: None,
+            external_processes: HashMap::new(),
+        };
+        assert!(collector.sample(&config, None).processes.is_empty());
+
+        config.root_pid = std::process::id();
+        let snapshot = collector.sample(&config, None);
+        let process = snapshot
+            .processes
+            .iter()
+            .find(|process| process.pid == config.root_pid)
+            .expect("selected process");
+
+        assert!(!process.command.is_empty());
+        assert!(process.resident_bytes > 0);
+        assert!(process.cpu_percent.is_finite());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_holds_no_process_outside_the_tracked_tree() {
+        let mut collector = Collector::new();
+        let config = CollectorConfig {
+            root_pid: u32::MAX,
+            sample_interval: None,
+            external_processes: HashMap::new(),
+        };
+        let snapshot = collector.sample(&config, None);
+        let own_pid = std::process::id();
+
+        assert!(snapshot.scanned_process_count > 1);
+        assert_eq!(
+            collector
+                .system
+                .processes()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![Pid::from_u32(own_pid)]
+        );
+        assert!(
+            collector
+                .process_table()
+                .iter()
+                .any(|process| process.pid == own_pid && process.ppid != 0)
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn keeps_command_lines_and_memory_out_of_the_discovery_table() {
+        let mut collector = Collector::new();
+        let mut config = CollectorConfig {
+            root_pid: u32::MAX,
+            sample_interval: None,
+            external_processes: HashMap::new(),
+        };
+        assert!(collector.sample(&config, None).processes.is_empty());
+
+        let pid = Pid::from_u32(std::process::id());
+        let unselected = collector.system.process(pid).expect("discovered process");
+        assert!(unselected.cmd().is_empty());
+        assert_eq!(unselected.memory(), 0);
+        assert_eq!(unselected.virtual_memory(), 0);
+
+        config.external_processes = [
+            (pid.as_u32(), Some(0)),
+            (u32::MAX, None),
+            (pid.as_u32(), None),
+        ]
+        .into_iter()
+        .collect();
+        let snapshot = collector.sample(&config, None);
+        let selected = snapshot
+            .processes
+            .iter()
+            .find(|process| process.pid == pid.as_u32())
+            .expect("external process details");
+        assert!(!selected.command.is_empty());
+        assert!(selected.resident_bytes > 0);
+        assert!(selected.start_time_ms > 0);
+        assert_eq!(
+            snapshot
+                .external_processes
+                .iter()
+                .map(|process| (process.pid, process.start_time_ms))
+                .collect::<Vec<_>>(),
+            vec![(pid.as_u32(), Some(selected.start_time_ms))],
+        );
+
+        config.root_pid = pid.as_u32();
+        config.external_processes.insert(pid.as_u32(), Some(0));
+        let snapshot = collector.sample(&config, None);
+        assert!(snapshot.external_processes.is_empty());
+        assert_eq!(
+            snapshot
+                .processes
+                .iter()
+                .filter(|process| process.pid == pid.as_u32())
+                .count(),
+            1,
+        );
+
+        let retained = collector
+            .system
+            .process(pid)
+            .expect("retained CPU baseline");
+        assert!(retained.cmd().is_empty());
+        assert_eq!(retained.memory(), 0);
+        assert_eq!(retained.virtual_memory(), 0);
+    }
+
+    #[test]
+    fn accepts_clock_shifts_without_accepting_reused_process_starts() {
+        assert!(matches_process_start_time(10_000, 13_600, 3_600));
+        assert!(!matches_process_start_time(10_000, 13_601, 3_600));
+        assert!(matches_process_start_time(10_000, 6_400, -3_600));
+        assert!(!matches_process_start_time(10_000, 6_401, -3_600));
+        assert!(matches_process_start_time(10_000, 10_000, 0));
+        assert!(!matches_process_start_time(10_000, 10_001, 0));
     }
 
     #[test]
     fn decodes_protocol_commands() {
         let configure = serde_json::from_str::<Command>(
-            r#"{"version":2,"type":"configure","rootPid":42,"sampleIntervalMs":1000,"externalProcesses":[{"pid":7}]}"#,
+            r#"{"version":3,"type":"configure","rootPid":42,"sampleIntervalMs":1000,"externalProcesses":[{"pid":7}]}"#,
         )
         .expect("configure command");
 
@@ -903,7 +1387,7 @@ mod tests {
         }
 
         let read_history = serde_json::from_str::<Command>(
-            r#"{"version":2,"type":"readHistory","requestId":"history-1","windowMs":60000}"#,
+            r#"{"version":3,"type":"readHistory","requestId":"history-1","windowMs":60000}"#,
         )
         .expect("read history command");
         assert!(matches!(
@@ -913,6 +1397,15 @@ mod tests {
                 window_ms: 60_000,
                 ..
             } if request_id == "history-1"
+        ));
+
+        let process_table = serde_json::from_str::<Command>(
+            r#"{"version":3,"type":"processTable","requestId":"processes-1"}"#,
+        )
+        .expect("process table command");
+        assert!(matches!(
+            process_table,
+            Command::ProcessTable { request_id, .. } if request_id == "processes-1"
         ));
     }
 
@@ -1130,6 +1623,43 @@ mod tests {
 
         assert!(truncated.len() < MAX_PROCESS_NAME_BYTES);
         assert!(truncated.is_char_boundary(truncated.len()));
+    }
+
+    #[test]
+    fn parses_proc_stat_names_with_spaces_and_parentheses() {
+        assert_eq!(
+            parse_proc_stat(b"4242 (tmux: server) S 1 4242 4242 0 -1 4194560 3101"),
+            Some(("tmux: server".to_owned(), 1))
+        );
+        assert_eq!(
+            parse_proc_stat(b"77 (a) b (c)) R 4242 77 77 34816 77 4194304"),
+            Some(("a) b (c)".to_owned(), 4242))
+        );
+        assert_eq!(parse_proc_stat(b"77 (truncated"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_process_table_reports_own_process_like_sysinfo() {
+        let collector = Collector::new();
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().without_tasks(),
+        );
+        let own_pid = std::process::id();
+        let table = collector.process_table();
+        let own = table
+            .iter()
+            .find(|process| process.pid == own_pid)
+            .expect("own process");
+        let expected = system
+            .process(Pid::from_u32(own_pid))
+            .expect("sysinfo own process");
+        assert_eq!(own.ppid, expected.parent().map(Pid::as_u32).unwrap_or(0));
+        assert_eq!(own.name, expected.name().to_string_lossy());
+        assert!(table.windows(2).all(|pair| pair[0].pid < pair[1].pid));
     }
 
     #[test]

@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema";
-import { TrimmedString } from "./baseSchemas.ts";
+import { ForwardCompatibleArray, TrimmedString } from "./baseSchemas.ts";
 
-export const MAX_KEYBINDING_VALUE_LENGTH = 64;
-export const MAX_KEYBINDING_WHEN_LENGTH = 256;
+const MAX_KEYBINDING_VALUE_LENGTH = 64;
+const MAX_KEYBINDING_WHEN_LENGTH = 256;
 export const MAX_WHEN_EXPRESSION_DEPTH = 64;
 export const MAX_SCRIPT_ID_LENGTH = 24;
 export const MAX_KEYBINDINGS_COUNT = 256;
@@ -34,60 +34,47 @@ export const MODEL_PICKER_JUMP_KEYBINDING_COMMANDS = [
 export type ModelPickerJumpKeybindingCommand =
   (typeof MODEL_PICKER_JUMP_KEYBINDING_COMMANDS)[number];
 
-export const THREAD_KEYBINDING_COMMANDS = [
+const THREAD_KEYBINDING_COMMANDS = [
+  "thread.stop",
+  "thread.steerQueuedMessage",
+  "thread.editQueuedMessage",
   "thread.previous",
   "thread.next",
+  "thread.copyReference",
   "thread.settle",
-  // Avi Code addition: the tab-close analogue for a thread. Upstream leaves
-  // `mod+w` to the Electron window-close role outside a focused terminal, which
-  // quits the desktop app; here it archives the open thread instead.
-  "thread.archive",
-  // Avi Code addition: the reopen-closed-tab analogue. Restores the most
-  // recently archived thread and jumps to it, so archiving is reversible from
-  // the keyboard rather than only through Settings → Archived.
-  "thread.reopenLastArchived",
-  // Avi Code addition: undo the last settle/snooze/archive (upstream #12848).
+  "thread.pin",
+  "thread.regenerateTitle",
   "thread.undo",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
-export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number];
 
-export const MODEL_PICKER_KEYBINDING_COMMANDS = [
+const MODEL_PICKER_KEYBINDING_COMMANDS = [
   "modelPicker.toggle",
+  "modelPicker.previousProvider",
+  "modelPicker.nextProvider",
   ...MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 ] as const;
-export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
 
-/**
- * Whole-window zoom, distinct from `preview.*` zoom which only scales the
- * embedded preview page. These are handled in the renderer rather than left to
- * the Electron menu roles: on Windows/Linux a menu accelerator is only
- * dispatched when the page leaves the key unhandled, so anything calling
- * `preventDefault()` first (the preview panel, xterm) silently kills app zoom.
- */
-export const APP_ZOOM_KEYBINDING_COMMANDS = ["app.zoomIn", "app.zoomOut", "app.resetZoom"] as const;
-export type AppZoomKeybindingCommand = (typeof APP_ZOOM_KEYBINDING_COMMANDS)[number];
-
-/**
- * Avi Code addition: find within the open thread. `find.next` and
- * `find.previous` are bound to Enter and Shift+Enter inside the find bar rather
- * than to a global chord, but they are declared so the bar's actions are
- * nameable and rebindable like everything else.
- */
-export const FIND_KEYBINDING_COMMANDS = ["find.toggle", "find.next", "find.previous"] as const;
-export type FindKeybindingCommand = (typeof FIND_KEYBINDING_COMMANDS)[number];
-
-const STATIC_KEYBINDING_COMMANDS = [
+export const STATIC_KEYBINDING_COMMANDS = [
+  "workspace.focusNext",
+  "workspace.focusPrevious",
   "sidebar.toggle",
   "navigation.back",
   "navigation.forward",
-  ...APP_ZOOM_KEYBINDING_COMMANDS,
   "terminal.toggle",
   "terminal.split",
   "terminal.splitVertical",
   "terminal.new",
   "terminal.close",
+  "terminal.previous",
+  "terminal.next",
   "rightPanel.toggle",
+  "rightPanel.new",
+  "threadPanel.toggle",
+  "rightPanel.toggleMaximized",
+  "rightPanel.close",
+  "view.reopenClosed",
+  "pullRequest.copyNumber",
   "diff.toggle",
   "preview.toggle",
   "preview.refresh",
@@ -95,25 +82,40 @@ const STATIC_KEYBINDING_COMMANDS = [
   "preview.zoomIn",
   "preview.zoomOut",
   "preview.resetZoom",
-  // Avi Code addition: split the preview panel into two side-by-side previews,
-  // or exit the split. Toggles against the active preview.
-  "preview.toggleSplit",
+  "preview.find",
   "commandPalette.toggle",
-  // Avi Code addition: find within the open thread. The browser's own find only
-  // sees mounted rows, and the transcript is virtualized, so it silently misses
-  // most of a long thread; this searches the messages the client already holds.
-  ...FIND_KEYBINDING_COMMANDS,
+  "filePicker.toggle",
+  "projectSearch.toggle",
+  "usage.open",
+  "theme.select",
+  "appearance.cycle",
+  "themeEditor.toggle",
   "composer.stash",
-  // Avi Code addition: focus the composer with `/btw ` prefilled, so a side
-  // question is one keystroke away rather than something you type out.
-  "composer.sideQuestion",
-  // Avi Code addition: start and stop dictation from the keyboard. Reaching
-  // for the microphone button with the mouse defeats the point of dictating.
-  "composer.dictate",
+  "composer.sendAlternate",
+  "composer.sendBackground",
+  "composer.sendAndNewThread",
+  "composer.dictation",
+  "composer.host",
+  "composer.cycleHost",
+  "composer.effort",
+  "composer.increaseEffort",
+  "composer.decreaseEffort",
+  "composer.mode",
+  "composer.workspace",
+  "composer.previousWorktree",
+  "composer.branch",
   "chat.new",
   "chat.newLocal",
   "chat.newWithoutProject",
+  "chat.find",
   "editor.openFavorite",
+  "usage.cost",
+  "usage.tokens",
+  "usage.limits",
+  "usage.period.day",
+  "usage.period.week",
+  "usage.period.month",
+  "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
 ] as const;
@@ -154,8 +156,14 @@ export const KeybindingsConfig = Schema.Array(KeybindingRule).check(
 );
 export type KeybindingsConfig = typeof KeybindingsConfig.Type;
 
+// Untrimmed: the `space` token resolves to the key " ".
+const KeybindingShortcutKey = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_KEYBINDING_VALUE_LENGTH),
+);
+
 export const KeybindingShortcut = Schema.Struct({
-  key: KeybindingValue,
+  key: KeybindingShortcutKey,
   metaKey: Schema.Boolean,
   ctrlKey: Schema.Boolean,
   shiftKey: Schema.Boolean,
@@ -163,6 +171,12 @@ export const KeybindingShortcut = Schema.Struct({
   modKey: Schema.Boolean,
 });
 export type KeybindingShortcut = typeof KeybindingShortcut.Type;
+
+export const PreviewForwardedShortcut = Schema.Struct({
+  command: KeybindingCommand,
+  shortcut: KeybindingShortcut,
+});
+export type PreviewForwardedShortcut = typeof PreviewForwardedShortcut.Type;
 
 const KeybindingWhenNodeRef = Schema.suspend(
   (): Schema.Codec<KeybindingWhenNode> => KeybindingWhenNode,
@@ -200,12 +214,13 @@ export const ResolvedKeybindingRule = Schema.Struct({
 }).annotate({ parseOptions: { onExcessProperty: "ignore" } });
 export type ResolvedKeybindingRule = typeof ResolvedKeybindingRule.Type;
 
-export const ResolvedKeybindingsConfig = Schema.Array(ResolvedKeybindingRule).check(
+/** Drops undecodable rules without failing the connection. */
+export const ResolvedKeybindingsConfig = ForwardCompatibleArray(ResolvedKeybindingRule).check(
   Schema.isMaxLength(MAX_KEYBINDINGS_COUNT),
 );
 export type ResolvedKeybindingsConfig = typeof ResolvedKeybindingsConfig.Type;
 
-export class KeybindingsConfigError extends Schema.TaggedErrorClass<KeybindingsConfigError>()(
+export class KeybindingsConfigError extends Schema.TaggedError<KeybindingsConfigError>()(
   "KeybindingsConfigParseError",
   {
     configPath: Schema.String,

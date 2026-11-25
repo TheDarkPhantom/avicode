@@ -1,6 +1,11 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
+import {
+  ClientSettingsSchema,
+  DEFAULT_CLIENT_SETTINGS,
+  type ClientSettings,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -13,67 +18,65 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
-  autoOpenPlanSidebar: false,
-  aviCodeArchivedThreadsSortMode: "project",
-  aviCodeChatContentWidth: "comfortable",
-  aviCodeChips: [
-    { id: "pr-merge", label: "pr merge", color: "green", text: "pr merge and deploy" },
-    { id: "no-deploy", label: "no deploy", color: "orange", text: "pr merge dont deploy" },
-  ],
-  aviCodeCommunicationStyleId: "default",
-  aviCodeComposerShowInteractionModeLabel: true,
-  aviCodeComposerShowRuntimeModeLabel: true,
-  aviCodeCtrlEnterStartsBackgroundThread: true,
-  aviCodeCommunicationStyles: [],
-  aviCodeDictationDeviceId: "",
-  aviCodeNewThreadsStartInPlanMode: false,
-  aviCodeNotificationSound: "pebble",
-  aviCodeOcrScannedPdfs: false,
-  aviCodeOpenChatsAtLastResponse: false,
-  aviCodeOpenSettingsToAviCodePage: false,
-  aviCodeProviderBadgeLabels: {},
-  aviCodeScrollToPlanTopOnExpand: true,
-  aviCodeSendWhileRunning: "steer",
-  aviCodeSidebarAlwaysShowDevServerStart: false,
-  aviCodeSidebarProjectsCollapsedByDefault: false,
-  aviCodeSidebarShowAttentionUnderCollapsedFolders: false,
-  aviCodeSidebarShowPrIndicator: true,
-  aviCodeSidebarShowStatusLabels: true,
-  aviCodeSidebarShowWorktreeIcon: true,
+  ...DEFAULT_CLIENT_SETTINGS,
+  notificationMode: "notifications-and-sound",
+  inAppNotificationsEnabled: true,
+  appearanceContrast: 100,
+  browserDefaultViewport: { _tag: "preset", width: 1024, height: 600, presetId: "nest-hub" },
+  browserDefaultZoomFactor: 1.25,
+  browserDefaultAppearance: "dark",
+  browserRecordingFrameRate: 60,
+  browserLinkTarget: "app",
+  sideThreadOpenTarget: "main",
+  browserAutoShowFloatingPreview: false,
+  browserProfiles: [{ id: "work", name: "Work", kind: "persistent" }],
+  browserDefaultProfileId: "work",
+  confirmQuit: "double-click",
   confirmThreadArchive: true,
   confirmThreadDelete: false,
-  dismissedProviderUpdateNotificationKeys: [],
+  confirmThreadUnpin: false,
+  diffFilesCollapsed: true,
   diffIgnoreWhitespace: true,
+  diffLayout: "stacked",
   environmentIdentificationMode: "artwork",
   favorites: [],
+  fontFamilyCode: "",
+  fontFamilyComposer: "",
+  fontFamilySans: "",
+  fontFamilyTerminal: "",
+  fontSizeCode: 13,
+  fontSizeInterface: 16,
+  fontSizePrompt: 14,
+  fontSizeTerminal: 12,
+  fontSmoothing: true,
   glassOpacity: 80,
-  notificationSoundEnabled: false,
-  projectScopedProviderSelectionEnabled: false,
+  onboardingCompletedAt: null,
+  panelAnimationDurationMs: 0,
+  proactivePanelsEnabled: true,
+  showSkillsInSlashMenu: false,
+  persistComposerContextStrip: true,
   providerModelPreferences: {},
-  rightPanelFollowsThreads: false,
-  sidebarAutoSettleAfterDays: 3,
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
   },
-  sidebarMouseBackForwardNavigation: false,
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
-  sidebarThreadPreviewCount: 6,
-  sidebarThreadGrouping: "flat",
-  sidebarFlatThreadCount: 20,
-  sidebarV2Enabled: false,
-  sidebarV2ConfiguredByUser: false,
+  boringSidebarEnabled: false,
+  boringSidebarMultilineRows: false,
+  threadDetailsUsageEnabled: false,
+  threadDetailsItems: {},
+  sidebarWorkingShelfEnabled: false,
+  loadBalancingEnabled: false,
+  loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
+  pullRequestMergeMethodOverrides: {},
   timestampFormat: "24-hour",
   wordWrap: true,
 };
 
 const decodeClientSettingsJson = Schema.decodeEffect(Schema.fromJsonString(ClientSettingsSchema));
-const decodeRecordJson = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-);
-function makeLayer(baseDir: string) {
-  const environmentLayer = DesktopEnvironment.layer({
+function layer(baseDir: string) {
+  const layerEnvironment = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
     homeDirectory: baseDir,
     platform: "darwin",
@@ -85,13 +88,17 @@ function makeLayer(baseDir: string) {
     runningUnderArm64Translation: false,
   }).pipe(
     Layer.provide(
-      Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ T3CODE_HOME: baseDir })),
+      Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        DesktopConfig.layerTest({ T3CODE_HOME: baseDir }),
+      ),
     ),
   );
 
   return DesktopClientSettings.layer.pipe(
-    Layer.provideMerge(environmentLayer),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(layerEnvironment),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 }
 
@@ -103,41 +110,33 @@ const withClientSettings = <A, E, R>(
     const baseDir = yield* fileSystem.makeTempDirectoryScoped({
       prefix: "t3-desktop-client-settings-test-",
     });
-    return yield* effect.pipe(Effect.provide(makeLayer(baseDir)));
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+    return yield* effect.pipe(Effect.provide(layer(baseDir)));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 describe("DesktopClientSettings", () => {
-  it.effect("returns none when no client settings file exists", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        assert.isTrue(Option.isNone(yield* settings.get));
-      }),
-    ),
-  );
-
-  it.effect("persists and reloads client settings", () =>
+  it.effect("saves through a symlinked client settings file without replacing the link", () =>
     withClientSettings(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
         const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        const dotfiles = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-desktop-client-settings-dotfiles-",
+        });
+        const linkedSettingsPath = `${dotfiles}/client-settings.json`;
+        yield* fileSystem.writeFileString(linkedSettingsPath, "{}\n");
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.symlink(linkedSettingsPath, environment.clientSettingsPath);
+
         yield* settings.set(clientSettings);
 
-        assert.deepEqual(yield* settings.get, Option.some(clientSettings));
-        assert.deepEqual(
-          yield* decodeClientSettingsJson(
-            yield* fileSystem.readFileString(environment.clientSettingsPath),
-          ),
-          clientSettings,
+        assert.equal(
+          yield* fileSystem.readLink(environment.clientSettingsPath),
+          linkedSettingsPath,
         );
-        assert.isFalse(
-          Object.hasOwn(
-            yield* decodeRecordJson(
-              yield* fileSystem.readFileString(environment.clientSettingsPath),
-            ),
-            "settings",
-          ),
+        assert.deepEqual(
+          yield* decodeClientSettingsJson(yield* fileSystem.readFileString(linkedSettingsPath)),
+          clientSettings,
         );
       }),
     ),
@@ -166,25 +165,53 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
-  it.effect("reports the failed client settings write operation and path", () =>
+  it.effect.each([
+    { label: "permission", reason: "PermissionDenied" },
+    { label: "I/O", reason: "Unknown" },
+  ] as const)("preserves saved preferences across $label read failures and retries", (failure) =>
     withClientSettings(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
         const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        yield* fileSystem.makeDirectory(environment.clientSettingsPath, { recursive: true });
-
-        const error = yield* settings.set(clientSettings).pipe(Effect.flip);
-        assert.instanceOf(error, DesktopClientSettings.DesktopClientSettingsWriteError);
-        assert.equal(error.operation, "replace-settings-file");
-        assert.equal(error.path, environment.clientSettingsPath);
-        assert.instanceOf(error.cause, PlatformError.PlatformError);
-        assert.isString(error.cause.stack);
-        assert.equal(
-          error.message,
-          `Desktop client settings write failed during replace-settings-file at ${environment.clientSettingsPath}.`,
+        const savedSettings = {
+          ...clientSettings,
+          onboardingCompletedAt: "2026-09-05T12:00:00.000Z",
+        };
+        yield* settings.set(savedSettings);
+        const savedContents = yield* fileSystem.readFileString(environment.clientSettingsPath);
+        const cause = PlatformError.systemError({
+          _tag: failure.reason,
+          module: "FileSystem",
+          method: "readFileString",
+          pathOrDescriptor: environment.clientSettingsPath,
+        });
+        let failRead = true;
+        const retryableSettings = yield* DesktopClientSettings.make.pipe(
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.FileSystem.of({
+              ...fileSystem,
+              readFileString: (path) =>
+                Effect.suspend(() =>
+                  failRead ? Effect.fail(cause) : fileSystem.readFileString(path),
+                ),
+            }),
+          ),
         );
-        assert.notInclude(error.message, error.cause.message);
+
+        const error = yield* retryableSettings.get.pipe(Effect.flip);
+        assert.instanceOf(error, DesktopClientSettings.DesktopClientSettingsReadError);
+        assert.equal(error.operation, "read-file");
+        assert.equal(error.path, environment.clientSettingsPath);
+        assert.strictEqual(error.cause, cause);
+        assert.equal(
+          yield* fileSystem.readFileString(environment.clientSettingsPath),
+          savedContents,
+        );
+
+        failRead = false;
+        assert.deepEqual(yield* retryableSettings.get, Option.some(savedSettings));
       }),
     ),
   );
@@ -238,100 +265,27 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
-  it.effect("loads defaults from empty client settings documents", () =>
+  it.effect.each([
+    { label: "malformed JSON", contents: "{not-json" },
+    { label: "invalid legacy settings", contents: '{"settings":{"fontSizeCode":"large"}}' },
+  ])("reports $label without treating the settings file as absent", (document) =>
     withClientSettings(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
         const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopClientSettings.DesktopClientSettings;
         yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(environment.clientSettingsPath, "{}\n");
+        yield* fileSystem.writeFileString(environment.clientSettingsPath, document.contents);
 
-        assert.deepEqual(yield* settings.get, Option.some(yield* decodeClientSettingsJson("{}")));
-      }),
-    ),
-  );
-
-  it.effect("defaults only an invalid field and keeps the valid ones", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(
-          environment.clientSettingsPath,
-          `{ "glassOpacity": 200, "timestampFormat": "24-hour" }\n`,
+        const error = yield* settings.get.pipe(Effect.flip);
+        assert.instanceOf(error, DesktopClientSettings.DesktopClientSettingsReadError);
+        assert.equal(error.operation, "decode-document");
+        assert.equal(error.path, environment.clientSettingsPath);
+        assert.instanceOf(error.cause, Schema.SchemaError);
+        assert.equal(
+          yield* fileSystem.readFileString(environment.clientSettingsPath),
+          document.contents,
         );
-
-        const persisted = yield* settings.get;
-        assert.isTrue(Option.isSome(persisted));
-        if (Option.isSome(persisted)) {
-          assert.equal(persisted.value.glassOpacity, clientSettings.glassOpacity);
-          assert.equal(persisted.value.timestampFormat, "24-hour");
-        }
-      }),
-    ),
-  );
-
-  it.effect("salvages valid fields inside a legacy wrapper with an invalid field", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(
-          environment.clientSettingsPath,
-          `{ "settings": { "glassOpacity": 200, "timestampFormat": "12-hour" } }\n`,
-        );
-
-        const persisted = yield* settings.get;
-        assert.isTrue(Option.isSome(persisted));
-        if (Option.isSome(persisted)) {
-          assert.equal(persisted.value.glassOpacity, clientSettings.glassOpacity);
-          assert.equal(persisted.value.timestampFormat, "12-hour");
-        }
-      }),
-    ),
-  );
-
-  it.effect("defaults multiple invalid fields independently", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(
-          environment.clientSettingsPath,
-          `{ "glassOpacity": 200, "environmentIdentificationMode": "nonsense", "timestampFormat": "24-hour" }\n`,
-        );
-
-        const persisted = yield* settings.get;
-        assert.isTrue(Option.isSome(persisted));
-        if (Option.isSome(persisted)) {
-          assert.equal(persisted.value.glassOpacity, clientSettings.glassOpacity);
-          assert.equal(
-            persisted.value.environmentIdentificationMode,
-            clientSettings.environmentIdentificationMode,
-          );
-          assert.equal(persisted.value.timestampFormat, "24-hour");
-        }
-      }),
-    ),
-  );
-
-  it.effect("treats malformed client settings documents as absent", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(environment.clientSettingsPath, "{not-json");
-
-        assert.isTrue(Option.isNone(yield* settings.get));
       }),
     ),
   );

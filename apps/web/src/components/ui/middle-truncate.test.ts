@@ -3,28 +3,27 @@ import { describe, expect, it } from "vite-plus/test";
 import { splitForMiddleTruncate } from "./middle-truncate";
 
 describe("splitForMiddleTruncate", () => {
-  it("keeps the meaningful tail of a long branch name", () => {
-    const value = "fix/cache-main-20260918-180825";
-    const split = splitForMiddleTruncate(value);
-    expect(split).not.toBeNull();
-    // Default keeps the trailing date that distinguishes similar branches.
-    expect(split?.tail).toBe("918-180825");
-    expect(`${split?.head}${split?.tail}`).toBe(value);
+  it("keeps a short last path segment whole", () => {
+    expect(splitForMiddleTruncate("feature/ui-polish")).toEqual({
+      head: "feature/",
+      tail: "ui-polish",
+    });
   });
 
-  it("keeps a short last path segment intact", () => {
-    const split = splitForMiddleTruncate("apps/web/src/index.ts");
-    expect(split?.tail).toBe("index.ts");
+  it("starts a long segment's tail on a word, not mid-word", () => {
+    expect(splitForMiddleTruncate("t3/clone-repo-to-other-machine")?.tail).toBe("machine");
+    expect(splitForMiddleTruncate("t3/investigate-release-build-times")?.tail).toBe("times");
   });
 
-  it("does not split when the string is short enough to show whole", () => {
-    expect(splitForMiddleTruncate("main")).toBeNull();
+  it("falls back to an earlier word when the last one is too short", () => {
+    expect(splitForMiddleTruncate("t3/compare-long-featurenames-ab")?.tail).toBe("featurenames-ab");
   });
 
-  it("does not split inside a surrogate pair", () => {
-    const split = splitForMiddleTruncate("😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", 4);
-    expect(split).not.toBeNull();
-    expect(Array.from(split?.tail ?? "")).toHaveLength(4);
-    expect(`${split?.head}${split?.tail}`).toBe("😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀");
+  it("keeps the fixed tail when no word break is near", () => {
+    expect(splitForMiddleTruncate("t3/abcdefghijklmnopqrstuvwxyz")?.tail).toBe("qrstuvwxyz");
+  });
+
+  it("respects an explicit tail length", () => {
+    expect(splitForMiddleTruncate("t3/clone-repo-to-other-machine", 6)?.tail).toBe("achine");
   });
 });

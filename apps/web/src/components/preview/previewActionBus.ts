@@ -1,20 +1,13 @@
-"use client";
-
-/**
- * Typed window-event bus for preview-panel actions. Lets the global
- * keybinding handler in `routes/_chat.tsx` reach `ChatView`'s URL-aware
- * arbitration without prop drilling or shared refs.
- */
 export type PreviewAction =
   | "toggle-panel"
   | "refresh"
+  | "back"
+  | "forward"
   | "focus-url"
   | "zoom-in"
   | "zoom-out"
   | "reset-zoom"
-  // Avi Code addition: toggle the side-by-side preview split. Handled in
-  // ChatView (which owns the split state), not per-pane in PreviewView.
-  | "toggle-split";
+  | "find";
 
 const EVENT_NAME = "t3code:preview-action";
 

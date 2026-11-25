@@ -10,6 +10,43 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 
+export {
+  EVENT_CODE_SHORTCUT_KEYS,
+  isMacPlatform,
+  matchesKeybindingShortcut,
+  matchesKeybindingShortcutModifiers,
+  normalizeEventKey,
+  resolveEventKeys,
+  shortcutKeyFromEvent,
+  type ShortcutEventLike,
+  type ShortcutModifierStateLike,
+  type ShortcutKeyboardLayoutMap,
+} from "./keybindingMatching.ts";
+
+export const US_SHIFTED_TO_UNSHIFTED_KEYS: ReadonlyMap<string, string> = new Map([
+  ["!", "1"],
+  ["@", "2"],
+  ["#", "3"],
+  ["$", "4"],
+  ["%", "5"],
+  ["^", "6"],
+  ["&", "7"],
+  ["*", "8"],
+  ["(", "9"],
+  [")", "0"],
+  ["~", "`"],
+  ["_", "-"],
+  ["+", "="],
+  ["{", "["],
+  ["}", "]"],
+  ["|", "\\"],
+  [":", ";"],
+  ['"', "'"],
+  ["<", ","],
+  [">", "."],
+  ["?", "/"],
+]);
+
 type WhenToken =
   | { type: "identifier"; value: string }
   | { type: "not" }
@@ -20,91 +57,102 @@ type WhenToken =
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+b", command: "sidebar.toggle" },
+  { key: "f6", command: "workspace.focusNext" },
+  { key: "shift+f6", command: "workspace.focusPrevious" },
+  // Some browsers keep plain F6 for their own toolbars; mod+F6 reaches the page in all of them.
+  { key: "mod+f6", command: "workspace.focusNext" },
+  { key: "mod+shift+f6", command: "workspace.focusPrevious" },
   { key: "mod+[", command: "navigation.back", when: "!terminalFocus" },
   { key: "mod+]", command: "navigation.forward", when: "!terminalFocus" },
-  // Avi Code addition: the Windows browser chords for back and forward. They
-  // yield to text fields, where Alt+Left/Right move by word on macOS, and to
-  // the terminal, where they are readline word motions.
-  { key: "alt+arrowleft", command: "navigation.back", when: "!terminalFocus && !editableFocus" },
-  {
-    key: "alt+arrowright",
-    command: "navigation.forward",
-    when: "!terminalFocus && !editableFocus",
-  },
   { key: "mod+j", command: "terminal.toggle" },
   { key: "mod+alt+b", command: "rightPanel.toggle" },
+  { key: "mod+shift+b", command: "threadPanel.toggle", when: "!terminalFocus" },
+  { key: "mod+t", command: "rightPanel.new", when: "rightPanelOpen && !terminalFocus" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
   { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
+  { key: "mod+shift+d", command: "composer.dictation", when: "!terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
-  // Avi Code addition: outside a focused terminal `mod+w` used to fall through
-  // to Electron's window-close role and quit the desktop app. It now closes the
-  // open thread instead; window close moved to `mod+shift+w` in the native menu.
-  { key: "mod+w", command: "thread.archive", when: "!terminalFocus" },
+  { key: "ctrl+alt+[", command: "terminal.previous", when: "terminalFocus && !isMac" },
+  { key: "ctrl+alt+]", command: "terminal.next", when: "terminalFocus && !isMac" },
+  { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
+  { key: "mod+shift+t", command: "view.reopenClosed" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
-  // Whole-window zoom. Unconditional, so it keeps working in the terminal and
-  // anywhere the preview does not own focus. `mod+shift+=` is the chord a US
-  // layout actually produces for "Ctrl +"; the old `mod++` rule was unreachable
-  // because it parsed to shiftKey:false while the real event carries shift.
-  { key: "mod+=", command: "app.zoomIn" },
-  { key: "mod+shift+=", command: "app.zoomIn" },
-  { key: "mod+-", command: "app.zoomOut" },
-  { key: "mod+0", command: "app.resetZoom" },
   { key: "mod+shift+j", command: "preview.toggle" },
-  // Avi Code addition: toggle the side-by-side preview split. Guarded to when a
-  // preview panel is open so it does not shadow the chord elsewhere.
-  { key: "mod+shift+s", command: "preview.toggleSplit", when: "previewOpen" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
-  // Registered after the app-zoom rules on purpose: `resolveShortcutCommand`
-  // scans backwards, so these win whenever the preview genuinely owns focus and
-  // its panel is open, and fall through to whole-window zoom otherwise.
-  { key: "mod+=", command: "preview.zoomIn", when: "previewFocus && previewOpen" },
-  { key: "mod+shift+=", command: "preview.zoomIn", when: "previewFocus && previewOpen" },
-  { key: "mod+-", command: "preview.zoomOut", when: "previewFocus && previewOpen" },
-  { key: "mod+0", command: "preview.resetZoom", when: "previewFocus && previewOpen" },
+  { key: "mod+=", command: "preview.zoomIn", when: "previewFocus" },
+  { key: "mod++", command: "preview.zoomIn", when: "previewFocus" },
+  { key: "mod+-", command: "preview.zoomOut", when: "previewFocus" },
+  { key: "mod+0", command: "preview.resetZoom", when: "previewFocus" },
+  { key: "mod+f", command: "preview.find", when: "previewFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
-  // Avi Code addition: find in the open thread. Guarded off a focused terminal
-  // the same way the palette is, because Ctrl+F is forward-char in a shell.
-  { key: "mod+f", command: "find.toggle", when: "!terminalFocus" },
+  { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
+  { key: "mod+u", command: "usage.open", when: "!terminalFocus" },
+  { key: "mod+alt+a", command: "theme.select", when: "!terminalFocus" },
+  { key: "mod+alt+shift+a", command: "appearance.cycle", when: "!terminalFocus" },
+  { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
-  // Avi Code addition. `mod+;` matches Claude Code desktop's side-question
-  // shortcut, and `;` is unclaimed everywhere else in the app.
-  { key: "mod+;", command: "composer.sideQuestion", when: "!terminalFocus" },
-  // Avi Code addition. Matches the chord Avi already uses for push-to-talk in
-  // other tools, so dictating here needs no new muscle memory. Backtick is
-  // unclaimed elsewhere in the app; `!terminalFocus` keeps it out of the way of
-  // a shell, where backtick is command substitution.
-  { key: "mod+`", command: "composer.dictate", when: "!terminalFocus" },
+  { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
+  { key: "alt+arrowup", command: "thread.editQueuedMessage", when: "composerFocus" },
+  { key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning" },
+  {
+    key: "mod+enter",
+    command: "composer.sendBackground",
+    when: "composerFocus && draftThreadRoute",
+  },
+  {
+    key: "mod+alt+enter",
+    command: "composer.sendBackground",
+    when: "composerFocus && draftThreadRoute",
+  },
+  {
+    key: "mod+alt+enter",
+    command: "composer.sendAndNewThread",
+    when: "composerFocus && !draftThreadRoute",
+  },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },
   { key: "mod+alt+n", command: "chat.newWithoutProject", when: "!terminalFocus" },
+  { key: "mod+f", command: "chat.find", when: "!terminalFocus && !previewFocus" },
   { key: "mod+shift+m", command: "modelPicker.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+h", command: "composer.host", when: "!terminalFocus" },
+  { key: "mod+shift+e", command: "composer.effort", when: "!terminalFocus" },
+  { key: "mod+shift+a", command: "composer.mode", when: "!terminalFocus" },
+  { key: "mod+shift+x", command: "composer.workspace", when: "!terminalFocus" },
+  { key: "mod+shift+g", command: "composer.branch", when: "!terminalFocus" },
+  { key: "mod+shift+l", command: "composer.previousWorktree", when: "!terminalFocus" },
+  { key: "mod+shift+k", command: "pullRequest.copyNumber", when: "!terminalFocus" },
+  { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
+  { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
-  // Avi Code change: upstream binds this to `mod+shift+s`, which the fork gives to
-  // `preview.toggleSplit`. `mod+shift+e` is unclaimed, and a Ctrl+Alt chord
-  // would collide with AltGr letters on European layouts.
-  { key: "mod+shift+e", command: "thread.settle", when: "!terminalFocus" },
-  // Avi Code addition: the browser "reopen closed tab" chord (Ctrl+Shift+T,
-  // Cmd+Shift+T on macOS), restoring the most recently archived thread. Gated
-  // off a focused terminal so it does not shadow the shell.
-  { key: "mod+shift+t", command: "thread.reopenLastArchived", when: "!terminalFocus" },
-  // Avi Code addition: undo the last settle/snooze/archive (upstream #12848).
-  // Yields to native undo while a text field owns the keyboard. Coexists with
-  // the reopen-last-archived chord above, which walks archive history instead.
+  { key: "cmd+shift+[", command: "terminal.previous", when: "terminalFocus && isMac" },
+  { key: "cmd+shift+]", command: "terminal.next", when: "terminalFocus && isMac" },
+  { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
+  { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
+  { key: "mod+shift+p", command: "thread.pin", when: "!terminalFocus" },
   { key: "mod+z", command: "thread.undo", when: "!terminalFocus && !editableFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,
+    when: "!modelPickerOpen && isDesktop",
   })),
   ...MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,
-    when: "modelPickerOpen",
+    when: "modelPickerOpen && isDesktop",
   })),
+  { key: "c", command: "usage.cost", when: "usagePageOpen" },
+  { key: "t", command: "usage.tokens", when: "usagePageOpen" },
+  { key: "l", command: "usage.limits", when: "usagePageOpen" },
+  { key: "mod+shift+1", command: "usage.period.day", when: "usagePageOpen" },
+  { key: "mod+shift+2", command: "usage.period.week", when: "usagePageOpen" },
+  { key: "mod+shift+3", command: "usage.period.month", when: "usagePageOpen" },
+  { key: "mod+shift+4", command: "usage.period.quarter", when: "usagePageOpen" },
 ];
 
 function normalizeKeyToken(token: string): string {
@@ -124,8 +172,10 @@ export function parseKeybindingShortcut(value: string): KeybindingShortcut | nul
     trailingEmptyCount += 1;
     tokens.pop();
   }
-  if (trailingEmptyCount > 0) {
+  if (trailingEmptyCount === 2) {
     tokens.push("+");
+  } else if (trailingEmptyCount !== 0) {
+    return null;
   }
   if (tokens.some((token) => token.length === 0)) {
     return null;
@@ -345,3 +395,23 @@ export function compileResolvedKeybindingsConfig(
 }
 
 export const DEFAULT_RESOLVED_KEYBINDINGS = compileResolvedKeybindingsConfig(DEFAULT_KEYBINDINGS);
+
+export function mergeWithDefaultKeybindings(
+  custom: ResolvedKeybindingsConfig,
+): ResolvedKeybindingsConfig {
+  if (custom.length === 0) {
+    return [...DEFAULT_RESOLVED_KEYBINDINGS];
+  }
+
+  const overriddenCommands = new Set(custom.map((binding) => binding.command));
+  const retainedDefaults = DEFAULT_RESOLVED_KEYBINDINGS.filter(
+    (binding) => !overriddenCommands.has(binding.command),
+  );
+  const merged = [...retainedDefaults, ...custom];
+
+  if (merged.length <= MAX_KEYBINDINGS_COUNT) {
+    return merged;
+  }
+
+  return merged.slice(-MAX_KEYBINDINGS_COUNT);
+}

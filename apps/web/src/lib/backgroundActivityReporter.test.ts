@@ -9,32 +9,31 @@ import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
 
 import {
-  backgroundActivityReporterLayer,
+  layer,
   observeBackgroundActivitySubscription,
   retainedBackgroundScopes,
-  wasRecentlyInteracted,
 } from "./backgroundActivityReporter.ts";
 
 describe("wasRecentlyInteracted", () => {
-  it("expires interaction independently of window focus", () => {
-    expect(wasRecentlyInteracted(10_000, 55_000)).toBe(true);
-    expect(wasRecentlyInteracted(10_000, 55_001)).toBe(false);
-  });
-
-  it("rejects future timestamps", () => {
-    expect(wasRecentlyInteracted(10_001, 10_000)).toBe(false);
-  });
-
   it.effect("retains an observed subscription until its returned finalizer runs", () =>
     Effect.gen(function* () {
       const environmentId = EnvironmentId.make("environment-observation-test");
       const scope = { type: "vcs-status" as const, cwd: "/repo" };
+      const releasePassive = yield* observeBackgroundActivitySubscription({
+        environmentId,
+        method: WS_METHODS.subscribeVcsStatus,
+        input: { cwd: scope.cwd, includeRemote: false },
+      });
+      expect(retainedBackgroundScopes(environmentId)).toEqual([]);
       const release = yield* observeBackgroundActivitySubscription({
         environmentId,
         method: WS_METHODS.subscribeVcsStatus,
         input: { cwd: scope.cwd },
       });
 
+      expect(retainedBackgroundScopes(environmentId)).toEqual([scope]);
+
+      yield* releasePassive;
       expect(retainedBackgroundScopes(environmentId)).toEqual([scope]);
 
       yield* release;
@@ -69,7 +68,7 @@ describe("wasRecentlyInteracted", () => {
   );
 });
 
-describe("backgroundActivityReporterLayer", () => {
+describe("layer", () => {
   beforeEach(() => {
     const target = new EventTarget();
     const listeners = {
@@ -94,24 +93,47 @@ describe("backgroundActivityReporterLayer", () => {
         new Map([[EnvironmentId.make("environment-reporter-test"), {}]]),
       );
       let calls = 0;
-      const registry = EnvironmentRegistry.of({
+      const registry = EnvironmentRegistry.EnvironmentRegistry.of({
         entries,
         run: () => {
           calls += 1;
           return calls === 1 ? Effect.failCause(Cause.interrupt()) : Effect.void;
         },
-      } as unknown as EnvironmentRegistry["Service"]);
+      } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
 
       yield* Layer.build(
-        backgroundActivityReporterLayer.pipe(
-          Layer.provide(Layer.succeed(EnvironmentRegistry, registry)),
-        ),
+        layer.pipe(Layer.provide(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, registry))),
       );
       yield* TestClock.adjust("1 second");
       expect(calls).toBe(1);
 
       yield* TestClock.adjust("25 seconds");
       expect(calls).toBe(2);
-    }).pipe(Effect.scoped),
+    }),
+  );
+
+  it.effect("keeps reporting after a report never settles", () =>
+    Effect.gen(function* () {
+      const entries = yield* SubscriptionRef.make(
+        new Map([[EnvironmentId.make("environment-reporter-test"), {}]]),
+      );
+      let calls = 0;
+      const registry = EnvironmentRegistry.EnvironmentRegistry.of({
+        entries,
+        run: () => {
+          calls += 1;
+          return calls === 1 ? Effect.never : Effect.void;
+        },
+      } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+
+      yield* Layer.build(
+        layer.pipe(Layer.provide(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, registry))),
+      );
+      yield* TestClock.adjust("1 second");
+      expect(calls).toBe(1);
+
+      yield* TestClock.adjust("25 seconds");
+      expect(calls).toBe(2);
+    }),
   );
 });

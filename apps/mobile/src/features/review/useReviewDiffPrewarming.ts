@@ -1,8 +1,14 @@
+import { useLocale } from "gt-react-native";
 import { useEffect } from "react";
 
 import { getCachedNativeReviewDiffData } from "./nativeReviewDiffAdapter";
 import type { ReviewSectionItem } from "./reviewModel";
-import { getCachedReviewParsedDiff } from "./reviewState";
+import {
+  getCachedReviewParsedDiff,
+  getReviewParsedDiffSourceCharacterCount,
+  MAX_CACHED_REVIEW_DIFFS,
+  MAX_CACHED_REVIEW_SOURCE_CHARACTERS,
+} from "./reviewState";
 
 interface IdleDeadlineLike {
   readonly didTimeout: boolean;
@@ -30,12 +36,13 @@ function cancelIdle(handle: number): void {
   clearTimeout(handle);
 }
 
-export function prewarmReviewDiffSection(input: {
+function prewarmReviewDiffSection(input: {
   readonly threadKey: string;
   readonly section: ReviewSectionItem;
+  readonly locale: string;
 }): void {
-  const { section, threadKey } = input;
-  if (section.diff === null) {
+  const { section, threadKey, locale } = input;
+  if (section.diff === null || section.diff.length > MAX_CACHED_REVIEW_SOURCE_CHARACTERS) {
     return;
   }
 
@@ -43,26 +50,76 @@ export function prewarmReviewDiffSection(input: {
     threadKey,
     sectionId: section.id,
     diff: section.diff,
+    locale,
   });
   getCachedNativeReviewDiffData({ parsedDiff, comments: [] });
 }
 
-/** Warms one cached section per idle period, after navigation animations finish. */
+function getReviewDiffPrewarmSections(input: {
+  readonly threadKey: string;
+  readonly sections: ReadonlyArray<ReviewSectionItem>;
+  readonly selectedSectionId: string | null;
+}): ReadonlyArray<ReviewSectionItem> {
+  const { threadKey, sections, selectedSectionId } = input;
+  const selectedIndex = sections.findIndex((section) => section.id === selectedSectionId);
+  const selectedSection = sections[selectedIndex];
+  if (!selectedSection) {
+    return [];
+  }
+
+  let sourceCharacterCount = getReviewParsedDiffSourceCharacterCount({
+    threadKey,
+    sectionId: selectedSection.id,
+    diff: selectedSection.diff,
+  });
+  if (sourceCharacterCount > MAX_CACHED_REVIEW_SOURCE_CHARACTERS) {
+    return [];
+  }
+
+  const pendingSections: ReviewSectionItem[] = [];
+  for (let distance = 1; distance < sections.length; distance += 1) {
+    for (const index of [selectedIndex - distance, selectedIndex + distance]) {
+      if (pendingSections.length >= MAX_CACHED_REVIEW_DIFFS - 1) {
+        return pendingSections;
+      }
+      const section = sections[index];
+      if (!section || section.diff === null) {
+        continue;
+      }
+      const sectionCharacterCount = getReviewParsedDiffSourceCharacterCount({
+        threadKey,
+        sectionId: section.id,
+        diff: section.diff,
+      });
+      if (sourceCharacterCount + sectionCharacterCount > MAX_CACHED_REVIEW_SOURCE_CHARACTERS) {
+        continue;
+      }
+      pendingSections.push(section);
+      sourceCharacterCount += sectionCharacterCount;
+    }
+  }
+  return pendingSections;
+}
+
 export function useReviewDiffPrewarming(input: {
   readonly threadKey: string | null;
   readonly sections: ReadonlyArray<ReviewSectionItem>;
   readonly selectedSectionId: string | null;
 }): void {
   const { sections, selectedSectionId, threadKey } = input;
+  const locale = useLocale();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prewarms pending review diff sections in idle callbacks and cancels the idle handle on cleanup
   useEffect(() => {
     if (!threadKey) {
       return;
     }
 
-    const pendingSections = sections.filter(
-      (section) => section.id !== selectedSectionId && section.diff !== null,
-    );
+    const pendingSections = getReviewDiffPrewarmSections({
+      threadKey,
+      sections,
+      selectedSectionId,
+    });
     if (pendingSections.length === 0) {
       return;
     }
@@ -82,7 +139,7 @@ export function useReviewDiffPrewarming(input: {
           return;
         }
         nextSectionIndex += 1;
-        prewarmReviewDiffSection({ threadKey, section });
+        prewarmReviewDiffSection({ threadKey, section, locale });
 
         if (nextSectionIndex < pendingSections.length) {
           scheduleNext();
@@ -97,5 +154,5 @@ export function useReviewDiffPrewarming(input: {
         cancelIdle(idleHandle);
       }
     };
-  }, [sections, selectedSectionId, threadKey]);
+  }, [sections, selectedSectionId, threadKey, locale]);
 }

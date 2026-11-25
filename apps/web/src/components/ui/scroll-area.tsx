@@ -1,10 +1,7 @@
-"use client";
-
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 
 import { cn } from "~/lib/utils";
 
-/** Fade classes for a virtualized list, which owns its scroll element and cannot use ScrollArea's. */
 function getVirtualizedScrollFadeClassName({ top, bottom }: { top: boolean; bottom: boolean }) {
   if (!top && !bottom) return undefined;
 
@@ -26,34 +23,56 @@ function ScrollArea({
   className,
   children,
   scrollFade = false,
+  scrollFadePadding = true,
   scrollbarGutter = false,
   hideScrollbars = false,
   chainVerticalScroll = false,
+  observeContent = false,
+  radius = "inherit",
+  viewportTabIndex,
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
   scrollFade?: boolean;
+  scrollFadePadding?: boolean;
   scrollbarGutter?: boolean;
   hideScrollbars?: boolean;
   chainVerticalScroll?: boolean;
+  observeContent?: boolean;
+  radius?: "inherit" | "none";
+  viewportTabIndex?: number;
 }) {
   return (
     <ScrollAreaPrimitive.Root
-      className={cn("relative size-full min-h-0 overflow-hidden rounded-[inherit]", className)}
+      className={cn(
+        "relative size-full min-h-0 overflow-hidden",
+        radius === "none" ? "rounded-none" : "rounded-[inherit]",
+        className,
+      )}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        {...(viewportTabIndex === undefined ? {} : { tabIndex: viewportTabIndex })}
         className={cn(
-          "h-full max-h-[inherit] overflow-auto overscroll-contain rounded-[inherit] outline-none transition-shadows focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-has-overflow-x:overscroll-x-contain",
+          "h-full max-h-[inherit] overflow-auto overscroll-contain rounded-[inherit] outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-has-overflow-x:overscroll-x-contain",
           chainVerticalScroll && "overscroll-y-auto",
           scrollFade &&
-            "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] [--fade-size:1.5rem]",
+            "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] focus-visible:mask-none [--fade-size:1.5rem]",
+          scrollFade && scrollFadePadding && "scroll-p-[var(--fade-size)]",
+          scrollFade && !scrollFadePadding && "has-focus-visible:mask-none",
           scrollbarGutter && "scrollbar-gutter-stable",
           hideScrollbars &&
             "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         )}
         data-slot="scroll-area-viewport"
       >
-        {children}
+        {observeContent ? (
+          // Base UI only observes content resizes through Content; minWidth overrides its fit-content default.
+          <ScrollAreaPrimitive.Content style={{ minWidth: 0 }}>
+            {children}
+          </ScrollAreaPrimitive.Content>
+        ) : (
+          children
+        )}
       </ScrollAreaPrimitive.Viewport>
       {!hideScrollbars && (
         <>

@@ -1,9 +1,21 @@
-import { ScrollTextIcon, SettingsIcon } from "lucide-react";
-import { memo, useCallback } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { T, useGT } from "gt-react";
+import { memo } from "react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
+import { useAtomValue } from "@effect/atom-react";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { shortcutLabelForCommand } from "../../keybindings";
+import {
+  navigateHistory,
+  useCanNavigateHistory,
+  type HistoryDirection,
+} from "../../navigationHistory";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
+import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
+import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -11,20 +23,25 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
-import { APP_BASE_NAME } from "../../branding";
+import { Button } from "../ui/button";
 import {
   SidebarFooter,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { readIssueListPreferences } from "../issue/issueListPreferences";
+import { IssueGlyph } from "../issue/issuePresentation";
+import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
-import { SidebarUpdatePill } from "./SidebarUpdatePill";
-// Avi Code addition: sidebar Usage entry with hover popover for quota gauges.
-import { UsageHoverPopover } from "../usage/UsageHoverPopover";
+import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { observeResize } from "~/lib/observeResize";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -33,9 +50,10 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
+  const gt = useGT();
   const backdropVariant = resolveSidebarStageBackdropVariant(
     stageLabel,
-    environmentIdentificationMode === "artwork",
+    environmentIdentificationMode,
   );
   const pillLabel =
     environmentIdentificationMode === "pill"
@@ -43,117 +61,264 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       : null;
 
   return (
-    <SidebarHeader
+    <div
       className={cn(
-        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
+        "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3",
         isElectron && "drag-region",
       )}
     >
       {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
-      <SidebarTrigger
-        className={cn(
-          "relative z-10 md:hidden",
-          backdropVariant &&
-            "[:hover,[data-pressed]]:bg-white/15 focus-visible:ring-white/90 focus-visible:ring-offset-blue-700 [&_svg]:stroke-white/90! [&_svg]:opacity-100! [&_svg]:hover:stroke-white!",
-        )}
-      />
-      <SidebarBrand onBackdrop={backdropVariant !== null} />
-      {pillLabel ? (
-        <Badge
-          className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
-          data-environment-identification="pill"
-          size="sm"
-          variant="secondary"
-        >
-          {pillLabel}
-        </Badge>
-      ) : null}
-    </SidebarHeader>
+      <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
+        <SidebarTrigger
+          variant={backdropVariant ? "media-navigation" : "ghost"}
+          className="relative top-auto translate-y-0"
+          aria-label={gt("Toggle main sidebar")}
+        />
+      </div>
+      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
+        <div className="flex shrink-0 items-center gap-1">
+          <SidebarBrand onBackdrop={backdropVariant !== null} />
+          {isElectron ? (
+            <div className="hidden items-center md:flex">
+              <HistoryNavigationButton direction="back" onBackdrop={backdropVariant !== null} />
+              <HistoryNavigationButton direction="forward" onBackdrop={backdropVariant !== null} />
+            </div>
+          ) : null}
+        </div>
+        {pillLabel ? (
+          <div className="ml-1 flex h-7 items-center">
+            <Badge data-environment-identification="pill" size="sm" variant="secondary">
+              {pillLabel}
+            </Badge>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 });
 
+export function SidebarBrandWidthProbe({
+  isElectron,
+  onWidthChange,
+}: {
+  isElectron: boolean;
+  onWidthChange: (width: number) => void;
+}) {
+  const observeWidth = (probe: HTMLDivElement) => {
+    return observeResize(probe, ([entry]) => {
+      if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
+    });
+  };
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none invisible fixed top-0 left-0 flex w-max border-r border-transparent pr-3"
+      ref={observeWidth}
+    >
+      <div className="ml-[var(--workspace-titlebar-content-left)] flex gap-1">
+        <SidebarBrandMark onBackdrop={false} />
+        {isElectron ? <div className="w-[calc(2*var(--workspace-titlebar-control-size))]" /> : null}
+      </div>
+    </div>
+  );
+}
+
+function HistoryNavigationButton({
+  direction,
+  onBackdrop,
+}: {
+  direction: HistoryDirection;
+  onBackdrop: boolean;
+}) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const enabled = useCanNavigateHistory(direction);
+  const gt = useGT();
+  const label = direction === "back" ? gt("Go back") : gt("Go forward");
+  const shortcutLabel = shortcutLabelForCommand(
+    keybindings,
+    direction === "back" ? "navigation.back" : "navigation.forward",
+  );
+  const Icon = direction === "back" ? ArrowLeftIcon : ArrowRightIcon;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-label={label}
+            className={cn(
+              "[-webkit-app-region:no-drag]",
+              onBackdrop && "relative top-auto translate-y-0",
+            )}
+            disabled={!enabled}
+            onClick={() => navigateHistory(direction)}
+            size="icon-sm"
+            variant={onBackdrop ? "media-navigation" : "ghost"}
+          />
+        }
+      >
+        <Icon className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">
+        {label}
+        {shortcutLabel ? ` (${shortcutLabel})` : ""}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+  const gt = useGT();
   return (
     <Link
-      aria-label="Go to threads"
+      aria-label={gt("T3 Code home")}
       className={cn(
-        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
     >
-      <AviCodeMark />
-      <span
-        className={cn(
-          "truncate text-sm font-semibold tracking-[-0.02em]",
-          onBackdrop ? "text-white/85" : "text-foreground",
-        )}
-      >
-        {APP_BASE_NAME}
-      </span>
+      <SidebarBrandMark onBackdrop={onBackdrop} />
     </Link>
   );
 }
 
-function AviCodeMark() {
+function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <svg
-      aria-label="Avi Code"
-      className="h-5 w-5 shrink-0"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect width="24" height="24" rx="7" fill="#0C0A0A" />
-      <path
-        d="M5.1 17.9 10.25 5.8h3.5l5.15 12.1h-3.45l-.9-2.3h-5.2l-.9 2.3H5.1Zm5.22-4.88h3.26L11.95 8.8l-1.63 4.22Z"
-        fill="#DE5257"
-      />
-      <circle cx="17.85" cy="6.15" r="1.45" fill="#C99A2E" />
-    </svg>
+    <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
+      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}
+        {"Code"}
+      </span>
+    </span>
   );
 }
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+function SidebarUtilityItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <SidebarMenuItem className="shrink-0">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+              {icon}
+            </SidebarMenuButton>
+          }
+        />
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+    </SidebarMenuItem>
+  );
+}
+
+const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
+  const navigateToMainApp = useNavigateToMainApp();
+  const gt = useGT();
   const { isMobile, setOpenMobile } = useSidebar();
-  const handleSettingsClick = useCallback(() => {
+  const isOnUtilityPage = useLocation({
+    select: (location) => isSidebarUtilityPage(location.pathname),
+  });
+  const pullRequestsSupported = usePullRequestsSupported();
+  const issuesSupported = useIssuesSupported();
+  const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
+  };
+  const handlePullRequestsClick = () => {
+    closeMobileSidebar();
+    void navigate({
+      to: "/pull-requests",
+      search: readPullRequestListPreferences(),
+    });
+  };
+  const handleIssuesClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/issues", search: readIssueListPreferences() });
+  };
+  const handleSettingsClick = () => {
+    closeMobileSidebar();
     void navigate({ to: "/settings" });
-  }, [isMobile, navigate, setOpenMobile]);
-  // Avi Code addition: upstream's footer ends at Settings. The fork merges upstream regularly, so
-  // the changelog — which separates fork work from what a sync brought in — sits one click away.
-  const handleChangelogClick = useCallback(() => {
+  };
+
+  const handleUsageClick = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
-    void navigate({ to: "/changelog" });
-  }, [isMobile, navigate, setOpenMobile]);
+    void navigate({ to: "/usage" });
+  };
+
+  const handleBackClick = () => {
+    closeMobileSidebar();
+    void navigateToMainApp();
+  };
 
   return (
-    <SidebarFooter className="p-2">
-      <SidebarProviderUpdatePill />
+    <SidebarMenu className="flex-row items-center">
+      {isOnUtilityPage ? (
+        <SidebarMenuItem className="min-w-0 flex-1">
+          <SidebarMenuButton onClick={handleBackClick}>
+            <ArrowLeftIcon />
+            <span>
+              <T>Back</T>
+            </span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ) : (
+        <>
+          <SidebarUtilityItem
+            icon={<SettingsIcon />}
+            label={gt("Settings")}
+            onClick={handleSettingsClick}
+          />
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem
+              icon={<PullRequestGlyph.pullRequest />}
+              label={gt("Pull requests")}
+              onClick={handlePullRequestsClick}
+            />
+          ) : null}
+          {issuesSupported ? (
+            <SidebarUtilityItem
+              icon={<IssueGlyph.issue />}
+              label={gt("Issues", { $context: "sidebar link to the list of issues" })}
+              onClick={handleIssuesClick}
+            />
+          ) : null}
+          <SidebarUtilityItem
+            icon={<ChartNoAxesColumnIcon />}
+            label={gt("Usage")}
+            onClick={handleUsageClick}
+          />
+        </>
+      )}
+      <SidebarThreadUndoNotice />
       <SidebarUpdatePill />
-      <SidebarMenu>
-        {/* Avi Code addition: Usage entry above Settings for at-a-glance quota
-            gauges on hover and a full usage page on click. */}
-        <SidebarMenuItem>
-          <UsageHoverPopover />
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton onClick={handleSettingsClick}>
-            <SettingsIcon />
-            <span>Settings</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton onClick={handleChangelogClick}>
-            <ScrollTextIcon />
-            <span>Changelog</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
+    </SidebarMenu>
+  );
+});
+
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+  return (
+    <SidebarFooter>
+      <SidebarProviderUpdatePill />
+      <SidebarUpdateArchitectureWarning />
+      <SidebarUtilityMenu />
     </SidebarFooter>
   );
 });

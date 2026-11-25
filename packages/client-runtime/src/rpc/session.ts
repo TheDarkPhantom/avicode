@@ -1,17 +1,39 @@
-import { type ServerConfig, WS_METHODS } from "@t3tools/contracts";
+import { msg } from "gt-i18n";
+import { translatableDetail } from "../errors/translatable.ts";
+import {
+  type ServerConfig,
+  type ServerConfigStreamEvent,
+  WsSubscribeServerConfigRpc,
+  WS_METHODS,
+} from "@t3tools/contracts";
+import {
+  joinSocketFrameParts,
+  SOCKET_FRAME_PARTS_QUERY_PARAM,
+} from "@t3tools/shared/socketFrameParts";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Stream from "effect/Stream";
+import type * as Rpc from "effect/rpc/Rpc";
+import * as RpcClient from "effect/rpc/RpcClient";
+import * as RpcClientError from "effect/rpc/RpcClientError";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
+import * as Socket from "effect/socket/Socket";
 
-import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
+import { makeWsRpcProtocolClient, PING_TIMEOUT, type WsRpcProtocolClient } from "./protocol.ts";
+import { NETWORK_BLOCKING_HINT, UNRESPONSIVE_HOST_HINT } from "../errors/network.ts";
 import type {
   ConnectionAttemptError,
   ConnectionTransientError,
@@ -21,30 +43,36 @@ import {
   ConnectionBlockedError,
   ConnectionTransientError as ConnectionTransientErrorClass,
 } from "../connection/model.ts";
+import {
+  applyServerConfigProjection,
+  type ServerConfigProjection,
+  withoutEnvironmentThemes,
+} from "../state/serverConfigProjection.ts";
+import { environmentMismatchError } from "../connection/errors.ts";
+import { recordServerClock } from "../clock.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
-const HEARTBEAT_INTERVAL = "15 seconds";
-const MAX_MISSED_PONGS = 3;
-
-interface HeartbeatDiagnostic {
-  readonly lastPingAtMs: number | null;
-  readonly lastPongAtMs: number | null;
-  readonly timedOutAtMs: number | null;
-}
-
-interface SocketCloseDiagnostic {
-  readonly bufferedAmount: number;
-  readonly code: number;
-  readonly extensions: string;
-  readonly wasClean: boolean;
-}
 
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
+  readonly subscribeServerConfig: (
+    input?: ServerConfigSubscriptionInput,
+  ) => ServerConfigSubscription;
   readonly ready: Effect.Effect<void, ConnectionAttemptError>;
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
-  readonly closed: Effect.Effect<never, ConnectionTransientError>;
+  /** Frames received so far: proof the socket is alive that needs no reply. */
+  readonly inboundFrames: Effect.Effect<number>;
+  readonly closed: Effect.Effect<never, ConnectionAttemptError>;
+}
+
+export interface RpcSessionOptions {
+  readonly environmentThemes?: boolean;
+  readonly usageLimitSources?: boolean;
+  readonly usageLimitsCommand?: boolean;
+  readonly providerCatalogsOnDemand?: boolean;
+  readonly providerCatalogDigests?: boolean;
+  readonly providerStatusDeltas?: boolean;
 }
 
 export class RpcSessionFactory extends Context.Service<
@@ -60,190 +88,463 @@ type InitialConfigError = Effect.Error<
   ReturnType<WsRpcProtocolClient[typeof WS_METHODS.serverGetConfig]>
 >;
 type ProbeError = Effect.Error<ReturnType<WsRpcProtocolClient[typeof WS_METHODS.serverProbe]>>;
+type ServerConfigSubscriptionError =
+  | Rpc.ErrorExit<typeof WsSubscribeServerConfigRpc>
+  | RpcClientError.RpcClientError;
+type ServerConfigSubscription = Stream.Stream<
+  ServerConfigStreamEvent,
+  ServerConfigSubscriptionError
+>;
+type ServerConfigSubscriptionInput = Parameters<
+  WsRpcProtocolClient[typeof WS_METHODS.subscribeServerConfig]
+>[0];
+type EnvironmentThemesUpdatedEvent = Extract<
+  ServerConfigStreamEvent,
+  { readonly type: "environmentThemesUpdated" }
+>;
+type UsageLimitSourcesUpdatedEvent = Extract<
+  ServerConfigStreamEvent,
+  { readonly type: "usageLimitSourcesUpdated" }
+>;
 
-function mapSessionRpcError(error: InitialConfigError | ProbeError): ConnectionAttemptError {
+interface ServerConfigReplayState {
+  readonly projection: ServerConfigProjection;
+  readonly revision: number;
+  readonly themesEvent: EnvironmentThemesUpdatedEvent | undefined;
+  readonly sourcesEvent: UsageLimitSourcesUpdatedEvent | undefined;
+}
+
+interface BufferedServerConfigEvent {
+  readonly event: ServerConfigStreamEvent;
+  readonly replay: ServerConfigReplayState;
+  readonly revision: number;
+}
+
+function serverConfigReplayEvents(
+  state: ServerConfigReplayState,
+): ReadonlyArray<ServerConfigStreamEvent> {
+  const snapshot = {
+    version: 1 as const,
+    type: "snapshot" as const,
+    config: withoutEnvironmentThemes(state.projection.config),
+  };
+  return [
+    snapshot,
+    ...(state.themesEvent === undefined ? [] : [state.themesEvent]),
+    ...(state.sourcesEvent === undefined ? [] : [state.sourcesEvent]),
+  ];
+}
+
+const isSocketErrorReason = Schema.is(Socket.SocketErrorReason);
+const PING_TIMEOUT_SECONDS = Duration.toSeconds(PING_TIMEOUT);
+
+function mapSessionRpcError(
+  error: InitialConfigError | ProbeError | ServerConfigSubscriptionError | ConnectionAttemptError,
+  via: "relay" | "direct",
+  socketFailure: () => ConnectionTransientError,
+): ConnectionAttemptError {
   switch (error._tag) {
+    case "ConnectionBlockedError":
+    case "ConnectionTransientError":
+      return error;
     case "EnvironmentAuthorizationError":
       return new ConnectionBlockedError({
         reason: "permission",
         detail: error.message,
+        hop: "server",
+        via,
       });
     case "KeybindingsConfigParseError":
     case "ServerSettingsError":
       return new ConnectionTransientErrorClass({
         reason: "remote-unavailable",
         detail: error.message,
+        hop: "server",
+        via,
       });
     case "RpcClientError":
-      return new ConnectionTransientErrorClass({
-        reason: "transport",
-        detail: error.message,
-      });
+      return isSocketErrorReason(error.reason)
+        ? socketFailure()
+        : new ConnectionTransientErrorClass({
+            reason: "transport",
+            detail: error.message,
+            ...socketFailureLocation(via),
+          });
   }
 }
 
-export const make = Effect.gen(function* () {
+/** Over T3 Connect the relay already reached the host, so a socket that drops failed between this device and the tunnel. */
+function socketFailureLocation(via: "relay" | "direct") {
+  return { hop: via === "relay" ? "tunnel" : "server", via } as const;
+}
+
+/** @public */
+export const make = Effect.fn("RpcSessionFactory.make")(function* (
+  options: RpcSessionOptions = {},
+) {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
+  const serverConfigInput: ServerConfigSubscriptionInput = {
+    ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
+    ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
+    ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+    ...(options.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
+    ...(options.providerCatalogDigests === true ? { providerCatalogDigests: true } : {}),
+    ...(options.providerStatusDeltas === true ? { providerStatusDeltas: true } : {}),
+  };
+  // Config state merges the snapshots it fetches back in, so no subscriber needs them broadcast.
+  const onDemandSnapshots = (input: ServerConfigSubscriptionInput) => ({
+    ...input,
+    workspaceSnapshotsOnDemand: true,
+  });
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
+    const via = connection.target._tag === "RelayConnectionTarget" ? "relay" : "direct";
     yield* Effect.annotateCurrentSpan({
       "connection.environment.id": connection.environmentId,
     });
 
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
-    const connectedAtMs = yield* Clock.currentTimeMillis;
-    const heartbeatDiagnostic = yield* Ref.make<HeartbeatDiagnostic>({
-      lastPingAtMs: null,
-      lastPongAtMs: null,
-      timedOutAtMs: null,
-    });
-    let socketCloseDiagnostic: SocketCloseDiagnostic | null = null;
-    let socketErrorObserved = false;
-    const diagnosticWebSocketConstructor = (url: string, protocols?: string | Array<string>) => {
-      const socket = webSocketConstructor(url, protocols);
-      socket.addEventListener(
-        "close",
-        (event) => {
-          socketCloseDiagnostic = {
-            bufferedAmount: socket.bufferedAmount,
-            code: event.code,
-            extensions: socket.extensions,
-            wasClean: event.wasClean,
-          };
-        },
-        { once: true },
-      );
-      socket.addEventListener(
-        "error",
-        () => {
-          socketErrorObserved = true;
-        },
-        { once: true },
-      );
-      return socket;
-    };
+    let pingTimedOut = false;
+    const socketFailure = () =>
+      new ConnectionTransientErrorClass({
+        reason: "transport",
+        // The network hint only fits a socket that never opened. Once it
+        // opened, the path worked, and a host that goes quiet is more
+        // often overloaded or asleep than blocked.
+        ...(!Deferred.isDoneUnsafe(connected)
+          ? translatableDetail(
+              msg("{host} could not establish a WebSocket connection.", {
+                host: connection.label,
+              }),
+              ...(via === "relay" ? [NETWORK_BLOCKING_HINT] : []),
+            )
+          : pingTimedOut
+            ? translatableDetail(
+                msg("{host} stopped responding for {seconds}s.", {
+                  host: connection.label,
+                  seconds: String(PING_TIMEOUT_SECONDS),
+                }),
+                UNRESPONSIVE_HOST_HINT,
+              )
+            : translatableDetail(msg("{host} disconnected.", { host: connection.label }))),
+        ...socketFailureLocation(via),
+      });
+    const mapRpcError = (error: Parameters<typeof mapSessionRpcError>[0]) =>
+      mapSessionRpcError(error, via, socketFailure);
     const hooks = RpcClient.ConnectionHooks.of({
       onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
-      onDisconnect: Effect.gen(function* () {
-        const wasConnected = yield* Deferred.isDone(connected);
-        const now = yield* Clock.currentTimeMillis;
-        const heartbeat = yield* Ref.get(heartbeatDiagnostic);
-        const timedOut = heartbeat.timedOutAtMs !== null;
-        if (wasConnected) {
-          yield* Effect.logWarning("Environment WebSocket disconnected.").pipe(
-            Effect.annotateLogs({
-              "environment.id": connection.environmentId,
-              "environment.label": connection.label,
-              "websocket.session_lifetime_ms": now - connectedAtMs,
-              "websocket.close_code": socketCloseDiagnostic?.code ?? "unavailable",
-              "websocket.close_clean": socketCloseDiagnostic?.wasClean ?? "unavailable",
-              "websocket.buffered_amount": socketCloseDiagnostic?.bufferedAmount ?? "unavailable",
-              "websocket.extensions": socketCloseDiagnostic?.extensions ?? "",
-              "websocket.error_observed": socketErrorObserved,
-              "websocket.heartbeat_timeout": timedOut,
-              "websocket.last_ping_at_ms": heartbeat.lastPingAtMs ?? "unavailable",
-              "websocket.last_pong_at_ms": heartbeat.lastPongAtMs ?? "unavailable",
-            }),
-          );
-        }
-        yield* Deferred.fail(
-          disconnected,
-          new ConnectionTransientErrorClass({
-            reason: timedOut ? "timeout" : "transport",
-            detail: timedOut
-              ? `${connection.label} timed out waiting for a heartbeat response.`
-              : wasConnected
-                ? `${connection.label} disconnected.`
-                : `${connection.label} could not establish a WebSocket connection.`,
-          }),
-        );
-      }).pipe(Effect.asVoid),
-      onPing: Clock.currentTimeMillis.pipe(
-        Effect.flatMap((lastPingAtMs) =>
-          Ref.update(heartbeatDiagnostic, (current) => ({ ...current, lastPingAtMs })),
-        ),
+      onDisconnect: Effect.suspend(() => Deferred.fail(disconnected, socketFailure())).pipe(
+        Effect.asVoid,
       ),
-      onPong: Clock.currentTimeMillis.pipe(
-        Effect.flatMap((lastPongAtMs) =>
-          Ref.update(heartbeatDiagnostic, (current) => ({ ...current, lastPongAtMs })),
-        ),
-      ),
-      onPingTimeout: Effect.gen(function* () {
-        const timedOutAtMs = yield* Clock.currentTimeMillis;
-        const heartbeat = yield* Ref.updateAndGet(heartbeatDiagnostic, (current) => ({
-          ...current,
-          timedOutAtMs,
-        }));
-        yield* Effect.logWarning("Environment WebSocket heartbeat timed out.").pipe(
-          Effect.annotateLogs({
-            "environment.id": connection.environmentId,
-            "environment.label": connection.label,
-            "websocket.ping_interval_ms": 15_000,
-            "websocket.max_missed_pongs": MAX_MISSED_PONGS,
-            "websocket.last_ping_at_ms": heartbeat.lastPingAtMs ?? "unavailable",
-            "websocket.last_pong_at_ms": heartbeat.lastPongAtMs ?? "unavailable",
-          }),
-        );
-      }),
     });
-    const socketLayer = Socket.layerWebSocket(connection.socketUrl, {
-      openTimeout: SOCKET_OPEN_TIMEOUT,
-    }).pipe(
-      Layer.provide(Layer.succeed(Socket.WebSocketConstructor, diagnosticWebSocketConstructor)),
+    // The protocol never reopens its socket, so every frame counted here came
+    // from this session's one socket.
+    let inboundFrames = 0;
+    const countingWebSocketConstructor: typeof webSocketConstructor = (url, options) => {
+      const socket = webSocketConstructor(url, options);
+      socket.addEventListener("message", () => {
+        inboundFrames += 1;
+      });
+      return socket;
+    };
+    const socketUrl = new URL(connection.socketUrl);
+    socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
+    const layerSocket = Layer.effect(
+      Socket.Socket,
+      Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
+    ).pipe(
+      Layer.provide(
+        Socket.layerWebSocket(socketUrl.toString(), {
+          openTimeout: SOCKET_OPEN_TIMEOUT,
+        }),
+      ),
+      Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
     );
-    const protocolLayer = Layer.effect(
+    const layerProtocol = Layer.effect(
       RpcClient.Protocol,
       RpcClient.makeProtocolSocket({
-        maxMissedPongs: MAX_MISSED_PONGS,
-        pingInterval: HEARTBEAT_INTERVAL,
+        pingTimeout: PING_TIMEOUT,
         retryTransientErrors: false,
         retryPolicy: Schedule.recurs(0),
-      }),
+        // RpcClient runs this before it fails the open requests.
+        onPingTimeout: Effect.sync(() => {
+          pingTimedOut = true;
+        }),
+      }).pipe(
+        // Teardown sends an interrupt per open stream, and a write to a closed
+        // socket waits out the client's 1s interrupt timeout before reconnecting.
+        // Requests still go through, so they fail with the protocol error.
+        Effect.map((protocol) => ({
+          ...protocol,
+          send: (clientId, request, transferables) =>
+            request._tag !== "Request" && Deferred.isDoneUnsafe(disconnected)
+              ? Effect.void
+              : protocol.send(clientId, request, transferables),
+        })),
+      ),
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
-          socketLayer,
+          layerSocket,
           RpcSerialization.layerJson,
           Layer.succeed(RpcClient.ConnectionHooks, hooks),
         ),
       ),
     );
-    const protocolContext = yield* Layer.build(protocolLayer).pipe(
+    const protocolContext = yield* Layer.build(layerProtocol).pipe(
       Effect.withSpan("environment.websocket.connect"),
     );
-    const client = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
-    const initialConfig = yield* Effect.cached(
-      client[WS_METHODS.serverGetConfig]({}).pipe(
-        Effect.mapError(mapSessionRpcError),
-        Effect.withSpan("environment.initialSync"),
+    // Building the protocol only starts the socket; this span times the
+    // handshake up to the first open, without making `connect` wait for it.
+    yield* Deferred.await(connected).pipe(
+      Effect.raceFirst(Deferred.await(disconnected)),
+      Effect.withSpan("environment.websocket.open"),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+    const protocolClient = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
+    const initialConfigDeferred = yield* Deferred.make<ServerConfig>();
+    const serverConfigExit = yield* Deferred.make<
+      void,
+      ServerConfigSubscriptionError | ConnectionAttemptError
+    >();
+    const configSubscriptionClosed = yield* Deferred.make<never, ConnectionAttemptError>();
+    const serverConfigState = yield* Ref.make(Option.none<ServerConfigReplayState>());
+    const serverConfigUpdates = yield* PubSub.sliding<BufferedServerConfigEvent>(64);
+    const configSubscriptionEndedError = new ConnectionTransientErrorClass({
+      reason: "remote-unavailable",
+      detail: `${connection.label} config subscription ended.`,
+    });
+    // An interrupt while the session is not closing came from the server; it ends the subscription.
+    let closingSession = false;
+    const configRequestedAtMs = yield* Clock.currentTimeMillis;
+    const serverConfigSource = protocolClient[WS_METHODS.subscribeServerConfig](
+      onDemandSnapshots(serverConfigInput),
+    ).pipe(
+      Stream.runForEach((event) =>
+        Effect.gen(function* () {
+          const buffered = yield* Ref.modify(serverConfigState, (current) => {
+            const projection = applyServerConfigProjection(
+              Option.map(current, (state) => state.projection),
+              event,
+            );
+            if (Option.isNone(projection)) {
+              return [Option.none<BufferedServerConfigEvent>(), current] as const;
+            }
+            const next = {
+              projection: projection.value,
+              revision: Option.match(current, {
+                onNone: () => 1,
+                onSome: (state) => state.revision + 1,
+              }),
+              themesEvent:
+                event.type === "environmentThemesUpdated"
+                  ? event
+                  : Option.getOrUndefined(current)?.themesEvent,
+              sourcesEvent:
+                event.type === "usageLimitSourcesUpdated"
+                  ? event
+                  : Option.getOrUndefined(current)?.sourcesEvent,
+            } satisfies ServerConfigReplayState;
+            return [
+              Option.some({ event, replay: next, revision: next.revision }),
+              Option.some(next),
+            ] as const;
+          });
+          if (Option.isSome(buffered)) {
+            yield* PubSub.publish(serverConfigUpdates, buffered.value);
+          }
+          if (event.type === "snapshot") {
+            // Later snapshots may repeat the first one's serverTime. Record
+            // before readiness so the first timers already use its clock.
+            if (!(yield* Deferred.isDone(initialConfigDeferred))) {
+              const { serverTime } = event.config;
+              recordServerClock(connection.environmentId, {
+                serverTimeMs: serverTime === undefined ? undefined : Date.parse(serverTime),
+                requestedAtMs: configRequestedAtMs,
+                receivedAtMs: yield* Clock.currentTimeMillis,
+              });
+            }
+            yield* Deferred.succeed(initialConfigDeferred, event.config);
+          }
+        }),
+      ),
+      // An unreadable first snapshot means the versions are incompatible. A later
+      // unreadable update ends the session, and the reconnect's snapshot decides.
+      Effect.catchDefect((defect) =>
+        Schema.isSchemaError(defect)
+          ? Effect.logWarning("Server configuration failed to decode.", {
+              environmentId: connection.environmentId,
+              issue: defect.message,
+            }).pipe(
+              Effect.andThen(
+                Effect.fail(
+                  Deferred.isDoneUnsafe(initialConfigDeferred)
+                    ? new ConnectionTransientErrorClass({
+                        reason: "remote-unavailable",
+                        ...translatableDetail(
+                          msg(
+                            "{host} sent a server configuration update this client could not read.",
+                            { host: connection.label },
+                          ),
+                        ),
+                        hop: "server",
+                        via,
+                      })
+                    : new ConnectionBlockedError({
+                        reason: "unsupported",
+                        ...translatableDetail(
+                          msg("{host} sent an incompatible server configuration.", {
+                            host: connection.label,
+                          }),
+                          msg("Update the client and server to compatible versions."),
+                        ),
+                        hop: "server",
+                        via,
+                      }),
+                ),
+              ),
+            )
+          : Effect.die(defect),
+      ),
+      Effect.onExit((exit) => {
+        if (Exit.isSuccess(exit) || (Cause.hasInterruptsOnly(exit.cause) && !closingSession)) {
+          return Effect.all([
+            Deferred.succeed(serverConfigExit, undefined),
+            Deferred.fail(configSubscriptionClosed, configSubscriptionEndedError),
+          ]).pipe(Effect.asVoid);
+        }
+        if (Cause.hasInterruptsOnly(exit.cause)) {
+          return Effect.void;
+        }
+        return Effect.all([
+          Deferred.failCause(serverConfigExit, exit.cause),
+          Deferred.failCause(configSubscriptionClosed, Cause.map(exit.cause, mapRpcError)),
+        ]).pipe(Effect.asVoid);
+      }),
+    );
+    yield* serverConfigSource.pipe(Effect.forkScoped);
+    // Finalizers run in reverse, so this is set before the fork above is interrupted.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        closingSession = true;
+      }),
+    );
+    const initialConfig = Effect.raceFirst(
+      Deferred.await(initialConfigDeferred),
+      Deferred.await(serverConfigExit).pipe(
+        Effect.mapError(mapRpcError),
+        Effect.flatMap(() => Effect.fail(configSubscriptionEndedError)),
+      ),
+    ).pipe(
+      Effect.filterOrElse(
+        (config) => config.environment.environmentId === connection.environmentId,
+        (config) =>
+          environmentMismatchError({
+            expected: connection.environmentId,
+            actual: config.environment.environmentId,
+          }),
+      ),
+      Effect.withSpan("environment.initialSync"),
+    );
+    const serverConfigEvents = Stream.unwrap(
+      Effect.gen(function* () {
+        const subscription = yield* PubSub.subscribe(serverConfigUpdates);
+        const snapshot = yield* Ref.get(serverConfigState);
+        if (Option.isNone(snapshot)) {
+          return Stream.empty;
+        }
+        const updates = Stream.fromSubscription(subscription).pipe(
+          Stream.filter((buffered) => buffered.revision > snapshot.value.revision),
+          Stream.mapAccum(
+            () => snapshot.value.revision,
+            (revision, buffered) => [
+              buffered.revision,
+              buffered.revision === revision + 1
+                ? [buffered.event]
+                : serverConfigReplayEvents(buffered.replay),
+            ],
+          ),
+        );
+        const terminal = Stream.fromEffect(Deferred.await(serverConfigExit)).pipe(Stream.drain);
+        return Stream.concat(
+          Stream.fromIterable(serverConfigReplayEvents(snapshot.value)),
+          Stream.merge(updates, terminal, { haltStrategy: "either" }),
+        );
+      }),
+    ).pipe(
+      Stream.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Stream.failCause(
+            Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)),
+          );
+        }
+        // The supervisor keeps the original cause. Shared durable consumers
+        // need a transport-shaped failure so they wait for its replacement.
+        return Stream.fail(
+          new RpcClientError.RpcClientError({
+            reason: new RpcClientError.RpcClientDefect({
+              message: `${connection.label} config subscription failed.`,
+              cause,
+            }),
+          }),
+        );
+      }),
+    );
+    const validatedInitialConfig = initialConfig.pipe(
+      Effect.mapError(
+        (cause) =>
+          new RpcClientError.RpcClientError({
+            reason: new RpcClientError.RpcClientDefect({
+              message: `${connection.label} config subscription failed.`,
+              cause,
+            }),
+          }),
       ),
     );
+    const subscribeServerConfig = (input: ServerConfigSubscriptionInput = serverConfigInput) =>
+      Stream.unwrap(
+        validatedInitialConfig.pipe(
+          Effect.as(
+            Equal.equals(input, serverConfigInput)
+              ? serverConfigEvents
+              : protocolClient[WS_METHODS.subscribeServerConfig](onDemandSnapshots(input)),
+          ),
+        ),
+      );
     const probe = initialConfig.pipe(
-      Effect.flatMap((config) =>
-        (config.environment.capabilities.connectionProbe === true
-          ? client[WS_METHODS.serverProbe]({})
-          : client[WS_METHODS.serverGetConfig]({})
-        ).pipe(Effect.mapError(mapSessionRpcError)),
+      Effect.flatMap(() =>
+        Effect.gen(function* () {
+          const requestedAtMs = yield* Clock.currentTimeMillis;
+          const result = yield* protocolClient[WS_METHODS.serverProbe]({}).pipe(
+            Effect.mapError(mapRpcError),
+          );
+          if (result.serverTime !== undefined) {
+            recordServerClock(connection.environmentId, {
+              serverTimeMs: Date.parse(result.serverTime),
+              requestedAtMs,
+              receivedAtMs: yield* Clock.currentTimeMillis,
+            });
+          }
+        }),
       ),
-      Effect.asVoid,
       Effect.withSpan("clientRuntime.connection.rpcSession.probe"),
     );
 
     return {
-      client,
+      client: protocolClient,
       initialConfig,
-      ready: Deferred.await(connected).pipe(
-        Effect.andThen(initialConfig),
-        Effect.asVoid,
-        Effect.raceFirst(Deferred.await(disconnected)),
-      ),
+      subscribeServerConfig,
+      ready: initialConfig.pipe(Effect.asVoid),
       probe,
-      closed: Deferred.await(disconnected),
+      inboundFrames: Effect.sync(() => inboundFrames),
+      // The config stream also fails on disconnect, and only it can report a decode failure.
+      closed: Deferred.await(configSubscriptionClosed),
     } satisfies RpcSession;
   });
 
   return RpcSessionFactory.of({ connect });
 });
 
-export const layer = Layer.effect(RpcSessionFactory, make);
+export const layer = (options: RpcSessionOptions) => Layer.effect(RpcSessionFactory, make(options));

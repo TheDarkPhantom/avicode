@@ -38,130 +38,44 @@ afterEach(() => {
 });
 
 describe("clientPersistenceStorage", () => {
-  it("persists client settings in browser storage", async () => {
-    getTestWindow();
-    const { readBrowserClientSettings, writeBrowserClientSettings } =
-      await import("./clientPersistenceStorage");
-    const settings = {
-      ...DEFAULT_CLIENT_SETTINGS,
-      timestampFormat: "24-hour" as const,
-    };
+  it.each(["not-json", '{"wordWrap":"invalid"}'])(
+    "does not treat invalid saved settings as absent: %s",
+    async (value) => {
+      const testWindow = getTestWindow();
+      testWindow.localStorage.setItem("t3code:client-settings:v1", value);
+      const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
 
-    writeBrowserClientSettings(settings);
+      expect(() => readBrowserClientSettings()).toThrow(
+        expect.objectContaining({
+          _tag: "LocalStorageOperationError",
+          operation: "decode",
+          storageKey: "t3code:client-settings:v1",
+        }),
+      );
+      expect(testWindow.localStorage.getItem("t3code:client-settings:v1")).toBe(value);
+    },
+  );
 
+  it("preserves saved settings across a transient read failure", async () => {
+    const testWindow = getTestWindow();
+    const settings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };
+    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify(settings));
+    const write = vi.spyOn(testWindow.localStorage, "setItem");
+    const failure = new Error("storage unavailable");
+    vi.spyOn(testWindow.localStorage, "getItem").mockImplementationOnce(() => {
+      throw failure;
+    });
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+    expect(() => readBrowserClientSettings()).toThrow(
+      expect.objectContaining({
+        _tag: "LocalStorageOperationError",
+        operation: "read",
+        storageKey: "t3code:client-settings:v1",
+        cause: failure,
+      }),
+    );
     expect(readBrowserClientSettings()).toEqual(settings);
-  });
-
-  it("reports unparseable blobs while preserving the fallback", async () => {
-    const testWindow = getTestWindow();
-    testWindow.localStorage.setItem("t3code:client-settings:v1", "not-json");
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
-
-    expect(readBrowserClientSettings()).toBeNull();
-    expect(consoleError).toHaveBeenCalledWith(
-      "Could not parse persisted client settings.",
-      expect.anything(),
-    );
-  });
-
-  it("defaults only an invalid field and preserves the valid ones", async () => {
-    const testWindow = getTestWindow();
-    testWindow.localStorage.setItem(
-      "t3code:client-settings:v1",
-      JSON.stringify({
-        glassOpacity: 200,
-        timestampFormat: "24-hour",
-      }),
-    );
-    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
-    const settings = readBrowserClientSettings();
-
-    expect(settings).toEqual(
-      expect.objectContaining({
-        glassOpacity: DEFAULT_CLIENT_SETTINGS.glassOpacity,
-        timestampFormat: "24-hour",
-      }),
-    );
-  });
-
-  it("defaults multiple invalid fields independently", async () => {
-    const testWindow = getTestWindow();
-    testWindow.localStorage.setItem(
-      "t3code:client-settings:v1",
-      JSON.stringify({
-        glassOpacity: 200,
-        environmentIdentificationMode: "nonsense",
-        timestampFormat: "24-hour",
-      }),
-    );
-    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
-    const settings = readBrowserClientSettings();
-
-    expect(settings).toEqual(
-      expect.objectContaining({
-        glassOpacity: DEFAULT_CLIENT_SETTINGS.glassOpacity,
-        environmentIdentificationMode: DEFAULT_CLIENT_SETTINGS.environmentIdentificationMode,
-        timestampFormat: "24-hour",
-      }),
-    );
-  });
-
-  it("drops a record field that violates its constraint", async () => {
-    const testWindow = getTestWindow();
-    testWindow.localStorage.setItem(
-      "t3code:client-settings:v1",
-      JSON.stringify({
-        aviCodeProviderBadgeLabels: { anthropic: "toolong" },
-        timestampFormat: "24-hour",
-      }),
-    );
-    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
-    const settings = readBrowserClientSettings();
-
-    expect(settings).toEqual(
-      expect.objectContaining({
-        aviCodeProviderBadgeLabels: DEFAULT_CLIENT_SETTINGS.aviCodeProviderBadgeLabels,
-        timestampFormat: "24-hour",
-      }),
-    );
-  });
-
-  it("defaults word wrap on and discards obsolete wrapping preferences", async () => {
-    const testWindow = getTestWindow();
-    testWindow.localStorage.setItem(
-      "t3code:client-settings:v1",
-      JSON.stringify({
-        chatWordWrap: false,
-        diffWordWrap: false,
-      }),
-    );
-    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
-    const settings = readBrowserClientSettings();
-
-    expect(settings).toEqual(
-      expect.objectContaining({
-        wordWrap: true,
-      }),
-    );
-    expect(settings).not.toHaveProperty("chatWordWrap");
-    expect(settings).not.toHaveProperty("diffWordWrap");
-  });
-
-  it("defaults mouse back/forward sidebar navigation off for legacy blobs", async () => {
-    const testWindow = getTestWindow();
-    testWindow.localStorage.setItem(
-      "t3code:client-settings:v1",
-      JSON.stringify({
-        timestampFormat: "24-hour",
-      }),
-    );
-    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
-
-    expect(readBrowserClientSettings()).toEqual(
-      expect.objectContaining({
-        sidebarMouseBackForwardNavigation: false,
-      }),
-    );
+    expect(write).not.toHaveBeenCalled();
   });
 });

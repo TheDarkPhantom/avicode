@@ -22,6 +22,8 @@ import {
   RelayMobileRegistrationScope,
   type RelayOkResponse,
   type RelayPublicClientId,
+  type RelayT3ChatLinkRequestResponse,
+  type RelayT3ChatLinkResponse,
   RelayRegisterDeviceEndpoint,
   RelayAgentActivitySnapshotEndpoint,
   RelayRegisterLiveActivityEndpoint,
@@ -41,9 +43,13 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
-import type * as HttpMethod from "effect/unstable/http/HttpMethod";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import * as HttpClientError from "effect/http/HttpClientError";
+import type * as HttpMethod from "effect/http/HttpMethod";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
+import { msg } from "gt-i18n";
+import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
+import { type MarkedText, markedTextEnglish } from "../errors/translatable.ts";
+import { relayRequestFailureText } from "./errorPresentation.ts";
 
 export interface ManagedRelayDpopProofInput {
   readonly method: HttpMethod.HttpMethod;
@@ -51,7 +57,7 @@ export interface ManagedRelayDpopProofInput {
   readonly accessToken?: string;
 }
 
-export class ManagedRelayDpopKeyLoadError extends Schema.TaggedErrorClass<ManagedRelayDpopKeyLoadError>()(
+export class ManagedRelayDpopKeyLoadError extends Schema.TaggedError<ManagedRelayDpopKeyLoadError>()(
   "ManagedRelayDpopKeyLoadError",
   {
     keyStore: Schema.Literals(["expo-secure-store", "indexed-db"]),
@@ -59,11 +65,15 @@ export class ManagedRelayDpopKeyLoadError extends Schema.TaggedErrorClass<Manage
   },
 ) {
   override get message(): string {
-    return "Could not load relay DPoP proof key.";
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [msg("Could not load relay DPoP proof key.")];
   }
 }
 
-export class ManagedRelayDpopProofCreationError extends Schema.TaggedErrorClass<ManagedRelayDpopProofCreationError>()(
+export class ManagedRelayDpopProofCreationError extends Schema.TaggedError<ManagedRelayDpopProofCreationError>()(
   "ManagedRelayDpopProofCreationError",
   {
     method: Schema.String,
@@ -95,6 +105,9 @@ export const ManagedRelayRequestAction = Schema.Literals([
   "unregister relay mobile device",
   "register relay live activity",
   "read relay agent activity snapshot",
+  "read linked T3 Chat account",
+  "start T3 Chat linking",
+  "unlink T3 Chat account",
 ]);
 export type ManagedRelayRequestAction = typeof ManagedRelayRequestAction.Type;
 
@@ -111,51 +124,152 @@ export const ManagedRelayRequestActivity = Schema.Literals([
   "Relay mobile device unregistration",
   "Relay Live Activity registration",
   "Relay agent activity snapshot",
+  "Relay T3 Chat link lookup",
+  "Relay T3 Chat link request",
+  "Relay T3 Chat unlinking",
 ]);
 export type ManagedRelayRequestActivity = typeof ManagedRelayRequestActivity.Type;
 
-export class ManagedRelayRequestTimeoutError extends Schema.TaggedErrorClass<ManagedRelayRequestTimeoutError>()(
+const REQUEST_TIMED_OUT_TEXT: Record<ManagedRelayRequestActivity, string> = {
+  "Relay DPoP access token exchange": msg("Relay DPoP access token exchange timed out."),
+  "Relay environment listing": msg("Relay environment listing timed out."),
+  "Relay client device listing": msg("Relay client device listing timed out."),
+  "Relay environment link challenge": msg("Relay environment link challenge timed out."),
+  "Relay environment linking": msg("Relay environment linking timed out."),
+  "Relay environment unlinking": msg("Relay environment unlinking timed out."),
+  "Relay environment status request": msg("Relay environment status request timed out."),
+  "Relay environment connection": msg("Relay environment connection timed out."),
+  "Relay mobile device registration": msg("Relay mobile device registration timed out."),
+  "Relay mobile device unregistration": msg("Relay mobile device unregistration timed out."),
+  "Relay Live Activity registration": msg("Relay Live Activity registration timed out."),
+  "Relay agent activity snapshot": msg("Relay agent activity snapshot timed out."),
+  "Relay T3 Chat link lookup": msg("Relay T3 Chat link lookup timed out."),
+  "Relay T3 Chat link request": msg("Relay T3 Chat link request timed out."),
+  "Relay T3 Chat unlinking": msg("Relay T3 Chat unlinking timed out."),
+};
+
+export class ManagedRelayRequestTimeoutError extends Schema.TaggedError<ManagedRelayRequestTimeoutError>()(
   "ManagedRelayRequestTimeoutError",
   {
     activity: ManagedRelayRequestActivity,
     timeoutMs: Schema.Number,
-    // The CLIENT span's trace id. A timed-out request has no server response
-    // to take an id from, but the client span was exported, so carrying its id
-    // makes the failure searchable instead of logging `traceId: null`.
     traceId: Schema.NullOr(Schema.String),
   },
 ) {
   override get message(): string {
-    return `${this.activity} timed out.`;
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [REQUEST_TIMED_OUT_TEXT[this.activity], NETWORK_BLOCKING_HINT];
   }
 }
 
-export class ManagedRelayUrlInvalidError extends Schema.TaggedErrorClass<ManagedRelayUrlInvalidError>()(
+export class ManagedRelayUrlInvalidError extends Schema.TaggedError<ManagedRelayUrlInvalidError>()(
   "ManagedRelayUrlInvalidError",
   {
     relayUrl: Schema.String,
   },
 ) {
   override get message(): string {
-    return "Relay URL must be a secure absolute HTTPS origin.";
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [msg("Relay URL must be a secure absolute HTTPS origin.")];
   }
 }
 
-export class ManagedRelayRequestFailedError extends Schema.TaggedErrorClass<ManagedRelayRequestFailedError>()(
+const REQUEST_FAILED_TEXT: Record<
+  ManagedRelayRequestAction,
+  { readonly failed: string; readonly failedWithDetail: string }
+> = {
+  "exchange relay DPoP access token": {
+    failed: msg("Could not exchange relay DPoP access token."),
+    failedWithDetail: msg("Could not exchange relay DPoP access token:"),
+  },
+  "list relay-managed environments": {
+    failed: msg("Could not list relay-managed environments."),
+    failedWithDetail: msg("Could not list relay-managed environments:"),
+  },
+  "list relay client devices": {
+    failed: msg("Could not list relay client devices."),
+    failedWithDetail: msg("Could not list relay client devices:"),
+  },
+  "create relay environment link challenge": {
+    failed: msg("Could not create relay environment link challenge."),
+    failedWithDetail: msg("Could not create relay environment link challenge:"),
+  },
+  "link relay environment": {
+    failed: msg("Could not link relay environment."),
+    failedWithDetail: msg("Could not link relay environment:"),
+  },
+  "unlink relay environment": {
+    failed: msg("Could not unlink relay environment."),
+    failedWithDetail: msg("Could not unlink relay environment:"),
+  },
+  "get relay environment status": {
+    failed: msg("Could not get relay environment status."),
+    failedWithDetail: msg("Could not get relay environment status:"),
+  },
+  "connect relay environment": {
+    failed: msg("Could not connect relay environment."),
+    failedWithDetail: msg("Could not connect relay environment:"),
+  },
+  "register relay mobile device": {
+    failed: msg("Could not register relay mobile device."),
+    failedWithDetail: msg("Could not register relay mobile device:"),
+  },
+  "unregister relay mobile device": {
+    failed: msg("Could not unregister relay mobile device."),
+    failedWithDetail: msg("Could not unregister relay mobile device:"),
+  },
+  "register relay live activity": {
+    failed: msg("Could not register relay live activity."),
+    failedWithDetail: msg("Could not register relay live activity:"),
+  },
+  "read relay agent activity snapshot": {
+    failed: msg("Could not read relay agent activity snapshot."),
+    failedWithDetail: msg("Could not read relay agent activity snapshot:"),
+  },
+  "read linked T3 Chat account": {
+    failed: msg("Could not read linked T3 Chat account."),
+    failedWithDetail: msg("Could not read linked T3 Chat account:"),
+  },
+  "start T3 Chat linking": {
+    failed: msg("Could not start T3 Chat linking."),
+    failedWithDetail: msg("Could not start T3 Chat linking:"),
+  },
+  "unlink T3 Chat account": {
+    failed: msg("Could not unlink T3 Chat account."),
+    failedWithDetail: msg("Could not unlink T3 Chat account:"),
+  },
+};
+
+export class ManagedRelayRequestFailedError extends Schema.TaggedError<ManagedRelayRequestFailedError>()(
   "ManagedRelayRequestFailedError",
   {
     action: ManagedRelayRequestAction,
+    transportFailed: Schema.optionalKey(Schema.Boolean),
     cause: Schema.Defect(),
     relayError: Schema.optional(RelayProtectedError),
+    status: Schema.optional(Schema.Number),
     traceId: Schema.optional(Schema.String),
   },
 ) {
   override get message(): string {
-    return `Could not ${this.action}.`;
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    const text = REQUEST_FAILED_TEXT[this.action];
+    if (this.transportFailed) return [text.failed, NETWORK_BLOCKING_HINT];
+    const detail = relayRequestFailureText(this);
+    return detail ? [text.failedWithDetail, ...detail] : [text.failed];
   }
 }
 
-export class ManagedRelayAccessTokenScopesUnexpectedError extends Schema.TaggedErrorClass<ManagedRelayAccessTokenScopesUnexpectedError>()(
+export class ManagedRelayAccessTokenScopesUnexpectedError extends Schema.TaggedError<ManagedRelayAccessTokenScopesUnexpectedError>()(
   "ManagedRelayAccessTokenScopesUnexpectedError",
   {
     requestedScopes: Schema.Array(RelayDpopAccessTokenScope),
@@ -163,11 +277,15 @@ export class ManagedRelayAccessTokenScopesUnexpectedError extends Schema.TaggedE
   },
 ) {
   override get message(): string {
-    return "Relay granted unexpected DPoP access token scopes.";
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [msg("Relay granted unexpected DPoP access token scopes.")];
   }
 }
 
-export class ManagedRelayTokenProofCreationError extends Schema.TaggedErrorClass<ManagedRelayTokenProofCreationError>()(
+export class ManagedRelayTokenProofCreationError extends Schema.TaggedError<ManagedRelayTokenProofCreationError>()(
   "ManagedRelayTokenProofCreationError",
   {
     method: Schema.String,
@@ -176,11 +294,15 @@ export class ManagedRelayTokenProofCreationError extends Schema.TaggedErrorClass
   },
 ) {
   override get message(): string {
-    return "Could not create relay token DPoP proof.";
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [msg("Could not create relay token DPoP proof.")];
   }
 }
 
-export class ManagedRelayRequestProofCreationError extends Schema.TaggedErrorClass<ManagedRelayRequestProofCreationError>()(
+export class ManagedRelayRequestProofCreationError extends Schema.TaggedError<ManagedRelayRequestProofCreationError>()(
   "ManagedRelayRequestProofCreationError",
   {
     method: Schema.String,
@@ -189,7 +311,11 @@ export class ManagedRelayRequestProofCreationError extends Schema.TaggedErrorCla
   },
 ) {
   override get message(): string {
-    return "Could not create relay request DPoP proof.";
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [msg("Could not create relay request DPoP proof.")];
   }
 }
 
@@ -271,6 +397,15 @@ export class ManagedRelayClient extends Context.Service<
       readonly clerkToken: string;
       readonly environmentId: RelayClientEnvironmentRecord["environmentId"];
     }) => Effect.Effect<RelayOkResponse, ManagedRelayClientError>;
+    readonly getT3ChatLink: (input: {
+      readonly clerkToken: string;
+    }) => Effect.Effect<RelayT3ChatLinkResponse, ManagedRelayClientError>;
+    readonly createT3ChatLinkRequest: (input: {
+      readonly clerkToken: string;
+    }) => Effect.Effect<RelayT3ChatLinkRequestResponse, ManagedRelayClientError>;
+    readonly unlinkT3Chat: (input: {
+      readonly clerkToken: string;
+    }) => Effect.Effect<RelayOkResponse, ManagedRelayClientError>;
     readonly getEnvironmentStatus: (input: {
       readonly clerkToken: string;
       readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
@@ -303,12 +438,25 @@ export class ManagedRelayClient extends Context.Service<
 
 const isRelayProtectedError = Schema.is(RelayProtectedError);
 
+const TRACEPARENT_TRACE_ID = /^[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}$/i;
+
+function untypedResponseFields(cause: RelayHttpRequestError) {
+  const response = HttpClientError.isHttpClientError(cause) ? cause.response : undefined;
+  if (!response) return {};
+  const traceId = TRACEPARENT_TRACE_ID.exec(response.headers.traceparent ?? "")?.[1];
+  return { status: response.status, ...(traceId ? { traceId } : {}) };
+}
+
 function relayRequestError(action: ManagedRelayRequestAction) {
   return (cause: RelayHttpRequestError): ManagedRelayClientError =>
     new ManagedRelayRequestFailedError({
       action,
+      transportFailed:
+        HttpClientError.isHttpClientError(cause) && cause.reason._tag === "TransportError",
       cause,
-      ...(isRelayProtectedError(cause) ? { relayError: cause, traceId: cause.traceId } : {}),
+      ...(isRelayProtectedError(cause)
+        ? { relayError: cause, traceId: cause.traceId }
+        : untypedResponseFields(cause)),
     });
 }
 
@@ -377,15 +525,13 @@ function tokenMatches(
   );
 }
 
-function relayAccountId(clerkToken: string): Option.Option<string> {
-  try {
-    return Option.fromNullishOr(decodeRelayJwt(clerkToken).sub).pipe(
-      Option.filter((subject) => subject.length > 0),
-    );
-  } catch {
-    return Option.none();
-  }
-}
+const relayAccountId = Effect.fn("clientRuntime.managedRelay.relayAccountId")(function* (
+  clerkToken: string,
+) {
+  const claims = yield* decodeRelayJwt(clerkToken).pipe(Effect.option);
+  const sub = Option.isSome(claims) ? claims.value.sub : undefined;
+  return typeof sub === "string" && sub.length > 0 ? Option.some(sub) : Option.none<string>();
+});
 
 function bearerHeaders(clerkToken: string) {
   return { authorization: `Bearer ${clerkToken}` };
@@ -412,6 +558,9 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
     ),
     linkEnvironment: unavailable("clientRuntime.managedRelay.linkEnvironment"),
     unlinkEnvironment: unavailable("clientRuntime.managedRelay.unlinkEnvironment"),
+    getT3ChatLink: unavailable("clientRuntime.managedRelay.getT3ChatLink"),
+    createT3ChatLinkRequest: unavailable("clientRuntime.managedRelay.createT3ChatLinkRequest"),
+    unlinkT3Chat: unavailable("clientRuntime.managedRelay.unlinkT3Chat"),
     getEnvironmentStatus: unavailable("clientRuntime.managedRelay.getEnvironmentStatus"),
     connectEnvironment: unavailable("clientRuntime.managedRelay.connectEnvironment"),
     registerDevice: unavailable("clientRuntime.managedRelay.registerDevice"),
@@ -424,6 +573,7 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
   });
 }
 
+/** @public */
 export const make = Effect.fn("ManagedRelayClient.make")(function* (
   options: ManagedRelayClientLayerOptions,
 ) {
@@ -529,7 +679,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         "relay.scopes": input.scopes.join(" "),
       });
       const nowMillis = yield* Clock.currentTimeMillis;
-      const accountId = relayAccountId(input.clerkToken);
+      const accountId = yield* relayAccountId(input.clerkToken);
       if (Option.isNone(accountId)) {
         yield* Effect.annotateCurrentSpan({
           "relay.token_cache.result": "bypass",
@@ -546,18 +696,31 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           expiresAtMillis: nowMillis + response.expires_in * 1_000,
         } satisfies ManagedRelayAccessTokenCacheEntry;
       }
+      const match = {
+        accountId: accountId.value,
+        clientId: options.clientId,
+        relayUrl,
+        thumbprint: input.thumbprint,
+        scopes: input.scopes,
+        nowMillis,
+      };
+      const cached = (yield* SynchronizedRef.get(cachedTokens)).find((token) =>
+        tokenMatches(token, match),
+      );
+      if (cached) {
+        yield* Effect.annotateCurrentSpan({
+          "relay.token_cache.result": "hit",
+        });
+        return cached;
+      }
       return yield* SynchronizedRef.modifyEffect(cachedTokens, (tokens) =>
         Effect.gen(function* () {
-          const activeTokens = tokens.filter((token) => token.expiresAtMillis > nowMillis + 5_000);
+          const lookupMillis = yield* Clock.currentTimeMillis;
+          const activeTokens = tokens.filter(
+            (token) => token.expiresAtMillis > lookupMillis + 5_000,
+          );
           const cached = activeTokens.find((token) =>
-            tokenMatches(token, {
-              accountId: accountId.value,
-              clientId: options.clientId,
-              relayUrl,
-              thumbprint: input.thumbprint,
-              scopes: input.scopes,
-              nowMillis,
-            }),
+            tokenMatches(token, { ...match, nowMillis: lookupMillis }),
           );
           if (cached) {
             yield* Effect.annotateCurrentSpan({
@@ -576,7 +739,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             thumbprint: input.thumbprint,
             scopes: input.scopes,
             accessToken: response.access_token,
-            expiresAtMillis: nowMillis + response.expires_in * 1_000,
+            expiresAtMillis: lookupMillis + response.expires_in * 1_000,
           };
           const nextTokens = [...activeTokens, next];
           if (options.accessTokenStore) {
@@ -646,11 +809,8 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       authorize(input).pipe(
         Effect.flatMap((authorization) =>
           request(authorization).pipe(
-            Effect.catch((error) => {
-              if (!isRejectedDpopAccessToken(error)) {
-                return Effect.fail(error);
-              }
-              return invalidateAccessToken(authorization.accessToken).pipe(
+            Effect.catchIf(isRejectedDpopAccessToken, (error) =>
+              invalidateAccessToken(authorization.accessToken).pipe(
                 Effect.tap((invalidated) =>
                   Effect.annotateCurrentSpan({
                     "relay.token_cache.invalidated": invalidated,
@@ -666,8 +826,8 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
                     : Effect.void,
                 ),
                 Effect.andThen(refreshRejectedToken ? attempt(false) : Effect.fail(error)),
-              );
-            }),
+              ),
+            ),
           ),
         ),
       );
@@ -709,7 +869,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     listDevices: Effect.fnUntraced(
       function* (input) {
         return yield* client.client
-          .listDevices({
+          .listDevicesV2({
             headers: bearerHeaders(input.clerkToken),
           })
           .pipe(
@@ -764,6 +924,42 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           );
       },
       Effect.withSpan("clientRuntime.managedRelay.unlinkEnvironment"),
+      withRelayClientTracing,
+    ),
+    getT3ChatLink: Effect.fnUntraced(
+      function* (input) {
+        return yield* client.client
+          .getT3ChatLink({ headers: bearerHeaders(input.clerkToken) })
+          .pipe(
+            Effect.mapError(relayRequestError("read linked T3 Chat account")),
+            timeoutRelayRequest("Relay T3 Chat link lookup"),
+          );
+      },
+      Effect.withSpan("clientRuntime.managedRelay.getT3ChatLink"),
+      withRelayClientTracing,
+    ),
+    createT3ChatLinkRequest: Effect.fnUntraced(
+      function* (input) {
+        return yield* client.client
+          .createT3ChatLinkRequest({ headers: bearerHeaders(input.clerkToken) })
+          .pipe(
+            Effect.mapError(relayRequestError("start T3 Chat linking")),
+            timeoutRelayRequest("Relay T3 Chat link request"),
+          );
+      },
+      Effect.withSpan("clientRuntime.managedRelay.createT3ChatLinkRequest"),
+      withRelayClientTracing,
+    ),
+    unlinkT3Chat: Effect.fnUntraced(
+      function* (input) {
+        return yield* client.client
+          .unlinkT3Chat({ headers: bearerHeaders(input.clerkToken) })
+          .pipe(
+            Effect.mapError(relayRequestError("unlink T3 Chat account")),
+            timeoutRelayRequest("Relay T3 Chat unlinking"),
+          );
+      },
+      Effect.withSpan("clientRuntime.managedRelay.unlinkT3Chat"),
       withRelayClientTracing,
     ),
     getEnvironmentStatus: Effect.fnUntraced(

@@ -4,7 +4,7 @@ import type * as SchemaIssue from "effect/SchemaIssue";
 
 import * as AcpSchema from "./_generated/schema.gen.ts";
 
-export const AcpRequestOperation = Schema.Literals([
+const AcpRequestOperation = Schema.Literals([
   "decode-extension-request-payload",
   "encode-extension-response",
   "handle-request",
@@ -12,12 +12,12 @@ export const AcpRequestOperation = Schema.Literals([
   "receive-response",
   "receive-streaming-response",
 ]);
-export type AcpRequestOperation = typeof AcpRequestOperation.Type;
+type AcpRequestOperation = typeof AcpRequestOperation.Type;
 
 export const AcpRequestId = Schema.Union([Schema.String, Schema.Number]);
 export type AcpRequestId = typeof AcpRequestId.Type;
 
-export const AcpSchemaIssueKind = Schema.Literals([
+const AcpSchemaIssueKind = Schema.Literals([
   "Filter",
   "Encoding",
   "Pointer",
@@ -30,9 +30,9 @@ export const AcpSchemaIssueKind = Schema.Literals([
   "Forbidden",
   "OneOf",
 ]);
-export type AcpSchemaIssueKind = typeof AcpSchemaIssueKind.Type;
+type AcpSchemaIssueKind = typeof AcpSchemaIssueKind.Type;
 
-export interface AcpSchemaIssueDiagnostics {
+interface AcpSchemaIssueDiagnostics {
   readonly issueCount: number;
   readonly issueKinds: ReadonlyArray<AcpSchemaIssueKind>;
   readonly maximumPathDepth: number;
@@ -41,8 +41,6 @@ export interface AcpSchemaIssueDiagnostics {
 const MAX_SUMMARY_ISSUES = 3;
 const MAX_SUMMARY_PATH_SEGMENTS = 8;
 
-// Record keys come from the payload, so a key that is not a plain identifier
-// is shown as `*` rather than copied.
 const summaryPathSegment = (segment: PropertyKey): string =>
   typeof segment === "number" || /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(String(segment))
     ? String(segment)
@@ -71,11 +69,9 @@ const isCatchAllMember = (issue: SchemaIssue.Issue) =>
   "ast" in issue && SchemaAST.resolveTitle(issue.ast) === "other";
 
 /**
- * Names where a payload broke its schema, such as `update.used missing`,
- * without copying any value from it. ACP unions end in a member titled
- * "other" that admits custom and future variants; it fails only because the
- * discriminator names a known variant, so the known variant's issues are the
- * ones reported.
+ * ACP unions end in a member titled "other" that admits custom and future
+ * variants; it fails only because the discriminator names a known variant, so
+ * the known variant's issues are the ones reported.
  */
 const schemaIssueSummary = (root: SchemaIssue.Issue): string => {
   const entries = new Set<string>();
@@ -148,7 +144,7 @@ export interface AcpRequestDiagnostics {
   readonly maximumPathDepth?: number;
 }
 
-export class AcpSpawnError extends Schema.TaggedErrorClass<AcpSpawnError>()("AcpSpawnError", {
+export class AcpSpawnError extends Schema.TaggedError<AcpSpawnError>()("AcpSpawnError", {
   command: Schema.optional(Schema.String),
   cause: Schema.Defect(),
 }) {
@@ -159,18 +155,25 @@ export class AcpSpawnError extends Schema.TaggedErrorClass<AcpSpawnError>()("Acp
   }
 }
 
-export class AcpProcessExitedError extends Schema.TaggedErrorClass<AcpProcessExitedError>()(
+export class AcpProcessExitedError extends Schema.TaggedError<AcpProcessExitedError>()(
   "AcpProcessExitedError",
   {
     code: Schema.optional(Schema.Number),
+    signal: Schema.optionalKey(Schema.String),
     pid: Schema.optionalKey(Schema.Int),
+    stderr: Schema.optionalKey(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message() {
-    return this.code === undefined
-      ? "ACP process exited"
-      : `ACP process exited with code ${this.code}`;
+    const base =
+      this.signal !== undefined
+        ? `ACP process exited after signal ${this.signal}`
+        : this.code === undefined
+          ? "ACP process exited"
+          : `ACP process exited with code ${this.code}`;
+    const excerpt = this.stderr?.trim();
+    return excerpt && excerpt.length > 0 ? `${base}\n${excerpt}` : base;
   }
 }
 
@@ -181,7 +184,7 @@ export const AcpProtocolParseOperation = Schema.Literals([
 ]);
 export type AcpProtocolParseOperation = typeof AcpProtocolParseOperation.Type;
 
-export class AcpProtocolParseError extends Schema.TaggedErrorClass<AcpProtocolParseError>()(
+export class AcpProtocolParseError extends Schema.TaggedError<AcpProtocolParseError>()(
   "AcpProtocolParseError",
   {
     operation: AcpProtocolParseOperation,
@@ -190,7 +193,6 @@ export class AcpProtocolParseError extends Schema.TaggedErrorClass<AcpProtocolPa
     issueCount: Schema.optionalKey(Schema.Number),
     issueKinds: Schema.optionalKey(Schema.Array(AcpSchemaIssueKind)),
     maximumPathDepth: Schema.optionalKey(Schema.Number),
-    /** Where the payload broke its schema, e.g. `update.used missing`; never payload values. */
     issueSummary: Schema.optionalKey(Schema.String),
     cause: Schema.Defect(),
   },
@@ -229,7 +231,7 @@ export class AcpProtocolParseError extends Schema.TaggedErrorClass<AcpProtocolPa
   }
 }
 
-export class AcpTransportError extends Schema.TaggedErrorClass<AcpTransportError>()(
+export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
   "AcpTransportError",
   {
     operation: Schema.optional(
@@ -242,14 +244,15 @@ export class AcpTransportError extends Schema.TaggedErrorClass<AcpTransportError
   },
 ) {
   override get message() {
+    const operation = this.operation ? ` ${this.operation}` : "";
     const method = this.method ? ` for method ${this.method}` : "";
-    return this.operation
-      ? `ACP transport operation ${this.operation} failed${method}.`
-      : "ACP transport operation failed.";
+    // Callers often pass a sentence; strip its period so the message ends with exactly one.
+    const detail = this.detail ? `: ${this.detail.replace(/\.$/, "")}` : "";
+    return `ACP transport operation${operation} failed${method}${detail}.`;
   }
 }
 
-export class AcpInputStreamEndedError extends Schema.TaggedErrorClass<AcpInputStreamEndedError>()(
+export class AcpInputStreamEndedError extends Schema.TaggedError<AcpInputStreamEndedError>()(
   "AcpInputStreamEndedError",
   {},
 ) {
@@ -258,7 +261,7 @@ export class AcpInputStreamEndedError extends Schema.TaggedErrorClass<AcpInputSt
   }
 }
 
-export class AcpRequestError extends Schema.TaggedErrorClass<AcpRequestError>()("AcpRequestError", {
+export class AcpRequestError extends Schema.TaggedError<AcpRequestError>()("AcpRequestError", {
   code: AcpSchema.ErrorCode,
   errorMessage: Schema.String,
   data: Schema.optional(Schema.Unknown),

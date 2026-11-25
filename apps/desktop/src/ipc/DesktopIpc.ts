@@ -32,7 +32,7 @@ export interface DesktopIpcMain {
   on(channel: string, listener: DesktopIpcSyncListener): void;
 }
 
-export class DesktopIpcRegistrationError extends Schema.TaggedErrorClass<DesktopIpcRegistrationError>()(
+export class DesktopIpcRegistrationError extends Schema.TaggedError<DesktopIpcRegistrationError>()(
   "DesktopIpcRegistrationError",
   {
     handlerKind: Schema.Literals(["invoke", "sync"]),
@@ -45,7 +45,7 @@ export class DesktopIpcRegistrationError extends Schema.TaggedErrorClass<Desktop
   }
 }
 
-export class DesktopIpcUnregistrationError extends Schema.TaggedErrorClass<DesktopIpcUnregistrationError>()(
+export class DesktopIpcUnregistrationError extends Schema.TaggedError<DesktopIpcUnregistrationError>()(
   "DesktopIpcUnregistrationError",
   {
     handlerKind: Schema.Literals(["invoke", "sync"]),
@@ -58,7 +58,7 @@ export class DesktopIpcUnregistrationError extends Schema.TaggedErrorClass<Deskt
   }
 }
 
-export class DesktopIpcUntrustedSenderError extends Schema.TaggedErrorClass<DesktopIpcUntrustedSenderError>()(
+export class DesktopIpcUntrustedSenderError extends Schema.TaggedError<DesktopIpcUntrustedSenderError>()(
   "DesktopIpcUntrustedSenderError",
   { channel: Schema.String },
 ) {
@@ -72,11 +72,10 @@ export const DesktopIpcError = Schema.Union([
   DesktopIpcUnregistrationError,
 ]);
 export type DesktopIpcError = typeof DesktopIpcError.Type;
-export const isDesktopIpcError = Schema.is(DesktopIpcError);
 
 export interface DesktopIpcMethod<E, R> {
   readonly channel: string;
-  readonly handler: (raw: unknown) => Effect.Effect<unknown, E, R>;
+  readonly handler: (raw: unknown, event?: DesktopIpcInvokeEvent) => Effect.Effect<unknown, E, R>;
 }
 
 export interface DesktopSyncIpcMethod<E, R> {
@@ -121,7 +120,7 @@ export const make = (
                   if (!(yield* isTrustedSender(event))) {
                     return yield* new DesktopIpcUntrustedSenderError({ channel });
                   }
-                  return yield* handler(raw);
+                  return yield* handler(raw, event);
                 }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invoke")),
               ),
             );
@@ -197,9 +196,11 @@ export const layer = (ipcMain: DesktopIpcMain) =>
     }),
   );
 
-/**
- * Convenience helpers for creating IPC methods
- */
+export const layerTest = (ipcMain: DesktopIpcMain) =>
+  Layer.succeed(
+    DesktopIpc,
+    make(ipcMain, () => Effect.succeed(true)),
+  );
 
 export interface DesktopIpcMethodRegistration<
   Payload,
@@ -226,7 +227,7 @@ export interface DesktopIpcMethodRegistration<
     ResultDecodingServices,
     ResultEncodingServices
   >;
-  readonly handler: (input: Payload) => Effect.Effect<Result, E, R>;
+  readonly handler: (input: Payload, event?: DesktopIpcInvokeEvent) => Effect.Effect<Result, E, R>;
 }
 
 export const makeIpcMethod = <
@@ -262,9 +263,9 @@ export const makeIpcMethod = <
 
   return {
     channel: method.channel,
-    handler: (raw) =>
+    handler: (raw, event) =>
       decode(raw).pipe(
-        Effect.flatMap(method.handler),
+        Effect.flatMap((input) => method.handler(input, event)),
         Effect.flatMap(encode),
         Effect.withSpan("desktop.ipc.method", { attributes: { channel: method.channel } }),
       ),

@@ -1,53 +1,48 @@
-import { extractTrailingDocumentContexts } from "@t3tools/shared/documentContext";
-
-import { extractTrailingElementContexts } from "../../lib/elementContext";
-import { extractTrailingPreviewAnnotation } from "../../lib/previewAnnotation";
+import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import {
-  extractTrailingTerminalContexts,
-  IMAGE_ONLY_BOOTSTRAP_PROMPT,
-} from "../../lib/terminalContext";
-import { PLAN_IMPLEMENTATION_PROMPT_PREFIX, PLAN_REVIEW_PROMPT_PREFIX } from "../../proposedPlan";
-
-/**
- * Terminal-style prompt recall for the composer. ArrowUp on an empty
- * composer walks back through the active thread's sent prompts, ArrowDown
- * walks forward and empties the composer past the newest entry.
- *
- * History is per thread and text only. It is derived from the thread's user
- * messages on every keypress, so there is no store to persist or sync.
- */
+  EnvironmentContextRecord,
+  type OrchestrationMessageContext,
+  ThreadContextRecord,
+} from "@t3tools/contracts";
+import {
+  ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+  collectComposerContextReferences,
+} from "@t3tools/shared/composerContextReferences";
+import { Schema } from "effect";
+import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
 const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
+const TRAILING_LEGACY_CONTEXT =
+  /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
 
-export interface ComposerPromptHistoryMessage {
+const isThreadContextRecord = Schema.is(ThreadContextRecord);
+const isEnvironmentContextRecord = Schema.is(EnvironmentContextRecord);
+
+type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly id: string;
-  readonly role: string;
-  readonly text: string;
+  readonly context?: OrchestrationMessageContext | undefined;
+};
+
+/** Thread and machine mentions; the draft holds these records, so recall can restore their chips. */
+export interface ComposerPromptHistoryMentions {
+  readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
+  readonly environmentContexts: ReadonlyArray<EnvironmentContextRecord>;
 }
 
-export interface ComposerPromptHistoryEntry {
+const NO_MENTIONS: ComposerPromptHistoryMentions = { threadContexts: [], environmentContexts: [] };
+
+interface ComposerPromptHistoryEntry {
   readonly id: string;
   readonly prompt: string;
+  readonly mentions: ComposerPromptHistoryMentions;
 }
 
-/**
- * Active recall. `entryId` is resolved against the current entries on every
- * step, so a server ack replacing an optimistic message or an older page
- * loading cannot move the position. `recalled` is the text put in the
- * composer; once the composer no longer matches it, the user has edited or
- * sent and browsing is over.
- */
 export interface ComposerPromptHistoryPosition {
   readonly entryId: string;
   readonly recalled: string;
 }
 
-/**
- * Prefer the id. A consecutive duplicate collapse can retire the recalled
- * id while the same text lives on under a newer one, so fall back to the
- * newest entry with matching text.
- */
 function findActive(
   entries: ReadonlyArray<ComposerPromptHistoryEntry>,
   position: ComposerPromptHistoryPosition,
@@ -57,16 +52,12 @@ function findActive(
   return entries.findLastIndex((entry) => entry.prompt === position.recalled);
 }
 
-export interface ComposerPromptHistoryStep {
+interface ComposerPromptHistoryStep {
   readonly position: ComposerPromptHistoryPosition | null;
   readonly prompt: string;
+  readonly mentions: ComposerPromptHistoryMentions;
 }
 
-/**
- * Drop only the review comments appended at send time, which sit at the
- * end. Cuts the original string at the start of the trailing run of blocks
- * so any review comment block the user typed earlier stays byte-for-byte.
- */
 function stripTrailingReviewComments(prompt: string): string {
   let cut = prompt.length;
   for (const match of [...prompt.matchAll(REVIEW_COMMENT_BLOCK_PATTERN)].toReversed()) {
@@ -81,23 +72,13 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Inline terminal chips are sent as `@terminal-1:12-13` labels in the text
- * with their content in the trailing block. Once the block is stripped the
- * label points at nothing, so remove it too. Each block entry removes one
- * label (the first match) and the single space beside it. Nothing else in
- * the prompt is touched, so indented code and typed labels survive. Block
- * headers look like `Terminal 1 lines 12-13`.
- */
 function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string>): string {
   let result = prompt;
   for (const header of headers) {
     const match = /^(.+?) lines? (\d+(?:-\d+)?)$/.exec(header);
     if (!match) continue;
     const label = `@${match[1]!.trim().toLowerCase().replace(/\s+/g, "-")}:${match[2]}`;
-    // Whole label only: `@terminal-1:4` must not match inside `@terminal-1:40`
-    // or `@terminal-1:4-12`.
-    const labelPattern = new RegExp(`${escapeRegExp(label)}(?![\\d-])`);
+    const labelPattern = new RegExp(`(?<![\\w@.-])${escapeRegExp(label)}(?![\\d-])`);
     const index = result.search(labelPattern);
     if (index < 0) continue;
     let end = index + label.length;
@@ -109,95 +90,110 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
   return result;
 }
 
-/**
- * Reduce a sent message to the text the user typed. Send-time appends are
- * stripped so a recalled prompt never carries stale context from another
- * turn: the attached-document blocks the server inlines (Avi Code), review
- * comments, preview annotations, element and terminal context blocks, and
- * the Claude ultrathink prefix. Communication style and thread context ride
- * beside the message, never in its text, so there is nothing to strip.
- */
-export function recallableComposerPrompt(messageText: string): string {
+export function recallableComposerPrompt(
+  messageText: string,
+  keptContextIds: ReadonlySet<string> = new Set(),
+): string {
   let prompt = messageText.trim();
   if (prompt.startsWith(CLAUDE_ULTRATHINK_PREFIX)) {
     prompt = prompt.slice(CLAUDE_ULTRATHINK_PREFIX.length);
   }
 
   while (prompt.length > 0) {
-    const documentContexts = extractTrailingDocumentContexts(prompt);
-    if (documentContexts.documentCount > 0) {
-      prompt = documentContexts.promptText.trimEnd();
-      continue;
-    }
     const withoutReviewComments = stripTrailingReviewComments(prompt);
     if (withoutReviewComments !== prompt) {
       prompt = withoutReviewComments;
       continue;
     }
-    const previewAnnotation = extractTrailingPreviewAnnotation(prompt);
-    if (previewAnnotation.annotation) {
-      prompt = previewAnnotation.promptText;
-      continue;
-    }
-    const elementContexts = extractTrailingElementContexts(prompt);
-    if (elementContexts.contextCount > 0) {
-      prompt = elementContexts.promptText;
-      continue;
-    }
-    const terminalContexts = extractTrailingTerminalContexts(prompt);
-    if (terminalContexts.contextCount > 0) {
-      prompt = stripInlineTerminalLabels(
-        terminalContexts.promptText,
-        terminalContexts.contexts.map((context) => context.header),
-      );
+    const legacy = TRAILING_LEGACY_CONTEXT.exec(prompt);
+    if (legacy) {
+      if (
+        legacy[1] === "preview_annotation" &&
+        /^<preview_annotation>\s*$/m.test(legacy[2]!) &&
+        !/^(?:Id|Page|Comment|Targets): /m.test(legacy[2]!)
+      )
+        break;
+      const headers = Array.from(legacy[2]!.matchAll(/^- (.+):$/gm), (match) => match[1]!);
+      if (legacy[1] !== "preview_annotation" && headers.length === 0) break;
+      prompt = prompt.slice(0, legacy.index).trimEnd();
+      if (legacy[1] === "terminal_context") prompt = stripInlineTerminalLabels(prompt, headers);
       continue;
     }
     break;
   }
 
-  // App-composed sends are not text the user typed, so they are not history.
+  // Chips without a record the draft can hold would render as unavailable.
+  for (const reference of collectComposerContextReferences(prompt).toReversed()) {
+    if (keptContextIds.has(reference.contextId)) continue;
+    let { start, end } = reference;
+    if (prompt[end] === " ") end += 1;
+    else if (prompt[start - 1] === " ") start -= 1;
+    prompt = prompt.slice(0, start) + prompt.slice(end);
+  }
+
   const trimmed = prompt.trim();
   if (
-    trimmed === IMAGE_ONLY_BOOTSTRAP_PROMPT ||
-    trimmed.startsWith(PLAN_IMPLEMENTATION_PROMPT_PREFIX) ||
-    trimmed.startsWith(PLAN_REVIEW_PROMPT_PREFIX)
+    trimmed === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ||
+    trimmed.startsWith(PLAN_IMPLEMENTATION_PROMPT_PREFIX)
   ) {
     return "";
   }
   return trimmed;
 }
 
-/**
- * Oldest first. Consecutive identical prompts collapse into the newest one,
- * matching shell `HISTCONTROL=ignoredups`. Attachment-only sends have no
- * typed text and are skipped.
- */
+/** A sent message's text as the composer can hold it, with the mention records its chips need. */
+export function recallComposerMessage(
+  message: Pick<ComposerPromptHistoryMessage, "text" | "context">,
+): Pick<ComposerPromptHistoryEntry, "prompt" | "mentions"> {
+  const records = message.context?.records ?? [];
+  const threadRecords = records.filter(isThreadContextRecord);
+  const environmentRecords = records.filter(isEnvironmentContextRecord);
+  const prompt = recallableComposerPrompt(
+    message.text,
+    new Set([...threadRecords, ...environmentRecords].map((record) => record.contextId)),
+  );
+  // A record whose chip is gone from the text would put the chip back when written to the draft.
+  const referenced = new Set<string>(
+    collectComposerContextReferences(prompt).map((reference) => reference.contextId),
+  );
+  return {
+    prompt,
+    mentions: {
+      threadContexts: threadRecords.filter((record) => referenced.has(record.contextId)),
+      environmentContexts: environmentRecords.filter((record) => referenced.has(record.contextId)),
+    },
+  };
+}
+
 export function buildComposerPromptHistoryEntries(
   messages: ReadonlyArray<ComposerPromptHistoryMessage>,
 ): ComposerPromptHistoryEntry[] {
   const entries: ComposerPromptHistoryEntry[] = [];
   for (const message of messages) {
     if (message.role !== "user") continue;
-    const prompt = recallableComposerPrompt(message.text);
+    // Automations and other agents send user-role messages; recall only what the user typed.
+    if (resolveUserMessagePresentation(message).attribution !== null) continue;
+    const { prompt, mentions } = recallComposerMessage(message);
     if (prompt.length === 0) continue;
+    const entry = { id: message.id, prompt, mentions };
     const previous = entries[entries.length - 1];
     if (previous && previous.prompt === prompt) {
-      entries[entries.length - 1] = { id: message.id, prompt };
+      entries[entries.length - 1] = entry;
       continue;
     }
-    entries.push({ id: message.id, prompt });
+    entries.push(entry);
   }
   return entries;
 }
 
-/**
- * Returns null when the key should fall through to normal caret movement.
- * Backward starts only from an empty composer, so an unsent draft is never
- * replaced, and stops at the oldest entry. Forward past the newest entry
- * empties the composer and ends browsing. An edited or sent recall no longer
- * matches `recalled`, so browsing restarts from scratch on the next backward
- * step.
- */
+function recall(entry: ComposerPromptHistoryEntry): ComposerPromptHistoryStep {
+  return {
+    position: { entryId: entry.id, recalled: entry.prompt },
+    prompt: entry.prompt,
+    mentions: entry.mentions,
+  };
+}
+
 export function stepComposerPromptHistory(input: {
   readonly direction: "backward" | "forward";
   readonly entries: ReadonlyArray<ComposerPromptHistoryEntry>;
@@ -212,11 +208,11 @@ export function stepComposerPromptHistory(input: {
     if (activeIndex < 0 && currentPrompt.length > 0) return null;
     const entry = entries[activeIndex < 0 ? entries.length - 1 : activeIndex - 1];
     if (!entry) return null;
-    return { position: { entryId: entry.id, recalled: entry.prompt }, prompt: entry.prompt };
+    return recall(entry);
   }
 
   if (activeIndex < 0) return null;
   const entry = entries[activeIndex + 1];
-  if (!entry) return { position: null, prompt: "" };
-  return { position: { entryId: entry.id, recalled: entry.prompt }, prompt: entry.prompt };
+  if (!entry) return { position: null, prompt: "", mentions: NO_MENTIONS };
+  return recall(entry);
 }

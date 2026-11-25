@@ -1,8 +1,8 @@
 import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
-import { decodeClientSettingsResilient } from "@t3tools/shared/resilientClientSettings";
+import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -14,41 +14,42 @@ import * as Ref from "effect/Ref";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
-
-// Avi Code addition: parse the file to an unknown value, unwrap the legacy
-// `{ settings: {...} }` document, then decode field-by-field so one invalid
-// saved value defaults just that field instead of discarding the whole file.
-// Only a genuinely unparseable file fails with SchemaError (handled below by
-// treating it as absent).
-const ClientSettingsRawJson = fromLenientJson(Schema.Unknown);
-const decodeClientSettingsRawJson = Schema.decodeEffect(ClientSettingsRawJson);
-
-function unwrapLegacyClientSettingsDocument(value: unknown): unknown {
-  if (value !== null && typeof value === "object" && !Array.isArray(value) && "settings" in value) {
-    const settings = (value as { settings: unknown }).settings;
-    if (settings !== null && typeof settings === "object" && !Array.isArray(settings)) {
-      return settings;
-    }
-  }
-  return value;
-}
-
-const decodeClientSettingsJson = (raw: string): Effect.Effect<ClientSettings, Schema.SchemaError> =>
-  decodeClientSettingsRawJson(raw).pipe(
-    Effect.map(unwrapLegacyClientSettingsDocument),
-    Effect.map(decodeClientSettingsResilient),
+const decodeClientSettingsDocument = Schema.decodeEffect(
+  fromLenientJson(Schema.Record(Schema.String, Schema.Unknown)),
+);
+const decodeClientSettingsValue = Schema.decodeUnknownEffect(ClientSettingsSchema);
+const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
+  const document = yield* decodeClientSettingsDocument(raw);
+  // Select the shape before validation so invalid legacy settings cannot become defaults.
+  return yield* decodeClientSettingsValue(
+    Object.hasOwn(document, "settings") ? document.settings : document,
   );
+});
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
+
+export class DesktopClientSettingsReadError extends Schema.TaggedError<DesktopClientSettingsReadError>()(
+  "DesktopClientSettingsReadError",
+  {
+    operation: Schema.Literals(["read-file", "decode-document"]),
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
+  }
+}
 
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
+  "resolve-symlink",
   "encode-document",
   "create-directory",
   "write-temporary-file",
   "replace-settings-file",
 ]);
 
-export class DesktopClientSettingsWriteError extends Schema.TaggedErrorClass<DesktopClientSettingsWriteError>()(
+export class DesktopClientSettingsWriteError extends Schema.TaggedError<DesktopClientSettingsWriteError>()(
   "DesktopClientSettingsWriteError",
   {
     operation: DesktopClientSettingsWriteOperation,
@@ -64,7 +65,7 @@ export class DesktopClientSettingsWriteError extends Schema.TaggedErrorClass<Des
 export class DesktopClientSettings extends Context.Service<
   DesktopClientSettings,
   {
-    readonly get: Effect.Effect<Option.Option<ClientSettings>>;
+    readonly get: Effect.Effect<Option.Option<ClientSettings>, DesktopClientSettingsReadError>;
     readonly set: (
       settings: ClientSettings,
     ) => Effect.Effect<void, DesktopClientSettingsWriteError>;
@@ -74,16 +75,24 @@ export class DesktopClientSettings extends Context.Service<
 const readClientSettings = (
   fileSystem: FileSystem.FileSystem,
   settingsPath: string,
-): Effect.Effect<Option.Option<ClientSettings>> =>
+): Effect.Effect<Option.Option<ClientSettings>, DesktopClientSettingsReadError> =>
   fileSystem.readFileString(settingsPath).pipe(
-    Effect.map(Option.some),
+    Effect.asSome,
     Effect.catchTags({
       PlatformError: (cause) =>
         cause.reason._tag === "NotFound"
           ? Effect.succeed(Option.none<string>())
           : Effect.logWarning("Could not read desktop client settings.", cause).pipe(
               Effect.annotateLogs({ settingsPath }),
-              Effect.as(Option.none<string>()),
+              Effect.andThen(
+                Effect.fail(
+                  new DesktopClientSettingsReadError({
+                    operation: "read-file",
+                    path: settingsPath,
+                    cause,
+                  }),
+                ),
+              ),
             ),
     }),
     Effect.flatMap(
@@ -91,12 +100,20 @@ const readClientSettings = (
         onNone: () => Effect.succeed(Option.none<ClientSettings>()),
         onSome: (raw) =>
           decodeClientSettingsJson(raw).pipe(
-            Effect.map((settings) => Option.some(settings)),
+            Effect.asSome,
             Effect.catchTags({
               SchemaError: (cause) =>
                 Effect.logWarning("Could not decode desktop client settings.", cause).pipe(
                   Effect.annotateLogs({ settingsPath }),
-                  Effect.as(Option.none<ClientSettings>()),
+                  Effect.andThen(
+                    Effect.fail(
+                      new DesktopClientSettingsReadError({
+                        operation: "decode-document",
+                        path: settingsPath,
+                        cause,
+                      }),
+                    ),
+                  ),
                 ),
             }),
           ),
@@ -111,8 +128,20 @@ const writeClientSettings = Effect.fnUntraced(function* (input: {
   readonly settings: ClientSettings;
   readonly suffix: string;
 }): Effect.fn.Return<void, DesktopClientSettingsWriteError> {
-  const directory = input.path.dirname(input.settingsPath);
-  const tempPath = `${input.settingsPath}.${process.pid}.${input.suffix}.tmp`;
+  const targetPath = yield* resolveSymlinkTarget(input.settingsPath).pipe(
+    Effect.provideService(FileSystem.FileSystem, input.fileSystem),
+    Effect.provideService(Path.Path, input.path),
+    Effect.mapError(
+      (cause) =>
+        new DesktopClientSettingsWriteError({
+          operation: "resolve-symlink",
+          path: input.settingsPath,
+          cause,
+        }),
+    ),
+  );
+  const directory = input.path.dirname(targetPath);
+  const tempPath = `${targetPath}.${process.pid}.${input.suffix}.tmp`;
   const encoded = yield* encodeClientSettingsJson(input.settings).pipe(
     Effect.mapError(
       (cause) =>
@@ -144,7 +173,7 @@ const writeClientSettings = Effect.fnUntraced(function* (input: {
           }),
       ),
     );
-    yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
+    yield* input.fileSystem.rename(tempPath, targetPath).pipe(
       Effect.mapError(
         (cause) =>
           new DesktopClientSettingsWriteError({
@@ -161,23 +190,15 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
 
   return DesktopClientSettings.of({
     get: readClientSettings(fileSystem, environment.clientSettingsPath).pipe(
       Effect.withSpan("desktop.clientSettings.get"),
     ),
-    set: (settings) =>
-      crypto.randomUUIDv4.pipe(
+    set: Effect.fn("desktop.clientSettings.set")(function (settings) {
+      return random.uuidV4().pipe(
         Effect.map((uuid) => uuid.replace(/-/g, "")),
-        Effect.mapError(
-          (cause) =>
-            new DesktopClientSettingsWriteError({
-              operation: "create-temporary-file-name",
-              path: environment.clientSettingsPath,
-              cause,
-            }),
-        ),
         Effect.flatMap((suffix) =>
           writeClientSettings({
             fileSystem,
@@ -187,8 +208,8 @@ export const make = Effect.gen(function* () {
             suffix,
           }),
         ),
-        Effect.withSpan("desktop.clientSettings.set"),
-      ),
+      );
+    }),
   });
 });
 
@@ -201,7 +222,9 @@ export const layerTest = (initialSettings: Option.Option<ClientSettings> = Optio
       const settingsRef = yield* Ref.make(initialSettings);
       return DesktopClientSettings.of({
         get: Ref.get(settingsRef),
-        set: (settings) => Ref.set(settingsRef, Option.some(settings)),
+        set: Effect.fn("DesktopClientSettings.set")(function (settings) {
+          return Ref.set(settingsRef, Option.some(settings));
+        }),
       });
     }),
   );

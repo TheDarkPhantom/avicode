@@ -1,78 +1,76 @@
+import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthAccessWriteScope,
+  AuthSettingsWriteScope,
+  AuthProvidersManageScope,
+  type AuthEnvironmentScope,
+} from "./auth.ts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { ProjectId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
-import { DEFAULT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import {
-  COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS,
-  COMMUNICATION_STYLE_MAX_LABEL_CHARS,
-  ModelSelection,
-} from "./orchestration.ts";
-import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
-
-// Avi Code addition. A stored communication style. Usually user-authored, with
-// an id namespaced `custom:`; a stored style whose id matches a built-in is an
-// edit of that built-in rather than a new entry, which is what makes the
-// built-ins editable and resettable. The label is what the composer chip and the
-// timeline show, so it is bounded to keep both readable.
-export const COMMUNICATION_STYLE_DEFAULT_ID = "default";
-export const COMMUNICATION_STYLE_MAX_CUSTOM = 12;
-/**
- * Built-ins a user can edit: every built-in except Default, which has no
- * instruction to change. Stated here as a number because contracts is
- * schema-only and cannot import the style list; `communicationStyles.test.ts`
- * asserts the two agree, so adding a built-in fails there rather than silently
- * costing someone a custom slot.
- */
-export const COMMUNICATION_STYLE_EDITABLE_BUILT_INS = 3;
-/**
- * Cap on the stored array, which holds custom styles and built-in edits
- * together. Deliberately larger than the custom limit: editing a built-in must
- * not consume a slot the user expects to keep for their own styles.
- */
-export const COMMUNICATION_STYLE_MAX_STORED =
-  COMMUNICATION_STYLE_MAX_CUSTOM + COMMUNICATION_STYLE_EDITABLE_BUILT_INS;
-
-export const AviCodeCommunicationStylePreset = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString.check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_LABEL_CHARS)),
-  instruction: TrimmedNonEmptyString.check(
-    Schema.isMaxLength(COMMUNICATION_STYLE_MAX_INSTRUCTION_CHARS),
-  ),
-});
-export type AviCodeCommunicationStylePreset = typeof AviCodeCommunicationStylePreset.Type;
-
-// Avi Code addition. Quick-send chips: saved shortcuts shown in the composer
-// while the input is empty. Clicking one sends its text as a message. Each chip
-// carries a short label, a palette colour token (resolved to a CSS value on the
-// client), and the message text to send. The list is capped so the row stays a
-// glanceable strip rather than an overflowing wall of buttons.
-export const AVICODE_CHIP_MAX = 10;
-export const AVICODE_CHIP_MAX_LABEL_CHARS = 24;
-export const AVICODE_CHIP_MAX_TEXT_CHARS = 2000;
-
-export const AviCodeChip = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString.check(Schema.isMaxLength(AVICODE_CHIP_MAX_LABEL_CHARS)),
-  // A palette token (see composerChips.ts on the client). Kept as a free string
-  // so an unknown token degrades to a plain chip rather than a decode failure.
-  color: TrimmedNonEmptyString,
-  text: TrimmedNonEmptyString.check(Schema.isMaxLength(AVICODE_CHIP_MAX_TEXT_CHARS)),
-});
-export type AviCodeChip = typeof AviCodeChip.Type;
-
-// Two starter chips seed the feature so its value is obvious on first open.
-export const DEFAULT_AVICODE_CHIPS: ReadonlyArray<AviCodeChip> = [
-  { id: "pr-merge", label: "pr merge", color: "green", text: "pr merge and deploy" },
-  { id: "no-deploy", label: "no deploy", color: "orange", text: "pr merge dont deploy" },
-];
-
-// ── Client Settings (local-only) ───────────────────────────────
+  EnvironmentId,
+  ForwardCompatibleNullable,
+  ForwardCompatibleOptional,
+  OmittedWhenNull,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+  TrimmedString,
+} from "./baseSchemas.ts";
+import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
+import { UsageModelFilter } from "./usage.ts";
+import { SecretProviderId, SecretProviderSlug } from "./secretReference.ts";
+import { containsSecretReference, SettingsSecretValue } from "./settingsSecretValue.ts";
+import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
+import { KeybindingShortcut } from "./keybindings.ts";
+import {
+  CustomModelSetting,
+  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
+  ProviderOptionSelections,
+} from "./model.ts";
+import { ModelSelection } from "./modelSelection.ts";
+import { ProjectScript, type ProjectMutation } from "./project.ts";
+import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
+import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
+import {
+  BrowserRecordingFrameRate,
+  DEFAULT_BROWSER_RECORDING_FRAME_RATE,
+  DEFAULT_PREVIEW_APPEARANCE,
+  DEFAULT_PREVIEW_ZOOM_FACTOR,
+  FILL_PREVIEW_VIEWPORT,
+  PreviewAppearancePreference,
+  PreviewViewportSetting,
+  PreviewZoomFactor,
+} from "./preview.ts";
+import {
+  ProviderInstanceConfig,
+  ProviderInstanceId,
+  ProviderDriverKind,
+} from "./providerInstance.ts";
+import { PullRequestMergeMethod } from "./pullRequest.ts";
+import {
+  CloudSpeechModelId,
+  SpeechAcceleration,
+  SpeechCorrectionCue,
+  SpeechCustomWords,
+  SpeechLanguage,
+  SpeechModelUnloadTimeout,
+  SpeechPostProcessingPromptSettings,
+} from "./speech.ts";
 
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
-export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
+const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
+
+export const DiffLayout = Schema.Literals(["stacked", "split"]);
+export type DiffLayout = typeof DiffLayout.Type;
+const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
 
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
@@ -80,94 +78,7 @@ export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "upda
 
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
-export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
-
-// Avi Code addition. "project" is the upstream two-level tree: projects sort by
-// their newest thread, threads sort within their project, so a thread can never
-// rise above its project's block. "project_no_folders" is that same two-level
-// tree but with folder headers ignored — the old pre-folders view, for users who
-// keep folders as data yet want a flat list of every project. "flat" drops the
-// grouping entirely and sorts every thread against every other by
-// `sidebarThreadSortOrder`, which is what makes the ctrl+1…ctrl+9 jump slots track
-// the globally most recent threads instead of whichever rows happen to sit at the
-// top of each expanded project.
-export const SidebarThreadGrouping = Schema.Literals(["project", "flat", "project_no_folders"]);
-export type SidebarThreadGrouping = typeof SidebarThreadGrouping.Type;
-export const DEFAULT_SIDEBAR_THREAD_GROUPING: SidebarThreadGrouping = "project";
-
-// The flat list has no per-project "show more" to spread rows across, so it
-// needs a much higher ceiling than SidebarThreadPreviewCount's per-project 15.
-export const MIN_SIDEBAR_FLAT_THREAD_COUNT = 5;
-export const MAX_SIDEBAR_FLAT_THREAD_COUNT = 100;
-export const SidebarFlatThreadCount = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_SIDEBAR_FLAT_THREAD_COUNT,
-    maximum: MAX_SIDEBAR_FLAT_THREAD_COUNT,
-  }),
-);
-export type SidebarFlatThreadCount = typeof SidebarFlatThreadCount.Type;
-export const DEFAULT_SIDEBAR_FLAT_THREAD_COUNT: SidebarFlatThreadCount = 20;
-
-// Avi Code addition. Upstream pins the chat column to a fixed 48rem regardless
-// of window width, so a wide window is mostly empty gutter. "comfortable" keeps
-// that measure, "wide" trades some line-length comfort for density, and "full"
-// uses the whole pane. Wide block content (tables, code, diffs) breaks out past
-// this cap on its own — see `--chat-wide-content-max-width`.
-export const AviCodeChatContentWidth = Schema.Literals(["comfortable", "wide", "full"]);
-export type AviCodeChatContentWidth = typeof AviCodeChatContentWidth.Type;
-export const DEFAULT_AVICODE_CHAT_CONTENT_WIDTH: AviCodeChatContentWidth = "comfortable";
-
-// Avi Code addition. Bounds for the background worktree health monitor. When the
-// count of clean dead worktrees reaches the threshold, or free disk under the
-// managed worktrees directory drops below the low-disk mark, the monitor warns
-// and (if enabled) removes clean dead worktree directories. A low-disk mark of 0
-// disables the disk rule.
-export const WorktreeHealthDeadCountThreshold = Schema.Int.check(
-  Schema.isBetween({ minimum: 1, maximum: 10_000 }),
-);
-export type WorktreeHealthDeadCountThreshold = typeof WorktreeHealthDeadCountThreshold.Type;
-export const DEFAULT_WORKTREE_HEALTH_DEAD_COUNT_THRESHOLD: WorktreeHealthDeadCountThreshold = 80;
-
-export const WorktreeHealthLowDiskGb = Schema.Int.check(
-  Schema.isBetween({ minimum: 0, maximum: 100_000 }),
-);
-export type WorktreeHealthLowDiskGb = typeof WorktreeHealthLowDiskGb.Type;
-export const DEFAULT_WORKTREE_HEALTH_LOW_DISK_GB: WorktreeHealthLowDiskGb = 20;
-
-// Avi Code addition. What a send does while the agent is still working.
-// "steer" is upstream's only behaviour: the message is injected into the
-// running turn immediately. "queue" holds it until the turn finishes and then
-// sends it as its own turn, which is what you want when the message is the
-// next instruction rather than a correction to the current one.
-export const AviCodeSendWhileRunning = Schema.Literals(["steer", "queue"]);
-export type AviCodeSendWhileRunning = typeof AviCodeSendWhileRunning.Type;
-export const DEFAULT_AVICODE_SEND_WHILE_RUNNING: AviCodeSendWhileRunning = "steer";
-
-// Avi Code addition. Sort order of the Settings > Archived list. "project"
-// keeps the historical grouped-by-project view; the other three flatten the
-// list and sort by archive time, creation time, or title.
-export const AviCodeArchivedThreadsSortMode = Schema.Literals([
-  "project",
-  "recentlyArchived",
-  "threadCreated",
-  "title",
-]);
-export type AviCodeArchivedThreadsSortMode = typeof AviCodeArchivedThreadsSortMode.Type;
-export const DEFAULT_AVICODE_ARCHIVED_THREADS_SORT_MODE: AviCodeArchivedThreadsSortMode = "project";
-
-// Avi Code addition. The chime used to be a single hard-coded rising two-note
-// sine — the same shape other desktop tools use, so hearing it did not tell you
-// which app wanted you. These five are synthesized from preset tables in
-// `apps/web/src/lib/notificationChime.ts`; no audio assets are involved.
-export const AviCodeNotificationSound = Schema.Literals([
-  "pebble",
-  "marimba",
-  "pluck",
-  "glass",
-  "chime",
-]);
-export type AviCodeNotificationSound = typeof AviCodeNotificationSound.Type;
-export const DEFAULT_AVICODE_NOTIFICATION_SOUND: AviCodeNotificationSound = "pebble";
+const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -175,17 +86,7 @@ export const SidebarProjectGroupingMode = Schema.Literals([
   "separate",
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
-export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
-export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
-export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
-export const SidebarThreadPreviewCount = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_SIDEBAR_THREAD_PREVIEW_COUNT,
-    maximum: MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
-  }),
-);
-export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
-export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
+const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 export const MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS = 1;
 export const MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS = 90;
 export const SidebarAutoSettleAfterDays = Schema.Number.check(
@@ -195,7 +96,46 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
   }),
 );
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
-export const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 3;
+const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 7;
+
+export const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
+export const MAX_SNOOZE_PRESETS = 8;
+export const SnoozePresetDay = Schema.Literals([
+  "today",
+  "tomorrow",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+export type SnoozePresetDay = typeof SnoozePresetDay.Type;
+/** `after` wakes a fixed time from now. `at` wakes at a local time; a weekday is its next occurrence after today. */
+export const SnoozePresetSetting = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("after"),
+    minutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_SNOOZE_PRESET_MINUTES })),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("at"),
+    day: SnoozePresetDay,
+    time: Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)),
+  }),
+]);
+export type SnoozePresetSetting = typeof SnoozePresetSetting.Type;
+export const SnoozePresetSettings = Schema.Array(SnoozePresetSetting).check(
+  Schema.isMaxLength(MAX_SNOOZE_PRESETS),
+);
+export const DEFAULT_SNOOZE_PRESETS: ReadonlyArray<SnoozePresetSetting> = [
+  { kind: "after", minutes: 60 },
+  { kind: "after", minutes: 180 },
+  { kind: "at", day: "today", time: "18:00" },
+  { kind: "at", day: "tomorrow", time: "09:00" },
+  { kind: "at", day: "monday", time: "09:00" },
+];
+
 export const MIN_GLASS_OPACITY = 40;
 export const MAX_GLASS_OPACITY = 100;
 export const GlassOpacity = Schema.Int.check(
@@ -205,201 +145,424 @@ export const GlassOpacity = Schema.Int.check(
   }),
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
-export const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
-export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
+const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+
+export const MIN_APPEARANCE_CONTRAST = 50;
+export const MAX_APPEARANCE_CONTRAST = 200;
+export const AppearanceContrast = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_APPEARANCE_CONTRAST, maximum: MAX_APPEARANCE_CONTRAST }),
+);
+export type AppearanceContrast = typeof AppearanceContrast.Type;
+const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
+export const MIN_PANEL_ANIMATION_DURATION_MS = 0;
+export const MAX_PANEL_ANIMATION_DURATION_MS = 400;
+export const PanelAnimationDurationMs = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_PANEL_ANIMATION_DURATION_MS,
+    maximum: MAX_PANEL_ANIMATION_DURATION_MS,
+  }),
+);
+export type PanelAnimationDurationMs = typeof PanelAnimationDurationMs.Type;
+const DEFAULT_PANEL_ANIMATION_DURATION_MS: PanelAnimationDurationMs = 0;
+
+export const MIN_INTERFACE_FONT_SIZE = 12;
+export const MAX_INTERFACE_FONT_SIZE = 20;
+export const InterfaceFontSize = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_INTERFACE_FONT_SIZE, maximum: MAX_INTERFACE_FONT_SIZE }),
+);
+export type InterfaceFontSize = typeof InterfaceFontSize.Type;
+export const DEFAULT_INTERFACE_FONT_SIZE: InterfaceFontSize = 16;
+
+export const MIN_PROMPT_FONT_SIZE = 12;
+export const MAX_PROMPT_FONT_SIZE = 20;
+export const PromptFontSize = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_PROMPT_FONT_SIZE, maximum: MAX_PROMPT_FONT_SIZE }),
+);
+export type PromptFontSize = typeof PromptFontSize.Type;
+export const DEFAULT_PROMPT_FONT_SIZE: PromptFontSize = 14;
+
+export const MIN_CODE_FONT_SIZE = 10;
+export const MAX_CODE_FONT_SIZE = 18;
+export const CodeFontSize = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_CODE_FONT_SIZE, maximum: MAX_CODE_FONT_SIZE }),
+);
+export type CodeFontSize = typeof CodeFontSize.Type;
+export const DEFAULT_CODE_FONT_SIZE: CodeFontSize = 13;
+
+export const MIN_TERMINAL_FONT_SIZE = 8;
+export const MAX_TERMINAL_FONT_SIZE = 20;
+export const TerminalFontSize = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_TERMINAL_FONT_SIZE, maximum: MAX_TERMINAL_FONT_SIZE }),
+);
+export type TerminalFontSize = typeof TerminalFontSize.Type;
+const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
+
+// "artwork" follows the running channel and shows nothing on Latest. The fixed artwork
+// modes let any channel opt into a specific channel's art.
+export const EnvironmentIdentificationMode = Schema.Literals([
+  "artwork",
+  "nightly-artwork",
+  "dev-artwork",
+  "pill",
+  "none",
+]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
 
+export const SnapShotKeyChord = KeybindingShortcut.check(
+  Schema.makeFilter(
+    (shortcut) =>
+      shortcut.metaKey ||
+      shortcut.ctrlKey ||
+      shortcut.shiftKey ||
+      shortcut.altKey ||
+      shortcut.modKey ||
+      "Snapshot shortcut requires a modifier.",
+  ),
+);
+export type SnapShotKeyChord = typeof SnapShotKeyChord.Type;
+export const SNAP_SHOT_MODIFIERS = ["shift", "meta", "control", "alt"] as const;
+export const SnapShotModifier = Schema.Literals(SNAP_SHOT_MODIFIERS);
+export type SnapShotModifier = typeof SnapShotModifier.Type;
+export const SnapShotShortcut = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("both-shift-keys") }),
+  Schema.Struct({ kind: Schema.Literal("modifier-pair"), modifier: SnapShotModifier }),
+  SnapShotKeyChord,
+]);
+export type SnapShotShortcut = typeof SnapShotShortcut.Type;
+export const SnapShotSound = Schema.Literals(["soft-pop", "camera-shutter"]);
+export type SnapShotSound = typeof SnapShotSound.Type;
+const DEFAULT_SNAP_SHOT_SOUND: SnapShotSound = "soft-pop";
+
+export type SnapShotModifierPairShortcut = Extract<SnapShotShortcut, { readonly kind: string }>;
+
+export function isModifierPairShortcut(
+  shortcut: SnapShotShortcut,
+): shortcut is SnapShotModifierPairShortcut {
+  return "kind" in shortcut;
+}
+
+export function snapShotShortcutModifierPair(
+  shortcut: SnapShotModifierPairShortcut,
+): SnapShotModifier {
+  return shortcut.kind === "both-shift-keys" ? "shift" : shortcut.modifier;
+}
+
+const APPLE_MODIFIER_LABELS: Record<SnapShotModifier, string> = {
+  shift: "Shift",
+  meta: "Command",
+  control: "Control",
+  alt: "Option",
+};
+const OTHER_MODIFIER_LABELS: Record<SnapShotModifier, string> = {
+  shift: "Shift",
+  meta: "Super",
+  control: "Ctrl",
+  alt: "Alt",
+};
+
+export function snapShotModifierPairLabel(modifier: SnapShotModifier, apple: boolean): string {
+  const label = (apple ? APPLE_MODIFIER_LABELS : OTHER_MODIFIER_LABELS)[modifier];
+  return `${label} + ${label}`;
+}
+const DEFAULT_SNAP_SHOT_SHORTCUT: SnapShotShortcut = {
+  kind: "both-shift-keys",
+};
+
+export const NotificationMode = Schema.Literals([
+  "off",
+  "notifications",
+  "sound",
+  "notifications-and-sound",
+]);
+export type NotificationMode = typeof NotificationMode.Type;
+
+export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
+export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
+const DEFAULT_QUIT_CONFIRMATION_MODE: QuitConfirmationMode = "hold";
+
+const LegacyConfirmQuit = Schema.Boolean.pipe(
+  Schema.decodeTo(
+    QuitConfirmationMode,
+    SchemaTransformation.transform({
+      decode: (confirmQuit): QuitConfirmationMode => (confirmQuit ? "hold" : "direct"),
+      encode: (mode) => mode === "hold",
+    }),
+  ),
+);
+
+const QuitConfirmationModeSetting = Schema.Union([QuitConfirmationMode, LegacyConfirmQuit]);
+
+export const FontFamilyPreference = Schema.String.check(Schema.isMaxLength(200));
+export type FontFamilyPreference = typeof FontFamilyPreference.Type;
+
+/** Clients apply each environment theme set once; later local choices persist until the next set. Empty clears it. */
+export const DefaultThemePreference = Schema.String.check(Schema.isMaxLength(64));
+// Excluded from RPC patches so t3 theme set can validate syntax and resolvability.
+export type DefaultThemePreference = typeof DefaultThemePreference.Type;
+
+/** A mode clients apply once per set, like the default theme. Empty sets none. */
+export const DefaultAppearancePreference = Schema.Literals(["", "light", "dark", "system"]);
+export type DefaultAppearancePreference = typeof DefaultAppearancePreference.Type;
+
+export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
+export const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
+export {
+  BROWSER_RECORDING_FRAME_RATES,
+  BrowserRecordingFrameRate,
+  DEFAULT_BROWSER_RECORDING_FRAME_RATE,
+} from "./preview.ts";
+export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
+export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
+export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
+/**
+ * Where a plain click opens a subagent, a side chat or a linked environment's thread: beside the
+ * thread you are in, or in its place. A modified click opens it in the other one.
+ */
+export const SideThreadOpenTarget = Schema.Literals(["panel", "main"]);
+export type SideThreadOpenTarget = typeof SideThreadOpenTarget.Type;
+const DEFAULT_SIDE_THREAD_OPEN_TARGET: SideThreadOpenTarget = "panel";
+/**
+ * What the address bar searches with when the input is not an address.
+ * "custom" uses `browserCustomSearchUrl`, a template with `%s` for the query.
+ */
+export const BrowserSearchEngine = Schema.Literals([
+  "duckduckgo",
+  "google",
+  "bing",
+  "brave",
+  "kagi",
+  "ecosia",
+  "custom",
+]);
+export type BrowserSearchEngine = typeof BrowserSearchEngine.Type;
+export const DEFAULT_BROWSER_SEARCH_ENGINE: BrowserSearchEngine = "duckduckgo";
+export const BROWSER_CUSTOM_SEARCH_URL_MAX_LENGTH = 2048;
+export const BrowserCustomSearchUrl = Schema.String.check(
+  Schema.isMaxLength(BROWSER_CUSTOM_SEARCH_URL_MAX_LENGTH),
+);
+
+export const LoadBalancingWeights = Schema.Record(
+  TrimmedNonEmptyString,
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
+);
+
+export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
+
+export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
+export type ChatWidth = typeof ChatWidth.Type;
+
+/** How wide inline HTML previews grow: "chat" keeps them in the chat column. */
+export const HtmlPreviewWidth = Schema.Literals(["chat", "wide", "full"]);
+export type HtmlPreviewWidth = typeof HtmlPreviewWidth.Type;
+
+/** How the composer shows reasoning effort: the level's name, or rising bars. */
+export const EffortDisplay = Schema.Literals(["label", "bars"]);
+export type EffortDisplay = typeof EffortDisplay.Type;
+
+export const ToolCallVisibility = Schema.Literals(["showAll", "hideSuccessful", "hideAll", "zen"]);
+export type ToolCallVisibility = typeof ToolCallVisibility.Type;
+
+/** What the open thread reads to a screen reader: turn status, the agent's in-between messages too, or every step. */
+export const ScreenReaderAnnouncements = Schema.Literals(["status", "messages", "everything"]);
+export type ScreenReaderAnnouncements = typeof ScreenReaderAnnouncements.Type;
+
+export const ModelFavorite = Schema.Struct({
+  provider: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+});
+export const ModelFavorites = Schema.Array(ModelFavorite);
+export const ProviderModelPreferences = Schema.Record(
+  ProviderInstanceId,
+  Schema.Struct({
+    hiddenModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+    modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  }),
+);
+export type ModelPreferences = {
+  readonly favorites: typeof ModelFavorites.Type;
+  readonly providerModelPreferences: typeof ProviderModelPreferences.Type;
+};
+
+export const VoiceShortcutMode = Schema.Literals(["auto", "hold", "toggle"]);
+export type VoiceShortcutMode = typeof VoiceShortcutMode.Type;
+
+export const VoiceMicrophoneEntry = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("default") }),
+  Schema.Struct({ kind: Schema.Literal("device"), deviceId: Schema.String, label: Schema.String }),
+]);
+export type VoiceMicrophoneEntry = typeof VoiceMicrophoneEntry.Type;
+
+/**
+ * Where this device sends microphone audio. A cloud grant names the forwarding environment and
+ * the provider; an OpenRouter grant also names the exact model, since OpenRouter has no default.
+ */
+export const VoiceTranscriptionDestination = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("environment"), environmentId: EnvironmentId }),
+  Schema.Struct({
+    kind: Schema.Literal("cloud"),
+    environmentId: EnvironmentId,
+    provider: Schema.Literals(["openai", "xai"]),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("cloud"),
+    environmentId: EnvironmentId,
+    provider: Schema.Literal("openrouter"),
+    model: CloudSpeechModelId,
+  }),
+]);
+export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
-  autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
+  notificationMode: NotificationMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("off" as const)),
+  ),
+  inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  diffColorScheme: DiffColorScheme.pipe(
+    Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
+  ),
+  chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
+  htmlPreviewWidth: HtmlPreviewWidth.pipe(
+    Schema.withDecodingDefault(Effect.succeed("chat" as const)),
+  ),
+  effortDisplay: EffortDisplay.pipe(Schema.withDecodingDefault(Effect.succeed("label" as const))),
+  loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  appearanceContrast: AppearanceContrast.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
+  ),
+  // Zero avoids per-frame layout work from width/height transitions.
+  panelAnimationDurationMs: PanelAnimationDurationMs.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PANEL_ANIMATION_DURATION_MS)),
+  ),
+  browserDefaultViewport: PreviewViewportSetting.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_VIEWPORT)),
+  ),
+  browserDefaultZoomFactor: PreviewZoomFactor.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PREVIEW_ZOOM_FACTOR)),
+  ),
+  browserDefaultAppearance: PreviewAppearancePreference.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PREVIEW_APPEARANCE)),
+  ),
+  browserRecordingFrameRate: BrowserRecordingFrameRate.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_RECORDING_FRAME_RATE)),
+  ),
+  browserRecordingShowKeyPresses: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  browserRecordingShowMousePresses: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+
+  browserLinkTarget: BrowserLinkTarget.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_LINK_TARGET)),
+  ),
+
+  browserSearchEngine: BrowserSearchEngine.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_SEARCH_ENGINE)),
+  ),
+
+  // Kept when the engine is switched away from "custom" so switching back restores it.
+  browserCustomSearchUrl: BrowserCustomSearchUrl.pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+
+  browserAutoShowFloatingPreview: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW)),
+  ),
+
+  browserProfiles: Schema.Array(BrowserProfile).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+
+  browserDefaultProfileId: BrowserProfileId.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_PROFILE_ID)),
+  ),
+
+  confirmQuit: QuitConfirmationModeSetting.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_QUIT_CONFIRMATION_MODE)),
+  ),
+  confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  confirmTerminalClose: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  confirmThreadUnpin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  diffFilesCollapsed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffIgnoreWhitespace: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  diffLayout: DiffLayout.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_DIFF_LAYOUT))),
   environmentIdentificationMode: EnvironmentIdentificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE)),
   ),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
   ),
-  // Avi Code addition. Plays a short chime when a thread enters a state that
-  // waits on the user — the same states the sidebar labels Pending Approval,
-  // Waiting, and Completed/Done. Opt-in: a browser tab that makes noise
-  // without being asked to is worse than a missed notification.
-  notificationSoundEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Which of the synthesized presets that chime uses.
-  aviCodeNotificationSound: AviCodeNotificationSound.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_NOTIFICATION_SOUND)),
+  fontSizeInterface: InterfaceFontSize.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
   ),
-  // Avi Code addition. Which microphone dictation records from, as a
-  // `MediaDeviceInfo.deviceId`. Empty means the system default, which is what
-  // dictation always used: with several inputs present (a webcam, a headset, a
-  // virtual mixer) the system default is frequently not the one being spoken
-  // into, and the result is a session that looks healthy and transcribes
-  // silence. Stored per client because the right microphone is a property of
-  // the machine sitting in front of the user, not of the server.
-  aviCodeDictationDeviceId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  // Avi Code addition. Expanding a long plan grows the card downwards, which
-  // leaves the viewport showing its middle or end and makes the reader scroll
-  // back up to start reading. On, expanding jumps to the top of the plan
-  // instead. Off restores the previous behaviour of staying put.
-  aviCodeScrollToPlanTopOnExpand: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
+  fontSizePrompt: PromptFontSize.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROMPT_FONT_SIZE)),
   ),
-  // Avi Code additions. Keep the dense chat list scannable and let custom
-  // provider instances use a memorable one- or two-character client badge.
-  aviCodeSidebarShowStatusLabels: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
+  fontSizeCode: CodeFontSize.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODE_FONT_SIZE)),
   ),
-  aviCodeProviderBadgeLabels: Schema.Record(
-    ProviderInstanceId,
-    Schema.String.check(Schema.isMaxLength(2)),
+  fontSizeTerminal: TerminalFontSize.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_FONT_SIZE)),
+  ),
+  fontFamilyCode: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  fontFamilyComposer: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  fontFamilySans: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  fontFamilyTerminal: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+
+  fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Older installs also decode to null; onboarding must additionally require an empty workspace.
+  onboardingCompletedAt: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  persistComposerContextStrip: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+
+  favorites: ModelFavorites.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  providerModelPreferences: ProviderModelPreferences.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  pullRequestMergeMethodOverrides: Schema.Record(
+    TrimmedNonEmptyString,
+    PullRequestMergeMethod,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // Avi Code addition. Seeds brand-new chats with plan interaction mode so
-  // agents research and propose before touching files. Existing threads and
-  // restored drafts keep whatever mode they already carry.
-  aviCodeNewThreadsStartInPlanMode: Schema.Boolean.pipe(
+
+  pullRequestLinksOpenInApp: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+
+  composerRichTextEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("enter")),
+  ),
+  followUpBehavior: Schema.Literals(["queue", "steer"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("steer")),
+  ),
+  sideThreadOpenTarget: SideThreadOpenTarget.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDE_THREAD_OPEN_TARGET)),
+  ),
+  proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  boringSidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  boringSidebarMultilineRows: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  // Avi Code addition. Hides the per-thread worktree icon in the sidebar for
-  // users who find the extra glyph noisy; the thread tooltip still names the
-  // worktree and branch.
-  aviCodeSidebarShowWorktreeIcon: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
+  toolCallVisibility: ToolCallVisibility.pipe(
+    Schema.withDecodingDefault(Effect.succeed("showAll" as const)),
   ),
-  // Avi Code addition. Inactive dev-server start buttons otherwise appear
-  // only while their thread row is hovered or keyboard-focused.
-  aviCodeSidebarAlwaysShowDevServerStart: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+  screenReaderAnnouncements: ScreenReaderAnnouncements.pipe(
+    Schema.withDecodingDefault(Effect.succeed("status" as const)),
   ),
-  // Avi Code addition. Hides the per-thread pull request indicator in the
-  // sidebar — the icon in v1, the `#123` badge in v2. Both are shortcuts to
-  // open the PR; the branch toolbar still shows and opens it.
-  aviCodeSidebarShowPrIndicator: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
+  screenReaderWindowTitle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Retired Labs toggle. Still read as the default for the Usage item in threadDetailsItems.
+  threadDetailsUsageEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Sparse show/hide overrides for thread details card items. Missing ids use the client's
+  // default, so new items appear for everyone and unknown ids survive a downgrade.
+  threadDetailsItems: Schema.Record(Schema.String, Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  // Avi Code addition. Seeds every project row collapsed so a long project
-  // list opens compact and the user expands only what they are working in.
-  // Per-project expand/collapse choices still win over this default.
-  aviCodeSidebarProjectsCollapsedByDefault: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
-  // Avi Code addition. Keeps chats that need attention (waiting on you, a
-  // failed run, a plan ready) visible beneath a collapsed folder instead of
-  // hiding them with the rest of the folder's contents.
-  aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
-  // Avi Code addition. How wide the chat column is allowed to grow.
-  aviCodeChatContentWidth: AviCodeChatContentWidth.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHAT_CONTENT_WIDTH)),
-  ),
-  // Avi Code addition. Steer the running turn (upstream's behaviour) or hold
-  // the send until the turn finishes.
-  aviCodeSendWhileRunning: AviCodeSendWhileRunning.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_SEND_WHILE_RUNNING)),
-  ),
-  // Avi Code addition. Sort order of the Settings > Archived list.
-  aviCodeArchivedThreadsSortMode: AviCodeArchivedThreadsSortMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_ARCHIVED_THREADS_SORT_MODE)),
-  ),
-  // Avi Code addition. Communication styles. `aviCodeCommunicationStyleId` is
-  // the last style picked anywhere and is what a brand-new chat starts on;
-  // changing the style inside a chat updates it. Deliberately global rather
-  // than per-project — a style is a per-task choice, and scoping it to a repo
-  // would tie it to the wrong thing.
-  aviCodeCommunicationStyleId: Schema.String.pipe(
-    Schema.withDecodingDefault(Effect.succeed(COMMUNICATION_STYLE_DEFAULT_ID)),
-  ),
-  // User-authored styles, shown alongside the built-ins. Ids are namespaced
-  // `custom:` so a future built-in cannot collide with one.
-  aviCodeCommunicationStyles: Schema.Array(AviCodeCommunicationStylePreset)
-    .check(Schema.isMaxLength(COMMUNICATION_STYLE_MAX_STORED))
-    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  // Avi Code addition. Quick-send chips shown above the composer footer while the
-  // input is empty. Seeded with two starter chips so the feature explains itself.
-  aviCodeChips: Schema.Array(AviCodeChip)
-    .check(Schema.isMaxLength(AVICODE_CHIP_MAX))
-    .pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHIPS))),
-  // Avi Code addition. Opening a chat lands at the live edge, so reading a
-  // finished answer from its first line means scrolling back up. With this on,
-  // opening a chat that is not working lands at the top of its last response
-  // instead. Off by default: it starts the viewport away from the newest text,
-  // which is the wrong trade when replies are short.
-  aviCodeOpenChatsAtLastResponse: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
-  // Avi Code addition. Settings always opens on General, which is upstream's
-  // page; the fork's own settings live one click further in. With this on,
-  // Settings opens on the Avi Code page instead. Off by default so the app
-  // still lands where upstream's docs and muscle memory expect.
-  aviCodeOpenSettingsToAviCodePage: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
-  // Avi Code addition. A scanned (image-only) PDF has no selectable text, so
-  // attaching one normally fails with a clear "needs OCR" error. With this on,
-  // the client runs local OCR (tesseract.js) over such a PDF's pages instead.
-  // Off by default: OCR is slow on long documents and runs entirely in the
-  // renderer, so it is opt-in per the FUTURE_ENHANCEMENTS note.
-  aviCodeOcrScannedPdfs: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Avi Code additions. The composer footer spells out the access mode and the
-  // Build/Plan mode beside their icons. Someone who never changes access mode,
-  // or who reads the icons fine, can drop either word and keep the icon. The
-  // labels stay in the accessible name and the tooltip either way.
-  aviCodeComposerShowRuntimeModeLabel: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
-  ),
-  aviCodeComposerShowInteractionModeLabel: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
-  ),
-  // Avi Code addition. Ctrl/Cmd+Enter in a new-thread draft starts that thread
-  // in the background and leaves the user on a fresh draft (upstream #7821).
-  // On by default to match upstream; off makes Ctrl/Cmd+Enter a plain send.
-  aviCodeCtrlEnterStartsBackgroundThread: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
-  ),
-  // Avi Code addition. Provider instances can represent separate client
-  // credentials, so carrying the last-picked instance across unrelated
-  // projects can cross an account boundary. Keep the upstream/global sticky
-  // behaviour by default and let users opt into concrete-project isolation.
-  projectScopedProviderSelectionEnabled: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
-  // Model favorites. Historically keyed by provider kind, now
-  // widened to `ProviderInstanceId` so users can favorite a specific model
-  // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
-  // the UI collapsing it into the same bucket as the default Codex. The
-  // widening is backward-compatible by construction: prior provider-kind
-  // strings satisfy the `ProviderInstanceId` slug schema, so previously
-  // persisted favorites decode unchanged and continue to point at the
-  // default instance for their kind (because `defaultInstanceIdForDriver(kind)`
-  // uses the same slug). The field name is kept as `provider` for storage
-  // stability; new call sites should treat the value as an instance id.
-  favorites: Schema.Array(
-    Schema.Struct({
-      provider: ProviderInstanceId,
-      model: TrimmedNonEmptyString,
-    }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  providerModelPreferences: Schema.Record(
-    ProviderInstanceId,
-    Schema.Struct({
-      hiddenModels: Schema.Array(Schema.String).pipe(
-        Schema.withDecodingDefault(Effect.succeed([])),
-      ),
-      modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-    }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // Avi Code addition. Upstream keeps the right panel's visibility per thread with
-  // no way to change it. This carries the open/closed state across threads instead.
-  // Surfaces stay thread-scoped either way — only visibility, and a reproducible
-  // surface kind, follow. Surfaced on the Avi Code settings page, not General.
-  rightPanelFollowsThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
-  ),
+  sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -407,53 +570,77 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // Avi Code addition. Upstream leaves the mouse's back and forward buttons to
-  // browser history; this repurposes them to step through the sidebar's visible
-  // threads. Surfaced on the Avi Code settings page, not General.
-  sidebarMouseBackForwardNavigation: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
   ),
-  sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
-  ),
-  sidebarThreadGrouping: SidebarThreadGrouping.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_GROUPING)),
-  ),
-  sidebarFlatThreadCount: SidebarFlatThreadCount.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_FLAT_THREAD_COUNT)),
-  ),
-  sidebarV2Enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Whether `sidebarV2Enabled` reflects an explicit choice in Settings → Beta.
-  // Client settings persist as a whole blob, so every user who has ever touched
-  // any setting already has `sidebarV2Enabled: false` stored — without this bit
-  // there is no way to tell that apart from "left alone", and a channel-derived
-  // default could never reach them. Mirrors `updateChannelConfiguredByUser`.
-  sidebarV2ConfiguredByUser: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
+  // Superseded by voiceMicrophones; read only to seed an empty order.
+  voiceMicrophone: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  // Device-local microphone order. Recording uses the first connected entry.
+  voiceMicrophones: Schema.Array(VoiceMicrophoneEntry).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  voiceShortcutMode: VoiceShortcutMode.pipe(Schema.withDecodingDefault(Effect.succeed("auto"))),
+  speechLanguage: SpeechLanguage.pipe(Schema.withDecodingDefault(Effect.succeed("auto"))),
+  speechTranslateToEnglish: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  speechCustomWords: SpeechCustomWords.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  speechSilenceFiltering: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  speechStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  speechRemoveFillerWords: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  speechPostProcessingPrompt: SpeechPostProcessingPromptSettings.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed({ mode: "default" as const, customInstructions: "" }),
+    ),
+  ),
+  speechCorrectionWord: SpeechCorrectionCue.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  // A locale code or "system". Open string so new locales and downgrades need no migration.
+  language: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("en"))),
+  snapShotEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  snapShotIncludeAccessibility: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  snapShotShortcut: SnapShotShortcut.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNAP_SHOT_SHORTCUT)),
+  ),
+  snapShotPlaySound: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  snapShotSound: SnapShotSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNAP_SHOT_SOUND)),
+  ),
+  snapShotFlash: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  snapShotAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Opt-in TeX typesetting in rendered Markdown. Off keeps math parsing and
+  // KaTeX out of the render path entirely.
+  mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
 
-// ── Server Settings (server-authoritative) ────────────────────
+const UsageModelTokenPrice = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isGreaterThanOrEqualTo(0),
+);
 
-export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
-export type ThreadEnvMode = typeof ThreadEnvMode.Type;
+/** Omitted cache rates use the input rate. */
+export const UsageModelPriceOverride = Schema.Struct({
+  inputCostPerMillionTokens: UsageModelTokenPrice,
+  outputCostPerMillionTokens: UsageModelTokenPrice,
+  cacheReadCostPerMillionTokens: Schema.optionalKey(UsageModelTokenPrice),
+  cacheWriteCostPerMillionTokens: Schema.optionalKey(UsageModelTokenPrice),
+});
+export type UsageModelPriceOverride = typeof UsageModelPriceOverride.Type;
 
-const makeBinaryPathSetting = (fallback: string) =>
+export const makeBinaryPathSetting = (fallback: string) =>
   TrimmedString.pipe(
     Schema.decodeTo(
       Schema.String,
-      SchemaTransformation.transformOrFail({
+      SchemaTransformation.transformEffect({
         decode: (value) => Effect.succeed(value || fallback),
         encode: (value) => Effect.succeed(value),
       }),
@@ -461,13 +648,28 @@ const makeBinaryPathSetting = (fallback: string) =>
     Schema.withDecodingDefault(Effect.succeed(fallback)),
   );
 
-export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch";
+export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch" | "select";
+
+export interface ProviderSettingsFormOption {
+  readonly value: string;
+  readonly label: string;
+}
 
 export interface ProviderSettingsFormAnnotation {
   readonly control?: ProviderSettingsFormControl | undefined;
   readonly placeholder?: string | undefined;
   readonly hidden?: boolean | undefined;
   readonly clearWhenEmpty?: "omit" | "persist" | undefined;
+
+  readonly options?: ReadonlyArray<ProviderSettingsFormOption> | undefined;
+}
+
+export function secretSettingsFields(schema: {
+  readonly fields: Readonly<Record<string, Schema.Top>>;
+}): ReadonlyArray<string> {
+  return Object.entries(schema.fields).flatMap(([field, fieldSchema]) => {
+    return isSecretSetting(fieldSchema) ? [field] : [];
+  });
 }
 
 export interface ProviderSettingsFormSchemaAnnotation {
@@ -477,10 +679,27 @@ export interface ProviderSettingsFormSchemaAnnotation {
 declare module "effect/Schema" {
   namespace Annotations {
     interface Annotations {
+      /** Store this credential separately and expose only whether it is configured to clients. */
+      readonly settingsSecret?: boolean | undefined;
+      /** Set by `SettingsSecretValue`: the credential may name a secret provider reference. */
+      readonly settingsSecretReference?: boolean | undefined;
       readonly providerSettingsForm?: ProviderSettingsFormAnnotation | undefined;
       readonly providerSettingsFormSchema?: ProviderSettingsFormSchemaAnnotation | undefined;
     }
   }
+}
+
+export function secretSetting<S extends Schema.Top>(schema: S): S["Rebuild"] {
+  return schema.annotateKey({ settingsSecret: true });
+}
+
+/** A masked form field is a credential too, so none is saved or sent to clients as plain text. */
+export function isSecretSetting(schema: Schema.Top): boolean {
+  const annotations = Schema.resolveAnnotationsKey(schema) ?? Schema.resolveAnnotations(schema);
+  return (
+    annotations?.settingsSecret === true ||
+    annotations?.providerSettingsForm?.control === "password"
+  );
 }
 
 export type ProviderSettingsOrder<Fields extends Schema.Struct.Fields> = readonly Extract<
@@ -504,6 +723,9 @@ export function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fi
 
 export const CodexSettings = makeProviderSettingsSchema(
   {
+    setupMode: Schema.optionalKey(Schema.Literals(["managed", "existing"])).pipe(
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -545,7 +767,7 @@ export const CodexSettings = makeProviderSettingsSchema(
         description: "Additional CLI arguments passed to codex app-server on session start.",
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -556,11 +778,27 @@ export const CodexSettings = makeProviderSettingsSchema(
 );
 export type CodexSettings = typeof CodexSettings.Type;
 
-// Empty, or an integer from 100,000 to 1,000,000 (Claude's auto-compaction
-// window). The patch rejects anything else so a typo fails the one update that
-// introduced it; the stored settings fall back to empty so a hand-edited file
-// never breaks the whole settings decode.
 const CLAUDE_AUTO_COMPACT_WINDOW_PATTERN = /^(?:|[1-9]\d{5}|1000000)$/;
+
+export const IDLE_COMPACTION_MODES = [
+  { value: "onReturn", label: "When you return" },
+  { value: "beforeCacheExpires", label: "Before the cache expires (beta)" },
+  { value: "off", label: "Never" },
+] as const;
+export const IdleCompactionMode = Schema.Literals(IDLE_COMPACTION_MODES.map((mode) => mode.value));
+export type IdleCompactionMode = typeof IdleCompactionMode.Type;
+
+// Shipped clients reject the whole server config unless `compactIdleThreads` is boolean.
+// Keep the mode in `idleCompaction`, but accept strings from older servers.
+const LegacyCompactIdleThreads = Schema.Union([Schema.Boolean, IdleCompactionMode]);
+
+const INSTANCE_IDLE_COMPACTION_MODES = [
+  { value: "default", label: "Use default" },
+  ...IDLE_COMPACTION_MODES,
+] as const;
+const InstanceIdleCompaction = Schema.Literals(
+  INSTANCE_IDLE_COMPACTION_MODES.map((mode) => mode.value),
+);
 
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
@@ -584,7 +822,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "~/.claude", clearWhenEmpty: "omit" },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -599,15 +837,9 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    autoCompactWindow: TrimmedString.pipe(
-      Schema.decodeTo(
-        Schema.String,
-        SchemaTransformation.transformOrFail({
-          decode: (value) =>
-            Effect.succeed(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN.test(value) ? value : ""),
-          encode: (value) => Effect.succeed(value),
-        }),
-      ),
+    autoCompactWindow: TrimmedString.check(
+      Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN),
+    ).pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Auto-compact after",
@@ -619,104 +851,62 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    idleCompaction: InstanceIdleCompaction.pipe(
+      Schema.withDecodingDefault(Effect.succeed("default" as const)),
+      Schema.annotateKey({
+        title: "Compact idle threads",
+        description:
+          "When to compact an idle thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Overrides the default in Providers > Advanced.",
+        providerSettingsForm: {
+          control: "select",
+          options: INSTANCE_IDLE_COMPACTION_MODES,
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
   },
   {
-    order: ["binaryPath", "homePath", "autoCompactWindow", "launchArgs"],
+    order: ["binaryPath", "homePath", "autoCompactWindow", "idleCompaction", "launchArgs"],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
-export const CursorSettings = makeProviderSettingsSchema(
+export const ANTIGRAVITY_AUTH_METHODS = [
+  { value: "oauth-personal", label: "Google account" },
+  { value: "oauth-business", label: "Gemini Enterprise" },
+  { value: "gemini-api-key", label: "Gemini API key" },
+  { value: "agent-platform", label: "Agent Platform (Vertex AI)" },
+] as const satisfies ReadonlyArray<ProviderSettingsFormOption>;
+export const AntigravityAuthMethod = Schema.Literals(
+  ANTIGRAVITY_AUTH_METHODS.map((method) => method.value),
+);
+export type AntigravityAuthMethod = typeof AntigravityAuthMethod.Type;
+
+export const AntigravitySettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("cursor-agent").pipe(
+    authMethod: AntigravityAuthMethod.pipe(
+      Schema.withDecodingDefault(Effect.succeed("oauth-personal" as const)),
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Cursor agent binary.",
-        providerSettingsForm: { placeholder: "cursor-agent", clearWhenEmpty: "omit" },
-      }),
-    ),
-    apiEndpoint: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("")),
-      Schema.annotateKey({
-        title: "API endpoint",
-        description: "Override the Cursor API endpoint for this instance.",
+        title: "Sign-in method",
+        description:
+          "Google accounts use your subscription; API keys and Agent Platform bill usage.",
         providerSettingsForm: {
-          placeholder: "https://...",
+          control: "select",
+          options: ANTIGRAVITY_AUTH_METHODS,
           clearWhenEmpty: "omit",
         },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
-      Schema.withDecodingDefault(Effect.succeed([])),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-  },
-  {
-    order: ["binaryPath", "apiEndpoint"],
-  },
-);
-export type CursorSettings = typeof CursorSettings.Type;
-
-export const GrokSettings = makeProviderSettingsSchema(
-  {
-    enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(true)),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-    binaryPath: makeBinaryPathSetting("grok").pipe(
-      Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Grok CLI binary.",
-        providerSettingsForm: { placeholder: "grok", clearWhenEmpty: "omit" },
-      }),
-    ),
-    customModels: Schema.Array(Schema.String).pipe(
-      Schema.withDecodingDefault(Effect.succeed([])),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-  },
-  {
-    order: ["binaryPath"],
-  },
-);
-export type GrokSettings = typeof GrokSettings.Type;
-
-export const OpenCodeSettings = makeProviderSettingsSchema(
-  {
-    enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(true)),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-    binaryPath: makeBinaryPathSetting("opencode").pipe(
-      Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the OpenCode binary.",
-        providerSettingsForm: {
-          placeholder: "opencode",
-          clearWhenEmpty: "omit",
-        },
-      }),
-    ),
-    serverUrl: TrimmedString.pipe(
+    apiKey: SettingsSecretValue.pipe(
+      secretSetting,
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Server URL",
-        description: "Leave blank to let Avi Code spawn the server when needed.",
-        providerSettingsForm: {
-          placeholder: "http://127.0.0.1:4096",
-          clearWhenEmpty: "omit",
-        },
-      }),
-    ),
-    serverPassword: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("")),
-      Schema.annotateKey({
-        title: "Server password",
-        description: "Stored in plain text on disk.",
+        title: "API key",
+        description: "Gemini or Vertex AI express key. Stored separately on the host.",
         providerSettingsForm: {
           control: "password",
           placeholder: "Optional",
@@ -724,48 +914,150 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    gcpProject: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "GCP project",
+        description:
+          "Required for Gemini Enterprise. Agent Platform uses it when no API key is set.",
+        providerSettingsForm: { placeholder: "my-project-id", clearWhenEmpty: "omit" },
+      }),
+    ),
+    gcpLocation: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "GCP location",
+        description: "Region for Gemini Enterprise or Agent Platform.",
+        providerSettingsForm: { placeholder: "us-central1", clearWhenEmpty: "omit" },
+      }),
+    ),
+    binaryPath: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Custom ACP executable. Leave empty to select automatically.",
+        providerSettingsForm: { placeholder: "Automatic", clearWhenEmpty: "persist" },
+      }),
+    ),
+    customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
-  {
-    order: ["binaryPath", "serverUrl", "serverPassword"],
-  },
+  { order: ["authMethod", "apiKey", "gcpProject", "gcpLocation", "binaryPath"] },
 );
-export type OpenCodeSettings = typeof OpenCodeSettings.Type;
+export type AntigravitySettings = typeof AntigravitySettings.Type;
+
+export const UsageLimitSourceConfig = Schema.Struct({
+  kind: Schema.Literals(["cliproxy", "http"]),
+  label: Schema.optional(TrimmedNonEmptyString),
+  url: TrimmedNonEmptyString,
+  managementKey: SettingsSecretValue.pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+    secretSetting,
+  ),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type UsageLimitSourceConfig = typeof UsageLimitSourceConfig.Type;
+
+export const TextGeneratorKind = Schema.Literals(["openaiCompatible", "anthropic"]);
+export type TextGeneratorKind = typeof TextGeneratorKind.Type;
+
+const TextGeneratorBaseUrl = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(2048),
+  Schema.makeFilter((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        (url.protocol === "http:" || url.protocol === "https:") &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash
+      );
+    } catch {
+      return false;
+    }
+  }),
+);
+
+/** A model API that only generates text. Its key shares the id namespace with provider instances. */
+export const TextGeneratorConfig = Schema.Struct({
+  kind: TextGeneratorKind,
+  label: Schema.optional(TrimmedNonEmptyString),
+  baseUrl: TextGeneratorBaseUrl,
+  apiKey: SettingsSecretValue.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type TextGeneratorConfig = typeof TextGeneratorConfig.Type;
+
+export const TextGeneratorModel = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+});
+export type TextGeneratorModel = typeof TextGeneratorModel.Type;
+
+export const ListTextGeneratorModelsInput = Schema.Struct({
+  id: ProviderInstanceId,
+  /**
+   * Unsaved settings to check before saving, such as from the add dialog. A redacted key keeps
+   * the one saved under `id`.
+   */
+  config: Schema.optional(TextGeneratorConfig),
+  /** Skip the server's cached list and ask the API again. */
+  refresh: Schema.optional(Schema.Boolean),
+  /** Also have a model answer a tiny prompt, which proves the key, endpoint, and model. */
+  test: Schema.optional(Schema.Boolean),
+  /** With `test`, the model to try; a cheap listed one when omitted. */
+  model: Schema.optional(TrimmedNonEmptyString),
+});
+export type ListTextGeneratorModelsInput = typeof ListTextGeneratorModelsInput.Type;
+
+export const ListTextGeneratorModelsResult = Schema.Struct({
+  models: Schema.Array(TextGeneratorModel),
+  /** The model that answered, when `test` was set. */
+  testedModel: Schema.optional(TrimmedNonEmptyString),
+});
+export type ListTextGeneratorModelsResult = typeof ListTextGeneratorModelsResult.Type;
+
+export class TextGeneratorError extends Schema.TaggedError<TextGeneratorError>()(
+  "TextGeneratorError",
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+export const SecretProviderKind = SecretProviderSlug.pipe(Schema.brand("SecretProviderKind"));
+export type SecretProviderKind = typeof SecretProviderKind.Type;
+
+export const SecretProviderLabel = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+
+/** Kinds decode their own config; unknown-kind envelopes round-trip verbatim across versions. */
+export const SecretProviderConfig = Schema.Struct({
+  kind: SecretProviderKind,
+  label: TrimmedNonEmptyString,
+  config: Schema.optionalKey(Schema.Unknown),
+});
+export type SecretProviderConfig = typeof SecretProviderConfig.Type;
+
+// Limits that may change later are enforced on writes only, never on the stored envelope. The
+// server also checks the kind and its config against the secret providers it has loaded.
+const SecretProviderConfigWrite = Schema.Struct({
+  ...SecretProviderConfig.fields,
+  label: SecretProviderLabel,
+});
+
+export const SourceControlHostSettings = Schema.Record(Schema.String, Schema.Unknown);
+export type SourceControlHostSettings = typeof SourceControlHostSettings.Type;
 
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  otlpLogsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
 export type ObservabilitySettings = typeof ObservabilitySettings.Type;
-
-// Voice dictation (Deepgram). The API key follows the same convention as
-// sensitive provider environment variables: the plaintext lives in the
-// server secret store, never in settings.json and never on the wire. The
-// client only ever sees `deepgramApiKeyRedacted: true`, meaning "a key is
-// stored" — see redactServerSettingsForClient in apps/server/src/serverSettings.ts.
-export const VoiceSettings = Schema.Struct({
-  deepgramApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
-});
-export type VoiceSettings = typeof VoiceSettings.Type;
-
-// Avi Code port of pingdotgg/t3code#14103. Bitbucket API credentials for this
-// environment, used before the `T3CODE_BITBUCKET_*` environment variables. The
-// tokens follow the Deepgram key's handshake: plaintext lives in the server
-// secret store, and clients only see `accessTokenRedacted` / `apiTokenRedacted`
-// set to true, meaning "a token is stored". The access token wins when both
-// kinds are configured.
-export const BitbucketSettings = Schema.Struct({
-  email: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  accessToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  accessTokenRedacted: Schema.optionalKey(Schema.Boolean),
-  apiToken: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  apiTokenRedacted: Schema.optionalKey(Schema.Boolean),
-});
-export type BitbucketSettings = typeof BitbucketSettings.Type;
 
 export const SourceControlWritingStyleMode = Schema.Literals([
   "repo_conventions",
@@ -784,6 +1076,36 @@ export const SourceControlWritingStyleSettings = Schema.Struct({
   ),
 });
 export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyleSettings.Type;
+
+const LegacySourceControlWritingStyle = TrimmedString.pipe(
+  Schema.decodeTo(
+    Schema.toType(SourceControlWritingStyleSettings),
+    SchemaTransformation.transform({
+      decode: (value): SourceControlWritingStyleSettings => ({
+        mode: value.length > 0 ? "custom" : "repo_conventions",
+        customInstructions: value,
+        followChangeRequestTemplates: true,
+      }),
+      encode: (value) => value.customInstructions,
+    }),
+  ),
+);
+
+// The struct member comes first so encoding uses its defaulted fields: the server strips
+// default sub-fields before writing settings.json, and a toType target would reject them.
+const SourceControlWritingStyleSetting = Schema.Union([
+  SourceControlWritingStyleSettings,
+  LegacySourceControlWritingStyle,
+]);
+
+export const BranchNamingMode = Schema.Literals(["static", "semantic", "custom"]);
+export type BranchNamingMode = typeof BranchNamingMode.Type;
+
+export interface BranchNamingOptions {
+  mode: BranchNamingMode;
+  prefix: string;
+  instructions: string;
+}
 
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 export const DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL = Duration.minutes(5);
@@ -809,7 +1131,6 @@ export const BackgroundActivityOverrides = Schema.Struct({
   providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
   hostPowerMonitorActiveInterval: Schema.optionalKey(Schema.DurationFromMillis),
   hostPowerMonitorIdleInterval: Schema.optionalKey(Schema.DurationFromMillis),
-  idleClientTtl: Schema.optionalKey(Schema.DurationFromMillis),
   pauseWhenHostLocked: Schema.optionalKey(Schema.Boolean),
   pauseWhenHostLowPower: Schema.optionalKey(Schema.Boolean),
   pauseWhenClientLowPower: Schema.optionalKey(Schema.Boolean),
@@ -827,40 +1148,386 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
-// Avi Code addition. Per-project overrides of a few server settings. Only
-// settings that describe how work in one repository should go are listed; the
-// rest stay environment-wide. `resolveProjectSettings` in
-// `@t3tools/shared/projectSettings` applies them. Inspired by upstream #11176.
-export const AVICODE_PROJECT_OVERRIDABLE_SETTING_KEYS = [
+export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
+export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
+
+/** `on-request`: agents report only when the user asks. `auto`: they also report on their own. */
+export const AgentFeedbackMode = Schema.Literals(["off", "on-request", "auto"]);
+export type AgentFeedbackMode = typeof AgentFeedbackMode.Type;
+
+const StorageRetentionDays = Schema.NullOr(
+  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
+);
+const SettledWorktreeRetentionDays = Schema.NullOr(
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3650 })),
+);
+
+export const WorktreeKeepWhen = Schema.Literals([
+  "any-local-files",
+  "uncommitted-changes",
+  "tracked-changes",
+]);
+export type WorktreeKeepWhen = typeof WorktreeKeepWhen.Type;
+
+export const WorktreeCleanupRules = Schema.Struct({
+  worktreeKeepWhen: WorktreeKeepWhen.pipe(
+    Schema.withDecodingDefault(Effect.succeed("uncommitted-changes")),
+  ),
+  worktreeAfterDays: StorageRetentionDays,
+  worktreeSettledAfterDays: SettledWorktreeRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  worktreeOnMerge: Schema.Boolean,
+  worktreeOnDelete: Schema.Boolean,
+  worktreeUnchanged: Schema.Boolean,
+});
+export type WorktreeCleanupRules = typeof WorktreeCleanupRules.Type;
+
+export const WorktreeCleanup = Schema.NullOr(
+  Schema.Union([
+    Schema.Struct({ mode: Schema.Literal("off") }),
+    Schema.Struct({ mode: Schema.Literal("custom"), rules: WorktreeCleanupRules }),
+  ]),
+);
+export type WorktreeCleanup = typeof WorktreeCleanup.Type;
+
+export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "worktreeCleanup",
+  "defaultModelSelection",
+  "defaultRuntimeMode",
   "defaultThreadEnvMode",
   "newWorktreesStartFromOrigin",
+  "worktreeSubmodules",
+  "defaultAutoPull",
+  "defaultProjectScripts",
+  "enableAgentBrowserAccess",
+  "enableAgentDeviceAccess",
   "textGenerationModelSelection",
+  "threadTitleInstructions",
   "sourceControlWriterModelSelection",
+  "reviewGuideModelSelection",
+  "reviewGuideInstructions",
   "sourceControlWritingStyle",
+  "removeAgentCreditsOnMerge",
+  "branchNamingMode",
+  "branchNamePrefix",
+  "branchNameInstructions",
+  "pullRequestMergeMethod",
+  "sidebarAutoSettleOnMerge",
+  "sidebarAutoSettleAfterDays",
+  "sidebarAutoSettleKeepPullRequests",
+  "continueThreadsAfterServerUpdate",
+  "responseStreamingMode",
+  "speechProjectCustomWords",
 ] as const;
-export type AviCodeProjectOverridableSettingKey =
-  (typeof AVICODE_PROJECT_OVERRIDABLE_SETTING_KEYS)[number];
+export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
-/**
- * One project's overrides. An absent key inherits the global value. `null` is
- * a real value for `sourceControlWriterModelSelection` (use the text
- * generation model), never "inherit".
- */
-export const AviCodeProjectSettingsOverride = Schema.Struct({
+export const ProjectProviderInstanceOverride = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+});
+export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOverride.Type;
+
+/** Absent keys inherit; null is a value for nullable settings.
+ * providerInstances overrides fields per instance; other keys replace the whole setting. */
+export const ProjectSettingsOverrides = Schema.Struct({
+  worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
+  defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
+  worktreeSubmodules: ForwardCompatibleOptional(WorktreeSubmodules),
+  defaultAutoPull: Schema.optionalKey(Schema.Boolean),
+  defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
+  enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
+  threadTitleInstructions: Schema.optionalKey(TrimmedString),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
-  sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
-} satisfies Record<AviCodeProjectOverridableSettingKey, unknown>);
-export type AviCodeProjectSettingsOverride = typeof AviCodeProjectSettingsOverride.Type;
+  reviewGuideModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  reviewGuideInstructions: Schema.optionalKey(TrimmedString),
+  sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSetting),
+  removeAgentCreditsOnMerge: Schema.optionalKey(Schema.Boolean),
+  branchNamingMode: Schema.optionalKey(BranchNamingMode),
+  branchNamePrefix: Schema.optionalKey(TrimmedString),
+  branchNameInstructions: Schema.optionalKey(TrimmedString),
+  pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
+  sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
+  sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
+  continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
+  responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
+  speechProjectCustomWords: Schema.optionalKey(SpeechCustomWords),
+  providerInstances: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
+  ),
+} satisfies Record<ProjectScopedServerSettingKey | "providerInstances", unknown>);
+export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
+
+// Whole-entry writers must round-trip unknown keys; keep the type closed to catch misspellings.
+export const keepUnknownOverrideKeys = <Entry extends Schema.Struct<Schema.Struct.Fields>>(
+  entry: Entry,
+): Schema.Codec<
+  Entry["Type"],
+  Entry["Encoded"],
+  Entry["DecodingServices"],
+  Entry["EncodingServices"]
+> => Schema.StructWithRest(entry, [Schema.Record(Schema.String, Schema.Unknown)]);
+
+/** True if null stores an override; otherwise null removes it. */
+export function isNullableProjectSettingsOverride(key: ProjectScopedServerSettingKey): boolean {
+  return NULLABLE_PROJECT_SETTINGS_OVERRIDES.has(key);
+}
+const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettingKey> = new Set<
+  {
+    [K in ProjectScopedServerSettingKey]: null extends ProjectSettingsOverrides[K] ? K : never;
+  }[ProjectScopedServerSettingKey]
+>([
+  "defaultModelSelection",
+  "sourceControlWriterModelSelection",
+  "reviewGuideModelSelection",
+  "pullRequestMergeMethod",
+  "sidebarAutoSettleAfterDays",
+]);
+
+/** Reclaimable bytes from which the offline `t3 doctor` repair is worth suggesting. */
+export const DATABASE_COMPACTION_RECOMMENDED_BYTES = 1024 ** 3;
+
+export const DatabaseStorageStatus = Schema.Struct({
+  databaseBytes: Schema.Number,
+  /** Free pages inside the file that an offline VACUUM (or incremental auto_vacuum) returns to disk. */
+  reclaimableBytes: Schema.Number,
+  /** False on databases created before incremental auto_vacuum; `t3 doctor` converts them. */
+  incrementalVacuumEnabled: Schema.Boolean,
+  /** Run on the host while offline. */
+  compactCommand: Schema.String,
+  /** The server can run the repair itself: the desktop app or background service restarts it. */
+  canReclaim: Schema.optionalKey(Schema.Boolean),
+  /** Why the last repair started from Settings failed. */
+  reclaimFailure: Schema.optionalKey(Schema.String),
+});
+export type DatabaseStorageStatus = typeof DatabaseStorageStatus.Type;
+
+export class DatabaseReclaimError extends Schema.TaggedError<DatabaseReclaimError>()(
+  "DatabaseReclaimError",
+  { reason: Schema.String },
+) {
+  override get message() {
+    return this.reason;
+  }
+}
+
+export function shouldRecommendDatabaseCompaction(status: DatabaseStorageStatus): boolean {
+  return (
+    !status.incrementalVacuumEnabled &&
+    status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES
+  );
+}
+
+/** Offline minutes the repair takes, at 30 s per GiB of live data (a BB-1 NVMe disk took 21 s). */
+export function databaseReclaimMinutes(status: DatabaseStorageStatus): number {
+  const liveGiB = (status.databaseBytes - status.reclaimableBytes) / 1024 ** 3;
+  return Math.max(1, Math.ceil(liveGiB / 2));
+}
+
+export const StorageCleanupReportEntry = Schema.Struct({
+  kind: Schema.Literals(["worktree", "browser-artifacts", "logs"]),
+  outcome: Schema.Literals(["removed", "kept", "failed"]),
+  reason: Schema.String,
+  path: Schema.NullOr(Schema.String),
+  projectPath: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  threadId: Schema.NullOr(ThreadId),
+  threadTitle: Schema.NullOr(Schema.String),
+  bytes: Schema.NullOr(Schema.Number).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  files: Schema.NullOr(Schema.Number).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+});
+export type StorageCleanupReportEntry = typeof StorageCleanupReportEntry.Type;
+export const StorageCleanupReport = Schema.Struct({
+  trigger: Schema.Literals(["automatic", "manual"]),
+  startedAt: Schema.String,
+  finishedAt: Schema.String,
+  entries: Schema.Array(StorageCleanupReportEntry),
+  counts: Schema.Struct({ removed: Schema.Number, kept: Schema.Number, failed: Schema.Number }),
+  omittedCount: Schema.Number,
+  bytesFreed: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+});
+export type StorageCleanupReport = typeof StorageCleanupReport.Type;
+
+export const StorageCleanupSettings = Schema.Struct({
+  worktreeKeepWhen: WorktreeKeepWhen.pipe(
+    Schema.withDecodingDefault(Effect.succeed("uncommitted-changes")),
+  ),
+  worktreeAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  worktreeSettledAfterDays: SettledWorktreeRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  worktreeOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  worktreeOnDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  worktreeUnchanged: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  browserArtifactsAfterDays: StorageRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  logsAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+});
+export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
+
+export const DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT = 500;
+export const MAX_WORKFLOW_SKIPPED_RUNS_KEPT = 10_000;
+const WorkflowSkippedRunsKept = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: MAX_WORKFLOW_SKIPPED_RUNS_KEPT }),
+);
+
+const UsageHistoryRetentionDays = Schema.Union([
+  Schema.Int.check(Schema.isGreaterThan(0)),
+  Schema.Literal("unlimited"),
+]);
+
+const CloudSpeechCredential = SettingsSecretValue.pipe(
+  Schema.withDecodingDefault(Effect.succeed("")),
+);
+export const CloudSpeechCredentials = Schema.Struct({
+  openai: CloudSpeechCredential,
+  xai: CloudSpeechCredential,
+  openrouter: CloudSpeechCredential,
+});
 
 export const ServerSettings = Schema.Struct({
-  enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
+  favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  worktreeCleanup: WorktreeCleanup.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  storageCleanup: StorageCleanupSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(StorageCleanupSettings)({}))),
+  ),
+
+  worktreesDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** macOS only, Labs beta: clone new worktrees from a cached checkout instead of writing every file. */
+  fastWorktreeCheckout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Server-maintained history keeps old worktrees eligible for cleanup and review diffs. */
+  previousWorktreesDirectories: Schema.Array(TrimmedString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  responseStreamingMode: ResponseStreamingMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+  ),
+  agentFeedback: Schema.Struct({
+    mode: AgentFeedbackMode.pipe(Schema.withDecodingDefaultKey(Effect.succeed("off" as const))),
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({ mode: "off" as const }))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  /** Holds an OS sleep inhibitor while any run is active; closing a laptop lid still sleeps it. */
+  keepAwakeWhileAgentsWork: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** New T3 Connect device keys wait for approval from someone already trusted here. */
+  requireConnectDeviceApproval: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+
+  enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Lets clients reach this machine's loopback ports over `/api/preview/tunnel`. */
+  enablePreviewTunnel: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  cloudSpeechCredentials: CloudSpeechCredentials.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ openai: "", xai: "", openrouter: "" })),
+  ),
+  speechModelId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed("handy-computer/parakeet-unified-en-0.6b-gguf")),
+  ),
+  speechAcceleration: SpeechAcceleration.pipe(Schema.withDecodingDefault(Effect.succeed("auto"))),
+  speechModelUnloadTimeout: SpeechModelUnloadTimeout.pipe(
+    Schema.withDecodingDefault(Effect.succeed("min_15")),
+  ),
+  // Vocabulary shared by everyone who dictates in a project; it lives with the project's environment.
+  speechProjectCustomWords: SpeechCustomWords.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Null follows textGenerationModelSelection; a selection pins transcript cleanup to its own model.
+  speechPostProcessingModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  projectAgentBrowserAccessOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  defaultProjectScripts: Schema.Array(ProjectScript).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  projectScriptOverrides: Schema.Record(ProjectId, Schema.NullOr(Schema.Array(ProjectScript))).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  projectAutoPullOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  fallbackModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  defaultRuntimeMode: RuntimeMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE)),
+  ),
+
+  projectSettingsOverrides: Schema.Record(
+    ProjectId,
+    keepUnknownOverrideKeys(ProjectSettingsOverrides),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  /** Fold once so restarts cannot undo later UI resets. */
+  projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+
+  enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Enabling the Device panel must not grant providers device control. */
+  enableDeviceSupport: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  deviceHosts: SshDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  easDeviceHosts: EasDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  simlockDeviceHosts: SimlockDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /** Alpha: Simlock device hosts. Off, the server ignores `simlockDeviceHosts`. */
+  simlockDeviceHostsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
+  ),
+  compactIdleThreads: LegacyCompactIdleThreads.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  idleCompaction: Schema.optionalKey(IdleCompactionMode),
+  snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  snoozePresets: SnoozePresetSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNOOZE_PRESETS)),
+  ),
+  /** Clients hide threads with these tags while `hideTaggedThreads` is on. Bad entries drop alone, so a hand edit cannot reset settings. */
+  hiddenThreadTags: Schema.Array(Schema.Unknown).pipe(
+    Schema.decodeTo(
+      Schema.Array(Schema.String),
+      SchemaTransformation.transform<ReadonlyArray<string>, ReadonlyArray<unknown>>({
+        decode: (values) => values.filter((value) => typeof value === "string"),
+        encode: (values) => values,
+      }),
+    ),
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  hideTaggedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
+  guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Beta: links to the user's other machines, both ways. Off refuses new links, calls over links
+   * and tasks on another machine; tasks already running there finish.
+   */
+  linkedEnvironmentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Beta: durable workflows from the workflows folder of the T3 home. Off runs none of them. */
+  workflowsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Skipped top-level runs kept per workflow; older ones are deleted. */
+  workflowSkippedRunsKept: WorkflowSkippedRunsKept.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT)),
+  ),
+  /** Beta: Claude and Codex predict the next prompt after completed turns. Codex follows a change at once; open Claude threads after they restart. */
+  promptSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
-  // Legacy flat fields retained for old settings files and old clients. New
-  // consumers should resolve `backgroundActivity` instead.
+
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
@@ -874,100 +1541,282 @@ export const ServerSettings = Schema.Struct({
   backgroundActivityProfile: BackgroundActivityProfile.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BACKGROUND_ACTIVITY_PROFILE)),
   ),
-  defaultThreadEnvMode: ThreadEnvMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("local" as const satisfies ThreadEnvMode)),
+  defaultTheme: DefaultThemePreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Distinguishes repeated sets of the same theme so clients apply each one. */
+  defaultThemeSetAt: Schema.String.check(Schema.isMaxLength(64)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
   ),
+  defaultAppearance: DefaultAppearancePreference.pipe(
+    Schema.withDecodingDefault(Effect.succeed("" as const)),
+  ),
+  defaultAppearanceSetAt: Schema.String.check(Schema.isMaxLength(64)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+  environmentIcon: ForwardCompatibleNullable(EnvironmentMachineKind).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  /** Null inherits t3.json, then local; omit it on the wire for older clients requiring a literal. */
+  defaultThreadEnvMode: OmittedWhenNull(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
-  // Avi Code addition. Lets new chat worktrees fall back to the project's
-  // primary action when no action explicitly owns worktree setup.
-  autoStartDevServerForNewWorktrees: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+  /** Null inherits t3.json, then recursive; unknown values decode to null for older clients. */
+  worktreeSubmodules: ForwardCompatibleNullable(WorktreeSubmodules).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
-  // Avi Code addition. Background worktree health monitor thresholds. See
-  // WorktreeHealthDeadCountThreshold / WorktreeHealthLowDiskGb above.
-  worktreeHealthDeadCountThreshold: WorktreeHealthDeadCountThreshold.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_HEALTH_DEAD_COUNT_THRESHOLD)),
-  ),
-  worktreeHealthLowDiskGb: WorktreeHealthLowDiskGb.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_HEALTH_LOW_DISK_GB)),
-  ),
-  worktreeHealthAutoCleanup: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Clones default to `<addProjectBaseDirectory>/<host>/<owner>/<repo>`, like ghq. */
+  ghqCloneLayout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
         instanceId: ProviderInstanceId.make("codex"),
         model: DEFAULT_TEXT_GENERATION_MODEL,
+        options: [
+          {
+            id: "reasoningEffort",
+            value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
+          },
+        ],
       }),
     ),
   ),
-  sourceControlWritingStyle: SourceControlWritingStyleSettings.pipe(
+  threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  branchNamingMode: BranchNamingMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("static" as const)),
+  ),
+  branchNamePrefix: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("t3"))),
+  branchNameInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  removeAgentCreditsOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sourceControlWritingStyle: SourceControlWritingStyleSetting.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
-  // Avi Code addition. Project id -> that project's overrides. Absent in
-  // settings files written before overrides existed, hence the `{}` default.
-  aviCodeProjectSettingsOverrides: Schema.Record(ProjectId, AviCodeProjectSettingsOverride).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
+  reviewGuidesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  reviewGuideModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  reviewGuideInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+
+  pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
 
-  // Legacy single-instance-per-driver settings. Continues to be the source
-  // of truth until `providerInstances` (below) lands per-driver migration
-  // shims and the server starts hydrating instances from it. Driver-specific
-  // schemas live here for the duration of the migration; once each driver
-  // owns its config in its own package, this struct shrinks to nothing and
-  // is removed entirely.
-  providers: Schema.Struct({
-    codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
-  // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
-  // is `Schema.Unknown` at this layer so envelopes with unknown drivers
-  // (forks, downgrades, in-flight PR branches) round-trip without loss.
-  // See providerInstance.ts for the forward/backward compatibility invariant.
+  // Schema.Unknown preserves unknown-driver configs across versions; see providerInstance.ts.
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  /** Hosts the add and publish project pickers offer, by kind. An unset host is off, except the default one. */
+  offeredSourceControlProviders: Schema.Record(Schema.String, Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  // User-chosen ids preserve rows across edits; undecodable entries round-trip untouched.
+  usageLimitSources: Schema.Record(UsageLimitSourceId, UsageLimitSourceConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  textGenerators: Schema.Record(ProviderInstanceId, TextGeneratorConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  secretProviders: Schema.Record(SecretProviderId, SecretProviderConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+
+  usageHistoryRetentionDays: UsageHistoryRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(92)),
+  ),
+
+  usagePriceOverrides: Schema.Record(TrimmedNonEmptyString, UsageModelPriceOverride).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+
+  usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+
+  /** Sent by the Usage tab with each summary request to this environment; edit in settings.json. Invalid values are ignored. */
+  usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
+export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | undefined => {
+  if (config === null || typeof config !== "object" || Array.isArray(config)) {
+    return undefined;
+  }
+  const enabled = (config as { readonly enabled?: unknown }).enabled;
+  return typeof enabled === "boolean" ? enabled : undefined;
+};
+
+// Must match each driver's enabled decoding default.
+const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
+  ["cursor", "grok", "fx", "kiro", "muse", "pi", "opencode", "antigravity"].map((driver) =>
+    ProviderDriverKind.make(driver),
+  ),
+);
+
+const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new Set(
+  ["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
+);
+
+export const isUnconfiguredDefaultInstanceEnabled = (instanceId: ProviderInstanceId): boolean =>
+  DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId);
+
+const defaultEnabledForDriver = (driver: ProviderDriverKind): boolean =>
+  !DEFAULT_DISABLED_PROVIDER_DRIVERS.has(driver);
+
+export const resolveProviderInstanceEnabled = (
+  instance: Pick<ProviderInstanceConfig, "driver" | "enabled" | "config">,
+): boolean => {
+  const configEnabled = providerInstanceConfigEnabledFlag(instance.config);
+  if (instance.enabled === false || configEnabled === false) {
+    return false;
+  }
+  return instance.enabled ?? configEnabled ?? defaultEnabledForDriver(instance.driver);
+};
+
+export const resolveProjectProviderInstanceEnabled = (
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
+  projectId: ProjectId | null,
+  instanceId: ProviderInstanceId,
+): boolean => {
+  const override =
+    projectId === null
+      ? undefined
+      : settings.projectSettingsOverrides[projectId]?.providerInstances?.[instanceId]?.enabled;
+  if (override !== undefined) return override;
+  const instanceConfig = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
+  return instanceConfig !== undefined
+    ? resolveProviderInstanceEnabled(instanceConfig)
+    : isUnconfiguredDefaultInstanceEnabled(instanceId);
+};
+
+/** The text generator a selection names, if any; it takes precedence over a provider instance. */
+export const textGeneratorForSelection = (
+  settings: Pick<ServerSettings, "textGenerators">,
+  instanceId: ProviderInstanceId,
+): TextGeneratorConfig | undefined =>
+  Object.hasOwn(settings.textGenerators, instanceId)
+    ? settings.textGenerators[instanceId]
+    : undefined;
+
+/** Whether a text generation selection can run: an enabled text generator or provider instance. */
+export const resolveTextGenerationSelectionEnabled = (
+  settings: Pick<
+    ServerSettings,
+    "providerInstances" | "projectSettingsOverrides" | "textGenerators"
+  >,
+  projectId: ProjectId | null,
+  instanceId: ProviderInstanceId,
+): boolean =>
+  textGeneratorForSelection(settings, instanceId)?.enabled ??
+  resolveProjectProviderInstanceEnabled(settings, projectId, instanceId);
+
+const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
+
+type IdleCompactionSettings = Pick<ServerSettings, "compactIdleThreads" | "idleCompaction">;
+
+/** The environment-wide idle compaction mode, from whichever field the settings carry. */
+export const globalIdleCompaction = (settings: IdleCompactionSettings): IdleCompactionMode =>
+  settings.idleCompaction ??
+  (typeof settings.compactIdleThreads === "string"
+    ? settings.compactIdleThreads
+    : settings.compactIdleThreads
+      ? "beforeCacheExpires"
+      : "onReturn");
+
+/** Sets the mode, and the legacy switch shipped clients still read alongside it. */
+export const withIdleCompaction = <S extends IdleCompactionSettings>(
+  settings: S,
+  mode: IdleCompactionMode,
+): S => ({ ...settings, idleCompaction: mode, compactIdleThreads: mode === "beforeCacheExpires" });
+
+/** Whether a server reads modes, rather than only the boolean switch from before them. */
+export const readsIdleCompactionModes = (settings: IdleCompactionSettings) =>
+  settings.idleCompaction !== undefined || typeof settings.compactIdleThreads === "string";
+
+/**
+ * The patch that sets `mode` in the form the server's settings show it reads:
+ * the mode for a server that has `idleCompaction` or kept the mode in the legacy
+ * field, the boolean switch for a server from before modes.
+ */
+export const idleCompactionPatch = (settings: IdleCompactionSettings, mode: IdleCompactionMode) =>
+  settings.idleCompaction !== undefined
+    ? { idleCompaction: mode }
+    : readsIdleCompactionModes(settings)
+      ? { compactIdleThreads: mode }
+      : { compactIdleThreads: mode === "beforeCacheExpires" };
+
+export const resolveIdleCompaction = (
+  settings: Pick<ServerSettings, "providerInstances" | "compactIdleThreads" | "idleCompaction">,
+  instanceId: ProviderInstanceId,
+): IdleCompactionMode => {
+  const instance = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
+  const override = decodeClaudeSettings(instance?.config ?? {}).pipe(
+    Option.map((config) => config.idleCompaction),
+    Option.getOrElse(() => "default" as const),
+  );
+  return override === "default" ? globalIdleCompaction(settings) : override;
+};
+
 export const ServerSettingsOperation = Schema.Literals([
   "normalize",
   "check-exists",
+  "create-provider-instance",
   "read-file",
+  "read-provider-history",
+  "read-project-settings",
   "read-secret",
   "remove-secret",
   "remove-stale-secret",
   "write-secret",
+  "write-secret-provider",
   "write-file",
   "prepare-directory",
+  "write-managed-setting",
+  "use-disallowed-provider",
 ]);
 export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 
-export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsError>()(
+/** Why a provider the administrator's policy leaves out cannot be used. */
+export const disallowedProviderMessage = (organization: string | undefined, label: string) =>
+  `${organization === undefined ? "Your organization" : `${organization}'s`} policy does not allow the ${label} provider.`;
+
+export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>()(
   "ServerSettingsError",
   {
     settingsPath: Schema.String,
     operation: ServerSettingsOperation,
     providerInstanceId: Schema.optional(Schema.String),
     environmentVariable: Schema.optional(Schema.String),
-    cause: Schema.Defect(),
+    /** For `write-managed-setting`: the locked dot path and who manages it. */
+    managedSetting: Schema.optional(Schema.String),
+    managedBy: Schema.optional(Schema.String),
+    /** For `use-disallowed-provider`: the provider's name as users know it. */
+    providerLabel: Schema.optional(Schema.String),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
+    if (this.operation === "write-managed-setting") {
+      return `${this.managedSetting ?? "This setting"} is managed by ${this.managedBy ?? "your organization"} and cannot be changed.`;
+    }
+    if (this.operation === "use-disallowed-provider") {
+      return disallowedProviderMessage(
+        this.managedBy,
+        this.providerLabel ?? this.providerInstanceId ?? "this",
+      );
+    }
     const provider =
       this.providerInstanceId === undefined ? "" : ` for provider ${this.providerInstanceId}`;
     const variable =
@@ -978,15 +1827,11 @@ export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsE
   }
 }
 
-// ── Unified type ─────────────────────────────────────────────────────
-
-export type UnifiedSettings = ServerSettings & ClientSettings;
+export type UnifiedSettings = Omit<ServerSettings, keyof ModelPreferences> & ClientSettings;
 export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
   ...DEFAULT_SERVER_SETTINGS,
   ...DEFAULT_CLIENT_SETTINGS,
 };
-
-// ── Server Settings Patch (replace with a Schema.deepPartial if available) ──────────────────────────────────────────
 
 const ModelSelectionPatch = Schema.Struct({
   instanceId: Schema.optionalKey(ProviderInstanceId),
@@ -994,51 +1839,127 @@ const ModelSelectionPatch = Schema.Struct({
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
-const CodexSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  shadowHomePath: Schema.optionalKey(TrimmedString),
-  launchArgs: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-
-const ClaudeSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
-  launchArgs: Schema.optionalKey(TrimmedString),
-  autoCompactWindow: Schema.optionalKey(
-    TrimmedString.check(Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN)),
-  ),
-});
-
-const CursorSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  apiEndpoint: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-
-const GrokSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-
-const OpenCodeSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  serverUrl: Schema.optionalKey(TrimmedString),
-  serverPassword: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-
 export const ServerSettingsPatch = Schema.Struct({
-  // Server settings
-  enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
+  setModelFavorites: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
+  ),
+  setModelsHidden: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ ...ModelFavorite.fields, hidden: Schema.Boolean })),
+  ),
+  setProviderModelOrder: Schema.optionalKey(
+    Schema.Struct({ provider: ProviderInstanceId, modelOrder: Schema.Array(TrimmedString) }),
+  ),
+  favorites: Schema.optionalKey(ModelFavorites),
+  providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
+  // Applied under the settings service's write lock, only while still unset.
+  migrateModelPreferences: Schema.optionalKey(
+    Schema.Struct({
+      favorites: Schema.optionalKey(ModelFavorites),
+      providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
+    }),
+  ),
+  worktreeCleanup: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Union([
+        Schema.Struct({ mode: Schema.Literal("off") }),
+        Schema.Struct({
+          mode: Schema.Literal("custom"),
+          rules: Schema.Struct({
+            worktreeKeepWhen: Schema.optionalKey(WorktreeKeepWhen),
+            worktreeAfterDays: Schema.optionalKey(StorageRetentionDays),
+            worktreeSettledAfterDays: Schema.optionalKey(SettledWorktreeRetentionDays),
+            worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
+            worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
+            worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+          }),
+        }),
+      ]),
+    ),
+  ),
+  storageCleanup: Schema.optionalKey(
+    Schema.Struct({
+      worktreeKeepWhen: Schema.optionalKey(WorktreeKeepWhen),
+      worktreeAfterDays: Schema.optionalKey(StorageRetentionDays),
+      worktreeSettledAfterDays: Schema.optionalKey(SettledWorktreeRetentionDays),
+      worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
+      worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
+      worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+      browserArtifactsAfterDays: Schema.optionalKey(StorageRetentionDays),
+      logsAfterDays: Schema.optionalKey(StorageRetentionDays),
+    }),
+  ),
+  worktreesDirectory: Schema.optionalKey(TrimmedString),
+  fastWorktreeCheckout: Schema.optionalKey(Schema.Boolean),
+  responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
+  agentFeedback: Schema.optionalKey(Schema.Struct({ mode: AgentFeedbackMode })),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
+  continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
+  keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
+  requireConnectDeviceApproval: Schema.optionalKey(Schema.Boolean),
+  enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  enablePreviewTunnel: Schema.optionalKey(Schema.Boolean),
+  cloudSpeechCredentials: Schema.optionalKey(
+    Schema.Struct({
+      openai: Schema.optionalKey(SettingsSecretValue),
+      xai: Schema.optionalKey(SettingsSecretValue),
+      openrouter: Schema.optionalKey(SettingsSecretValue),
+    }),
+  ),
+  speechModelId: Schema.optionalKey(Schema.String),
+  speechAcceleration: Schema.optionalKey(SpeechAcceleration),
+  speechModelUnloadTimeout: Schema.optionalKey(SpeechModelUnloadTimeout),
+  speechProjectCustomWords: Schema.optionalKey(SpeechCustomWords),
+  speechPostProcessingModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  projectAgentBrowserAccessOverrides: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
+  ),
+  defaultAutoPull: Schema.optionalKey(Schema.Boolean),
+  defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
+  projectScriptOverrides: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(Schema.Array(ProjectScript))),
+  ),
+  projectAutoPullOverrides: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
+  ),
+  defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
+  fallbackModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  /** Replaces each project's override set; null removes it. Omitted providerInstances retains its stored value. */
+  projectSettingsOverrides: Schema.optionalKey(
+    Schema.Record(
+      ProjectId,
+      Schema.NullOr(
+        keepUnknownOverrideKeys(
+          Schema.Struct({
+            ...ProjectSettingsOverrides.fields,
+            sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
+          }),
+        ),
+      ),
+    ),
+  ),
+  enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
+  enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
+  deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
+  deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
+  easDeviceHosts: Schema.optionalKey(EasDeviceHostConfigs),
+  simlockDeviceHosts: Schema.optionalKey(SimlockDeviceHostConfigs),
+  simlockDeviceHostsEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  compactIdleThreads: Schema.optionalKey(LegacyCompactIdleThreads),
+  idleCompaction: Schema.optionalKey(IdleCompactionMode),
+  sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
+  sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
+  autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  snoozePresets: Schema.optionalKey(SnoozePresetSettings),
+  hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
+  hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
+  guestSharingEnabled: Schema.optionalKey(Schema.Boolean),
+  linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
+  workflowsEnabled: Schema.optionalKey(Schema.Boolean),
+  workflowSkippedRunsKept: Schema.optionalKey(WorkflowSkippedRunsKept),
+  promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),
@@ -1050,15 +1971,22 @@ export const ServerSettingsPatch = Schema.Struct({
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
   backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
-  defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
+  defaultTheme: Schema.optionalKey(DefaultThemePreference),
+  defaultThemeSetAt: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+  defaultAppearance: Schema.optionalKey(DefaultAppearancePreference),
+  defaultAppearanceSetAt: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+  environmentIcon: Schema.optionalKey(Schema.NullOr(EnvironmentMachineKind)),
+  defaultThreadEnvMode: Schema.optionalKey(Schema.NullOr(ThreadEnvMode)),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
-  autoStartDevServerForNewWorktrees: Schema.optionalKey(Schema.Boolean),
-  // Avi Code addition. Worktree health monitor thresholds.
-  worktreeHealthDeadCountThreshold: Schema.optionalKey(WorktreeHealthDeadCountThreshold),
-  worktreeHealthLowDiskGb: Schema.optionalKey(WorktreeHealthLowDiskGb),
-  worktreeHealthAutoCleanup: Schema.optionalKey(Schema.Boolean),
+  worktreeSubmodules: Schema.optionalKey(Schema.NullOr(WorktreeSubmodules)),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  threadTitleInstructions: Schema.optionalKey(TrimmedString),
+  branchNamingMode: Schema.optionalKey(BranchNamingMode),
+  branchNamePrefix: Schema.optionalKey(TrimmedString),
+  branchNameInstructions: Schema.optionalKey(TrimmedString),
+  removeAgentCreditsOnMerge: Schema.optionalKey(Schema.Boolean),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
       mode: Schema.optionalKey(SourceControlWritingStyleMode),
@@ -1067,134 +1995,205 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
-  // Avi Code addition. Entry-level patch: a project's entry replaces its whole
-  // override set, and `null` removes every override for that project. Clearing
-  // one setting means resending the entry without that key; per-key `null`
-  // could not express it because `sourceControlWriterModelSelection` is itself
-  // nullable. Projects missing from the patch keep their overrides.
-  aviCodeProjectSettingsOverrides: Schema.optionalKey(
-    Schema.Record(ProjectId, Schema.NullOr(AviCodeProjectSettingsOverride)),
-  ),
+  reviewGuidesEnabled: Schema.optionalKey(Schema.Boolean),
+  reviewGuideModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  reviewGuideInstructions: Schema.optionalKey(TrimmedString),
+  pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),
       otlpMetricsUrl: Schema.optionalKey(TrimmedString),
+      otlpLogsUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
-  // `deepgramApiKeyRedacted: false` is how the client says "this is a fresh
-  // plaintext value, replace the stored secret" (including clearing it with an
-  // empty string). Omitting it leaves the stored secret untouched. Mirrors the
-  // `valueRedacted` handshake on provider environment variables.
-  voice: Schema.optionalKey(
-    Schema.Struct({
-      deepgramApiKey: Schema.optionalKey(TrimmedString),
-      deepgramApiKeyRedacted: Schema.optionalKey(Schema.Boolean),
-    }),
-  ),
-  // Same handshake as `voice`: a token sent with its `...Redacted: false` flag
-  // replaces the stored secret (an empty one clears it); `true` keeps it.
-  bitbucket: Schema.optionalKey(
-    Schema.Struct({
-      email: Schema.optionalKey(TrimmedString),
-      accessToken: Schema.optionalKey(TrimmedString),
-      accessTokenRedacted: Schema.optionalKey(Schema.Boolean),
-      apiToken: Schema.optionalKey(TrimmedString),
-      apiTokenRedacted: Schema.optionalKey(Schema.Boolean),
-    }),
-  ),
-  providers: Schema.optionalKey(
-    Schema.Struct({
-      codex: Schema.optionalKey(CodexSettingsPatch),
-      claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
-      cursor: Schema.optionalKey(CursorSettingsPatch),
-      grok: Schema.optionalKey(GrokSettingsPatch),
-      opencode: Schema.optionalKey(OpenCodeSettingsPatch),
-    }),
-  ),
-  // Whole-map replacement for the new instance config. Patching individual
-  // entries is intentionally out of scope: the map is small, and partial
-  // patches risk leaving driver-specific config in a half-merged state.
-  // The web UI sends a fully-formed map every time it edits this field.
+  /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty secrets remove them. A non-empty token map keeps the saved tokens of hosts it omits; an empty map clears them all. */
+  sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
+  offeredSourceControlProviders: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
+  // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Merge per source to avoid racing other edits; null removes an entry.
+  usageLimitSources: Schema.optionalKey(
+    Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),
+  ),
+  // Merge per entry like usageLimitSources; null removes an entry.
+  textGenerators: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, Schema.NullOr(TextGeneratorConfig)),
+  ),
+  secretProviders: Schema.optionalKey(
+    Schema.Record(SecretProviderId, Schema.NullOr(SecretProviderConfigWrite)),
+  ),
+
+  usageHistoryRetentionDays: Schema.optionalKey(UsageHistoryRetentionDays),
+
+  usagePriceOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, Schema.NullOr(UsageModelPriceOverride)),
+  ),
+
+  usageModelAliases: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
+  ),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
+/** The theme service sets theme defaults after it validates them, so clients cannot. */
+export const ClientServerSettingsPatch = ServerSettingsPatch.mapFields(
+  Struct.omit(["defaultTheme", "defaultThemeSetAt", "defaultAppearance", "defaultAppearanceSetAt"]),
+);
+
+/** The host runs saved project scripts, some without anyone asking: on worktree creation and on settle. */
+function carriesProjectScripts(patch: ServerSettingsPatch): boolean {
+  return (
+    patch.defaultProjectScripts !== undefined ||
+    Object.values(patch.projectScriptOverrides ?? {}).some((scripts) => scripts !== null) ||
+    Object.values(patch.projectSettingsOverrides ?? {}).some(
+      (overrides) => overrides?.defaultProjectScripts !== undefined,
+    )
+  );
+}
+
+export function requiredScopesForServerSettingsPatch(
+  patch: ServerSettingsPatch,
+): ReadonlyArray<AuthEnvironmentScope> {
+  let changesProviders = false;
+  let changesSettings = false;
+  let changesAccess = false;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (key === "requireConnectDeviceApproval" || key === "enablePreviewTunnel") {
+      changesAccess = true;
+    } else if (
+      key === "providers" ||
+      key === "providerInstances" ||
+      key === "usageLimitSources" ||
+      key === "textGenerators" ||
+      key === "secretProviders"
+    ) {
+      changesProviders = true;
+    } else {
+      changesSettings = true;
+    }
+  }
+  // A reference can name any secret the store holds; choosing where one goes is provider authority.
+  if (containsSecretReference(patch)) changesProviders = true;
+  // Removing a secret provider also clears the settings fields that read from it.
+  if (Object.values(patch.secretProviders ?? {}).some((entry) => entry === null)) {
+    changesSettings = true;
+  }
+  return [
+    ...(changesSettings || (!changesProviders && !changesAccess) ? [AuthSettingsWriteScope] : []),
+    ...(changesProviders ? [AuthProvidersManageScope] : []),
+    ...(changesAccess ? [AuthAccessWriteScope] : []),
+    // Saving a script is choosing a command for the host to run, wherever the patch carries it.
+    ...(carriesProjectScripts(patch) ? [AuthOrchestrationOperateScope] : []),
+  ];
+}
+
+/** Host-executed project scripts require settings-write authority in addition to orchestration:operate. */
+export function requiredScopesForProjectMutation(
+  mutation: ProjectMutation,
+): ReadonlyArray<AuthEnvironmentScope> {
+  if (mutation.type === "project.delete" || mutation.scripts === undefined) {
+    return [AuthOrchestrationOperateScope];
+  }
+  return [
+    ...new Set([
+      AuthOrchestrationOperateScope,
+      ...requiredScopesForServerSettingsPatch({ defaultProjectScripts: mutation.scripts }),
+    ]),
+  ];
+}
+
 export const ClientSettingsPatch = Schema.Struct({
-  autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
+  notificationMode: Schema.optionalKey(NotificationMode),
+  inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
+  diffColorScheme: Schema.optionalKey(DiffColorScheme),
+  chatWidth: Schema.optionalKey(ChatWidth),
+  htmlPreviewWidth: Schema.optionalKey(HtmlPreviewWidth),
+  effortDisplay: Schema.optionalKey(EffortDisplay),
+  loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
+  loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),
+  appearanceContrast: Schema.optionalKey(AppearanceContrast),
+  panelAnimationDurationMs: Schema.optionalKey(PanelAnimationDurationMs),
+  browserDefaultViewport: Schema.optionalKey(PreviewViewportSetting),
+  browserDefaultZoomFactor: Schema.optionalKey(PreviewZoomFactor),
+  browserDefaultAppearance: Schema.optionalKey(PreviewAppearancePreference),
+  browserRecordingFrameRate: Schema.optionalKey(BrowserRecordingFrameRate),
+  browserRecordingShowKeyPresses: Schema.optionalKey(Schema.Boolean),
+  browserRecordingShowMousePresses: Schema.optionalKey(Schema.Boolean),
+  browserLinkTarget: Schema.optionalKey(BrowserLinkTarget),
+  browserSearchEngine: Schema.optionalKey(BrowserSearchEngine),
+  browserCustomSearchUrl: Schema.optionalKey(BrowserCustomSearchUrl),
+  browserAutoShowFloatingPreview: Schema.optionalKey(Schema.Boolean),
+  browserProfiles: Schema.optionalKey(Schema.Array(BrowserProfile)),
+  browserDefaultProfileId: Schema.optionalKey(BrowserProfileId),
+  confirmQuit: Schema.optionalKey(QuitConfirmationMode),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
+  confirmTerminalClose: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
+  confirmThreadUnpin: Schema.optionalKey(Schema.Boolean),
+  diffFilesCollapsed: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
-  notificationSoundEnabled: Schema.optionalKey(Schema.Boolean),
-  aviCodeNotificationSound: Schema.optionalKey(AviCodeNotificationSound),
-  aviCodeDictationDeviceId: Schema.optionalKey(Schema.String),
-  aviCodeScrollToPlanTopOnExpand: Schema.optionalKey(Schema.Boolean),
-  aviCodeSidebarShowStatusLabels: Schema.optionalKey(Schema.Boolean),
-  aviCodeChatContentWidth: Schema.optionalKey(AviCodeChatContentWidth),
-  aviCodeSendWhileRunning: Schema.optionalKey(AviCodeSendWhileRunning),
-  aviCodeArchivedThreadsSortMode: Schema.optionalKey(AviCodeArchivedThreadsSortMode),
-  aviCodeProviderBadgeLabels: Schema.optionalKey(
-    Schema.Record(ProviderInstanceId, Schema.String.check(Schema.isMaxLength(2))),
+  onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
+  fontSizePrompt: Schema.optionalKey(PromptFontSize),
+  fontSizeCode: Schema.optionalKey(CodeFontSize),
+  fontSizeTerminal: Schema.optionalKey(TerminalFontSize),
+  fontFamilyCode: Schema.optionalKey(FontFamilyPreference),
+  fontFamilyComposer: Schema.optionalKey(FontFamilyPreference),
+  fontFamilySans: Schema.optionalKey(FontFamilyPreference),
+  fontFamilyTerminal: Schema.optionalKey(FontFamilyPreference),
+  fontSmoothing: Schema.optionalKey(Schema.Boolean),
+  persistComposerContextStrip: Schema.optionalKey(Schema.Boolean),
+  favorites: Schema.optionalKey(ModelFavorites),
+  providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
+  pullRequestMergeMethodOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),
   ),
-  aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
-  aviCodeSidebarShowWorktreeIcon: Schema.optionalKey(Schema.Boolean),
-  aviCodeSidebarAlwaysShowDevServerStart: Schema.optionalKey(Schema.Boolean),
-  aviCodeSidebarShowPrIndicator: Schema.optionalKey(Schema.Boolean),
-  aviCodeSidebarProjectsCollapsedByDefault: Schema.optionalKey(Schema.Boolean),
-  aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.optionalKey(Schema.Boolean),
-  aviCodeCommunicationStyleId: Schema.optionalKey(Schema.String),
-  aviCodeCommunicationStyles: Schema.optionalKey(
-    Schema.Array(AviCodeCommunicationStylePreset).check(
-      Schema.isMaxLength(COMMUNICATION_STYLE_MAX_STORED),
-    ),
-  ),
-  aviCodeChips: Schema.optionalKey(
-    Schema.Array(AviCodeChip).check(Schema.isMaxLength(AVICODE_CHIP_MAX)),
-  ),
-  aviCodeOpenChatsAtLastResponse: Schema.optionalKey(Schema.Boolean),
-  aviCodeOpenSettingsToAviCodePage: Schema.optionalKey(Schema.Boolean),
-  aviCodeOcrScannedPdfs: Schema.optionalKey(Schema.Boolean),
-  aviCodeComposerShowRuntimeModeLabel: Schema.optionalKey(Schema.Boolean),
-  aviCodeComposerShowInteractionModeLabel: Schema.optionalKey(Schema.Boolean),
-  aviCodeCtrlEnterStartsBackgroundThread: Schema.optionalKey(Schema.Boolean),
-  projectScopedProviderSelectionEnabled: Schema.optionalKey(Schema.Boolean),
-  favorites: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        provider: ProviderInstanceId,
-        model: TrimmedNonEmptyString,
-      }),
-    ),
-  ),
-  providerModelPreferences: Schema.optionalKey(
-    Schema.Record(
-      ProviderInstanceId,
-      Schema.Struct({
-        hiddenModels: Schema.Array(Schema.String).pipe(
-          Schema.withDecodingDefault(Effect.succeed([])),
-        ),
-        modelOrder: Schema.Array(Schema.String).pipe(
-          Schema.withDecodingDefault(Effect.succeed([])),
-        ),
-      }),
-    ),
-  ),
-  rightPanelFollowsThreads: Schema.optionalKey(Schema.Boolean),
-  sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  pullRequestLinksOpenInApp: Schema.optionalKey(Schema.Boolean),
+  composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
+  sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),
+  followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
+  sideThreadOpenTarget: Schema.optionalKey(SideThreadOpenTarget),
+  proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
+  showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
+  boringSidebarEnabled: Schema.optionalKey(Schema.Boolean),
+  boringSidebarMultilineRows: Schema.optionalKey(Schema.Boolean),
+  toolCallVisibility: Schema.optionalKey(ToolCallVisibility),
+  screenReaderAnnouncements: Schema.optionalKey(ScreenReaderAnnouncements),
+  screenReaderWindowTitle: Schema.optionalKey(Schema.Boolean),
+  threadDetailsUsageEnabled: Schema.optionalKey(Schema.Boolean),
+  threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
+  sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
-  sidebarMouseBackForwardNavigation: Schema.optionalKey(Schema.Boolean),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
-  sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
-  sidebarThreadGrouping: Schema.optionalKey(SidebarThreadGrouping),
-  sidebarFlatThreadCount: Schema.optionalKey(SidebarFlatThreadCount),
-  sidebarV2Enabled: Schema.optionalKey(Schema.Boolean),
-  sidebarV2ConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
+  voiceMicrophone: Schema.optionalKey(Schema.String),
+  voiceMicrophones: Schema.optionalKey(Schema.Array(VoiceMicrophoneEntry)),
+  voiceShortcutMode: Schema.optionalKey(VoiceShortcutMode),
+  speechLanguage: Schema.optionalKey(SpeechLanguage),
+  speechTranslateToEnglish: Schema.optionalKey(Schema.Boolean),
+  speechCustomWords: Schema.optionalKey(SpeechCustomWords),
+  speechSilenceFiltering: Schema.optionalKey(Schema.Boolean),
+  speechStreaming: Schema.optionalKey(Schema.Boolean),
+  speechRemoveFillerWords: Schema.optionalKey(Schema.Boolean),
+  speechPostProcessingPrompt: Schema.optionalKey(SpeechPostProcessingPromptSettings),
+  speechCorrectionWord: Schema.optionalKey(SpeechCorrectionCue),
+  language: Schema.optionalKey(Schema.String),
+  snapShotEnabled: Schema.optionalKey(Schema.Boolean),
+  snapShotIncludeAccessibility: Schema.optionalKey(Schema.Boolean),
+  snapShotShortcut: Schema.optionalKey(SnapShotShortcut),
+  snapShotPlaySound: Schema.optionalKey(Schema.Boolean),
+  snapShotSound: Schema.optionalKey(SnapShotSound),
+  snapShotFlash: Schema.optionalKey(Schema.Boolean),
+  snapShotAnimations: Schema.optionalKey(Schema.Boolean),
   wordWrap: Schema.optionalKey(Schema.Boolean),
+  mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

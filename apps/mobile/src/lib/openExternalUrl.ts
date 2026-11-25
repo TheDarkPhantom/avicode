@@ -1,11 +1,19 @@
 import * as Schema from "effect/Schema";
 import { Linking } from "react-native";
 
-const ExternalUrlTarget = Schema.Literals(["file-preview", "markdown-link", "pull-request"]);
+const ExternalUrlTarget = Schema.Literals([
+  "file-preview",
+  "markdown-link",
+  "pull-request",
+  "provider-auth",
+  "mcp-app",
+  "secret-request",
+  "external-link",
+]);
 
 export type ExternalUrlTarget = typeof ExternalUrlTarget.Type;
 
-export class ExternalUrlOpenError extends Schema.TaggedErrorClass<ExternalUrlOpenError>()(
+export class ExternalUrlOpenError extends Schema.TaggedError<ExternalUrlOpenError>()(
   "ExternalUrlOpenError",
   {
     target: ExternalUrlTarget,
@@ -33,7 +41,10 @@ function externalUrlMetadata(url: string): { readonly scheme: string; readonly h
   }
 }
 
-export async function tryOpenExternalUrl(url: string, target: ExternalUrlTarget): Promise<boolean> {
+export async function tryOpenExternalUrl(
+  url: string,
+  target: ExternalUrlTarget = "external-link",
+): Promise<boolean> {
   try {
     await Linking.openURL(url);
     return true;
@@ -48,4 +59,15 @@ export async function tryOpenExternalUrl(url: string, target: ExternalUrlTarget)
     });
     return false;
   }
+}
+
+/**
+ * For a link in rendered text, such as a pull request body: opens web, mail and phone links
+ * only.
+ */
+export async function tryOpenWebLink(
+  url: string,
+  target: ExternalUrlTarget = "external-link",
+): Promise<boolean> {
+  return /^(?:https?|mailto|tel):/i.test(url) && (await tryOpenExternalUrl(url, target));
 }

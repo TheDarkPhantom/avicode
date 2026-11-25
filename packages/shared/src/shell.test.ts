@@ -1,18 +1,31 @@
+// @effect-diagnostics nodeBuiltinImport:off -- The synchronous shell probe runs real commands with isolated config files.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { DesktopHostTelemetryMessage } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import * as TestClock from "effect/testing/TestClock";
 import * as Option from "effect/Option";
+import * as TestClock from "effect/testing/TestClock";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  extractPathFromShellOutput,
+  applyShellEnvironment,
+  pathSetup,
+  pathSetupCommand,
   CommandAvailability,
+  CommandResolutionCache,
+  makePathDirectoryListings,
+  PathDirectoryListings,
   type CommandAvailabilityChecker,
+  gitForWindowsBash,
   isCommandAvailable,
   listLoginShellCandidates,
   mergePathEntries,
@@ -21,20 +34,18 @@ import {
   preferGitForWindowsBinary,
   readEnvironmentFromLoginShell,
   readEnvironmentFromWindowsShell,
-  readPathFromLaunchctl,
-  readPathFromLoginShell,
   resolveCommandPath,
-  resolveKnownWindowsCliDirs,
   resolveSpawnCommand,
   resolveWindowsEnvironment,
   runsGitWithoutConsole,
+  windowsEnvironmentValueCommand,
   SpawnExecutableResolution,
-  SpawnResolutionCache,
-  type SpawnExecutableResolver,
   WindowsShellEnvironment,
-  withPathDirectoryListings,
   type WindowsShellEnvironmentReader,
+  XcodeGitLocation,
 } from "./shell.ts";
+
+const decodeDesktopHostMessage = Schema.decodeUnknownSync(DesktopHostTelemetryMessage);
 
 const nativeProbe = vi.hoisted(() => ({
   execFile: vi.fn<typeof import("node:child_process").execFile>(),
@@ -61,93 +72,99 @@ const withWindowsEnvironmentMocks = <A, E, R>(
     Effect.provideService(CommandAvailability, commandAvailable),
   );
 
-describe("extractPathFromShellOutput", () => {
-  it("extracts the path between capture markers", () => {
-    expect(
-      extractPathFromShellOutput(
-        "__T3CODE_PATH_START__\n/opt/homebrew/bin:/usr/bin\n__T3CODE_PATH_END__\n",
-      ),
-    ).toBe("/opt/homebrew/bin:/usr/bin");
-  });
-
-  it("ignores shell startup noise around the capture markers", () => {
-    expect(
-      extractPathFromShellOutput(
-        "Welcome to fish\n__T3CODE_PATH_START__\n/opt/homebrew/bin:/usr/bin\n__T3CODE_PATH_END__\nBye\n",
-      ),
-    ).toBe("/opt/homebrew/bin:/usr/bin");
-  });
-
-  it("returns null when the markers are missing", () => {
-    expect(extractPathFromShellOutput("/opt/homebrew/bin /usr/bin")).toBeNull();
-  });
-});
-
-describe("readPathFromLoginShell", () => {
-  it("uses a shell-agnostic printenv PATH probe", () => {
-    const execFile = vi.fn<
-      (
-        file: string,
-        args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number },
-      ) => string
-    >(() => "__T3CODE_ENV_PATH_START__\n/a:/b\n__T3CODE_ENV_PATH_END__\n");
-
-    expect(readPathFromLoginShell("/opt/homebrew/bin/fish", execFile)).toBe("/a:/b");
-    expect(execFile).toHaveBeenCalledTimes(1);
-
-    const firstCall = execFile.mock.calls[0] as
-      | [string, ReadonlyArray<string>, { encoding: "utf8"; timeout: number }]
-      | undefined;
-    expect(firstCall).toBeDefined();
-    if (!firstCall) {
-      throw new Error("Expected execFile to be called");
-    }
-
-    const [shell, args, options] = firstCall;
-    expect(shell).toBe("/opt/homebrew/bin/fish");
-    expect(args).toHaveLength(2);
-    expect(args?.[0]).toBe("-ilc");
-    expect(args?.[1]).toContain("printenv PATH || true");
-    expect(args?.[1]).toContain("__T3CODE_ENV_PATH_START__");
-    expect(args?.[1]).toContain("__T3CODE_ENV_PATH_END__");
-    expect(options).toEqual({ encoding: "utf8", timeout: 5000 });
-  });
-});
-
-describe("readPathFromLaunchctl", () => {
-  it("returns a trimmed PATH value from launchctl", () => {
-    const execFile = vi.fn<
-      (
-        file: string,
-        args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number },
-      ) => string
-    >(() => "  /opt/homebrew/bin:/usr/bin  \n");
-
-    expect(readPathFromLaunchctl(execFile)).toBe("/opt/homebrew/bin:/usr/bin");
-    expect(execFile).toHaveBeenCalledWith("/bin/launchctl", ["getenv", "PATH"], {
-      encoding: "utf8",
-      timeout: 2000,
-    });
-  });
-
-  it("returns undefined when launchctl is unavailable", () => {
-    const execFile = vi.fn<
-      (
-        file: string,
-        args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number },
-      ) => string
-    >(() => {
-      throw new Error("spawn /bin/launchctl ENOENT");
-    });
-
-    expect(readPathFromLaunchctl(execFile)).toBeUndefined();
-  });
-});
-
 describe("readEnvironmentFromLoginShell", () => {
+  // Opt in with an explicit binary, like the provider live probes; CI need not install Nu.
+  it.runIf(process.env.T3_TEST_NU_PATH !== undefined)(
+    "captures Nushell PATH and multiline values without external tools",
+    () => {
+      const shell = process.env.T3_TEST_NU_PATH!;
+      const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-nu-env-"));
+      try {
+        const toolPath = NodePath.join(home, "nu tools", "bin");
+        const extraToolPath = NodePath.join(home, "extra-tools", "bin");
+        NodeFS.mkdirSync(toolPath, { recursive: true });
+        NodeFS.mkdirSync(extraToolPath, { recursive: true });
+        const config = NodePath.join(home, "config.nu");
+        const envConfig = NodePath.join(home, "env.nu");
+        NodeFS.writeFileSync(envConfig, "");
+        NodeFS.writeFileSync(
+          config,
+          [
+            `$env.PATH = [${JSON.stringify(toolPath)}, "~/extra-tools/bin", "rel/dir", ""]`,
+            '$env.CUSTOM_VAR = "  first\\nsecond  "',
+            '$env.EMPTY_VAR = ""',
+            'print "startup noise"',
+          ].join("\n"),
+        );
+
+        expect(
+          readEnvironmentFromLoginShell(
+            shell,
+            ["MISSING_VAR", "PATH", "EMPTY_VAR", "CUSTOM_VAR"],
+            (file, args, options) =>
+              NodeChildProcess.execFileSync(
+                file,
+                ["--no-history", "--config", config, "--env-config", envConfig, ...args],
+                {
+                  ...options,
+                  env: { HOME: home, XDG_CONFIG_HOME: home, PATH: toolPath },
+                },
+              ),
+          ),
+        ).toEqual({
+          PATH: `${toolPath}:${extraToolPath}:rel/dir:`,
+          CUSTOM_VAR: "  first\nsecond  ",
+        });
+      } finally {
+        NodeFS.rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(NodeFS.existsSync("/bin/bash"))(
+    "captures values when the profile replaces PATH and a DEBUG trap echoes commands",
+    () => {
+      const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-bash-env-"));
+      try {
+        const tools = NodePath.join(home, "tools 'quoted $dir");
+        NodeFS.mkdirSync(tools);
+        const printenv = NodeChildProcess.execFileSync("/bin/bash", ["-c", "type -P printenv"], {
+          encoding: "utf8",
+          env: { PATH: process.env.PATH },
+        }).trim();
+        NodeFS.copyFileSync(printenv, NodePath.join(tools, "printenv"));
+        vi.stubEnv("PATH", tools);
+        const shellPath = NodePath.join(home, "bin");
+        const bashEnv = NodePath.join(home, "env.bash");
+        NodeFS.writeFileSync(
+          bashEnv,
+          [
+            `export PATH='${shellPath.replaceAll("'", "'\\''")}'`,
+            // Simulate a non-FHS host while retaining the real executable in its private prefix.
+            "function /usr/bin/printenv { return 127; }",
+            `trap 'echo -ne "\\033]0;\${BASH_COMMAND}\\007"' DEBUG`,
+          ].join("\n"),
+        );
+
+        expect(
+          readEnvironmentFromLoginShell(
+            "/bin/bash",
+            ["XDG_DATA_HOME", "PATH"],
+            // Non-interactive bash reads only BASH_ENV, not the host's /etc startup files that -il runs.
+            (file, [, command = ""], options) =>
+              NodeChildProcess.execFileSync(file, ["-c", command], {
+                ...options,
+                env: { HOME: home, PATH: tools, TERM: "dumb", BASH_ENV: bashEnv },
+              }),
+          ),
+        ).toEqual({ PATH: shellPath });
+      } finally {
+        vi.unstubAllEnvs();
+        NodeFS.rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("extracts multiple environment variables from a login shell command", () => {
     const execFile = vi.fn<
       (
@@ -171,6 +188,13 @@ describe("readEnvironmentFromLoginShell", () => {
       SSH_AUTH_SOCK: "/tmp/secretive.sock",
     });
     expect(execFile).toHaveBeenCalledTimes(1);
+    expect(execFile).toHaveBeenCalledWith("/bin/zsh", expect.any(Array), {
+      encoding: "utf8",
+      timeout: 5000,
+      killSignal: "SIGKILL",
+      detached: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   });
 
   it("omits environment variables that are missing or empty", () => {
@@ -195,7 +219,7 @@ describe("readEnvironmentFromLoginShell", () => {
     });
   });
 
-  it("preserves surrounding whitespace in captured values", () => {
+  it("preserves multiline values and surrounding whitespace", () => {
     const execFile = vi.fn<
       (
         file: string,
@@ -203,13 +227,15 @@ describe("readEnvironmentFromLoginShell", () => {
         options: { encoding: "utf8"; timeout: number },
       ) => string
     >(() =>
-      ["__T3CODE_ENV_CUSTOM_VAR_START__", "  padded value  ", "__T3CODE_ENV_CUSTOM_VAR_END__"].join(
-        "\n",
-      ),
+      [
+        "__T3CODE_ENV_CUSTOM_VAR_START__",
+        "  first\nsecond  ",
+        "__T3CODE_ENV_CUSTOM_VAR_END__",
+      ].join("\n"),
     );
 
     expect(readEnvironmentFromLoginShell("/bin/zsh", ["CUSTOM_VAR"], execFile)).toEqual({
-      CUSTOM_VAR: "  padded value  ",
+      CUSTOM_VAR: "  first\nsecond  ",
     });
   });
 });
@@ -221,10 +247,6 @@ describe("listLoginShellCandidates", () => {
       "/bin/zsh",
     ]);
   });
-
-  it("falls back to the platform default when no shells are available", () => {
-    expect(listLoginShellCandidates("linux", undefined, "")).toEqual(["/bin/bash"]);
-  });
 });
 
 describe("mergePathEntries", () => {
@@ -232,12 +254,21 @@ describe("mergePathEntries", () => {
     expect(
       mergePathEntries("/opt/homebrew/bin:/usr/bin", "/Users/test/.local/bin:/usr/bin", "darwin"),
     ).toBe("/opt/homebrew/bin:/usr/bin:/Users/test/.local/bin");
-  });
-
-  it("uses the platform-specific delimiter", () => {
-    expect(mergePathEntries("C:\\Tools;C:\\Windows", "C:\\Windows;C:\\Git", "win32")).toBe(
-      "C:\\Tools;C:\\Windows;C:\\Git",
+    expect(mergePathEntries("/opt/bin :/opt/bin", "/opt/bin :/usr/bin", "linux")).toBe(
+      "/opt/bin :/opt/bin:/usr/bin",
     );
+  });
+});
+
+describe("windowsEnvironmentValueCommand", () => {
+  it("joins PATH as Process, then Machine, then User so prepends win and User installs still appear", () => {
+    const command = windowsEnvironmentValueCommand("PATH");
+    const processAt = command.indexOf("[Environment]::GetEnvironmentVariable('PATH','Process')");
+    const machineAt = command.indexOf("[Environment]::GetEnvironmentVariable('PATH','Machine')");
+    const userAt = command.indexOf("[Environment]::GetEnvironmentVariable('PATH','User')");
+    expect(processAt).toBeGreaterThan(-1);
+    expect(processAt).toBeLessThan(machineAt);
+    expect(machineAt).toBeLessThan(userAt);
   });
 });
 
@@ -278,7 +309,7 @@ describe("readEnvironmentFromWindowsShell", () => {
             PATH: "C:\\Windows",
             APPDATA: "C:\\Roaming",
           }).pipe(Effect.provideService(CommandAvailability, () => Effect.succeed(true)));
-          expect(patch).toEqual({ PATH: "C:\\Roaming\\npm;C:\\Windows" });
+          expect(patch).toEqual({ PATH: "C:\\Windows;C:\\Roaming\\npm" });
           expect(execFile.mock.calls.slice(-2).map(([file]) => file)).toEqual([
             "pwsh.exe",
             "powershell.exe",
@@ -375,7 +406,7 @@ describe("readEnvironmentFromWindowsShell", () => {
 
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], {}, (...args) =>
-          Effect.try(() => execFile(...args)).pipe(Effect.option),
+          Effect.sync(() => Option.liftThrowable(execFile)(...args)),
         ),
       ).toEqual({
         PATH: "C:\\Users\\testuser\\AppData\\Roaming\\npm",
@@ -384,6 +415,9 @@ describe("readEnvironmentFromWindowsShell", () => {
         "pwsh.exe",
         expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
         { encoding: "utf8", timeout: 5000 },
+      );
+      expect(execFile.mock.calls[0]?.[1].at(-1)).toContain(
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
       );
     }),
   );
@@ -403,12 +437,27 @@ describe("readEnvironmentFromWindowsShell", () => {
 
       expect(
         yield* readEnvironmentFromWindowsShell(["FNM_DIR"], {}, (...args) =>
-          Effect.try(() => execFile(...args)).pipe(Effect.option),
+          Effect.sync(() => Option.liftThrowable(execFile)(...args)),
         ),
       ).toEqual({
         FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
       });
     }),
+  );
+
+  effectIt.effect.runIf(HostProcess.Platform.defaultValue() === "win32")(
+    "reads a non-ASCII value from the real shell",
+    () =>
+      Effect.gen(function* () {
+        const name = "T3CODE_TEST_NON_ASCII_PATH";
+        const value = "C:\\Users\\Jürgen\\Grüße";
+        vi.stubEnv(name, value);
+        try {
+          expect(yield* readEnvironmentFromWindowsShell([name])).toEqual({ [name]: value });
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      }),
   );
 
   effectIt.effect("omits -NoProfile when loadProfile is enabled", () =>
@@ -423,7 +472,7 @@ describe("readEnvironmentFromWindowsShell", () => {
 
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], { loadProfile: true }, (...args) =>
-          Effect.try(() => execFile(...args)).pipe(Effect.option),
+          Effect.sync(() => Option.liftThrowable(execFile)(...args)),
         ),
       ).toEqual({
         PATH: "C:\\Tools",
@@ -454,7 +503,7 @@ describe("readEnvironmentFromWindowsShell", () => {
 
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], {}, (...args) =>
-          Effect.try(() => execFile(...args)).pipe(Effect.option),
+          Effect.sync(() => Option.liftThrowable(execFile)(...args)),
         ),
       ).toEqual({
         PATH: "C:\\Tools",
@@ -498,80 +547,552 @@ describe("mergePathValues", () => {
     expect(mergePathValues("/usr/local/bin:/usr/bin", "/usr/bin:/USR/BIN", "linux")).toBe(
       "/usr/local/bin:/usr/bin:/USR/BIN",
     );
+    expect(mergePathValues("/opt/bin :/opt/bin", "/opt/bin :/usr/bin", "linux")).toBe(
+      "/opt/bin :/opt/bin:/usr/bin",
+    );
+    expect(mergePathValues('/opt/bin"', "/opt/bin", "linux")).toBe('/opt/bin":/opt/bin');
   });
-});
-
-describe("resolveKnownWindowsCliDirs", () => {
-  it("returns known Windows CLI install directories in priority order", () => {
-    expect(
-      resolveKnownWindowsCliDirs({
-        APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
-        LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
-        USERPROFILE: "C:\\Users\\testuser",
-      }),
-    ).toEqual([
-      "C:\\Users\\testuser\\AppData\\Roaming\\npm",
-      "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
-      "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
-      "C:\\Users\\testuser\\AppData\\Local\\pnpm",
-      "C:\\Users\\testuser\\.bun\\bin",
-      "C:\\Users\\testuser\\scoop\\shims",
-    ]);
-  });
-});
-
-effectIt.layer(NodeServices.layer)("isCommandAvailable", (it) => {
-  it.effect("returns false when PATH is empty", () =>
-    Effect.gen(function* () {
-      expect(
-        yield* isCommandAvailable("definitely-not-installed", {
-          env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-        }).pipe(Effect.provideService(HostProcessPlatform, "win32")),
-      ).toBe(false);
-    }),
-  );
 });
 
 effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
-  it.effect("fails when PATH is empty", () =>
-    Effect.gen(function* () {
-      const result = yield* resolveCommandPath("definitely-not-installed", {
-        env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-      }).pipe(Effect.provideService(HostProcessPlatform, "win32"), Effect.result);
+  // Windows rejects `"` in file names.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "finds executables in a POSIX PATH directory ending in whitespace and quotes",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* fs.makeTempDirectoryScoped({ directory: ".", prefix: "t3-path-" });
+        const directory = `${cwd}/bin \u00a0"`;
+        yield* fs.makeDirectory(directory);
+        const executable = `${directory}/audit-command`;
+        yield* fs.writeFileString(executable, "#!/bin/sh\n");
+        yield* fs.chmod(executable, 0o755);
+        const env = { PATH: directory };
 
-      expect(result._tag).toBe("Failure");
+        expect(
+          yield* resolveCommandPath("audit-command", { env }).pipe(
+            Effect.provideService(HostProcess.Platform, "linux"),
+            Effect.provideService(CommandResolutionCache, new Map()),
+          ),
+        ).toBe(path.join(directory, "audit-command"));
+        const resolveExecutable = yield* SpawnExecutableResolution;
+        expect(
+          yield* Effect.promise(async () => resolveExecutable("audit-command", "linux", env)),
+        ).toBe(executable);
+      }),
+  );
+
+  const recordProbes = (env: NodeJS.ProcessEnv) =>
+    Effect.gen(function* () {
+      const probed: Array<string> = [];
+      const result = yield* resolveCommandPath("definitely-not-installed", { env }).pipe(
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
+        Effect.provide(
+          FileSystem.layerNoop({
+            stat: (filePath) =>
+              Effect.sync(() => {
+                probed.push(filePath);
+                // No mtime, so no listing: every candidate is probed directly.
+                return { type: "Directory", mtime: Option.none() } as FileSystem.File.Info;
+              }),
+          }),
+        ),
+      );
+
+      expect(result).toBeNull();
+      return probed;
+    });
+
+  it.effect("still visits a PATH entry that differs only in case", () =>
+    Effect.gen(function* () {
+      const probed = yield* recordProbes({
+        PATH: "C:\\bin;C:\\BIN",
+        PATHEXT: ".COM;.EXE",
+      });
+
+      // Windows PATH directories can be case-sensitive; preserve both spellings.
+      expect(probed.filter((file) => file.includes("definitely-not-installed"))).toHaveLength(8);
     }),
   );
 
-  it.effect("probes only listed PATH names and relists a directory that changes", () =>
+  it.effect.each(["audit-command", "audit-command.CMD"])(
+    "resolves lowercase executable files for %s in a case-sensitive Windows PATH directory",
+    (command) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-case-sensitive-path-" });
+        const executable = path.join(cwd, "audit-command.cmd");
+        yield* fs.writeFileString(executable, "@echo off\n");
+
+        const decoy = path.join(cwd, "audit-command.exe");
+        yield* fs.writeFileString(decoy, "");
+        for (const key of ["PATHEXT", "PathExt", "pathext"]) {
+          const resolved = yield* resolveCommandPath(command, {
+            env: { PATH: cwd, [key]: ".CMD" },
+          }).pipe(
+            Effect.provideService(HostProcess.Platform, "win32"),
+            Effect.provideService(CommandResolutionCache, new Map()),
+            Effect.provideService(FileSystem.FileSystem, {
+              ...fs,
+              stat: (filePath) =>
+                fs.stat(
+                  [cwd, executable, decoy].includes(filePath)
+                    ? filePath
+                    : path.join(cwd, "missing"),
+                ),
+            }),
+          );
+          expect(resolved).toBe(executable);
+        }
+      }),
+  );
+
+  // Seconds; the tests below run their clock a minute later, past the window in which a listing is not kept.
+  const AGED_MTIME = 4_102_444_800;
+  const afterAgedMtime = TestClock.setTime((AGED_MTIME + 60) * 1000);
+
+  it.effect("reuses PATH listings across lookups until a directory changes", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const first = yield* fs.makeTempDirectoryScoped();
       const second = yield* fs.makeTempDirectoryScoped();
       yield* fs.writeFileString(path.join(first, "cursor.CMD"), "");
+      yield* fs.writeFileString(path.join(first, "MyToolLongName.cmd"), "");
       yield* fs.writeFileString(path.join(second, "cursor.EXE"), "");
+      yield* fs.utimes(first, AGED_MTIME, AGED_MTIME);
+      yield* fs.utimes(second, AGED_MTIME, AGED_MTIME);
+      yield* afterAgedMtime;
       const env = { PATH: `${first};${second}`, PATHEXT: ".EXE;.CMD" };
+      // Windows resolves an 8.3 alias that a directory listing never names.
+      const alias = path.join(first, "MYTOOL~1.CMD");
       const probed: Array<string> = [];
+      const listed: Array<string> = [];
       yield* Effect.gen(function* () {
         expect(yield* resolveCommandPath("cursor", { env })).toBe(path.join(first, "cursor.CMD"));
         expect(yield* isCommandAvailable("absent", { env })).toBe(false);
+        expect(yield* isCommandAvailable("also-absent", { env })).toBe(false);
+        expect(yield* resolveCommandPath("MYTOOL~1", { env })).toBe(alias);
+        expect(listed).toEqual([first, second]);
         yield* fs.writeFileString(path.join(second, "late.EXE"), "");
-        yield* fs.utimes(second, 4_102_444_800, 4_102_444_800); // seconds: 2100-01-01
+        yield* fs.utimes(second, AGED_MTIME + 30, AGED_MTIME + 30);
         expect(yield* resolveCommandPath("late", { env })).toBe(path.join(second, "late.EXE"));
+        expect(listed).toEqual([first, second, second]);
       }).pipe(
-        withPathDirectoryListings,
         Effect.provideService(FileSystem.FileSystem, {
           ...fs,
           stat: (file) => {
-            // Record candidate probes, not the per-lookup directory mtime checks.
             if (file !== first && file !== second) probed.push(file);
-            return fs.stat(file);
+            return fs.stat(file === alias ? path.join(first, "MyToolLongName.cmd") : file);
+          },
+          readDirectory: (directory, options) => {
+            listed.push(directory);
+            return fs.readDirectory(directory, options);
           },
         }),
       );
-      expect(probed).toEqual([path.join(first, "cursor.CMD"), path.join(second, "late.EXE")]);
-    }).pipe(Effect.provideService(HostProcessPlatform, "win32")),
+      expect(probed).toEqual([
+        path.join(first, "cursor.CMD"),
+        path.join(first, "MYTOOL~1.EXE"),
+        path.join(first, "MYTOOL~1.exe"),
+        alias,
+        path.join(second, "late.EXE"),
+      ]);
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideServiceEffect(PathDirectoryListings, makePathDirectoryListings),
+    ),
+  );
+
+  it.effect("does not keep the listing of a PATH directory that changed moments ago", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      yield* fs.utimes(directory, AGED_MTIME + 59, AGED_MTIME + 59);
+      yield* afterAgedMtime;
+      const env = { PATH: directory, PATHEXT: ".CMD" };
+      let listings = 0;
+      yield* Effect.gen(function* () {
+        expect(yield* isCommandAvailable("absent", { env })).toBe(false);
+        expect(yield* isCommandAvailable("also-absent", { env })).toBe(false);
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          readDirectory: (target, options) => {
+            listings += 1;
+            return fs.readDirectory(target, options);
+          },
+        }),
+      );
+      expect(listings).toBe(2);
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideServiceEffect(PathDirectoryListings, makePathDirectoryListings),
+    ),
+  );
+
+  // A POSIX directory joined with win32 separators names nothing, so this needs a Windows host.
+  it.effect.skipIf(HostProcess.Platform.defaultValue() !== "win32")(
+    "relists a changed PATH directory in the spawn resolver",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped();
+        yield* fs.writeFileString(path.join(directory, "cursor.CMD"), "");
+        yield* fs.utimes(directory, 946_684_800, 946_684_800);
+        const env = { PATH: directory, PATHEXT: ".EXE;.CMD" };
+        const resolveExecutable = yield* SpawnExecutableResolution;
+        expect(yield* Effect.promise(async () => resolveExecutable("cursor", "win32", env))).toBe(
+          path.join(directory, "cursor.CMD"),
+        );
+        expect(
+          yield* Effect.promise(async () => resolveExecutable("late", "win32", env)),
+        ).toBeUndefined();
+        yield* fs.writeFileString(path.join(directory, "late.EXE"), "");
+        yield* fs.utimes(directory, 946_684_830, 946_684_830);
+        expect(yield* Effect.promise(async () => resolveExecutable("late", "win32", env))).toBe(
+          path.join(directory, "late.EXE"),
+        );
+      }),
+  );
+
+  // Candidates are checked against the process cwd, so the lookup runs in a child with a temp cwd.
+  const resolveInChild = `
+import { createRequire } from "node:module";
+const [shellPath, command, rawPaths, rawGitPaths, gitShim, xcodeGit] = process.argv.slice(1);
+const requireFromShell = createRequire(shellPath);
+const Effect = await import(requireFromShell.resolve("effect/Effect"));
+const { layer } = await import(requireFromShell.resolve("@effect/platform-node/NodeServices"));
+const HostProcess = await import(shellPath.replace(/shell\\.ts$/, "HostProcess.ts"));
+const Shell = await import(shellPath);
+const resolved = {};
+const resolvedGit = {};
+const defaultResolver = Shell.SpawnExecutableResolution.defaultValue();
+const resolveExecutable = async (...args) => {
+  const found = await defaultResolver(...args);
+  return found === gitShim ? "/usr/bin/git" : found;
+};
+const locateXcodeGit = () => xcodeGit;
+await Effect.runPromise(Effect.gen(function* () {
+  const caches = new Map();
+  for (const [label, { PATH, cwd, cacheGroup }] of Object.entries(JSON.parse(rawPaths))) {
+    process.chdir(cwd);
+    let cache = caches.get(cacheGroup);
+    if (!cache) caches.set(cacheGroup, cache = new Map());
+    resolved[label] = {
+      effect: yield* Shell.resolveCommandPath(command, { env: { PATH } }).pipe(
+        Effect.provideService(HostProcess.Platform, process.platform),
+        Effect.provideService(Shell.CommandResolutionCache, cache),
+      ),
+      spawn: (yield* Effect.promise(async () => Shell.SpawnExecutableResolution.defaultValue()(command, process.platform, { PATH }))) ?? null,
+    };
+  }
+  for (const [label, { PATH, cwd, cacheGroup }] of Object.entries(JSON.parse(rawGitPaths))) {
+    process.chdir(cwd);
+    let cache = caches.get(cacheGroup);
+    if (!cache) caches.set(cacheGroup, cache = new Map());
+    resolvedGit[label] = yield* Shell.resolveSpawnCommand("git", ["status"], { env: { PATH } }).pipe(
+      Effect.provideService(HostProcess.Platform, "darwin"),
+      Effect.provideService(Shell.SpawnExecutableResolution, resolveExecutable),
+      Effect.provideService(Shell.XcodeGitLocation, locateXcodeGit),
+      Effect.provideService(Shell.CommandResolutionCache, cache),
+    );
+  }
+}).pipe(Effect.provide(layer)));
+console.log(JSON.stringify({ resolved, resolvedGit }));
+`;
+
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "searches the current directory for empty POSIX PATH components across cached lookups",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        // Real paths: the child's process.cwd() reports them, and anchored matches start with it.
+        const cwd = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "t3-empty-path-cwd-" }),
+        );
+        const listed = yield* fs.makeTempDirectoryScoped({ prefix: "t3-empty-path-listed-" });
+        const empty = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "t3-empty-path-absent-" }),
+        );
+        const command = "t3-empty-path-cli";
+        const inCwd = path.join(cwd, command);
+        const inListed = path.join(listed, command);
+        const gitShim = path.join(listed, "git");
+        const xcodeGit = path.join(listed, "xcode-git");
+        yield* fs.writeFileString(inCwd, "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(inListed, "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(path.join(cwd, "git"), "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(gitShim, "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(xcodeGit, "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.utimes(cwd, 4_102_444_800, 4_102_444_800);
+        yield* fs.utimes(empty, 4_102_444_800, 4_102_444_800);
+        const missing = path.join(cwd, "missing");
+
+        const searches = {
+          dot: { PATH: ".", expected: inCwd },
+          leading: { PATH: `:${missing}`, expected: inCwd },
+          trailing: { PATH: `${missing}:`, expected: inCwd },
+          interior: { PATH: `${missing}::${missing}-2`, expected: inCwd },
+          leadingBeforeListed: { PATH: `:${listed}`, expected: inCwd },
+          listedBeforeTrailing: { PATH: `${listed}:`, expected: inListed },
+          dotBeforeEmpty: { PATH: `.:${missing}:`, expected: inCwd },
+          emptyBeforeDot: { PATH: `:.:${missing}`, expected: inCwd },
+          entirelyEmpty: { PATH: "", expected: null },
+          whitespaceOnly: { PATH: `${missing}: `, expected: null },
+        };
+
+        const cachedSearches = {
+          cachedMiss: { PATH: `:${missing}`, cwd: empty, cacheGroup: "miss", expected: null },
+          afterMiss: { PATH: `:${missing}`, cwd, cacheGroup: "miss", expected: inCwd },
+          cachedHit: { PATH: `:${missing}`, cwd, cacheGroup: "hit", expected: inCwd },
+          afterHit: { PATH: `:${missing}`, cwd: empty, cacheGroup: "hit", expected: null },
+          cachedListed: {
+            PATH: `:${listed}`,
+            cwd: empty,
+            cacheGroup: "listed",
+            expected: inListed,
+          },
+          beforeListed: { PATH: `:${listed}`, cwd, cacheGroup: "listed", expected: inCwd },
+          cachedLocal: { PATH: `:${listed}`, cwd, cacheGroup: "local", expected: inCwd },
+          afterLocal: { PATH: `:${listed}`, cwd: empty, cacheGroup: "local", expected: inListed },
+        };
+        const entries = [
+          ...Object.entries(cachedSearches),
+          ...Object.entries(searches).map(
+            ([label, row]) => [label, { ...row, cwd, cacheGroup: label }] as const,
+          ),
+        ];
+        const gitEntries = ["", "."].flatMap((entry) => {
+          const PATH = `${entry}:${listed}`;
+          // An empty entry launches the local git it found; "." keeps its relative spelling.
+          const localGit = entry === "" ? path.join(cwd, "git") : "git";
+          return [
+            { PATH, cwd: empty, cacheGroup: `xcode-first-${entry}`, expected: xcodeGit },
+            { PATH, cwd, cacheGroup: `xcode-first-${entry}`, expected: localGit },
+            { PATH, cwd, cacheGroup: `local-first-${entry}`, expected: localGit },
+            { PATH, cwd: empty, cacheGroup: `local-first-${entry}`, expected: xcodeGit },
+          ];
+        });
+        // A match from an absolute entry stays bare `git`, even when PATH also has a relative entry.
+        gitEntries.push({ PATH: `.:${cwd}`, cwd: empty, cacheGroup: "absolute", expected: "git" });
+        const stdout = NodeChildProcess.execFileSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "-e",
+            resolveInChild,
+            path.join(import.meta.dirname, "shell.ts"),
+            command,
+            JSON.stringify(
+              Object.fromEntries(
+                entries.map(([label, row]) => [
+                  label,
+                  {
+                    PATH: row.PATH,
+                    cwd: row.cwd,
+                    cacheGroup: row.cacheGroup,
+                  },
+                ]),
+              ),
+            ),
+            JSON.stringify(gitEntries),
+            gitShim,
+            xcodeGit,
+          ],
+          { cwd, encoding: "utf8", env: {} },
+        );
+        const {
+          resolved,
+          resolvedGit,
+        }: {
+          resolved: Record<string, { effect: string | null; spawn: string | null }>;
+          resolvedGit: Record<string, { command: string; args: string[]; shell: boolean }>;
+        } = JSON.parse(stdout);
+
+        // A relative result is relative to the child's cwd.
+        const anchored = (found: string | null, directory: string) =>
+          found === null ? null : path.resolve(directory, found);
+        const directories = Object.fromEntries(entries.map(([label, row]) => [label, row.cwd]));
+        expect(
+          Object.fromEntries(
+            Object.entries(resolved).map(([label, found]) => {
+              const directory = directories[label];
+              if (directory === undefined) throw new Error(`Unexpected resolver case: ${label}`);
+              return [
+                label,
+                {
+                  effect: anchored(found.effect, directory),
+                  spawn: anchored(found.spawn, directory),
+                },
+              ];
+            }),
+          ),
+        ).toEqual(
+          Object.fromEntries(
+            entries.map(([label, row]) => [label, { effect: row.expected, spawn: row.expected }]),
+          ),
+        );
+        // A match through an empty component comes back absolute, so callers can launch it from
+        // another cwd or through a wrapper; a literal "." keeps main's relative spelling.
+        for (const label of [
+          "leading",
+          "trailing",
+          "interior",
+          "leadingBeforeListed",
+          "afterMiss",
+          "cachedHit",
+          "beforeListed",
+          "cachedLocal",
+          "emptyBeforeDot",
+        ]) {
+          expect(resolved[label], label).toEqual({ effect: inCwd, spawn: inCwd });
+        }
+        for (const label of ["dot", "dotBeforeEmpty"]) {
+          expect(resolved[label], label).toEqual({ effect: command, spawn: command });
+        }
+        expect(resolvedGit).toEqual(
+          Object.fromEntries(
+            gitEntries.map((row, index) => [
+              String(index),
+              { command: row.expected, args: ["status"], shell: false },
+            ]),
+          ),
+        );
+      }),
+  );
+
+  // Deleting the working directory makes process.cwd() throw, so this also runs in a child.
+  const resolveWithoutCwd = `
+import { createRequire } from "node:module";
+import * as NodeFS from "node:fs";
+const [shellPath, command, PATH, removed, gitShim, xcodeGit] = process.argv.slice(1);
+const requireFromShell = createRequire(shellPath);
+const Effect = await import(requireFromShell.resolve("effect/Effect"));
+const { layer } = await import(requireFromShell.resolve("@effect/platform-node/NodeServices"));
+const HostProcess = await import(shellPath.replace(/shell\\.ts$/, "HostProcess.ts"));
+const Shell = await import(shellPath);
+const defaultResolver = Shell.SpawnExecutableResolution.defaultValue();
+const resolveExecutable = async (...args) => {
+  const found = await defaultResolver(...args);
+  return found === gitShim ? "/usr/bin/git" : found;
+};
+process.chdir(removed);
+NodeFS.rmdirSync(removed);
+const cache = new Map();
+const result = await Effect.runPromise(Effect.gen(function* () {
+  const effect = yield* Shell.resolveCommandPath(command, { env: { PATH } }).pipe(
+    Effect.provideService(HostProcess.Platform, process.platform),
+  );
+  const git = yield* Shell.resolveSpawnCommand("git", ["status"], { env: { PATH } }).pipe(
+    Effect.provideService(HostProcess.Platform, "darwin"),
+    Effect.provideService(Shell.SpawnExecutableResolution, resolveExecutable),
+    Effect.provideService(Shell.XcodeGitLocation, () => xcodeGit),
+  );
+  return { effect, git: git.command };
+}).pipe(
+  Effect.provideService(Shell.CommandResolutionCache, cache),
+  Effect.provide(layer),
+));
+console.log(JSON.stringify({ ...result, cached: cache.size }));
+`;
+
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "searches absolute PATH entries and caches nothing when the working directory is gone",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const listed = yield* fs.makeTempDirectoryScoped({ prefix: "t3-gone-cwd-listed-" });
+        const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-gone-cwd-parent-" });
+        const removed = path.join(parent, "removed");
+        yield* fs.makeDirectory(removed);
+        const command = "t3-gone-cwd-cli";
+        const inListed = path.join(listed, command);
+        const gitShim = path.join(listed, "git");
+        const xcodeGit = path.join(listed, "xcode-git");
+        yield* fs.writeFileString(inListed, "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(gitShim, "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(xcodeGit, "#!/bin/sh\n", { mode: 0o755 });
+
+        const stdout = NodeChildProcess.execFileSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "-e",
+            resolveWithoutCwd,
+            path.join(import.meta.dirname, "shell.ts"),
+            command,
+            `:${listed}`,
+            removed,
+            gitShim,
+            xcodeGit,
+          ],
+          { cwd: parent, encoding: "utf8", env: {} },
+        );
+
+        expect(JSON.parse(stdout)).toEqual({ effect: inListed, git: xcodeGit, cached: 0 });
+      }),
+  );
+
+  // Node caches process.cwd(), so after a rename it names a path that no longer exists.
+  const resolveAfterRename = `
+import { createRequire } from "node:module";
+import * as NodeFS from "node:fs";
+const [shellPath, command, cwd, renamed] = process.argv.slice(1);
+const requireFromShell = createRequire(shellPath);
+const Effect = await import(requireFromShell.resolve("effect/Effect"));
+const { layer } = await import(requireFromShell.resolve("@effect/platform-node/NodeServices"));
+const HostProcess = await import(shellPath.replace(/shell\\.ts$/, "HostProcess.ts"));
+const Shell = await import(shellPath);
+process.chdir(cwd);
+process.cwd();
+NodeFS.renameSync(cwd, renamed);
+const resolved = await Effect.runPromise(
+  Shell.resolveCommandPath(command, { env: { PATH: "bin" } }).pipe(
+    Effect.provideService(HostProcess.Platform, process.platform),
+    Effect.provideService(Shell.CommandResolutionCache, new Map()),
+    Effect.provide(layer),
+  ),
+);
+console.log(JSON.stringify(resolved));
+`;
+
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "resolves a relative PATH entry after the working directory is renamed",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-renamed-cwd-" });
+        const cwd = path.join(parent, "before");
+        const command = "t3-renamed-cwd-cli";
+        yield* fs.makeDirectory(path.join(cwd, "bin"), { recursive: true });
+        yield* fs.writeFileString(path.join(cwd, "bin", command), "#!/bin/sh\n", { mode: 0o755 });
+
+        const stdout = NodeChildProcess.execFileSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "-e",
+            resolveAfterRename,
+            path.join(import.meta.dirname, "shell.ts"),
+            command,
+            cwd,
+            path.join(parent, "after"),
+          ],
+          { cwd: parent, encoding: "utf8", env: {} },
+        );
+
+        expect(JSON.parse(stdout)).toBe(path.join("bin", command));
+      }),
   );
 });
 
@@ -580,6 +1101,18 @@ describe("runsGitWithoutConsole", () => {
 
   it.each([
     [["rev-parse", "--git-path", "index"], true],
+    [["rev-parse", "--git-common-dir", "--show-toplevel"], true],
+    [
+      [
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "index",
+        "--git-common-dir",
+        "--show-toplevel",
+      ],
+      true,
+    ],
     [["--git-dir", "C:\\repo\\.git", "symbolic-ref", "refs/remotes/origin/HEAD"], true],
     [["remote", "get-url", "--", "origin"], true],
     [["config", "--get", "branch.main.pushRemote"], true],
@@ -612,7 +1145,6 @@ describe("preferGitForWindowsBinary", () => {
       paths.includes(filePath);
 
   it("runs the git.exe Git for Windows' launcher would start", () => {
-    // 2.56+ on x64. The PATHEXT scan returns the extension in PATHEXT's case.
     expect(
       preferGitForWindowsBinary(
         "C:\\Program Files\\Git\\cmd\\git.EXE",
@@ -623,7 +1155,6 @@ describe("preferGitForWindowsBinary", () => {
         ),
       ),
     ).toBe("C:\\Program Files\\Git\\ucrt64\\bin\\git.exe");
-    // Before 2.56, and the portable build's bin launcher.
     expect(
       preferGitForWindowsBinary(
         "D:\\PortableGit\\bin\\git.exe",
@@ -641,8 +1172,7 @@ describe("preferGitForWindowsBinary", () => {
   });
 
   it("keeps the launcher when MSYSTEM is set", () => {
-    // The real git.exe only adds its own folders to PATH when MSYSTEM is unset;
-    // without them a `#!/bin/sh` hook cannot start.
+    // git.exe adds hook dependencies to PATH only when MSYSTEM is unset.
     expect(
       preferGitForWindowsBinary(
         "C:\\Program Files\\Git\\cmd\\git.exe",
@@ -650,12 +1180,6 @@ describe("preferGitForWindowsBinary", () => {
         files("C:\\Program Files\\Git\\mingw64\\bin\\git.exe"),
       ),
     ).toBe("C:\\Program Files\\Git\\cmd\\git.exe");
-  });
-
-  it("keeps the launcher when no git.exe sits beside it", () => {
-    expect(preferGitForWindowsBinary("C:\\Program Files\\Git\\cmd\\git.exe", {}, () => false)).toBe(
-      "C:\\Program Files\\Git\\cmd\\git.exe",
-    );
   });
 
   it("leaves other gits and other launchers alone", () => {
@@ -666,6 +1190,24 @@ describe("preferGitForWindowsBinary", () => {
     expect(preferGitForWindowsBinary("C:\\Program Files\\Git\\cmd\\gitk.exe", {}, everything)).toBe(
       "C:\\Program Files\\Git\\cmd\\gitk.exe",
     );
+  });
+});
+
+describe("gitForWindowsBash", () => {
+  const bash = "C:\\Program Files\\Git\\bin\\bash.exe";
+  const isBash = (filePath: string) => filePath === bash;
+
+  it.each([
+    "C:\\Program Files\\Git\\cmd\\git.exe",
+    "C:\\Program Files\\Git\\bin\\git.exe",
+    "C:\\Program Files\\Git\\mingw64\\bin\\git.exe",
+  ])("finds Git Bash from %s", (git) => {
+    expect(gitForWindowsBash(git, isBash)).toBe(bash);
+  });
+
+  it("finds nothing without a Git for Windows bash", () => {
+    expect(gitForWindowsBash("C:\\Users\\me\\scoop\\shims\\git.exe", isBash)).toBeUndefined();
+    expect(gitForWindowsBash("C:\\Program Files\\Git\\cmd\\gitk.exe", () => true)).toBeUndefined();
   });
 });
 
@@ -716,8 +1258,7 @@ describe("npmShimExecutable", () => {
   });
 
   it("keeps a shim CMD would read differently", () => {
-    // CMD keeps trailing characters in an unquoted `SET` value, so these point
-    // `dp0`, and with it the executable, somewhere else.
+    // CMD preserves trailing SET whitespace, changing the executable path.
     for (const suffix of ["\u00a0", "\t", " "]) {
       const altered = NPM_OPENCODE_SHIM.replace("SET dp0=%~dp0", `SET dp0=%~dp0${suffix}`);
       expect(
@@ -775,43 +1316,71 @@ describe("npmShimExecutable", () => {
 });
 
 effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
-  it.effect.runIf(HostProcessPlatform.defaultValue() === "win32")(
-    "runs the executable behind an npm shim directly when asked",
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const path = yield* Path.Path;
-          const prefix = yield* fs.makeTempDirectoryScoped({ prefix: "t3-npm-shim-" });
-          const shim = path.join(prefix, "opencode.cmd");
-          const executable = path.join(
-            prefix,
-            "node_modules",
-            "opencode-ai",
-            "bin",
-            "opencode.exe",
-          );
-          yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
-          yield* fs.writeFileString(executable, "");
-          yield* fs.writeFileString(shim, NPM_OPENCODE_SHIM);
-          const resolve = (bypassNpmShim: boolean) =>
-            resolveSpawnCommand("opencode", ["serve", "--port=4096"], {
-              env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-              bypassNpmShim,
-            }).pipe(
-              Effect.provideService(HostProcessPlatform, "win32"),
-              Effect.provideService(SpawnResolutionCache, new Map()),
-              Effect.provideService(SpawnExecutableResolution, () => shim),
-            );
+  it.effect("yields while discovering a Windows executable", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-spawn-" });
+        const executable = path.join(directory, "tool.EXE");
+        yield* fs.writeFileString(executable, "");
+        let settled = false;
+        const pending = Promise.resolve(
+          SpawnExecutableResolution.defaultValue()(executable, "win32", { PATHEXT: ".EXE;.CMD" }),
+        ).then((value) => {
+          settled = true;
+          return value;
+        });
+        try {
+          yield* Effect.promise(() => Promise.resolve());
+          expect(settled).toBe(false);
+        } finally {
+          expect(yield* Effect.promise(() => pending)).toBe(executable);
+        }
+      }),
+    ),
+  );
 
-          expect(yield* resolve(true)).toEqual({
-            command: executable,
-            args: ["serve", "--port=4096"],
-            shell: false,
-          });
-          expect((yield* resolve(false)).shell).toBe(true);
-        }),
+  it.effect("preserves PATH and PATHEXT order and discovers executables after a miss", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-spawn-" });
+        const fixture = NodePath.join(directory, "tool.EXE");
+        yield* fs.writeFileString(fixture, "");
+        const stat = yield* Effect.promise(() => NodeFS.promises.stat(fixture));
+        const files = new Set<string>();
+        using _stat = vi.spyOn(NodeFS.promises, "stat").mockImplementation(async (candidate) => {
+          if (!files.has(String(candidate))) throw new Error("not found");
+          return stat;
+        });
+        const lookup = resolveSpawnCommand("tool", ["status"], {
+          env: { PATH: "C:\\first;C:\\later", PATHEXT: ".EXE;.CMD" },
+        });
+        expect((yield* lookup).command).toBe("tool");
+        files.add("C:\\first\\tool.CMD");
+        files.add("C:\\first\\tool.EXE");
+        files.add("C:\\later\\tool.EXE");
+        expect(yield* lookup).toEqual({
+          command: "C:\\first\\tool.EXE",
+          args: ["status"],
+          shell: false,
+        });
+        files.delete("C:\\first\\tool.EXE");
+        expect((yield* lookup).command).toBe("C:\\first\\tool.EXE");
+        expect(
+          yield* Effect.promise(async () =>
+            SpawnExecutableResolution.defaultValue()("tool", "win32", {
+              PATH: "C:\\first;C:\\later",
+              PATHEXT: ".EXE;.CMD",
+            }),
+          ),
+        ).toBe("C:\\first\\tool.CMD");
+      }).pipe(
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
       ),
+    ),
   );
 
   it.effect("runs Windows executables directly without a shell", () =>
@@ -819,8 +1388,8 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
       const command = yield* resolveSpawnCommand("node.exe", ["script.js", "hello & goodbye"], {
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
-        Effect.provideService(SpawnResolutionCache, new Map()),
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
       );
 
       expect(command).toEqual({
@@ -829,6 +1398,37 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         shell: false,
       });
     }),
+  );
+
+  it.effect.runIf(HostProcess.Platform.defaultValue() === "win32")(
+    "runs the executable behind an npm shim directly when asked",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const prefix = yield* fs.makeTempDirectoryScoped({ prefix: "t3-npm-shim-" });
+        const shim = path.join(prefix, "opencode.cmd");
+        const executable = path.join(prefix, "node_modules", "opencode-ai", "bin", "opencode.exe");
+        yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+        yield* fs.writeFileString(executable, "");
+        yield* fs.writeFileString(shim, NPM_OPENCODE_SHIM);
+        const resolve = (bypassNpmShim: boolean) =>
+          resolveSpawnCommand("opencode", ["serve", "--port=4096"], {
+            env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+            bypassNpmShim,
+          }).pipe(
+            Effect.provideService(HostProcess.Platform, "win32"),
+            Effect.provideService(CommandResolutionCache, new Map()),
+            Effect.provideService(SpawnExecutableResolution, () => shim),
+          );
+
+        expect(yield* resolve(true)).toEqual({
+          command: executable,
+          args: ["serve", "--port=4096"],
+          shell: false,
+        });
+        expect((yield* resolve(false)).shell).toBe(true);
+      }),
   );
 
   it.effect("builds one escaped cmd.exe line for Windows command shims", () =>
@@ -846,8 +1446,8 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         ],
         { env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" } },
       ).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
-        Effect.provideService(SpawnResolutionCache, new Map()),
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
         Effect.provideService(
           SpawnExecutableResolution,
           () => "C:\\Program Files\\npm & tools\\vp.cmd",
@@ -879,9 +1479,9 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         env: { CODEX_HOME: "C:\\Users\\tester\\.codex" },
         extendEnv: true,
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
-        Effect.provideService(SpawnResolutionCache, new Map()),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
+        Effect.provideService(HostProcess.Environment, {
           PATH: "C:\\Users\\tester\\AppData\\Roaming\\npm",
           PATHEXT: ".COM;.EXE;.BAT;.CMD",
         }),
@@ -899,81 +1499,84 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
     }),
   );
 
-  it.effect("scans PATH once per command until the search environment changes", () =>
-    Effect.gen(function* () {
-      const scans: Array<string> = [];
-      const scan: SpawnExecutableResolver = (name, _platform, env) => {
-        scans.push(`${name}@${env.PATH}`);
-        return name === "missing" ? undefined : `${env.PATH}\\${name}.exe`;
-      };
-      const resolve = (command: string, path: string, resolver = scan) =>
-        resolveSpawnCommand(command, [], { env: { PATH: path, PATHEXT: ".EXE" } }).pipe(
-          Effect.provideService(HostProcessPlatform, "win32"),
-          Effect.provideService(SpawnExecutableResolution, resolver),
-        );
+  describe("macOS git", () => {
+    // Files that exist, the git first on PATH, and what `xcrun --find git` prints.
+    const setup = (options: {
+      readonly platform?: NodeJS.Platform;
+      readonly gitOnPath: string;
+      readonly xcrunGit: string | undefined;
+    }) => {
+      const files = new Set([options.gitOnPath, ...(options.xcrunGit ? [options.xcrunGit] : [])]);
+      const host = { xcrunGit: options.xcrunGit, xcrunCalls: 0 };
+      const resolve = resolveSpawnCommand("git", ["status"], { env: { PATH: "/fake/bin" } }).pipe(
+        Effect.map((resolved) => resolved.command),
+        Effect.provideService(HostProcess.Platform, options.platform ?? "darwin"),
+        Effect.provideService(SpawnExecutableResolution, (command) =>
+          command === "git" ? options.gitOnPath : files.has(command) ? command : undefined,
+        ),
+        Effect.provideService(XcodeGitLocation, () => {
+          host.xcrunCalls += 1;
+          return host.xcrunGit;
+        }),
+      );
+      return { files, host, resolve };
+    };
 
-      expect((yield* resolve("git", "C:\\one")).command).toBe("C:\\one\\git.exe");
-      expect((yield* resolve("git", "C:\\one")).command).toBe("C:\\one\\git.exe");
-      // A failed spawn is how a provider reports "not installed", so a miss
-      // must clear the moment the binary appears.
-      yield* resolve("missing", "C:\\one");
-      yield* resolve("missing", "C:\\one");
-      expect((yield* resolve("git", "C:\\two")).command).toBe("C:\\two\\git.exe");
-      // Callers probe explicit paths they may have just written.
-      yield* resolve("C:\\tools\\git.exe", "C:\\one");
-      yield* resolve("C:\\tools\\git.exe", "C:\\one");
-      expect(scans).toEqual([
-        "git@C:\\one",
-        "missing@C:\\one",
-        "missing@C:\\one",
-        "git@C:\\two",
-        "C:\\tools\\git.exe@C:\\one",
-        "C:\\tools\\git.exe@C:\\one",
-      ]);
+    const XCODE_GIT = "/Applications/Xcode.app/Contents/Developer/usr/bin/git";
 
-      yield* TestClock.adjust("31 seconds");
-      yield* resolve("git", "C:\\one");
-      expect(scans).toHaveLength(7);
+    it.effect("runs the git behind the xcrun shim and looks it up once", () =>
+      Effect.gen(function* () {
+        const { host, resolve } = setup({ gitOnPath: "/usr/bin/git", xcrunGit: XCODE_GIT });
+        expect(yield* resolve).toBe(XCODE_GIT);
+        expect(yield* resolve).toBe(XCODE_GIT);
+        expect(host.xcrunCalls).toBe(1);
+      }).pipe(Effect.provideService(CommandResolutionCache, new Map())),
+    );
 
-      // Another resolver sharing the cache gets its own answer, not the cached one.
-      const elsewhere = yield* resolve("git", "C:\\one", () => "D:\\elsewhere\\git.exe");
-      expect(elsewhere.command).toBe("D:\\elsewhere\\git.exe");
-      expect((yield* resolve("git", "C:\\one")).command).toBe("C:\\one\\git.exe");
-      expect(scans).toHaveLength(7);
-    }).pipe(Effect.provideService(SpawnResolutionCache, new Map())),
-  );
+    it.effect("keeps git when PATH has another git or the host is not macOS", () =>
+      Effect.gen(function* () {
+        const homebrew = setup({ gitOnPath: "/opt/homebrew/bin/git", xcrunGit: XCODE_GIT });
+        expect(yield* homebrew.resolve).toBe("git");
+        expect(homebrew.host.xcrunCalls).toBe(0);
 
-  it.effect("keeps launcher swaps apart for environments with and without MSYSTEM", () =>
-    Effect.gen(function* () {
-      let scans = 0;
-      const scan: SpawnExecutableResolver = () => {
-        scans++;
-        return "C:\\Git\\cmd\\git.exe";
-      };
-      const resolve = (env: NodeJS.ProcessEnv) =>
-        resolveSpawnCommand("git", [], {
-          env: { PATH: "C:\\Git\\cmd", PATHEXT: ".EXE", ...env },
-        }).pipe(
-          Effect.provideService(HostProcessPlatform, "win32"),
-          Effect.provideService(SpawnExecutableResolution, scan),
-        );
+        const linux = setup({ platform: "linux", gitOnPath: "/usr/bin/git", xcrunGit: XCODE_GIT });
+        expect(yield* linux.resolve).toBe("git");
+      }).pipe(Effect.provideService(CommandResolutionCache, new Map())),
+    );
 
-      yield* resolve({});
-      yield* resolve({});
-      expect(scans).toBe(1);
-      // A swap made without MSYSTEM must not reach a child that has it set.
-      yield* resolve({ MSYSTEM: "MINGW64" });
-      expect(scans).toBe(2);
-    }).pipe(Effect.provideService(SpawnResolutionCache, new Map())),
-  );
+    it.effect("keeps git when xcrun fails or names a missing file", () =>
+      Effect.gen(function* () {
+        const failed = setup({ gitOnPath: "/usr/bin/git", xcrunGit: undefined });
+        expect(yield* failed.resolve).toBe("git");
+
+        const missing = setup({ gitOnPath: "/usr/bin/git", xcrunGit: XCODE_GIT });
+        missing.files.delete(XCODE_GIT);
+        expect(yield* missing.resolve).toBe("git");
+      }).pipe(Effect.provideService(CommandResolutionCache, new Map())),
+    );
+
+    it.effect("looks again when the resolved git disappears", () =>
+      Effect.gen(function* () {
+        const betaGit = "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/git";
+        const { files, host, resolve } = setup({ gitOnPath: "/usr/bin/git", xcrunGit: XCODE_GIT });
+        expect(yield* resolve).toBe(XCODE_GIT);
+
+        files.delete(XCODE_GIT);
+        files.add(betaGit);
+        host.xcrunGit = betaGit;
+        expect(yield* resolve).toBe(betaGit);
+        expect(host.xcrunCalls).toBe(2);
+      }).pipe(Effect.provideService(CommandResolutionCache, new Map())),
+    );
+  });
 
   it.effect("does not fall back to a shell for unresolved Windows commands", () =>
     Effect.gen(function* () {
       const command = yield* resolveSpawnCommand("missing & calc", ["unsafe & value"], {
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
-        Effect.provideService(SpawnResolutionCache, new Map()),
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
       );
 
       expect(command).toEqual({
@@ -986,7 +1589,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
 });
 
 effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
-  it.effect("returns the baseline no-profile PATH patch when node is already available", () =>
+  it.effect("uses known CLI directories as a fallback without changing shell PATH priority", () =>
     Effect.gen(function* () {
       const readEnvironment = vi.fn(
         (_names: ReadonlyArray<string>, options?: { loadProfile?: boolean }) =>
@@ -1009,14 +1612,15 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
         ),
       ).toEqual({
         PATH: [
+          "C:\\Shell\\Bin",
+          "C:\\Windows\\System32",
           "C:\\Users\\testuser\\AppData\\Roaming\\npm",
           "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
           "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
           "C:\\Users\\testuser\\AppData\\Local\\pnpm",
+          "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
-          "C:\\Shell\\Bin",
-          "C:\\Windows\\System32",
         ].join(";"),
       });
       expect(readEnvironment).toHaveBeenCalledTimes(1);
@@ -1080,13 +1684,14 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
         PATH: [
           "C:\\Profile\\Node",
           "C:\\Windows\\System32",
+          "C:\\Shell\\Bin",
           "C:\\Users\\testuser\\AppData\\Roaming\\npm",
           "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
           "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
           "C:\\Users\\testuser\\AppData\\Local\\pnpm",
+          "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
-          "C:\\Shell\\Bin",
         ].join(";"),
         FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
         FNM_MULTISHELL_PATH: "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
@@ -1123,14 +1728,112 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
         ),
       ).toEqual({
         PATH: [
+          "C:\\Windows\\System32",
           "C:\\Users\\testuser\\AppData\\Roaming\\npm",
+          "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
-          "C:\\Windows\\System32",
         ].join(";"),
         FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
       });
       expect(commandAvailable).toHaveBeenCalledTimes(1);
     }),
   );
+});
+
+describe("desktop shell environment updates", () => {
+  it.each(["win32", "linux", "darwin"] as const)(
+    "applies shell updates with %s PATH semantics",
+    (platform) => {
+      const message = decodeDesktopHostMessage({
+        version: 1,
+        type: "shellEnvironment",
+        discovered: true,
+        platform,
+        environment: {
+          PATH: "C:\\fresh",
+          FNM_DIR: null,
+          __MISE_DIFF: null,
+          SSH_AUTH_SOCK: "/current.sock",
+          NODE_OPTIONS: "--bad",
+        },
+      });
+      expect(message.type).toBe("shellEnvironment");
+      if (message.type !== "shellEnvironment") throw new Error("Expected shell environment update");
+      const env: NodeJS.ProcessEnv = {
+        Path: "C:\\stale",
+        FNM_DIR: "stale",
+        __MISE_DIFF: "stale",
+        UNRELATED: "keep",
+      };
+      applyShellEnvironment(env, message.environment, platform);
+      expect(env).toEqual({
+        PATH: "C:\\fresh",
+        ...(platform === "win32" ? {} : { Path: "C:\\stale" }),
+        SSH_AUTH_SOCK: "/current.sock",
+        UNRELATED: "keep",
+      });
+      env.Path = "C:\\stale";
+      env.path = "C:\\other";
+      applyShellEnvironment(env, { PATH: null, SSH_AUTH_SOCK: null }, platform);
+      expect(env).toEqual({
+        ...(platform === "win32" ? {} : { Path: "C:\\stale", path: "C:\\other" }),
+        UNRELATED: "keep",
+      });
+    },
+  );
+});
+
+describe("pathSetupCommand", () => {
+  // Undefined where a pasted line could break things: Windows (it would flatten %VAR% entries in
+  // the registry PATH), macOS bash (several startup files), other shells, and unsafe paths.
+  it.each([
+    [
+      "/home/theo/.local/bin",
+      "/bin/bash",
+      "linux",
+      `printf '\\n%s\\n' 'export PATH="$PATH:/home/theo/.local/bin"' >> ~/.bashrc`,
+    ],
+    [
+      "/Users/theo/.local/bin",
+      "/usr/bin/fish",
+      "linux",
+      `mkdir -p ~/.config/fish && printf '\\n%s\\n' 'fish_add_path --append --path $HOME/.local/bin' >> ~/.config/fish/config.fish`,
+    ],
+    [
+      "/opt/t3/bin",
+      "/bin/zsh",
+      "linux",
+      `printf '\\n%s\\n' 'export PATH="$PATH:/opt/t3/bin"' >> ~/.zshrc`,
+    ],
+    ["/Users/theo/.local/bin", "/bin/tcsh", "darwin", undefined],
+    ["/Users/theo/.local/bin", "/bin/bash", "darwin", undefined],
+    ["C:\\Users\\theo\\.local\\bin", "pwsh", "win32", undefined],
+    ["/Users/theo/it's here", "/bin/zsh", "darwin", undefined],
+    ["/opt/a$PWD/bin", "/bin/zsh", "linux", undefined],
+    // Relative: PATH would follow the working directory into any checkout's `bin`.
+    ["bin", "/bin/zsh", "linux", undefined],
+  ] as const)("%s with %s on %s", (directory, shell, platform, expected) => {
+    expect(pathSetupCommand({ directory, home: "/Users/theo", shell, platform })).toBe(expected);
+  });
+
+  it("writes the startup file fish and zsh read, under XDG_CONFIG_HOME or ZDOTDIR", () => {
+    const setup = { directory: "/opt/t3/bin", home: "/home/theo", shell: "/usr/bin/fish" } as const;
+    expect(pathSetup({ ...setup, platform: "linux", configHome: "/home/theo/cfg" })?.file).toBe(
+      "/home/theo/cfg/fish/config.fish",
+    );
+    expect(pathSetup({ ...setup, platform: "linux" })?.file).toBe("~/.config/fish/config.fish");
+    // zsh reads .zshrc from ZDOTDIR when it is set.
+    expect(
+      pathSetup({ ...setup, shell: "/bin/zsh", platform: "darwin", zdotdir: "/Users/theo/.zsh" })
+        ?.file,
+    ).toBe("/Users/theo/.zsh/.zshrc");
+    // A set folder that cannot be written safely means no setup, never the unread default.
+    expect(
+      pathSetup({ ...setup, shell: "/bin/zsh", platform: "darwin", zdotdir: "/Users/theo/my zsh" }),
+    ).toBeUndefined();
+    expect(
+      pathSetup({ ...setup, platform: "linux", configHome: "/home/theo/my cfg" }),
+    ).toBeUndefined();
+  });
 });

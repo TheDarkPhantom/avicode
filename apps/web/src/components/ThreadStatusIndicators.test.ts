@@ -1,39 +1,12 @@
-import type { VcsStatusResult } from "@t3tools/contracts";
-import type { AnimationEvent } from "react";
-import { describe, expect, it } from "vite-plus/test";
+import { SourceControlProviderKind } from "@t3tools/contracts";
+import { ProjectId, type PullRequestSummary, type VcsStatusResult } from "@t3tools/contracts";
+import { describe, expect, it } from "@effect/vitest";
 
 import {
-  prStatusIndicator,
-  resolveThreadPr,
-  settledPrHoverColorClass,
-  synchronizeTerminalPulse,
+  resolveDisplayedThreadPr,
+  resolveDisplayedThreadPrProvider,
 } from "./ThreadStatusIndicators";
-
-describe("synchronizeTerminalPulse", () => {
-  it("pins only the status pulse to the document clock", () => {
-    const pulse = { animationName: "status-pulse", startTime: 975 } as CSSAnimation;
-    const otherCss = { animationName: "other-animation", startTime: 125 } as CSSAnimation;
-    const otherAnimation = { startTime: 250 } as Animation;
-
-    synchronizeTerminalPulse({
-      animationName: "status-pulse",
-      currentTarget: { getAnimations: () => [pulse, otherCss, otherAnimation] },
-    } as unknown as AnimationEvent<SVGSVGElement>);
-
-    expect([pulse.startTime, otherCss.startTime, otherAnimation.startTime]).toEqual([0, 125, 250]);
-  });
-
-  it("ignores other animations starting on the icon", () => {
-    const pulse = { animationName: "status-pulse", startTime: 975 } as CSSAnimation;
-
-    synchronizeTerminalPulse({
-      animationName: "fade-in",
-      currentTarget: { getAnimations: () => [pulse] },
-    } as unknown as AnimationEvent<SVGSVGElement>);
-
-    expect(pulse.startTime).toBe(975);
-  });
-});
+import { newestPullRequestSummary } from "../state/pullRequests";
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   return {
@@ -58,71 +31,108 @@ function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   };
 }
 
-describe("resolveThreadPr", () => {
-  it("keeps local-checkout PR indicators scoped to the stored thread branch", () => {
-    expect(
-      resolveThreadPr({
-        threadBranch: "feature/other",
-        gitStatus: status(),
-      }),
-    ).toBeNull();
+function mergedFeaturePr(): NonNullable<VcsStatusResult["pr"]> {
+  return {
+    number: 42,
+    title: "Feature PR",
+    url: "https://github.com/pingdotgg/t3code/pull/42",
+    baseRef: "main",
+    headRef: "feature/current",
+    state: "merged",
+  };
+}
+
+function pullRequestSummary(
+  state: PullRequestSummary["state"],
+  updatedAt: string,
+): PullRequestSummary {
+  return {
+    provider: SourceControlProviderKind.make("github"),
+    projectId: ProjectId.make("project-1"),
+    repository: "pingdotgg/t3code",
+    number: 42,
+    title: "Feature PR",
+    url: "https://github.com/pingdotgg/t3code/pull/42",
+    state,
+    headBranch: "feature/current",
+    baseBranch: "main",
+    updatedAt,
+  };
+}
+
+describe("shared pull request state", () => {
+  it("never lets a stale open response regress a merged observation", () => {
+    const merged = pullRequestSummary("merged", "2026-09-03T01:01:00.000Z");
+    const staleOpen = pullRequestSummary("open", "2026-09-03T01:00:00.000Z");
+
+    expect(newestPullRequestSummary(merged, staleOpen)).toBe(merged);
   });
 
-  it("hides PR indicators when a dedicated worktree has switched away from the thread branch", () => {
-    expect(
-      resolveThreadPr({
-        threadBranch: "stack/base",
-        gitStatus: status(),
-      }),
-    ).toBeNull();
-  });
+  it("accepts a newer open state after a closed pull request is reopened", () => {
+    const closed = pullRequestSummary("closed", "2026-09-03T01:00:00.000Z");
+    const reopened = pullRequestSummary("open", "2026-09-03T01:01:00.000Z");
 
-  it("hides PR indicators when thread branch metadata is missing", () => {
-    expect(
-      resolveThreadPr({
-        threadBranch: null,
-        gitStatus: status(),
-      }),
-    ).toBeNull();
-  });
-
-  it("shows the PR when the live checkout matches the stored thread branch", () => {
-    const gitStatus = status();
-
-    expect(
-      resolveThreadPr({
-        threadBranch: "feature/current",
-        gitStatus,
-      }),
-    ).toBe(gitStatus.pr);
-  });
-});
-
-describe("prStatusIndicator", () => {
-  it("formats PR tooltips with number, uppercase status, and title", () => {
-    expect(prStatusIndicator(status().pr, undefined)).toMatchObject({
-      tooltip: "PR #42 - Open: PR branch",
-      tooltipLead: "PR #42 - Open",
-      tooltipTitle: "PR branch",
-    });
-  });
-
-  it("uses red for closed pull requests", () => {
-    const closedPr = status().pr;
-    if (!closedPr) throw new Error("Expected pull request fixture");
-
-    expect(prStatusIndicator({ ...closedPr, state: "closed" }, undefined)?.colorClass).toContain(
-      "text-red-600",
-    );
+    expect(newestPullRequestSummary(closed, reopened)).toBe(reopened);
   });
 });
 
-describe("settledPrHoverColorClass", () => {
-  it.each([
-    ["open", "text-emerald-600"],
-    ["merged", "text-violet-600"],
-    ["closed", "text-red-600"],
-  ] as const)("restores the %s pull request color on row hover", (state, colorClass) => {
-    expect(settledPrHoverColorClass(state)).toContain(`group-hover/v2-row:${colorClass}`);
+describe("resolveDisplayedThreadPr", () => {
+  const featureBranch = "feature/current";
+  const mergedPr = mergedFeaturePr();
+  const linkedPullRequest = {
+    projectId: ProjectId.make("project-1"),
+    repository: "pingdotgg/t3code",
+    number: 42,
+    url: "https://github.com/pingdotgg/t3code/pull/42",
+  };
+  const provider = {
+    kind: SourceControlProviderKind.make("github"),
+    name: "GitHub",
+    baseUrl: "https://github.com",
+  };
+
+  it("shows a linked pull request when the checkout has a different branch", () => {
+    const input = {
+      threadBranch: "feature/other",
+      gitStatus: status({ refName: "feature/other", pr: null }),
+      linkedPullRequest,
+      linkedPullRequestStatus: { pr: mergedPr, sourceControlProvider: provider },
+    };
+
+    expect(resolveDisplayedThreadPr(input)).toEqual(mergedPr);
+    expect(resolveDisplayedThreadPrProvider(input)).toEqual(provider);
+  });
+
+  it.each(["open", "merged", "closed"] as const)(
+    "only shows an unlinked branch PR while open (state=%s)",
+    (state) => {
+      const branchPr = { ...mergedPr, state };
+      const input = {
+        threadBranch: featureBranch,
+        gitStatus: status({ pr: branchPr, sourceControlProvider: provider }),
+      };
+
+      expect(resolveDisplayedThreadPr(input)).toEqual(state === "open" ? branchPr : null);
+      expect(resolveDisplayedThreadPrProvider(input)).toEqual(
+        state === "open" ? provider : undefined,
+      );
+    },
+  );
+
+  it("never attaches a PR reported by main to the feature thread", () => {
+    const mainPr = {
+      number: 99,
+      title: "Unrelated main PR",
+      url: "https://github.com/pingdotgg/t3code/pull/99",
+      baseRef: "develop",
+      headRef: "main",
+      state: "merged" as const,
+    };
+    expect(
+      resolveDisplayedThreadPr({
+        threadBranch: featureBranch,
+        gitStatus: status({ refName: "main", pr: mainPr }),
+      }),
+    ).toBeNull();
   });
 });

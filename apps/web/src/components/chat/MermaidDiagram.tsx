@@ -1,241 +1,326 @@
-import type DOMPurify from "dompurify";
-import type { Mermaid } from "mermaid";
-import { use, useEffect, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import DOMPurify from "dompurify";
+import type { DiagramType, MathResolver } from "pele/lazy";
+import { T, useGT, Var } from "gt-react";
+import { use, useState } from "react";
 
+import { serializeCodeBlockToMarkdown } from "../../markdown-clipboard";
 import { Button } from "../ui/button";
-import { ExpandedImageDialog } from "./ExpandedImageDialog";
 
-type MermaidRenderResult =
-  | { readonly status: "rendered"; readonly svg: string }
-  | { readonly status: "error"; readonly message: string; readonly retryable: boolean };
+type Pele = typeof import("pele/lazy");
+type PeleLoad = { readonly status: "loaded"; readonly pele: Pele } | { readonly status: "failed" };
 
-interface MermaidRuntime {
-  readonly mermaid: Mermaid;
-  readonly sanitize: (svg: string) => string;
+let coreLoad: Promise<PeleLoad> | null = null;
+// Each diagram type is its own chunk, so a chat with one flowchart loads only
+// the flowchart parser and layout.
+const diagramLoads = new Map<DiagramType, Promise<PeleLoad>>();
+
+function loadCore(): Promise<PeleLoad> {
+  coreLoad ??= import("pele/lazy").then(
+    (pele): PeleLoad => ({ status: "loaded", pele }),
+    (): PeleLoad => ({ status: "failed" }),
+  );
+  return coreLoad;
 }
 
-let runtimePromise: Promise<MermaidRuntime> | null = null;
-let renderQueue: Promise<unknown> = Promise.resolve();
-let nextDiagramId = 0;
-const MAX_CACHED_RENDERS = 64;
-// Keyed by theme plus full source so distinct diagrams never share an entry.
-// Pending renders are never evicted, because use() must get the same promise
-// on retry.
-const renderCache = new Map<string, Promise<MermaidRenderResult>>();
-const settledRenders = new WeakSet<Promise<MermaidRenderResult>>();
-
-const REMOTE_CSS_URL = /url\(\s*(?!['"]?#)[^)]*\)/gi;
-
-// Diagrams can come from untrusted content, so strip anything that can
-// navigate, run script, or fetch remote content on top of Mermaid's own strict
-// sanitization. CSS keeps only local url(#id) references; label text is untouched.
-function createSvgSanitizer(factory: typeof DOMPurify): (svg: string) => string {
-  const purifier = factory(window);
-  purifier.addHook("uponSanitizeElement", (node, data) => {
-    if (data.tagName === "style" && node.textContent) {
-      node.textContent = node.textContent.replace(REMOTE_CSS_URL, "none");
-    }
-  });
-  purifier.addHook("uponSanitizeAttribute", (_node, data) => {
-    if (data.attrName === "style") data.attrValue = data.attrValue.replace(REMOTE_CSS_URL, "none");
-  });
-  return (svg) =>
-    purifier.sanitize(svg, {
-      ADD_TAGS: ["foreignObject"],
-      HTML_INTEGRATION_POINTS: { foreignobject: true },
-      FORBID_ATTR: ["href", "xlink:href", "src", "srcset"],
-      FORBID_TAGS: ["a", "img", "image", "script"],
-      USE_PROFILES: { svg: true, svgFilters: true, html: true },
-    });
+function loadDiagramType(pele: Pele, type: DiagramType): Promise<PeleLoad> {
+  let load = diagramLoads.get(type);
+  if (!load) {
+    load = pele.load(type).then(
+      (): PeleLoad => ({ status: "loaded", pele }),
+      (): PeleLoad => ({ status: "failed" }),
+    );
+    diagramLoads.set(type, load);
+  }
+  return load;
 }
 
-// Mermaid and DOMPurify are ~1MB together, so they load only once a diagram
-// is actually shown and never weigh on the main chat bundle.
-function loadMermaidRuntime(): Promise<MermaidRuntime> {
-  runtimePromise ??= Promise.all([import("mermaid"), import("dompurify")])
-    .then(([mermaidModule, purifyModule]) => ({
-      mermaid: mermaidModule.default,
-      sanitize: createSvgSanitizer(purifyModule.default),
-    }))
-    .catch((error: unknown) => {
-      runtimePromise = null;
-      throw error;
-    });
-  return runtimePromise;
-}
-
-// Mermaid also lazy-loads diagram chunks inside render(); losing the network
-// there is worth a retry, unlike a syntax error.
-const CHUNK_LOAD_ERROR = /dynamically imported module|importing a module script|failed to fetch/i;
-
-async function renderMermaid(
-  source: string,
-  theme: "light" | "dark",
-): Promise<MermaidRenderResult> {
-  const id = `mermaid-diagram-${nextDiagramId++}`;
-  let runtime: MermaidRuntime;
+function detectDiagramType(pele: Pele, source: string): DiagramType | null {
   try {
-    runtime = await loadMermaidRuntime();
+    return pele.detectType(source);
   } catch {
-    return { status: "error", message: "Mermaid failed to load.", retryable: true };
-  }
-  try {
-    // initialize() mutates global config, so renders run one at a time.
-    runtime.mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      suppressErrorRendering: true,
-      // HTML labels and theme CSS are mounted while Mermaid lays the diagram
-      // out, before sanitizing, so diagram directives must not set them.
-      secure: [
-        "secure",
-        "securityLevel",
-        "startOnLoad",
-        "maxTextSize",
-        "suppressErrorRendering",
-        "maxEdges",
-        "htmlLabels",
-        "themeCSS",
-      ],
-      htmlLabels: false,
-      flowchart: { htmlLabels: false },
-      theme: theme === "dark" ? "dark" : "default",
-      fontFamily: getComputedStyle(document.body).fontFamily,
-    });
-    const { svg } = await runtime.mermaid.render(id, source);
-    return { status: "rendered", svg: runtime.sanitize(svg) };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "The diagram could not be rendered.";
-    return { status: "error", message, retryable: CHUNK_LOAD_ERROR.test(message) };
-  } finally {
-    // Mermaid leaves its measuring container behind when render() throws.
-    document.getElementById(`d${id}`)?.remove();
+    return null;
   }
 }
 
-function evictSettledRenders() {
-  for (const [key, result] of renderCache) {
-    if (renderCache.size <= MAX_CACHED_RENDERS) return;
-    if (settledRenders.has(result)) renderCache.delete(key);
-  }
+let mathLoad: Promise<MathResolver | null> | null = null;
+
+// Pele has no typesetter, so $$...$$ labels go through the KaTeX the chat
+// already uses for math. It only loads for diagrams that contain math.
+function loadMath(): Promise<MathResolver | null> {
+  mathLoad ??= import("katex").then(
+    ({ default: katex }) => {
+      const typeset = new Map<string, ReturnType<MathResolver>>();
+      let probe: HTMLDivElement | null = null;
+      // Pele calls this on every layout, including resizes.
+      return (tex, size) => {
+        const key = `${size}:${tex}`;
+        if (typeset.has(key)) return typeset.get(key);
+        let markup: ReturnType<MathResolver> = null;
+        try {
+          if (!probe) {
+            probe = document.createElement("div");
+            probe.style.cssText =
+              "position:absolute;left:-9999px;visibility:hidden;display:inline-block;white-space:nowrap";
+            document.body.append(probe);
+          }
+          probe.style.fontSize = `${size}px`;
+          probe.innerHTML = katex.renderToString(tex, {
+            displayMode: true,
+            output: "mathml",
+            throwOnError: true,
+            // No \href, \url, \htmlClass, or other commands that emit active HTML.
+            trust: false,
+            strict: "ignore",
+            maxSize: 20,
+            maxExpand: 1000,
+          });
+          const expression = probe.querySelector("math");
+          // The annotation repeats the TeX source; the sanitizer would keep its text.
+          expression?.querySelector("annotation")?.remove();
+          if (expression) {
+            const { width, height } = expression.getBoundingClientRect();
+            markup = { html: expression.outerHTML, width, height };
+          }
+        } catch {
+          // Unsupported TeX stays readable as its source.
+        }
+        typeset.set(key, markup);
+        return markup;
+      };
+    },
+    () => null,
+  );
+  return mathLoad;
 }
 
-function mermaidRenderKey(source: string, theme: "light" | "dark") {
-  return `${theme}\n${source}`;
-}
+// MathML element types KaTeX emits, without annotation (the resolver removes it),
+// semantics (only a wrapper, so its content is kept), and mglyph (an image).
+const KATEX_MATHML_TAGS = new Set([
+  "math",
+  "menclose",
+  "mfrac",
+  "mi",
+  "mlabeledtr",
+  "mn",
+  "mo",
+  "mover",
+  "mpadded",
+  "mphantom",
+  "mroot",
+  "mrow",
+  "mspace",
+  "msqrt",
+  "mstyle",
+  "msub",
+  "msubsup",
+  "msup",
+  "mtable",
+  "mtd",
+  "mtext",
+  "mtr",
+  "munder",
+  "munderover",
+]);
+// Presentation attributes KaTeX sets on those elements. The profiles already
+// cover class, style, width, height, display, and xmlns.
+const KATEX_MATHML_ATTRIBUTES = new Set([
+  "accent",
+  "accentunder",
+  "columnalign",
+  "columnlines",
+  "columnspacing",
+  "depth",
+  "displaystyle",
+  "fence",
+  "largeop",
+  "linebreak",
+  "linethickness",
+  "lspace",
+  "mathbackground",
+  "mathcolor",
+  "mathsize",
+  "mathvariant",
+  "maxsize",
+  "minsize",
+  "notation",
+  "rowlines",
+  "rowspacing",
+  "rspace",
+  "scriptlevel",
+  "separator",
+  "stretchy",
+  "voffset",
+]);
 
-function mermaidRenderPromise(source: string, theme: "light" | "dark") {
-  const key = mermaidRenderKey(source, theme);
-  const cached = renderCache.get(key);
-  if (cached) {
-    renderCache.delete(key);
-    renderCache.set(key, cached);
-    return cached;
-  }
-  const result = renderQueue.then(() => renderMermaid(source, theme));
-  renderQueue = result.catch(() => undefined);
-  void result.then(() => {
-    settledRenders.add(result);
-    evictSettledRenders();
+let purifier: ReturnType<typeof DOMPurify> | null = null;
+
+// Diagrams can come from untrusted PR descriptions. Pele escapes labels and
+// links and images are off, so this is defense in depth against anything that
+// could navigate, run script, or fetch remote content.
+function sanitizeDiagramSvg(svg: string): Node {
+  purifier ??= DOMPurify(window);
+  return purifier.sanitize(svg, {
+    FORBID_ATTR: ["href", "xlink:href", "src", "srcset"],
+    FORBID_TAGS: ["a", "image", "foreignObject", "style"],
+    USE_PROFILES: { svg: true, svgFilters: true },
+    RETURN_DOM_FRAGMENT: true,
   });
-  renderCache.set(key, result);
-  evictSettledRenders();
-  return result;
 }
+
+// Pele puts MathML labels in a <foreignObject> with an HTML <div> around them.
+function sanitizeMathDiagramSvg(svg: string): Node {
+  purifier ??= DOMPurify(window);
+  return purifier.sanitize(svg, {
+    // DOMPurify still only accepts <math> under an HTML parent and checks every
+    // MathML child's namespace.
+    ADD_TAGS: ["foreignObject", ...KATEX_MATHML_TAGS],
+    ADD_ATTR: (attribute, tagName) =>
+      KATEX_MATHML_TAGS.has(tagName) && KATEX_MATHML_ATTRIBUTES.has(attribute),
+    HTML_INTEGRATION_POINTS: { foreignobject: true },
+    FORBID_ATTR: ["href", "xlink:href", "src", "srcset"],
+    FORBID_TAGS: ["a", "img", "image", "script", "style"],
+    USE_PROFILES: { svg: true, svgFilters: true, html: true },
+    RETURN_DOM_FRAGMENT: true,
+  });
+}
+
+// Pele colors diagrams through these, which a standalone image cannot inherit.
+const PELE_COLOR_VARIABLES = [
+  "--pele-bg",
+  "--pele-fg",
+  "--pele-muted",
+  "--pele-line",
+  "--pele-surface",
+  "--pele-surface-alt",
+  "--pele-border",
+  "--pele-accent",
+  "--pele-critical",
+  ...Array.from({ length: 8 }, (_, index) => `--pele-series-${index + 1}`),
+];
+
+let expandedImageUrl: string | null = null;
 
 /**
- * Converts a rendered diagram into a standalone image with a fixed size and the
- * page background, so it reads the same in the zoomable image dialog.
+ * A blob URL, unlike a data URL, passes the desktop connect-src policy that media
+ * save and copy actions fetch through.
  */
-function mermaidImageUrl(svg: string): string {
-  const svgDocument = new DOMParser().parseFromString(svg, "image/svg+xml");
-  const element = svgDocument.documentElement;
-  const viewBox = element.getAttribute("viewBox")?.trim().split(/\s+/).map(Number);
-  if (viewBox?.length === 4 && viewBox.every(Number.isFinite)) {
-    element.setAttribute("width", String(viewBox[2]));
-    element.setAttribute("height", String(viewBox[3]));
+function diagramImageUrl(svg: SVGSVGElement): string {
+  const element = svg.cloneNode(true) as SVGSVGElement;
+  const computed = getComputedStyle(svg);
+  for (const name of PELE_COLOR_VARIABLES) {
+    const value = computed.getPropertyValue(name).trim();
+    if (value) element.style.setProperty(name, value);
   }
-  element.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   element.style.maxWidth = "none";
   element.style.backgroundColor = getComputedStyle(document.body).backgroundColor;
-  return URL.createObjectURL(
+  if (expandedImageUrl) URL.revokeObjectURL(expandedImageUrl);
+  expandedImageUrl = URL.createObjectURL(
     new Blob([new XMLSerializer().serializeToString(element)], { type: "image/svg+xml" }),
   );
+  return expandedImageUrl;
 }
 
-/**
- * Suspends until the diagram renders. Invalid diagrams show the parser message
- * above `fallback` (the highlighted source), so the code is never lost.
- */
 export function MermaidDiagram({
   source,
-  theme,
-  fallback,
+  onExpand,
 }: {
   source: string;
-  theme: "light" | "dark";
-  fallback: ReactNode;
+  onExpand: (imageUrl: string) => void;
 }) {
+  const gt = useGT();
   const [, setAttempt] = useState(0);
-  const [expandedUrl, setExpandedUrl] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const trimmedSource = source.trim();
-  const result = use(mermaidRenderPromise(trimmedSource, theme));
+  const core = use(loadCore());
+  const type = core.status === "loaded" ? detectDiagramType(core.pele, trimmedSource) : null;
+  const load = core.status === "loaded" && type ? use(loadDiagramType(core.pele, type)) : core;
+  const math = trimmedSource.includes("$$") ? use(loadMath()) : null;
 
-  // Releases the expanded image's blob URL when the dialog closes or unmounts.
-  useEffect(
-    () => () => {
-      if (expandedUrl) URL.revokeObjectURL(expandedUrl);
-    },
-    [expandedUrl],
-  );
+  // Re-created, and so remounted, whenever the renderer, math support or source changes.
+  const mountDiagram = (container: HTMLSpanElement) => {
+    if (load.status !== "loaded") return;
+    const mounted = load.pele.mount(container, trimmedSource, {
+      links: false,
+      images: false,
+      zoom: false,
+      // Keep the author's direction; a wide diagram scales down to fit instead of turning vertical.
+      autoDirection: false,
+      ...(math ? { math, sanitize: sanitizeMathDiagramSvg } : { sanitize: sanitizeDiagramSvg }),
+      onRender: () => setRenderError(null),
+      onError: (error) =>
+        setRenderError(
+          error instanceof Error ? error.message : gt("The diagram could not be rendered."),
+        ),
+    });
+    return () => mounted.destroy();
+  };
 
-  if (result.status === "error") {
-    const summary = result.message.split("\n", 1)[0] ?? result.message;
+  if (load.status === "failed") {
     return (
-      <>
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5">
-          <p className="m-0 min-w-0 truncate text-xs text-destructive" title={result.message}>
-            Unable to render diagram: {summary}
-          </p>
-          {result.retryable ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                renderCache.delete(mermaidRenderKey(trimmedSource, theme));
-                setAttempt((attempt) => attempt + 1);
-              }}
-            >
-              Retry
-            </Button>
-          ) : null}
-        </div>
-        {fallback}
-      </>
+      <DiagramError
+        message={gt("The diagram renderer failed to load.")}
+        source={source}
+        onRetry={() => {
+          if (core.status === "failed") coreLoad = null;
+          if (type) diagramLoads.delete(type);
+          setAttempt((attempt) => attempt + 1);
+        }}
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto p-3">
+    <div
+      className="chat-markdown-mermaid overflow-x-auto"
+      data-markdown-mermaid=""
+      data-markdown-copy={serializeCodeBlockToMarkdown(source, "mermaid")}
+    >
+      {renderError ? <DiagramError message={renderError} source={source} /> : null}
       <button
         type="button"
-        aria-label="Expand diagram"
-        // Edge animations are opt-in diagram syntax; they would repaint forever.
-        className="flex w-full cursor-zoom-in justify-center rounded-md focus-visible:outline-2 focus-visible:outline-ring [&_svg]:h-auto [&_svg]:max-w-full [&_svg_*]:animate-none!"
-        onClick={() => setExpandedUrl(mermaidImageUrl(result.svg))}
-        dangerouslySetInnerHTML={{ __html: result.svg }}
-      />
-      {expandedUrl
-        ? createPortal(
-            <ExpandedImageDialog
-              preview={{ images: [{ src: expandedUrl, name: "Mermaid diagram" }], index: 0 }}
-              onClose={() => setExpandedUrl(null)}
-            />,
-            document.body,
-          )
-        : null}
+        aria-label={gt("Expand diagram")}
+        hidden={renderError !== null}
+        className="block w-full cursor-zoom-in rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+        onClick={(event) => {
+          const svg = event.currentTarget.querySelector("svg");
+          if (svg) onExpand(diagramImageUrl(svg));
+        }}
+      >
+        <span ref={mountDiagram} className="flex w-full justify-center" />
+      </button>
+    </div>
+  );
+}
+
+function DiagramError({
+  message,
+  source,
+  onRetry,
+}: {
+  message: string;
+  source: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="m-0 text-xs text-destructive">
+          <T>
+            Unable to render diagram: <Var>{message}</Var>
+          </T>
+        </p>
+        {onRetry ? (
+          <Button type="button" variant="ghost" size="xs" onClick={onRetry}>
+            <T>Retry</T>
+          </Button>
+        ) : null}
+      </div>
+      <pre
+        data-thread-find-ignore
+        className="mt-2 mb-0 overflow-auto font-mono text-xs whitespace-pre-wrap"
+      >
+        {source}
+      </pre>
     </div>
   );
 }

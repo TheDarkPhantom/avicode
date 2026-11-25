@@ -1,27 +1,27 @@
-"use client";
+import { useGT } from "gt-react";
+import {
+  AuthPreviewOperateScope,
+  type PreviewAnnotationPayload,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 
-import type { ScopedThreadRef } from "@t3tools/contracts";
-
-import { isPreviewSupportedInRuntime } from "~/previewStateStore";
+import type { ComposerImageAttachment } from "~/composerDraftStore";
+import { usePreviewAvailable } from "~/browser/previewRuntime";
+import { useEnvironmentScope } from "~/state/session";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./PreviewPanelShell";
-import type { ConfiguredPreviewUrl } from "./previewEmptyStateLogic";
 import { PreviewView } from "./PreviewView";
 
 interface Props {
   mode: PreviewPanelMode;
   threadRef: ScopedThreadRef;
   tabId?: string | null;
-  configuredUrls?: ReadonlyArray<ConfiguredPreviewUrl> | undefined;
-  /** Avi Code addition: passed through so the start page can group servers. */
-  projectRoot?: string | null;
-  worktreePath?: string | null;
-  /** Avi Code addition: lets the empty state start the project's dev server. */
-  startDevServerLabel?: string | null;
-  onStartDevServer?: (() => void) | undefined;
+  configuredUrls?: ReadonlyArray<string> | undefined;
   visible: boolean;
-  /** Avi Code addition: forwarded so only the focused split pane takes keybinds. */
-  focused?: boolean;
+  onSendAnnotation?: (
+    annotation: PreviewAnnotationPayload,
+    image: ComposerImageAttachment | null,
+  ) => void;
 }
 
 export function PreviewPanel({
@@ -29,19 +29,20 @@ export function PreviewPanel({
   threadRef,
   tabId,
   configuredUrls,
-  projectRoot = null,
-  worktreePath = null,
-  startDevServerLabel = null,
-  onStartDevServer,
   visible,
-  focused = true,
+  onSendAnnotation,
 }: Props) {
-  if (!isPreviewSupportedInRuntime()) {
+  const available = usePreviewAvailable(threadRef.environmentId);
+  const gt = useGT();
+  const canOperatePreview = useEnvironmentScope(threadRef.environmentId, AuthPreviewOperateScope);
+  if (!canOperatePreview || !available) {
     return (
       <PreviewPanelShell mode={mode}>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="max-w-sm text-sm text-muted-foreground">
-            Preview is only available in the Avi Code desktop app.
+            {canOperatePreview
+              ? gt("Preview is only available in the T3 Code desktop app.")
+              : gt("Pair this client again with preview access to control browser previews.")}
           </p>
         </div>
       </PreviewPanelShell>
@@ -54,12 +55,8 @@ export function PreviewPanel({
         threadRef={threadRef}
         {...(tabId !== undefined ? { tabId } : {})}
         configuredUrls={configuredUrls}
-        projectRoot={projectRoot}
-        worktreePath={worktreePath}
-        startDevServerLabel={startDevServerLabel}
-        onStartDevServer={onStartDevServer}
         visible={visible}
-        focused={focused}
+        {...(onSendAnnotation ? { onSendAnnotation } : {})}
       />
     </PreviewPanelShell>
   );

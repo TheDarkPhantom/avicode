@@ -1,41 +1,19 @@
 import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
-import { decodeClientSettingsResilient } from "@t3tools/shared/resilientClientSettings";
 
-import { setLocalStorageItem } from "./hooks/useLocalStorage";
+import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
-export const CLIENT_SETTINGS_STORAGE_KEY = "t3code:client-settings:v1";
+const CLIENT_SETTINGS_STORAGE_KEY = "t3code:client-settings:v1";
 
 function hasWindow(): boolean {
   return typeof window !== "undefined";
 }
 
-// Avi Code addition: read the raw blob and decode field-by-field so one invalid
-// saved value defaults just that field instead of discarding every setting.
 export function readBrowserClientSettings(): ClientSettings | null {
   if (!hasWindow()) {
     return null;
   }
 
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(CLIENT_SETTINGS_STORAGE_KEY);
-  } catch (error) {
-    console.error("Could not read persisted client settings.", error);
-    return null;
-  }
-  if (raw === null) {
-    return null;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    console.error("Could not parse persisted client settings.", error);
-    return null;
-  }
-
-  return decodeClientSettingsResilient(parsed);
+  return getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, ClientSettingsSchema);
 }
 
 export function writeBrowserClientSettings(settings: ClientSettings): void {
@@ -44,4 +22,19 @@ export function writeBrowserClientSettings(settings: ClientSettings): void {
   }
 
   setLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, settings, ClientSettingsSchema);
+}
+
+/** Storage events fire only for other tabs' writes; a null key means storage was cleared. */
+export function subscribeBrowserClientSettingsWrites(onChange: () => void): () => void {
+  if (!hasWindow()) {
+    return () => undefined;
+  }
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === CLIENT_SETTINGS_STORAGE_KEY || event.key === null) {
+      onChange();
+    }
+  };
+  const target = window;
+  target.addEventListener("storage", handleStorage);
+  return () => target.removeEventListener("storage", handleStorage);
 }

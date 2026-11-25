@@ -1,6 +1,17 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
-import type { DraftThreadEnvMode } from "../composerDraftStore";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  ProjectId,
+  ScopedProjectRef,
+} from "@t3tools/contracts";
+import type { ComposerThreadDraftState, DraftThreadEnvMode } from "../composerDraftStore";
+
+type ComposerModelSelectionState = Pick<
+  ComposerThreadDraftState,
+  "activeProvider" | "modelSelectionByProvider" | "modelSelectionExplicit"
+>;
 
 interface ThreadContextLike {
   environmentId: EnvironmentId;
@@ -16,7 +27,7 @@ interface NewThreadHandler {
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
     },
-  ): Promise<void>;
+  ): Promise<unknown>;
 }
 
 export interface ChatThreadActionContext {
@@ -31,6 +42,48 @@ export function resolveNewDraftStartFromOrigin(input: {
   newWorktreesStartFromOrigin: boolean;
 }): boolean {
   return input.envMode === "worktree" && input.newWorktreesStartFromOrigin;
+}
+
+export function resolveNewThreadModelSelectionOverride(input: {
+  readonly projectDefaultSelection: ModelSelection | null;
+  readonly carrySelection: ModelSelection | null;
+  readonly carrySourceDraftId: string | null;
+  readonly destinationDraftId: string;
+}): ModelSelection | null {
+  return (
+    input.projectDefaultSelection ??
+    (input.carrySourceDraftId === input.destinationDraftId ? null : input.carrySelection)
+  );
+}
+
+export function hasExplicitComposerModelSelection(
+  draft: ComposerModelSelectionState | null | undefined,
+): boolean {
+  const activeProvider = draft?.activeProvider;
+  return (
+    draft?.modelSelectionExplicit === true &&
+    activeProvider !== null &&
+    activeProvider !== undefined &&
+    draft.modelSelectionByProvider[activeProvider] !== undefined
+  );
+}
+
+export function threadHasStarted(
+  thread: Pick<EnvironmentThreadShell, "latestRun" | "itemCount" | "runtime"> | null | undefined,
+): boolean {
+  return Boolean(thread && (thread.latestRun !== null || thread.itemCount > 0 || thread.runtime));
+}
+
+/**
+ * A draft is seeded from sticky state, project defaults, prompt links, or a carried selection.
+ * That seed is what an unstarted thread sends; once the thread has started, its own selection
+ * wins unless the user picked a model or traits for it.
+ */
+export function draftModelSelectionApplies(
+  draft: Pick<ComposerThreadDraftState, "modelSelectionExplicit"> | null | undefined,
+  threadStarted: boolean,
+): boolean {
+  return !threadStarted || draft?.modelSelectionExplicit === true;
 }
 
 export function resolveThreadActionProjectRef(
@@ -48,12 +101,6 @@ export function resolveThreadActionProjectRef(
   return context.defaultProjectRef;
 }
 
-// New threads inherit only the *project* from the current context. Branch,
-// worktree, and env mode always come from the user's configured defaults —
-// carrying them over from the viewed thread meant "new thread" silently
-// reused checkouts and branches. Explicit affordances (branch toolbar's
-// "new thread in this worktree") pass those options to handleNewThread
-// directly instead.
 export async function startNewThreadFromContext(
   context: ChatThreadActionContext,
 ): Promise<boolean> {

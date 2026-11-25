@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isEditableFocused } from "./lib/editableFocus";
 
 export interface ShortcutModifierState {
   metaKey: boolean;
@@ -14,7 +15,7 @@ const EMPTY_SHORTCUT_MODIFIER_STATE: ShortcutModifierState = {
   shiftKey: false,
 };
 
-export function areShortcutModifierStatesEqual(
+function areShortcutModifierStatesEqual(
   left: ShortcutModifierState,
   right: ShortcutModifierState,
 ): boolean {
@@ -26,31 +27,42 @@ export function areShortcutModifierStatesEqual(
   );
 }
 
-function createShortcutModifierStore() {
+function createShortcutModifierStore(ignoreEditable: boolean) {
   let state = EMPTY_SHORTCUT_MODIFIER_STATE;
   const listeners = new Set<() => void>();
   let stopTracking: (() => void) | null = null;
 
   const updateState = (next: ShortcutModifierState) => {
-    // Ordinary typing returns here, before any subscriber hears about it.
     if (areShortcutModifierStatesEqual(state, next)) return;
     state = next;
     for (const listener of listeners) listener();
   };
   const onKeyboardEvent = (event: KeyboardEvent) => {
-    updateState(shortcutModifierStateAfterKeyboardEvent(state, event));
+    updateState(
+      ignoreEditable && isEditableFocused(event.target)
+        ? EMPTY_SHORTCUT_MODIFIER_STATE
+        : shortcutModifierStateAfterKeyboardEvent(state, event),
+    );
   };
-  const onWindowBlur = () => {
+  // Dictation tools can omit Meta keyup after synthetic paste, leaving jump hints stuck.
+  const onResetEvent = () => {
     updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
   };
+  const onFocus = (event: FocusEvent) => {
+    if (ignoreEditable && isEditableFocused(event.target)) onResetEvent();
+  };
   const startTracking = () => {
+    window.addEventListener("focusin", onFocus);
     window.addEventListener("keydown", onKeyboardEvent, true);
     window.addEventListener("keyup", onKeyboardEvent, true);
-    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("paste", onResetEvent, true);
+    window.addEventListener("blur", onResetEvent);
     return () => {
+      window.removeEventListener("focusin", onFocus);
       window.removeEventListener("keydown", onKeyboardEvent, true);
       window.removeEventListener("keyup", onKeyboardEvent, true);
-      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("paste", onResetEvent, true);
+      window.removeEventListener("blur", onResetEvent);
       state = EMPTY_SHORTCUT_MODIFIER_STATE;
     };
   };
@@ -71,10 +83,12 @@ function createShortcutModifierStore() {
 }
 
 /** Shared by every subscriber; read it from a snapshot to re-render only when a derived value changes. */
-export const shortcutModifierStore = createShortcutModifierStore();
+export const shortcutModifierStore = createShortcutModifierStore(false);
+const editableIgnoringShortcutModifierStore = createShortcutModifierStore(true);
 
-export function useShortcutModifierState(): ShortcutModifierState {
-  return useSyncExternalStore(shortcutModifierStore.subscribe, shortcutModifierStore.getSnapshot);
+export function useShortcutModifierState(ignoreEditable = false): ShortcutModifierState {
+  const store = ignoreEditable ? editableIgnoringShortcutModifierStore : shortcutModifierStore;
+  return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
 function normalizeModifierKey(key: string): keyof ShortcutModifierState | null {
@@ -107,11 +121,12 @@ export function shortcutModifierStateAfterKeyboardEvent(
       [normalizedModifierKey]: event.type === "keydown",
     };
   } else {
+    // Dictation paste can poison real events with metaKey=true until a physical Meta press.
     nextState = {
-      metaKey: event.metaKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
+      metaKey: currentState.metaKey && event.metaKey,
+      ctrlKey: currentState.ctrlKey && event.ctrlKey,
+      altKey: currentState.altKey && event.altKey,
+      shiftKey: currentState.shiftKey && event.shiftKey,
     };
   }
 

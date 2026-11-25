@@ -1,10 +1,103 @@
 # Keybindings
 
-T3 Code reads keybindings from:
+Customize shortcuts in **Settings → Keybindings** on web and desktop. That page
+also lists the command IDs and defaults available in your version.
 
-- `~/.t3/keybindings.json`
+To free a default shortcut for another command, choose **Unassign** from its row's
+actions menu. **Reset to default** brings it back.
 
-The file must be a JSON array of rules:
+## Composer controls
+
+`mod+shift+d` starts dictation in the focused editor, or the composer, and finishes it on the next press;
+`Esc` discards the recording. Change the chord under **Composer: Start or Finish
+Dictation**, and the hold or toggle behavior in **Settings → Voice**. See
+[Voice input](./voice-input.md).
+
+In **Settings → Chat → Send shortcut**, choose whether Enter sends, requires
+`mod+Enter` for multiline prompts, or always requires `mod+Enter`. `Shift+Enter`
+inserts a new line. This applies to the web and desktop composer at desktop widths.
+
+**Follow-up behavior** chooses Queue or Steer while the agent runs. Use
+`mod+Enter` to do the opposite for one message, even when the send shortcut
+requires a modifier. `mod+Alt+Enter` sends, keeps that thread running in the
+background, and opens a fresh new-thread composer. In a new thread, `mod+Enter`
+does the same. Change these shortcuts in **Settings → Keybindings** under
+**Composer: Opposite Queue or Steer Action**, **Composer: Start in Background**,
+or **Composer: Send and Start New Thread**. These bindings take priority over the
+send shortcut. Click the send button to use the configured follow-up behavior.
+
+When a thread has queued messages, `mod+Shift+Enter` sends the first one as a steer
+while a turn is running, or as a new turn when the thread is stopped. Change it under
+**Queue: Send First Queued Message** in Keybindings.
+
+Use `mod+shift+m` to choose a model and `mod+shift+h` to choose a host.
+To step a new thread to the next machine instead of opening the menu, bind
+**Composer: Cycle Host** in Keybindings. It has no default shortcut.
+Use `mod+shift+e` for effort, `mod+shift+a` for permissions, `mod+shift+x` for the
+workspace, and `mod+shift+g` for the Git branch. The workspace menu includes the
+current checkout, a new worktree, and the previous worktree when available.
+Use `mod+shift+l` to reuse the previous worktree directly.
+
+To change effort one step without opening the picker, bind
+**Composer: Increase Effort** and **Composer: Decrease Effort** in Keybindings.
+Both are unbound by default. Increase wraps from the highest level to the
+lowest, and decrease wraps from the lowest level to the highest.
+
+In the model picker, press Left in an empty search field or Shift+Tab to reach
+the provider list. Use Up/Down to move and Enter to choose. Right returns to
+model search. Right at the end of the search moves to the highlighted model's effort
+levels, and Left comes back. Choosing a model keeps the picker open on its effort. `mod+shift+up` and `mod+shift+down` switch providers directly and clear the
+search. These provider shortcuts can also be changed in Settings.
+
+These shortcuts run inside the focused web or desktop client. `mod` uses Command
+on macOS and Ctrl on Windows and Linux, including GNOME, KDE Plasma, Niri, and
+Hyprland. If a custom desktop shortcut takes the same keys, choose another binding
+in Settings.
+
+## Copy pull request references
+
+With a PR open in the right panel or on the Pull requests page, use `mod+shift+c`
+to copy its URL and `mod+shift+k` to copy its number with a `#` prefix.
+Both shortcuts can be changed in Settings. Search for “Copy Link or Thread”
+or “Copy Number”. They copy the selected PR and leave terminal input alone.
+Without a PR, `mod+shift+c` copies the thread itself, which pastes into a
+composer as a thread chip.
+
+## Find in a diff
+
+Click into a diff in the Diff panel or a pull request's Code tab, then press
+`mod+f` to search every file in it, including folded files and unchanged lines
+hidden between changes. Enter and `Shift+Enter` move between matches, and a
+match in a folded file opens it. Escape closes the search. This shortcut is not
+configurable. A very large uncommitted diff loads its files as you scroll, and
+find only searches the files loaded so far.
+
+## iPad
+
+With a hardware keyboard, use `Cmd+1` through `Cmd+9` to open the first nine
+displayed threads. The shortcuts follow the current list filters and order.
+`Cmd+K` opens the command palette to search commands, projects, and threads.
+Use the arrow keys and Return to choose a result, or `Cmd+1` through `Cmd+9` to
+choose directly. Escape or `Cmd+K` closes the palette. Start a search with `>`
+to show only actions.
+
+In a new thread, `Cmd+Shift+H` moves the draft to the next machine.
+
+In the composer, Return sends and `Shift+Return` inserts a new line. While a
+turn is running, `Cmd+Return` sends with the other follow-up action. To make
+Return insert a new line instead, change the Return key behavior in Settings →
+Keyboard; `Cmd+Return` then sends.
+
+## Android
+
+With a hardware keyboard, the composer handles Return as on iPad, with `Ctrl` in
+place of `Cmd`. The on-screen keyboard's Return always inserts a new line.
+
+## Edit the configuration file
+
+Keybindings live on the environment's machine, in
+`~/.t3/userdata/keybindings.json` by default. You can edit this file directly.
+It is a JSON array of rules:
 
 ```json
 [
@@ -13,159 +106,120 @@ The file must be a JSON array of rules:
 ]
 ```
 
-See the full schema for more details: [`packages/contracts/src/keybindings.ts`](../../packages/contracts/src/keybindings.ts)
+T3 Code creates the file with its defaults and adds new defaults on later startups.
+New defaults do not replace commands you customized. If a new default overlaps one
+of your shortcuts, [rule order](#precedence) decides which runs.
+Invalid rules are ignored; if the file cannot be parsed, T3 Code uses defaults.
 
-## Defaults
+## Rule shape
+
+Each rule requires a `key` shortcut and a `command` ID. An optional `when`
+expression restricts when it runs.
+
+Project scripts use `script.{id}.run`, such as `script.test.run`.
+
+## Key syntax
+
+Join modifiers and a key with `+`, such as `mod+shift+d` or `ctrl+l`.
+`mod` means Command on macOS and Control elsewhere. Other modifiers are
+`cmd` / `meta`, `ctrl` / `control`, `alt` / `option`, and `shift`.
+
+## When conditions
+
+Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
+`previewOpen`, `rightPanelOpen`, `modelPickerOpen`, `usagePageOpen`, `composerFocus`,
+`draftThreadRoute`, `turnRunning`, `composerEmpty`, `editableFocus`, `isWeb`, and `isDesktop`.
+In a thread, `rightPanelOpen` is true while its right panel is open; the default
+`mod+t` uses it to open the panel's new-tab menu.
+`draftThreadRoute` is true on a draft thread, including a restored draft, until it is first sent.
+`composerEmpty` is true while the composer has no text, attachments, or context, and is not
+editing a queued message or answering a question.
+`editableFocus` is true while a text field, the composer, or another editor has
+the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
+desktop app. Unknown keys evaluate to `false`.
+
+`mod+1` through `mod+9` jump to the first nine threads, and to models while the
+model picker is open. The thread jumps do not run while the model picker is open.
+Those defaults use `isDesktop` so they do not steal the
+browser's tab-switch shortcuts. Remove that condition in Settings if you want
+the same jumps in a browser.
+
+Combine keys with `!` for not, `&&` for and, `||` for or, and parentheses:
 
 ```json
-[
-  { "key": "mod+[", "command": "navigation.back", "when": "!terminalFocus" },
-  { "key": "mod+]", "command": "navigation.forward", "when": "!terminalFocus" },
-  {
-    "key": "alt+arrowleft",
-    "command": "navigation.back",
-    "when": "!terminalFocus && !editableFocus"
-  },
-  {
-    "key": "alt+arrowright",
-    "command": "navigation.forward",
-    "when": "!terminalFocus && !editableFocus"
-  },
-  { "key": "mod+j", "command": "terminal.toggle" },
-  { "key": "mod+d", "command": "terminal.split", "when": "terminalFocus" },
-  { "key": "mod+n", "command": "terminal.new", "when": "terminalFocus" },
-  { "key": "mod+w", "command": "terminal.close", "when": "terminalFocus" },
-  { "key": "mod+w", "command": "thread.archive", "when": "!terminalFocus" },
-  { "key": "mod+shift+j", "command": "preview.toggle" },
-  { "key": "mod+r", "command": "preview.refresh", "when": "previewFocus" },
-  { "key": "mod+l", "command": "preview.focusUrl", "when": "previewFocus" },
-  { "key": "mod+=", "command": "preview.zoomIn", "when": "previewFocus" },
-  { "key": "mod+-", "command": "preview.zoomOut", "when": "previewFocus" },
-  { "key": "mod+0", "command": "preview.resetZoom", "when": "previewFocus" },
-  { "key": "mod+k", "command": "commandPalette.toggle", "when": "!terminalFocus" },
-  { "key": "mod+f", "command": "find.toggle", "when": "!terminalFocus" },
-  { "key": "mod+n", "command": "chat.new", "when": "!terminalFocus" },
-  { "key": "mod+shift+o", "command": "chat.new", "when": "!terminalFocus" },
-  { "key": "mod+shift+n", "command": "chat.newLocal", "when": "!terminalFocus" },
-  { "key": "mod+alt+n", "command": "chat.newWithoutProject", "when": "!terminalFocus" },
-  { "key": "mod+o", "command": "editor.openFavorite" },
-  { "key": "mod+shift+e", "command": "thread.settle", "when": "!terminalFocus" }
-]
+{ "key": "mod+j", "command": "terminal.toggle", "when": "terminalOpen && !terminalFocus" }
 ```
 
-For most up to date defaults, see [`DEFAULT_KEYBINDINGS` in `apps/server/src/keybindings.ts`](../../apps/server/src/keybindings.ts)
+## Find in the current thread
 
-## Composer keys
+`chat.find` searches conversation messages and proposed plans in the active thread. Entering a
+query searches the entire thread, including older messages. Thread search requires server support;
+update an older server to enable it. Select **Retry** if a search fails. It defaults to
+`mod+f` outside terminals and previews. Press **Enter** or **Shift+Enter** to move between matches,
+and **Escape** to close find.
 
-These keys are built into the composer and are not configurable.
+## Find on a browser page
 
-- `mod+enter` in a new thread sends the first message and starts that thread in the background.
-  You land on a fresh new-thread draft with the same workspace mode and base branch, and a toast
-  offers **Open** for the thread that started. **New worktree** stays selected, but the fresh draft
-  does not reuse the worktree created for the thread that just started. In a thread that has
-  already started, `mod+enter` is a plain send. Turn this off in Settings → Avi Code → Composer to
-  make `mod+enter` a plain send everywhere.
-- `mod+alt+enter` in a thread that has already started sends, keeps that thread running, and
-  opens a fresh new-thread draft in the same project. If the message waits behind the running turn
-  or for a reconnect, you stay on the thread so it can send. In a new thread it does the same as
-  `mod+enter`.
-- `ArrowUp` in an empty composer brings back the last prompt you sent in this thread. Press it
-  again to go further back, and `ArrowDown` to come forward. Moving forward past the newest prompt
-  clears the composer. Only the text you typed comes back: attachments, attached documents,
-  terminal and element context, review comments, and the ultrathink prefix are left out, and
-  app-composed sends such as plan implementation are skipped. A composer holding an attachment or
-  other context does not count as empty. With text in the composer the arrows move the caret as
-  usual; recall only takes over while the text is an unedited recalled prompt and the caret is on
-  its first visual line (`ArrowUp`) or last visual line (`ArrowDown`). Open menus, approvals, and
-  pending questions take the arrows first.
+`preview.find` (`mod+f` while a browser has focus) searches the open page in the desktop app. It
+is also in the browser's **⋮** menu and the command palette. A page that handles `mod+f` itself,
+such as a code editor, keeps its own find. Use the **⋮** menu to reach the browser's find there.
+Streamed browser tabs and T3 Code in a web browser do not support it.
 
-## Configuration
+## Precedence
 
-### Rule Shape
+The last rule whose key and condition both match wins, even if it belongs to a
+different command. Put a more specific rule after a general one when they share
+a shortcut.
 
-Each entry supports:
+## Commands with special behavior
 
-- `key` (required): shortcut string, like `mod+j`, `ctrl+k`, `cmd+shift+d`
-- `command` (required): action ID
-- `when` (optional): boolean expression controlling when the shortcut is active
+`thread.stop` interrupts the running turn in the focused thread. It has no default
+shortcut; assign one in **Settings → Keybindings**.
 
-Invalid rules are ignored. Invalid config files are ignored. Warnings are logged by the server.
+`thread.regenerateTitle` generates a new title for the focused thread, like
+**Regenerate title** in the thread menu. It has no default shortcut.
 
-### Available Commands
+`thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
+bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a
+draft. Consecutive
+actions of the same kind undo together. The notice remains available for five
+seconds after the latest action. Right after an action, the shortcut works even
+in a text field such as the composer. Once you type or press another key, the
+field gets its own undo back. Terminals always keep their native shortcut.
 
-- `navigation.back` / `navigation.forward`: move through the pages you have visited, like a
-  browser's back and forward buttons. `mod+[` and `mod+]` work outside the terminal; `alt+left` and
-  `alt+right` also skip text fields. In the desktop app the mouse's back and forward buttons do the
-  same, unless Settings → Avi Code has them step through sidebar threads instead.
-- `terminal.toggle`: open/close terminal drawer
-- `terminal.split`: split terminal (in focused terminal context by default)
-- `terminal.new`: create new terminal (in focused terminal context by default)
-- `terminal.close`: close/kill the focused terminal (in focused terminal context by default)
-- `thread.archive`: close the open thread by archiving it, then land on a fresh draft in the same
-  project (outside a focused terminal by default). Reversible from Settings → Archived. On desktop
-  this takes over `mod+w` from the native Close Window item, which moves to `mod+shift+w`.
-- `thread.settle`: settle the open thread, or restore it when it is already settled (outside a
-  focused terminal by default). Settling shows an Undo, also reachable with `mod+z`. Upstream uses
-  `mod+shift+s`, which here toggles the preview split.
-- `preview.toggle`: open/close the in-app browser preview panel (desktop app only)
-- `preview.refresh`: reload the active preview tab (in focused preview context by default)
-- `preview.focusUrl`: focus the URL input of the preview panel (in focused preview context by default)
-- `preview.zoomIn`: zoom the preview viewport in one step (in focused preview context by default)
-- `preview.zoomOut`: zoom the preview viewport out one step (in focused preview context by default)
-- `preview.resetZoom`: reset the preview zoom to 100% (in focused preview context by default)
-- `commandPalette.toggle`: open or close the global command palette
-- `find.toggle`: open the find bar for the current thread, searching messages, plans, and tool calls
-- `find.next` / `find.previous`: step to the next or previous match (Enter and Shift+Enter in the bar)
-- `chat.new`: create a new chat thread preserving the active thread's branch/worktree state
-- `chat.newLocal`: create a new chat thread for the active project in a new environment (local/worktree determined by app settings (default `local`))
-- `chat.newWithoutProject`: start a thread [without a project](./threads-without-a-project.md)
-- `editor.openFavorite`: open current project/worktree in the last-used editor
-- `script.{id}.run`: run a project script by id (for example `script.test.run`)
+`navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
+through the pages you have visited, like a browser's back and forward buttons.
 
-### Key Syntax
+`chat.new` may ask you to choose a project when there is more than one.
+`chat.newLocal` skips that chooser. Both use your
+[new-thread defaults](./thread-sidebar.md#start-a-thread). `chat.newWithoutProject`
+(`mod+alt+n`) starts a thread [without a project](./thread-sidebar.md#start-without-a-project).
 
-Supported modifiers:
+## Reserved shortcuts
 
-- `mod` (`cmd` on macOS, `ctrl` on non-macOS)
-- `cmd` / `meta`
-- `ctrl` / `control`
-- `shift`
-- `alt` / `option`
+In the desktop app, `mod+w` closes the focused terminal or the active right-panel
+tab. When nothing remains to close, it does nothing; it never closes the window. In a browser, `mod+w`
+closes the browser tab; rebind `rightPanel.close` and `terminal.close` to an available
+shortcut such as `alt+w`.
 
-Examples:
+`mod+shift+t` reopens the last closed tab across the app, including files,
+diffs, pull requests, browsers, and devices, in the order you closed them.
+A browser opens in a fresh session without its old page history. Incognito tabs
+can reopen until you reload or quit the app. This shortcut does not undo deleted work.
+Browsers also use it to reopen browser tabs; choose another binding in Settings
+if the browser takes it first.
 
-- `mod+j`
-- `mod+shift+d`
-- `ctrl+l`
-- `cmd+k`
+Many defaults include `!terminalFocus` so they do not intercept terminal input.
+Keep that condition when remapping them if you want the same behavior.
+`sidebar.toggle` never takes a Ctrl chord from a focused terminal, so tmux's `Ctrl+B`
+prefix reaches it. On macOS, `Cmd+B` still toggles the sidebar there.
 
-### `when` Conditions
+## Desktop quit shortcut
 
-Currently available context keys:
+Use `Cmd+Q` on macOS or `Ctrl+Q` on Windows and Linux. In the default **Hold** mode,
+hold for 1.2 seconds or press twice within 500 milliseconds. Holding requires
+keyboard repeat; if repeat is disabled, use two presses or the application menu.
 
-- `terminalFocus`
-- `terminalOpen`
-- `previewFocus`
-- `previewOpen`
-- `editableFocus` (a text field or the composer has focus)
-
-Supported operators:
-
-- `!` (not)
-- `&&` (and)
-- `||` (or)
-- parentheses: `(` `)`
-
-Examples:
-
-- `"when": "terminalFocus"`
-- `"when": "terminalOpen && !terminalFocus"`
-- `"when": "terminalFocus || terminalOpen"`
-
-Unknown condition keys evaluate to `false`.
-
-### Precedence
-
-- Rules are evaluated in array order.
-- For a key event, the last rule where both `key` matches and `when` evaluates to `true` wins.
-- That means precedence is across commands, not only within the same command.
+Change **Settings → General → Confirmations → Quit shortcut** to **Direct** for a
+single press or **Double press** for two presses only. Choosing **Quit** from the
+application menu always quits immediately.

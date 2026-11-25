@@ -1,18 +1,33 @@
-import { describe, expect, it } from "vite-plus/test";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import { assert, describe, expect, it } from "vite-plus/test";
 
 import {
   detectComposerTrigger,
-  parseComposerSideQuestionCommand,
-  parseStandaloneComposerSlashCommand,
+  parseSideChatCommand,
   serializeComposerFileLink,
-  serializeComposerMentionPath,
 } from "./composerTrigger.ts";
+import { resolveMarkdownFileLinkTarget } from "./markdownLinks.ts";
+
+interface MarkdownNode {
+  readonly type: string;
+  readonly value?: string;
+  readonly children?: ReadonlyArray<MarkdownNode>;
+}
+
+function parsedLinkLabel(markdown: string): string | undefined {
+  const textOf = (node: MarkdownNode): string =>
+    node.value ?? (node.children ?? []).map(textOf).join("");
+  const find = (node: MarkdownNode): MarkdownNode | undefined =>
+    node.type === "link" ? node : node.children?.map(find).find(Boolean);
+  const link = find(unified().use(remarkParse).parse(markdown) as MarkdownNode);
+  return link && textOf(link);
+}
 
 describe("detectComposerTrigger", () => {
   it.each([
     ["Run /tmp/build.sh", "Run /tmp/build.sh".length],
     ["/etc/hosts", "/etc/hosts".length],
-    ["/src/foo.ts", "/sr".length],
     ["Use /etc/hosts now", "Use /et".length],
     ["cmd /foo\\bar", "cmd /foo\\bar".length],
     ["/Windows\\System32", "/Windows\\System32".length],
@@ -20,52 +35,138 @@ describe("detectComposerTrigger", () => {
     expect(detectComposerTrigger(text, cursor)).toBeNull();
   });
 
-  it("keeps a slash in the line-leading model picker query", () => {
-    expect(detectComposerTrigger("/model openai/gpt", 17)).toMatchObject({
-      kind: "slash-model",
-      query: "openai/gpt",
-    });
-  });
-
-  it("still opens the slash menu for a command", () => {
-    expect(detectComposerTrigger("/pla", 4)).toMatchObject({
+  it.each([
+    ["/model", 0],
+    ["Question\n/MODEL", 9],
+  ])("offers typed %j as a slash command", (text, rangeStart) => {
+    expect(detectComposerTrigger(text, text.length)).toEqual({
       kind: "slash-command",
-      query: "pla",
+      query: text.slice(rangeStart + 1),
+      rangeStart,
+      rangeEnd: text.length,
     });
   });
-});
 
-describe("serializeComposerMentionPath", () => {
-  it("keeps simple mention paths unquoted", () => {
-    expect(serializeComposerMentionPath("src/index.ts")).toBe("src/index.ts");
+  it("does not reopen a menu after /model arguments", () => {
+    expect(detectComposerTrigger("/Model opus", "/Model opus".length)).toBeNull();
   });
 
-  it("quotes mention paths containing whitespace", () => {
-    expect(serializeComposerMentionPath("docs/My File.md")).toBe('"docs/My File.md"');
+  it.each(["Use /", "Use /review"])("detects the inline slash token in %j", (text) => {
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "slash-command",
+      query: text.slice(5),
+      rangeStart: 4,
+      rangeEnd: text.length,
+    });
   });
 
-  it("escapes quoted mention path content", () => {
-    expect(serializeComposerMentionPath('docs/My "File".md')).toBe('"docs/My \\"File\\".md"');
+  it.each(["Use/review", "https://example.com/review", "Use /review "])(
+    "does not trigger for %j",
+    (text) => expect(detectComposerTrigger(text, text.length)).toBeNull(),
+  );
+
+  it.each([
+    ["", "", ""],
+    ["Compare ", "8737", ""],
+    ["Compare (", "", ")"],
+    ["Compare(", "fix-name", ")"],
+    ["((", "fix_name", "))"],
+    ["[", "8737", "]"],
+    ["{", "8737", "}"],
+    ["【", "修正", "】"],
+  ])("keeps brackets outside the PR range after %j", (prefix, query, suffix) => {
+    const text = `${prefix}#${query}`;
+    expect(detectComposerTrigger(`${text}${suffix}`, text.length)).toEqual({
+      kind: "pull-request",
+      query,
+      rangeStart: prefix.length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it.each([
+    "# Heading",
+    "issue#123",
+    "https://example.com/#123",
+    "(#123)",
+    "[issue#123",
+    "[#_fix",
+    "]#123",
+  ])("does not detect a pull request in %j", (text) => {
+    expect(detectComposerTrigger(text, text.length)).toBeNull();
+  });
+
+  it.each([
+    ["@src/(#1", "path", "src/(#1"],
+    ["$review(#1", "skill", "review(#1"],
+  ])("keeps explicit completion for %j", (token, kind, query) => {
+    const text = `Use ${token}`;
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind,
+      query,
+      rangeStart: 4,
+      rangeEnd: text.length,
+    });
+  });
+
+  it.each(["$", "€", "𑿝"])("detects %s skill prefixes and their source range", (prefix) => {
+    const text = `Use ${prefix}review`;
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "skill",
+      query: "review",
+      rangeStart: 4,
+      rangeEnd: text.length,
+    });
+  });
+
+  it.each([
+    "budget $9.99",
+    "only $.99",
+    "about €20",
+    "raise $10k",
+    "$1,000",
+    "£2e6",
+    "raise $10k.",
+  ])("does not open the skill menu for the amount in %j", (text) =>
+    expect(detectComposerTrigger(text, text.length)).toBeNull(),
+  );
+
+  it.each(["$", "$1password", "$2fa"])("still detects the skill prefix %j", (text) => {
+    expect(detectComposerTrigger(text, text.length)).toMatchObject({
+      kind: "skill",
+      query: text.slice(1),
+    });
   });
 });
 
 describe("serializeComposerFileLink", () => {
-  it("uses the basename as the markdown label", () => {
-    expect(serializeComposerFileLink("path/to/package.json")).toBe(
-      "[package.json](path/to/package.json)",
-    );
-  });
-
   it("encodes markdown-sensitive destination characters", () => {
     expect(serializeComposerFileLink("docs/My File (draft).md")).toBe(
       "[My File (draft).md](docs/My%20File%20%28draft%29.md)",
     );
   });
 
+  it("preserves literal HTML entities in the file label and destination", () => {
+    const path = "docs/R&copy;.md";
+    const paragraph = unified().use(remarkParse).parse(serializeComposerFileLink(path)).children[0];
+    assert(paragraph?.type === "paragraph");
+    const link = paragraph.children[0];
+    assert(link?.type === "link");
+    expect(link.children).toMatchObject([{ type: "text", value: "R&copy;.md" }]);
+    expect(resolveMarkdownFileLinkTarget(link.url, "/workspace")).toBe(`/workspace/${path}`);
+  });
+
   it("supports windows paths", () => {
     expect(serializeComposerFileLink("C:\\repo\\src\\index.ts")).toBe(
       "[index.ts](C:%5Crepo%5Csrc%5Cindex.ts)",
     );
+  });
+
+  it.each([
+    ["pkg/__init__.py", "__init__.py"],
+    ["notes/*draft*.md", "*draft*.md"],
+  ])("renders the mention of %j with its file name as the label", (path, basename) => {
+    expect(parsedLinkLabel(serializeComposerFileLink(path))).toBe(basename);
   });
 
   it("preserves paths that legitimately start with an at sign", () => {
@@ -75,37 +176,18 @@ describe("serializeComposerFileLink", () => {
   });
 });
 
-// Avi Code addition: `/btw` is the only slash command that carries an argument,
-// so it needs a parser the bare-command matcher cannot provide.
-describe("parseComposerSideQuestionCommand", () => {
-  it("captures the question after the command", () => {
-    expect(parseComposerSideQuestionCommand("/btw what does that flag do?")).toEqual({
-      question: "what does that flag do?",
+describe("parseSideChatCommand", () => {
+  it("reads an optional prompt after /side or /btw", () => {
+    expect(parseSideChatCommand("/side")).toEqual({ prompt: "" });
+    expect(parseSideChatCommand("  /SIDE  why does this fail?\nline two ")).toEqual({
+      prompt: "why does this fail?\nline two",
     });
+    expect(parseSideChatCommand("/btw check @src/a.ts")).toEqual({ prompt: "check @src/a.ts" });
   });
 
-  it("keeps newlines inside a multi-line question", () => {
-    expect(parseComposerSideQuestionCommand("/btw first line\nsecond line")).toEqual({
-      question: "first line\nsecond line",
-    });
-  });
-
-  // A bare `/btw` opens the panel and lets the user type there, matching the
-  // keyboard shortcut. It is not a parse failure.
-  it("returns an empty question for a bare command", () => {
-    expect(parseComposerSideQuestionCommand("/btw")).toEqual({ question: "" });
-    expect(parseComposerSideQuestionCommand("  /btw   ")).toEqual({ question: "" });
-  });
-
-  it("ignores text that merely starts with the letters", () => {
-    expect(parseComposerSideQuestionCommand("/btwice something")).toBeNull();
-    expect(parseComposerSideQuestionCommand("tell me btw")).toBeNull();
-  });
-
-  // The bare-command parser must not claim `/btw`, or the composer would treat
-  // it as a mode switch and swallow the question.
-  it("stays out of the bare slash-command parser", () => {
-    expect(parseStandaloneComposerSlashCommand("/btw")).toBeNull();
-    expect(parseStandaloneComposerSlashCommand("/plan")).toBe("plan");
+  it("ignores other commands and inline mentions", () => {
+    expect(parseSideChatCommand("/sidebar")).toBeNull();
+    expect(parseSideChatCommand("/btwx")).toBeNull();
+    expect(parseSideChatCommand("ask /side later")).toBeNull();
   });
 });

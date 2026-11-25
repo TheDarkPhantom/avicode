@@ -14,28 +14,38 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
-  it("treats a missing attachment upload capability as unsupported", () => {
-    expect(decodeDescriptor(descriptor).capabilities.attachmentUploads).toBeUndefined();
-  });
-
-  it("preserves an advertised attachment upload capability", () => {
+  it("decodes old, recognized and future manual installation descriptors", () => {
+    expect(decodeDescriptor(descriptor).capabilities.serverInstallation).toBeUndefined();
+    for (const installation of [
+      { kind: "npx" },
+      { kind: "npm-global", prefix: "/opt/node" },
+      { kind: "t3-launcher", launcher: "/opt/bin/t3", baseDir: "/data/t3" },
+    ]) {
+      expect(
+        decodeDescriptor({
+          ...descriptor,
+          capabilities: { ...descriptor.capabilities, serverInstallation: installation },
+        }).capabilities.serverInstallation,
+      ).toEqual(installation);
+    }
+    const spaced = { kind: "t3-launcher", launcher: "/opt/bin/t3 ", baseDir: " /data/t3 " };
     expect(
       decodeDescriptor({
         ...descriptor,
-        capabilities: { ...descriptor.capabilities, attachmentUploads: true },
-      }).capabilities.attachmentUploads,
-    ).toBe(true);
-  });
-
-  it("preserves the server's generic attachment upload limit", () => {
-    expect(
-      decodeDescriptor({
-        ...descriptor,
-        capabilities: {
-          ...descriptor.capabilities,
-          fileAttachments: { maxUploadBytes: 50 * 1024 * 1024 },
-        },
-      }).capabilities.fileAttachments,
-    ).toEqual({ maxUploadBytes: 50 * 1024 * 1024 });
+        capabilities: { ...descriptor.capabilities, serverInstallation: spaced },
+      }).capabilities.serverInstallation,
+    ).toEqual(spaced);
+    for (const installation of [
+      { kind: "future-manager" },
+      { kind: "npm-global" },
+      { kind: "t3-launcher", launcher: "t3" },
+    ]) {
+      expect(
+        decodeDescriptor({
+          ...descriptor,
+          capabilities: { ...descriptor.capabilities, serverInstallation: installation },
+        }).capabilities.serverInstallation,
+      ).toBeUndefined();
+    }
   });
 });

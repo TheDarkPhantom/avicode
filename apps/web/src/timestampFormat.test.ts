@@ -1,174 +1,102 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  formatElapsedDurationLabel,
-  formatExpiresInLabel,
-  formatRelativeTime,
-  formatRelativeTimeLabel,
-  formatRelativeTimeUntil,
-  formatRelativeTimeUntilLabel,
-  formatShortTimestamp,
-  formatTimestamp,
-  getRelativeTimeState,
-  getTimestampFormatOptions,
+  formatChatTimestampTooltip,
+  formatDayAwareTimestamp,
+  formatUpcomingTimestamp,
 } from "./timestampFormat";
 
-describe("getTimestampFormatOptions", () => {
-  it("omits hour12 when locale formatting is requested", () => {
-    expect(getTimestampFormatOptions("locale", true)).toEqual({
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  });
+// Node re-resolves the default zone when TZ is assigned, like a renderer after the OS zone changes.
+function useTimeZone(timeZone: string): Disposable {
+  const previous = process.env.TZ;
+  process.env.TZ = timeZone;
+  return {
+    [Symbol.dispose]: () => {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    },
+  };
+}
 
-  it("builds a 12-hour formatter with seconds when requested", () => {
-    expect(getTimestampFormatOptions("12-hour", true)).toEqual({
+it("localizes the day period while honoring the system clock and explicit 24-hour mode", async () => {
+  using _zone = useTimeZone("UTC");
+  vi.stubGlobal("window", { desktopBridge: { getSystemLocale: () => "en-US" } });
+  vi.resetModules();
+  try {
+    const { formatShortTimestamp } = await import("./timestampFormat");
+    const date = "2026-11-19T18:05:00.000Z";
+    expect(formatShortTimestamp(date, "locale", "zh")).toBe("下午6:05");
+    expect(formatShortTimestamp(date, "24-hour", "zh")).toBe("18:05");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+describe("timestamps in an explicit time zone", () => {
+  // 23:00 UTC on July 1 is 7 PM on July 1 in New York, whatever the host zone.
+  const now = Date.parse("2026-07-01T23:00:00.000Z");
+  const zone = "America/New_York";
+
+  it("picks relative days from the calendar in that zone", () => {
+    expect(formatUpcomingTimestamp("2026-07-02T00:30:00.000Z", "12-hour", now, zone)).not.toMatch(
+      /tomorrow/,
+    );
+    expect(formatUpcomingTimestamp("2026-07-02T05:30:00.000Z", "12-hour", now, zone)).toMatch(
+      /^tomorrow at /,
+    );
+    expect(formatDayAwareTimestamp("2026-07-01T03:30:00.000Z", "12-hour", now, zone)).toMatch(
+      /^yesterday at /,
+    );
+  });
+});
+
+describe("timestamps after the system time zone changes", () => {
+  // Built fresh with an explicit zone, so expectations follow the host locale but not a stale zone.
+  const timeIn = (iso: string, timeZone: string) =>
+    new Intl.DateTimeFormat(undefined, {
       hour: "numeric",
       minute: "2-digit",
-      second: "2-digit",
       hour12: true,
-    });
+      timeZone,
+    }).format(new Date(iso));
+  const dayIn = (iso: string, timeZone: string) =>
+    new Intl.DateTimeFormat(undefined, { month: "numeric", day: "numeric", timeZone }).format(
+      new Date(iso),
+    );
+
+  it("renders the gutter label in the new zone", () => {
+    const sameDay = "2026-11-07T04:45:43.877Z";
+    const earlierInWeek = "2026-11-04T20:00:00.000Z";
+    const now = Date.parse(sameDay);
+    using _zone = useTimeZone("America/New_York");
+    expect([
+      formatDayAwareTimestamp(sameDay, "12-hour", now),
+      formatDayAwareTimestamp(earlierInWeek, "12-hour", now),
+    ]).toEqual([
+      timeIn(sameDay, "America/New_York"),
+      `${dayIn(earlierInWeek, "America/New_York")} ${timeIn(earlierInWeek, "America/New_York")}`,
+    ]);
+
+    process.env.TZ = "Asia/Bangkok";
+    expect([
+      formatDayAwareTimestamp(sameDay, "12-hour", now),
+      formatDayAwareTimestamp(earlierInWeek, "12-hour", now),
+    ]).toEqual([
+      timeIn(sameDay, "Asia/Bangkok"),
+      `${dayIn(earlierInWeek, "Asia/Bangkok")} ${timeIn(earlierInWeek, "Asia/Bangkok")}`,
+    ]);
   });
 
-  it("builds a 24-hour formatter without seconds when requested", () => {
-    expect(getTimestampFormatOptions("24-hour", false)).toEqual({
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: false,
-    });
-  });
-});
+  it("renders the tooltip in the new zone", () => {
+    const monthEnd = "2026-10-31T20:00:00.000Z";
+    using _zone = useTimeZone("America/New_York");
+    expect(formatChatTimestampTooltip(monthEnd, "12-hour")).toBe(
+      `${timeIn(monthEnd, "America/New_York")}, 31st October 2026`,
+    );
 
-describe("formatRelativeTimeUntilLabel", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00.000Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns Expired when the instant is in the past", () => {
-    expect(formatRelativeTimeUntilLabel("2026-04-07T11:59:00.000Z")).toBe("Expired");
-  });
-
-  it("formats seconds remaining", () => {
-    expect(formatRelativeTimeUntilLabel("2026-04-07T12:00:45.000Z")).toBe("45s left");
-  });
-
-  it("formats minutes remaining", () => {
-    expect(formatRelativeTimeUntilLabel("2026-04-07T12:15:00.000Z")).toBe("15m left");
-  });
-
-  it("formats hours remaining", () => {
-    expect(formatRelativeTimeUntilLabel("2026-04-07T18:00:00.000Z")).toBe("6h left");
-  });
-});
-
-describe("formatExpiresInLabel", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00.000Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns Expired when the instant is in the past", () => {
-    expect(formatExpiresInLabel("2026-04-07T11:59:00.000Z")).toBe("Expired");
-  });
-
-  it("uses sub-minute second count", () => {
-    expect(formatExpiresInLabel("2026-04-07T12:00:45.000Z")).toBe("Expires in 45s");
-  });
-
-  it("uses minutes and seconds under one hour", () => {
-    expect(formatExpiresInLabel("2026-04-07T12:04:12.000Z")).toBe("Expires in 4m 12s");
-    expect(formatExpiresInLabel("2026-04-07T12:15:00.000Z")).toBe("Expires in 15m");
-  });
-
-  it("uses hours with minute and second remainder", () => {
-    expect(formatExpiresInLabel("2026-04-07T14:02:03.000Z")).toBe("Expires in 2h 2m 3s");
-    expect(formatExpiresInLabel("2026-04-07T18:00:00.000Z")).toBe("Expires in 6h");
-  });
-});
-
-describe("invalid timestamp inputs", () => {
-  it("returns an empty timestamp instead of throwing", () => {
-    expect(() => formatTimestamp("not-a-date", "12-hour")).not.toThrow();
-    expect(formatTimestamp("not-a-date", "12-hour")).toBe("");
-  });
-
-  it("returns an empty short timestamp instead of throwing", () => {
-    expect(() => formatShortTimestamp("not-a-date", "12-hour")).not.toThrow();
-    expect(formatShortTimestamp("not-a-date", "12-hour")).toBe("");
-  });
-
-  it("returns an empty relative time label instead of a NaN label", () => {
-    expect(formatRelativeTime("not-a-date")).toBeNull();
-    expect(formatRelativeTimeLabel("not-a-date")).toBe("");
-  });
-
-  it("distinguishes missing and invalid relative time state", () => {
-    expect(getRelativeTimeState(null)).toEqual({ status: "missing" });
-    expect(getRelativeTimeState("not-a-date")).toEqual({ status: "invalid" });
-  });
-
-  it("returns an empty elapsed duration instead of a NaN label", () => {
-    expect(formatElapsedDurationLabel("not-a-date")).toBe("");
-  });
-
-  it("returns an empty relative time until label instead of a NaN label", () => {
-    expect(formatRelativeTimeUntil("not-a-date")).toBeNull();
-    expect(formatRelativeTimeUntilLabel("not-a-date")).toBe("");
-  });
-
-  it("returns an empty expires-in label instead of a NaN label", () => {
-    expect(formatExpiresInLabel("not-a-date")).toBe("");
-  });
-});
-
-describe("getRelativeTimeState", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00.000Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns relative parts for valid timestamps", () => {
-    expect(getRelativeTimeState("2026-04-07T11:45:00.000Z")).toEqual({
-      status: "relative",
-      value: "15m",
-      suffix: "ago",
-    });
-  });
-});
-
-describe("formatElapsedDurationLabel", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-07T12:00:00.000Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns just now when the instant is current or in the future", () => {
-    expect(formatElapsedDurationLabel("2026-04-07T12:00:00.000Z")).toBe("just now");
-    expect(formatElapsedDurationLabel("2026-04-07T12:01:00.000Z")).toBe("just now");
-  });
-
-  it("formats seconds, minutes, hours, and days", () => {
-    expect(formatElapsedDurationLabel("2026-04-07T11:59:45.000Z")).toBe("15s");
-    expect(formatElapsedDurationLabel("2026-04-07T11:45:00.000Z")).toBe("15m");
-    expect(formatElapsedDurationLabel("2026-04-07T06:00:00.000Z")).toBe("6h");
-    expect(formatElapsedDurationLabel("2026-04-03T12:00:00.000Z")).toBe("4d");
+    process.env.TZ = "Asia/Bangkok";
+    expect(formatChatTimestampTooltip(monthEnd, "12-hour")).toBe(
+      `${timeIn(monthEnd, "Asia/Bangkok")}, 1st November 2026`,
+    );
   });
 });

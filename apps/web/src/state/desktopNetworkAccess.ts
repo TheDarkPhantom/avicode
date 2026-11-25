@@ -5,9 +5,12 @@ import type {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { msg } from "gt-react";
+
+import { m } from "../i18n/messages";
 
 const DESKTOP_NETWORK_ACCESS_STALE_TIME_MS = 30_000;
 
@@ -21,30 +24,30 @@ export interface DesktopNetworkAccessSnapshot {
   readonly serverExposureState: DesktopServerExposureState;
 }
 
-class DesktopNetworkAccessUnavailableError extends Schema.TaggedErrorClass<DesktopNetworkAccessUnavailableError>()(
+class DesktopNetworkAccessUnavailableError extends Schema.TaggedError<DesktopNetworkAccessUnavailableError>()(
   "DesktopNetworkAccessUnavailableError",
   {},
 ) {
   override get message(): string {
-    return "Desktop network access is unavailable.";
+    return m(msg("Desktop network access is unavailable."));
   }
 }
 
-class DesktopServerExposureStateLoadError extends Schema.TaggedErrorClass<DesktopServerExposureStateLoadError>()(
+class DesktopServerExposureStateLoadError extends Schema.TaggedError<DesktopServerExposureStateLoadError>()(
   "DesktopServerExposureStateLoadError",
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Failed to load desktop server exposure state.";
+    return m(msg("Failed to load desktop server exposure state."));
   }
 }
 
-class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedErrorClass<DesktopAdvertisedEndpointsLoadError>()(
+class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedError<DesktopAdvertisedEndpointsLoadError>()(
   "DesktopAdvertisedEndpointsLoadError",
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Failed to load advertised desktop endpoints.";
+    return m(msg("Failed to load advertised desktop endpoints."));
   }
 }
 
@@ -52,7 +55,7 @@ function getDesktopNetworkAccessBridge(): DesktopNetworkAccessBridge | undefined
   return typeof window === "undefined" ? undefined : window.desktopBridge;
 }
 
-export function createDesktopNetworkAccessStateAtom(
+function createDesktopNetworkAccessStateAtom(
   getBridge: () => DesktopNetworkAccessBridge | undefined,
 ) {
   const loadDesktopNetworkAccess = Effect.fn("loadDesktopNetworkAccess")(function* () {

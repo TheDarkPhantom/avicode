@@ -1,8 +1,8 @@
 import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
-import { RefreshCwIcon, SmartphoneIcon } from "lucide-react";
+import { T, useGT, useMessages } from "gt-react";
+import { SmartphoneIcon } from "lucide-react";
 
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";
-import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
@@ -12,6 +12,11 @@ import {
   mobileClientPlatformLabel,
   mobileClientUpdatedAtLabel,
 } from "./MobileClientsUserProfilePage.logic";
+import {
+  ClerkUserProfilePage,
+  ClerkUserProfileRefreshButton,
+  ClerkUserProfileRow,
+} from "./ClerkUserProfilePage";
 
 const MOBILE_CLIENT_SKELETON_ROWS = ["primary", "secondary"] as const;
 
@@ -22,62 +27,65 @@ function MobileClientStatusBadge({
   readonly enabled: boolean;
   readonly label: string;
 }) {
+  const gt = useGT();
   return (
     <Badge variant={enabled ? "success" : "outline"}>
-      {label}: {enabled ? "On" : "Off"}
+      {enabled
+        ? gt("{label}: On", { label, $context: "a setting is on" })
+        : gt("{label}: Off", { label, $context: "a setting is off" })}
     </Badge>
   );
 }
 
 function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord }) {
+  const gt = useGT();
+  const m = useMessages();
   return (
-    <li className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm/4">
-      <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground">
-          <SmartphoneIcon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-            <div className="min-w-0">
-              <h3 className="truncate text-sm font-semibold text-foreground">{device.label}</h3>
-              <p className="text-xs text-muted-foreground">{mobileClientPlatformLabel(device)}</p>
-            </div>
-            <p className="shrink-0 text-[11px] text-muted-foreground/75">
-              {mobileClientUpdatedAtLabel(device.updatedAt)}
-            </p>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <MobileClientStatusBadge
-              enabled={device.notifications.enabled}
-              label="Push notifications"
-            />
-            <MobileClientStatusBadge
-              enabled={device.liveActivities.enabled}
-              label="Live Activities"
-            />
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground/80">
-            {mobileClientNotificationDetail(device)}
+    <ClerkUserProfileRow icon={<SmartphoneIcon className="size-4" />}>
+      <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm leading-4.5 font-medium text-foreground">
+            {device.label}
+          </h3>
+          <p className="text-xs leading-4.5 text-muted-foreground">
+            {mobileClientPlatformLabel(device)}
           </p>
         </div>
+        <p className="shrink-0 text-2xs leading-4 text-muted-foreground/75">
+          {mobileClientUpdatedAtLabel(device.updatedAt, m)}
+        </p>
       </div>
-    </li>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <MobileClientStatusBadge
+          enabled={device.notifications.enabled}
+          label={gt("Push notifications")}
+        />
+        <MobileClientStatusBadge
+          enabled={device.liveActivities.enabled}
+          label={gt("Live Activities")}
+        />
+      </div>
+      <p className="mt-1.5 text-xs leading-4.5 text-muted-foreground/80">
+        {mobileClientNotificationDetail(device, m)}
+      </p>
+    </ClerkUserProfileRow>
   );
 }
 
 function MobileClientsSkeleton() {
+  const gt = useGT();
   return (
-    <div aria-label="Loading mobile clients" className="space-y-3" role="status">
+    <div aria-label={gt("Loading mobile clients")} className="divide-y border-t" role="status">
       {MOBILE_CLIENT_SKELETON_ROWS.map((row) => (
-        <div key={row} className="rounded-xl border p-4">
+        <div key={row} className="py-4">
           <div className="flex gap-3">
-            <Skeleton className="size-9 shrink-0 rounded-lg" />
+            <Skeleton shape="card" className="size-8 shrink-0" />
             <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-3.5 w-36" />
               <Skeleton className="h-3 w-28" />
-              <div className="flex gap-2 pt-1">
-                <Skeleton className="h-5 w-28" />
-                <Skeleton className="h-5 w-24" />
+              <div className="flex gap-2">
+                <Skeleton className="h-4.5 w-28" />
+                <Skeleton className="h-4.5 w-24" />
               </div>
             </div>
           </div>
@@ -89,15 +97,19 @@ function MobileClientsSkeleton() {
 
 function EmptyMobileClients() {
   return (
-    <Empty className="min-h-72 rounded-xl border border-dashed bg-muted/15">
+    <Empty size="compact">
       <EmptyMedia variant="icon">
         <SmartphoneIcon />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle>No mobile clients</EmptyTitle>
+        <EmptyTitle>
+          <T>No mobile clients</T>
+        </EmptyTitle>
         <EmptyDescription>
-          Sign in to Avi Code on your iPhone to register it for push notifications and Live
-          Activities.
+          <T>
+            Install T3 Code on your phone and sign in to T3 Connect to get push notifications and
+            Live Activities.
+          </T>
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -106,45 +118,37 @@ function EmptyMobileClients() {
 
 export function MobileClientsUserProfilePage() {
   const devicesState = useManagedRelayDevices();
+  const gt = useGT();
   const devices = devicesState.data ?? [];
   const isInitialLoad =
     !devicesState.accountId || (devicesState.data === null && !devicesState.error);
   const hasErrorWithoutData = devicesState.error !== null && devicesState.data === null;
 
   return (
-    <div className="flex min-h-[30rem] w-full flex-col bg-background text-foreground">
-      <header className="flex flex-col gap-4 border-b px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold tracking-[-0.01em]">Mobile clients</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Devices registered to receive T3 Connect activity from your environments.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={devicesState.isPending}
+    <ClerkUserProfilePage
+      title={gt("Mobile clients")}
+      description={gt("Mobile devices that get notifications from your environments.")}
+      action={
+        <ClerkUserProfileRefreshButton
+          isPending={devicesState.isPending}
           onClick={devicesState.refresh}
-        >
-          <RefreshCwIcon className={cn("size-3.5", devicesState.isPending && "animate-spin")} />
-          Refresh
-        </Button>
-      </header>
-
-      <div className="flex-1 p-6">
+        />
+      }
+    >
+      <div>
         {devicesState.error ? (
           <div
-            className="mb-4 flex flex-col gap-3 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            className="mb-4 flex flex-col gap-3 border-t border-destructive/35 py-3 text-xs sm:flex-row sm:items-center sm:justify-between"
             role="alert"
           >
             <div>
               <p className="font-medium text-destructive-foreground">
-                Could not load mobile clients
+                <T>Could not load mobile clients</T>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">{devicesState.error}</p>
             </div>
             <Button size="xs" variant="outline" onClick={devicesState.refresh}>
-              Try again
+              <T>Try again</T>
             </Button>
           </div>
         ) : null}
@@ -152,15 +156,17 @@ export function MobileClientsUserProfilePage() {
         {isInitialLoad ? (
           <MobileClientsSkeleton />
         ) : hasErrorWithoutData ? null : devices.length > 0 ? (
-          <ul className="space-y-3">
+          <ul className="border-t">
             {devices.map((device) => (
               <MobileClientRow key={device.deviceId} device={device} />
             ))}
           </ul>
         ) : (
-          <EmptyMobileClients />
+          <div className="border-t">
+            <EmptyMobileClients />
+          </div>
         )}
       </div>
-    </div>
+    </ClerkUserProfilePage>
   );
 }

@@ -1,8 +1,11 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
-  IsoDateTime,
+  GitRefName,
+  ForwardCompatibleOptional,
   NonNegativeInt,
   PositiveInt,
+  ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -10,9 +13,8 @@ import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceC
 import { VcsDriverKind } from "./vcs.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
+const GitFilePath = Schema.String.check(Schema.isNonEmpty());
 const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
-
-// Domain Types
 
 export const GitStackedAction = Schema.Literals([
   "commit",
@@ -20,10 +22,9 @@ export const GitStackedAction = Schema.Literals([
   "create_pr",
   "commit_push",
   "commit_push_pr",
-  "auto_merge",
 ]);
 export type GitStackedAction = typeof GitStackedAction.Type;
-export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr", "merge"]);
+export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr"]);
 export type GitActionProgressPhase = typeof GitActionProgressPhase.Type;
 export const GitActionProgressKind = Schema.Literals([
   "action_started",
@@ -81,9 +82,11 @@ const GitRunStackedActionToast = Schema.Struct({
 export type GitRunStackedActionToast = typeof GitRunStackedActionToast.Type;
 
 export const VcsRef = Schema.Struct({
-  name: TrimmedNonEmptyStringSchema,
+  name: GitRefName,
   isRemote: Schema.optional(Schema.Boolean),
-  remoteName: Schema.optional(TrimmedNonEmptyStringSchema),
+  remoteName: Schema.optional(GitRefName),
+  // Full Git ref, for example refs/remotes/origin/feature.
+  upstreamRef: Schema.optional(GitRefName),
   current: Schema.Boolean,
   isDefault: Schema.Boolean,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
@@ -92,24 +95,36 @@ export type VcsRef = typeof VcsRef.Type;
 
 const VcsWorktree = Schema.Struct({
   path: TrimmedNonEmptyStringSchema,
-  refName: TrimmedNonEmptyStringSchema,
+  refName: GitRefName,
 });
 const GitResolvedPullRequest = Schema.Struct({
   number: PositiveInt,
   title: TrimmedNonEmptyStringSchema,
   url: Schema.String,
-  baseBranch: TrimmedNonEmptyStringSchema,
-  headBranch: TrimmedNonEmptyStringSchema,
+  baseBranch: GitRefName,
+  headBranch: GitRefName,
   state: GitPullRequestState,
 });
 export type GitResolvedPullRequest = typeof GitResolvedPullRequest.Type;
-
-// RPC Inputs
 
 export const VcsStatusInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
 });
 export type VcsStatusInput = typeof VcsStatusInput.Type;
+
+export const VcsBranchStatus = Schema.Struct({
+  refName: Schema.NullOr(Schema.String),
+  /** Absent from older servers, where a removed checkout looks like a detached HEAD. */
+  isRepo: Schema.optional(Schema.Boolean),
+});
+export type VcsBranchStatus = typeof VcsBranchStatus.Type;
+
+export const VcsStatusSubscriptionInput = Schema.Struct({
+  ...VcsStatusInput.fields,
+  /** Passive observers receive cached remote status without retaining its refresh loop. */
+  includeRemote: Schema.optional(Schema.Boolean),
+});
+export type VcsStatusSubscriptionInput = typeof VcsStatusSubscriptionInput.Type;
 
 export const VcsPullInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -122,18 +137,9 @@ export const GitRunStackedActionInput = Schema.Struct({
   action: GitStackedAction,
   commitMessage: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(10_000))),
   featureBranch: Schema.optional(Schema.Boolean),
-  filePaths: Schema.optional(
-    Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
-  ),
-  autoMerge: Schema.optional(
-    Schema.Struct({
-      promotionRefs: Schema.Array(TrimmedNonEmptyStringSchema).check(
-        Schema.isMinLength(1),
-        Schema.isMaxLength(3),
-      ),
-      requireFinalApproval: Schema.Boolean,
-    }),
-  ),
+  filePaths: Schema.optional(Schema.Array(GitFilePath).check(Schema.isMinLength(1))),
+  threadId: Schema.optional(ThreadId),
+  projectId: Schema.optional(ProjectId),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;
 
@@ -152,9 +158,9 @@ export type VcsListRefsInput = typeof VcsListRefsInput.Type;
 
 export const VcsCreateWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
-  refName: TrimmedNonEmptyStringSchema,
-  newRefName: Schema.optional(TrimmedNonEmptyStringSchema),
-  baseRefName: Schema.optional(TrimmedNonEmptyStringSchema),
+  refName: GitRefName,
+  newRefName: Schema.optional(GitRefName),
+  baseRefName: Schema.optional(GitRefName),
   path: Schema.NullOr(TrimmedNonEmptyStringSchema),
 });
 export type VcsCreateWorktreeInput = typeof VcsCreateWorktreeInput.Type;
@@ -180,152 +186,21 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
 
-// Avi Code addition: worktree cleanup (scan dead/finished worktrees per repo, then delete)
-export const WorktreeCleanupReason = Schema.Literals([
-  "archived",
-  "settled",
-  "pr-merged",
-  "pr-closed",
-  "orphaned",
-]);
-export type WorktreeCleanupReason = typeof WorktreeCleanupReason.Type;
-
-export const WorktreeCleanupCandidate = Schema.Struct({
-  worktreePath: TrimmedNonEmptyStringSchema,
-  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
-  threadId: Schema.NullOr(ThreadId),
-  threadIds: Schema.Array(ThreadId),
-  reason: WorktreeCleanupReason,
-  diskBytes: NonNegativeInt,
-  // Excluded-by-default safety flags surfaced in the preview.
-  isDirty: Schema.Boolean,
-  isActive: Schema.Boolean,
-});
-export type WorktreeCleanupCandidate = typeof WorktreeCleanupCandidate.Type;
-
-export const VcsScanCleanupInput = Schema.Struct({
-  cwd: TrimmedNonEmptyStringSchema,
-  projectId: TrimmedNonEmptyStringSchema,
-  // Defaults to true. Clients that measure sizes afterwards with
-  // `vcs.measureWorktreeSize` pass false, so the list returns quickly; each
-  // candidate's `diskBytes` is then 0.
-  includeDiskBytes: Schema.optional(Schema.Boolean),
-});
-export type VcsScanCleanupInput = typeof VcsScanCleanupInput.Type;
-
-export const VcsScanCleanupResult = Schema.Struct({
-  candidates: Schema.Array(WorktreeCleanupCandidate),
-  totalBytes: NonNegativeInt,
-});
-export type VcsScanCleanupResult = typeof VcsScanCleanupResult.Type;
-
-export const VcsMeasureWorktreeSizeInput = Schema.Struct({
-  cwd: TrimmedNonEmptyStringSchema,
-  worktreePath: TrimmedNonEmptyStringSchema,
-});
-export type VcsMeasureWorktreeSizeInput = typeof VcsMeasureWorktreeSizeInput.Type;
-
-export const VcsMeasureWorktreeSizeResult = Schema.Struct({
-  diskBytes: NonNegativeInt,
-});
-export type VcsMeasureWorktreeSizeResult = typeof VcsMeasureWorktreeSizeResult.Type;
-
-export const VcsExecuteCleanupCandidateInput = Schema.Struct({
-  worktreePath: TrimmedNonEmptyStringSchema,
-  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
-  threadIds: Schema.Array(ThreadId),
-  diskBytes: NonNegativeInt,
-});
-export type VcsExecuteCleanupCandidateInput = typeof VcsExecuteCleanupCandidateInput.Type;
-
-export const VcsExecuteCleanupInput = Schema.Struct({
-  cwd: TrimmedNonEmptyStringSchema,
-  candidates: Schema.Array(VcsExecuteCleanupCandidateInput),
-  deleteBranches: Schema.Boolean,
-  pruneCheckpoints: Schema.Boolean,
-  runGc: Schema.Boolean,
-});
-export type VcsExecuteCleanupInput = typeof VcsExecuteCleanupInput.Type;
-
-export const VcsCleanupCandidateResult = Schema.Struct({
-  worktreePath: TrimmedNonEmptyStringSchema,
-  ok: Schema.Boolean,
-  error: Schema.NullOr(Schema.String),
-});
-export type VcsCleanupCandidateResult = typeof VcsCleanupCandidateResult.Type;
-
-export const VcsExecuteCleanupResult = Schema.Struct({
-  results: Schema.Array(VcsCleanupCandidateResult),
-  reclaimedBytes: NonNegativeInt,
-});
-export type VcsExecuteCleanupResult = typeof VcsExecuteCleanupResult.Type;
-
-// Avi Code addition: background worktree health monitor. A periodic snapshot of
-// dead-worktree pressure and free disk space, plus what an automatic cleanup did.
-export const WorktreeHealthTrigger = Schema.Literals(["startup", "interval", "manual"]);
-export type WorktreeHealthTrigger = typeof WorktreeHealthTrigger.Type;
-
-export const WorktreeHealthBreachReason = Schema.Literals(["dead-count", "low-disk"]);
-export type WorktreeHealthBreachReason = typeof WorktreeHealthBreachReason.Type;
-
-export const WorktreeHealthProjectSummary = Schema.Struct({
-  projectId: TrimmedNonEmptyStringSchema,
-  cwd: TrimmedNonEmptyStringSchema,
-  deadCleanCount: NonNegativeInt,
-  deadDirtyCount: NonNegativeInt,
-  // Non-null when this project could not be scanned; its counts are then 0.
-  error: Schema.NullOr(Schema.String),
-});
-export type WorktreeHealthProjectSummary = typeof WorktreeHealthProjectSummary.Type;
-
-export const WorktreeHealthAutoCleanupSummary = Schema.Struct({
-  removedCount: NonNegativeInt,
-  failedCount: NonNegativeInt,
-  freedBytes: NonNegativeInt,
-});
-export type WorktreeHealthAutoCleanupSummary = typeof WorktreeHealthAutoCleanupSummary.Type;
-
-export const WorktreeHealthThresholds = Schema.Struct({
-  deadCountThreshold: NonNegativeInt,
-  lowDiskGb: NonNegativeInt,
-});
-export type WorktreeHealthThresholds = typeof WorktreeHealthThresholds.Type;
-
-export const WorktreeHealthSnapshot = Schema.Struct({
-  checkedAt: IsoDateTime,
-  trigger: WorktreeHealthTrigger,
-  // Null when free space could not be read (e.g. statfs unsupported); the
-  // low-disk rule is then skipped.
-  freeBytes: Schema.NullOr(NonNegativeInt),
-  totalBytes: Schema.NullOr(NonNegativeInt),
-  // Dead worktrees overall, and split by whether they are safe to auto-remove.
-  deadCount: NonNegativeInt,
-  deadCleanCount: NonNegativeInt,
-  deadDirtyCount: NonNegativeInt,
-  perProject: Schema.Array(WorktreeHealthProjectSummary),
-  thresholds: WorktreeHealthThresholds,
-  breached: Schema.Boolean,
-  breachReasons: Schema.Array(WorktreeHealthBreachReason),
-  // Non-null when an automatic cleanup ran on this check.
-  autoCleanup: Schema.NullOr(WorktreeHealthAutoCleanupSummary),
-});
-export type WorktreeHealthSnapshot = typeof WorktreeHealthSnapshot.Type;
-
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
-  refName: TrimmedNonEmptyStringSchema,
+  refName: GitRefName,
   switchRef: Schema.optional(Schema.Boolean),
 });
 export type VcsCreateRefInput = typeof VcsCreateRefInput.Type;
 
 export const VcsCreateRefResult = Schema.Struct({
-  refName: TrimmedNonEmptyStringSchema,
+  refName: GitRefName,
 });
 export type VcsCreateRefResult = typeof VcsCreateRefResult.Type;
 
 export const VcsSwitchRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
-  refName: TrimmedNonEmptyStringSchema,
+  refName: GitRefName,
 });
 export type VcsSwitchRefInput = typeof VcsSwitchRefInput.Type;
 
@@ -335,15 +210,15 @@ export const VcsInitInput = Schema.Struct({
 });
 export type VcsInitInput = typeof VcsInitInput.Type;
 
-// RPC Results
-
 const VcsStatusChangeRequest = Schema.Struct({
   number: PositiveInt,
   title: TrimmedNonEmptyStringSchema,
   url: Schema.String,
-  baseRef: TrimmedNonEmptyStringSchema,
-  headRef: TrimmedNonEmptyStringSchema,
+  baseRef: GitRefName,
+  headRef: GitRefName,
   state: VcsStatusChangeRequestState,
+  isDraft: Schema.optional(Schema.Boolean),
+  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const VcsStatusLocalShape = {
@@ -351,12 +226,15 @@ const VcsStatusLocalShape = {
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
   hasPrimaryRemote: Schema.Boolean,
   isDefaultRef: Schema.Boolean,
-  refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  refName: Schema.NullOr(GitRefName),
   hasWorkingTreeChanges: Schema.Boolean,
   workingTree: Schema.Struct({
+    // Absolute worktree root on the environment that every files[].path is
+    // relative to. Absent when the server could not resolve it.
+    rootPath: Schema.optional(GitFilePath),
     files: Schema.Array(
       Schema.Struct({
-        path: TrimmedNonEmptyStringSchema,
+        path: GitFilePath,
         insertions: NonNegativeInt,
         deletions: NonNegativeInt,
       }),
@@ -364,6 +242,13 @@ const VcsStatusLocalShape = {
     insertions: NonNegativeInt,
     deletions: NonNegativeInt,
   }),
+  branchChanges: Schema.optional(
+    Schema.Struct({
+      baseRef: Schema.NullOr(GitRefName),
+      insertions: NonNegativeInt,
+      deletions: NonNegativeInt,
+    }),
+  ),
 };
 
 const VcsStatusRemoteShape = {
@@ -386,6 +271,13 @@ export const VcsStatusResult = Schema.Struct({
 });
 export type VcsStatusResult = typeof VcsStatusResult.Type;
 
+export const VcsRefreshStatusResult = Schema.Struct({
+  ...VcsStatusResult.fields,
+  // Digest of the repository's refs after the refresh; absent when they could not be read.
+  refsDigest: Schema.optional(TrimmedNonEmptyString),
+});
+export type VcsRefreshStatusResult = typeof VcsRefreshStatusResult.Type;
+
 export const VcsStatusStreamEvent = Schema.Union([
   Schema.TaggedStruct("snapshot", {
     local: VcsStatusLocalResult,
@@ -401,6 +293,7 @@ export const VcsStatusStreamEvent = Schema.Union([
 export type VcsStatusStreamEvent = typeof VcsStatusStreamEvent.Type;
 
 export const VcsListRefsResult = Schema.Struct({
+  isAtRepositoryRoot: Schema.optional(Schema.Boolean),
   refs: Schema.Array(VcsRef),
   isRepo: Schema.Boolean,
   hasPrimaryRemote: Schema.Boolean,
@@ -421,13 +314,15 @@ export type GitResolvePullRequestResult = typeof GitResolvePullRequestResult.Typ
 
 export const GitPreparePullRequestThreadResult = Schema.Struct({
   pullRequest: GitResolvedPullRequest,
-  branch: TrimmedNonEmptyStringSchema,
+  branch: GitRefName,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
+  /** False when local commits or edits prevented a reused worktree from reaching the PR head. */
+  isOnPullRequestHead: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
 
 export const VcsSwitchRefResult = Schema.Struct({
-  refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  refName: Schema.NullOr(GitRefName),
 });
 export type VcsSwitchRefResult = typeof VcsSwitchRefResult.Type;
 
@@ -435,7 +330,7 @@ export const GitRunStackedActionResult = Schema.Struct({
   action: GitStackedAction,
   branch: Schema.Struct({
     status: GitBranchStepStatus,
-    name: Schema.optional(TrimmedNonEmptyStringSchema),
+    name: Schema.optional(GitRefName),
   }),
   commit: Schema.Struct({
     status: GitCommitStepStatus,
@@ -444,16 +339,16 @@ export const GitRunStackedActionResult = Schema.Struct({
   }),
   push: Schema.Struct({
     status: GitPushStepStatus,
-    branch: Schema.optional(TrimmedNonEmptyStringSchema),
-    upstreamBranch: Schema.optional(TrimmedNonEmptyStringSchema),
+    branch: Schema.optional(GitRefName),
+    upstreamBranch: Schema.optional(GitRefName),
     setUpstream: Schema.optional(Schema.Boolean),
   }),
   pr: Schema.Struct({
     status: GitPrStepStatus,
     url: Schema.optional(Schema.String),
     number: Schema.optional(PositiveInt),
-    baseBranch: Schema.optional(TrimmedNonEmptyStringSchema),
-    headBranch: Schema.optional(TrimmedNonEmptyStringSchema),
+    baseBranch: Schema.optional(GitRefName),
+    headBranch: Schema.optional(GitRefName),
     title: Schema.optional(TrimmedNonEmptyStringSchema),
   }),
   toast: GitRunStackedActionToast,
@@ -462,30 +357,32 @@ export type GitRunStackedActionResult = typeof GitRunStackedActionResult.Type;
 
 export const VcsPullResult = Schema.Struct({
   status: Schema.Literals(["pulled", "skipped_up_to_date"]),
-  refName: TrimmedNonEmptyStringSchema,
-  upstreamRef: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
+  refName: GitRefName,
+  upstreamRef: GitRefName.pipe(Schema.NullOr),
 });
 export type VcsPullResult = typeof VcsPullResult.Type;
 
-// RPC / domain errors
-
-// Well-known git failures, recognized from stderr at the driver and carried as
-// a closed set of diagnostic tags. Git's stderr itself stays off the error: it
-// echoes argv and remote URLs, which can hold credentials. The tag names the
-// cause for logs and callers; it does not select a message.
+// Git stderr can echo credentials from argv and remote URLs. Only a fixed
+// reason reaches the error and its diagnostic suffix; newer, unknown reasons
+// decode as absent through GitCommandError.
 export const GitCommandFailureReason = Schema.Literals([
   "authentication_failed",
   "branch_already_exists",
   "branch_checked_out_in_worktree",
+  "config_locked",
   "host_key_unverified",
   "not_a_repository",
   "path_already_exists",
+  "push_rejected_by_remote",
+  "push_rejected_non_fast_forward",
+  "ref_name_conflict",
+  "ref_not_found",
   "remote_unreachable",
   "tag_would_be_clobbered",
 ]);
 export type GitCommandFailureReason = typeof GitCommandFailureReason.Type;
 
-export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()("GitCommandError", {
+export class GitCommandError extends Schema.TaggedError<GitCommandError>()("GitCommandError", {
   operation: Schema.String,
   command: Schema.String,
   cwd: Schema.String,
@@ -494,7 +391,7 @@ export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()(
   stdoutLength: Schema.optional(Schema.Number),
   stderrLength: Schema.optional(Schema.Number),
   outputLength: Schema.optional(Schema.Number),
-  reason: Schema.optional(GitCommandFailureReason),
+  reason: ForwardCompatibleOptional(GitCommandFailureReason),
   detail: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {
@@ -504,7 +401,7 @@ export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()(
   }
 }
 
-export class TextGenerationError extends Schema.TaggedErrorClass<TextGenerationError>()(
+export class TextGenerationError extends Schema.TaggedError<TextGenerationError>()(
   "TextGenerationError",
   {
     operation: Schema.String,
@@ -517,7 +414,7 @@ export class TextGenerationError extends Schema.TaggedErrorClass<TextGenerationE
   }
 }
 
-export class GitManagerError extends Schema.TaggedErrorClass<GitManagerError>()("GitManagerError", {
+export class GitManagerError extends Schema.TaggedError<GitManagerError>()("GitManagerError", {
   operation: Schema.String,
   cwd: Schema.String,
   detail: Schema.String,
@@ -528,14 +425,14 @@ export class GitManagerError extends Schema.TaggedErrorClass<GitManagerError>()(
   }
 }
 
-export class GitPullRequestMaterializationError extends Schema.TaggedErrorClass<GitPullRequestMaterializationError>()(
+export class GitPullRequestMaterializationError extends Schema.TaggedError<GitPullRequestMaterializationError>()(
   "GitPullRequestMaterializationError",
   {
     cwd: TrimmedNonEmptyStringSchema,
     pullRequestNumber: PositiveInt,
     headRepository: Schema.NullOr(TrimmedNonEmptyStringSchema),
-    headBranch: TrimmedNonEmptyStringSchema,
-    localBranch: TrimmedNonEmptyStringSchema,
+    headBranch: GitRefName,
+    localBranch: GitRefName,
     cause: Schema.Defect(),
   },
 ) {
