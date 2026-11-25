@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
+import { AVICODE_IDENTITY } from "../../../packages/shared/src/avicodeIdentity.ts";
 import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";

@@ -141,7 +141,7 @@ const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 const CODEX_CATALOG_REFRESH_TIMEOUT_MS = 3_000;
 const CODEX_CONFIG_PROBE_TIMEOUT_MS = 3_000;
 const CODEX_CATALOG_REFRESH_POLL = "100 millis" as const;
-const CODEX_CLIENT_NAME = AVICODE_IDENTITY.sessionOriginator;
+const CODEX_CLIENT_NAME = "T3 Code";
 // Handshake plus account/models/skills requests can exceed the shared 10s probe budget.
 const CODEX_AUTH_PROBE_TIMEOUT_MS = 20_000;
 const CODEX_DISCOVERY_MARGIN_MS = 250;
@@ -608,7 +608,7 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv => ({
-  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: CODEX_CLIENT_NAME,
+  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: AVICODE_IDENTITY.sessionOriginator,
   ...environment,
 });
 
@@ -616,7 +616,7 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
       name: CODEX_CLIENT_NAME,
-      title: AVICODE_IDENTITY.productName,
+      title: CODEX_CLIENT_NAME,
       version: packageJson.version,
     },
     capabilities: {
