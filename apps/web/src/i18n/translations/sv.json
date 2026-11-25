@@ -12982,5 +12982,12 @@
   "201490988858b511": "återkallad av {by}",
   "99451a5d2d40440f": "Återkallad av {by}.",
   "3ee30a50b70fffab": "Återkallad av {by}: {reason}",
-  "92e129bf413a1220": "återkallad"
+  "92e129bf413a1220": "återkallad",
+  "95916f5b6dff5bb7": "Ej släppt",
+  "442cfaf3794fd363": "Installerad",
+  "9d037a5e13556861": "Baserad på {upstream} {version}",
+  "3230203820653db1": "Ändringslogg",
+  "ce831ba6bf54da86": "Varje version visar vad {fork} ändrade och vad synkningen med {upstream} förde in, med upphovspersonen angiven.",
+  "08a8d3e436c4a95f": "Inga versioner har registrerats än.",
+  "4c383bef3119c376": "Se vad som ändrades i varje version."
 }

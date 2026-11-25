@@ -12975,5 +12975,12 @@
   "201490988858b511": "zurückgezogen von {by}",
   "99451a5d2d40440f": "Zurückgezogen von {by}.",
   "3ee30a50b70fffab": "Zurückgezogen von {by}: {reason}",
-  "92e129bf413a1220": "zurückgezogen"
+  "92e129bf413a1220": "zurückgezogen",
+  "95916f5b6dff5bb7": "Unveröffentlicht",
+  "442cfaf3794fd363": "Installiert",
+  "9d037a5e13556861": "Basiert auf {upstream} {version}",
+  "3230203820653db1": "Änderungsprotokoll",
+  "ce831ba6bf54da86": "Jede Version listet, was {fork} geändert hat und was die Synchronisierung mit {upstream} gebracht hat, jeweils mit Angabe der Urheber.",
+  "08a8d3e436c4a95f": "Es wurden noch keine Versionen erfasst.",
+  "4c383bef3119c376": "Sieh dir an, was sich in jeder Version geändert hat."
 }

@@ -12984,5 +12984,12 @@
   "201490988858b511": "withdrawn by {by}",
   "99451a5d2d40440f": "Withdrawn by {by}.",
   "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
-  "92e129bf413a1220": "withdrawn"
+  "92e129bf413a1220": "withdrawn",
+  "95916f5b6dff5bb7": "Unreleased",
+  "442cfaf3794fd363": "Installed",
+  "9d037a5e13556861": "Based on {upstream} {version}",
+  "3230203820653db1": "Changelog",
+  "ce831ba6bf54da86": "Each release lists what {fork} changed and what syncing with {upstream} brought in, credited to whoever wrote it.",
+  "08a8d3e436c4a95f": "No releases have been recorded yet.",
+  "4c383bef3119c376": "See what changed in each version."
 }

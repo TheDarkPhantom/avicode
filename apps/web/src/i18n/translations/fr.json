@@ -12975,5 +12975,12 @@
   "201490988858b511": "retirée par {by}",
   "99451a5d2d40440f": "Retirée par {by}.",
   "3ee30a50b70fffab": "Retirée par {by} : {reason}",
-  "92e129bf413a1220": "retirée"
+  "92e129bf413a1220": "retirée",
+  "95916f5b6dff5bb7": "Non publiée",
+  "442cfaf3794fd363": "Installée",
+  "9d037a5e13556861": "Basée sur {upstream} {version}",
+  "3230203820653db1": "Journal des modifications",
+  "ce831ba6bf54da86": "Chaque version indique ce que {fork} a modifié et ce que la synchronisation avec {upstream} a apporté, avec le nom de leurs auteurs.",
+  "08a8d3e436c4a95f": "Aucune version n’a encore été enregistrée.",
+  "4c383bef3119c376": "Voyez ce qui a changé dans chaque version."
 }
