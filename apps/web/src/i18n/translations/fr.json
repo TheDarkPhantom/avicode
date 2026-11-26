@@ -13007,5 +13007,21 @@
   "d59aeef7ef08c892": "Modifier",
   "9861a2beb702d912": "Supprimer",
   "283f5c40cec3fbd5": "Favoris",
-  "1917f1746b698ff8": "Ajouter un favori"
+  "1917f1746b698ff8": "Ajouter un favori",
+  "aaea665388b4a4f4": "Par défaut",
+  "0a796a0eb90890e4": "Galet",
+  "ad030468f7f54879": "Marimba",
+  "7fb100248916a7fd": "Pincement",
+  "f868405ee3fdb046": "Verre",
+  "037fcad2e01aefb1": "Carillon",
+  "bb7d02e10d4aa493": "Retentit quand un fil a besoin d’une réponse ou d’une approbation, si le son des notifications est activé.",
+  "73e58a146862b0ef": "Retentit quand un fil se termine, si le son des notifications est activé.",
+  "652be25646ce33bf": "Rétablir le son « besoin de vous » par défaut",
+  "e12b6f2749eddb8f": "Rétablir le son « terminé » par défaut",
+  "4837cf021644e27b": "Son quand un agent a besoin de vous",
+  "d3c7fc2c999ba235": "Son quand un agent a terminé",
+  "c3c5efa1981f9f58": "Écouter le son",
+  "f618adf017a8be06": "Sons de notification",
+  "ea8a237ec8762fe8": "son notification alerte carillon réponse approbation attente",
+  "7cac31b88c132462": "son notification alerte carillon fait terminé achèvement"
 }

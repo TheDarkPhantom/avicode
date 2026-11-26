@@ -2,6 +2,11 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import { msg } from "gt-react";
 
+import {
+  avicodeNotificationSoundFor,
+  playAviCodeNotificationSound,
+} from "./avicode/notificationSounds";
+import { getClientSettings } from "./hooks/useSettings";
 import completionUrl from "./assets/notification-completion.mp3";
 import inputUrl from "./assets/notification-input.mp3";
 
@@ -119,6 +124,11 @@ export async function playNotificationSound(
 ) {
   if (!audioContext || audioContext.state !== "running") return;
   const context = audioContext;
+  // Avi Code addition: a picked preset replaces the bundled sound.
+  const aviCodeSound = avicodeNotificationSoundFor(kind, getClientSettings());
+  if (aviCodeSound !== "default") {
+    return playAviCodeNotificationSound(context, kind, aviCodeSound, shouldPlay);
+  }
   const url = kind === "completion" ? completionUrl : inputUrl;
   try {
     const decoded = await loadNotificationBuffer(context, url);

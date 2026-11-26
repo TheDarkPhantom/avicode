@@ -13002,5 +13002,21 @@
   "d59aeef7ef08c892": "Editar",
   "9861a2beb702d912": "Quitar",
   "283f5c40cec3fbd5": "Marcadores",
-  "1917f1746b698ff8": "Añadir marcador"
+  "1917f1746b698ff8": "Añadir marcador",
+  "aaea665388b4a4f4": "Predeterminado",
+  "0a796a0eb90890e4": "Guijarro",
+  "ad030468f7f54879": "Marimba",
+  "7fb100248916a7fd": "Pulsación",
+  "f868405ee3fdb046": "Cristal",
+  "037fcad2e01aefb1": "Campanilla",
+  "bb7d02e10d4aa493": "Suena cuando un hilo necesita una respuesta o aprobación, si el sonido de notificación está activado.",
+  "73e58a146862b0ef": "Suena cuando un hilo termina, si el sonido de notificación está activado.",
+  "652be25646ce33bf": "Restablecer el sonido de aviso al predeterminado",
+  "e12b6f2749eddb8f": "Restablecer el sonido de finalización al predeterminado",
+  "4837cf021644e27b": "Sonido cuando un agente te necesita",
+  "d3c7fc2c999ba235": "Sonido cuando un agente termina",
+  "c3c5efa1981f9f58": "Reproducir sonido",
+  "f618adf017a8be06": "Sonidos de notificación",
+  "ea8a237ec8762fe8": "sonido notificación alerta campanilla respuesta aprobación esperando",
+  "7cac31b88c132462": "sonido notificación alerta campanilla hecho terminado finalización"
 }

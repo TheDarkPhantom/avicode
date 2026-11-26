@@ -13016,5 +13016,21 @@
   "d59aeef7ef08c892": "Edit",
   "9861a2beb702d912": "Remove",
   "283f5c40cec3fbd5": "Bookmarks",
-  "1917f1746b698ff8": "Add bookmark"
+  "1917f1746b698ff8": "Add bookmark",
+  "aaea665388b4a4f4": "Default",
+  "0a796a0eb90890e4": "Pebble",
+  "ad030468f7f54879": "Marimba",
+  "7fb100248916a7fd": "Pluck",
+  "f868405ee3fdb046": "Glass",
+  "037fcad2e01aefb1": "Chime",
+  "bb7d02e10d4aa493": "Plays when a thread needs input or approval, if notification sound is on.",
+  "73e58a146862b0ef": "Plays when a thread finishes, if notification sound is on.",
+  "652be25646ce33bf": "Reset the needs-you sound to default",
+  "e12b6f2749eddb8f": "Reset the finished sound to default",
+  "4837cf021644e27b": "Sound when an agent needs you",
+  "d3c7fc2c999ba235": "Sound when an agent finishes",
+  "c3c5efa1981f9f58": "Play sound",
+  "f618adf017a8be06": "Notification sounds",
+  "ea8a237ec8762fe8": "notification sound alert chime input approval waiting",
+  "7cac31b88c132462": "notification sound alert chime done finished completion"
 }
