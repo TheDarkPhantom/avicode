@@ -6,17 +6,22 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   aviCodeRebrandPlugin,
+  aviCodeServerRebrandPlugin,
   loadHashMessage,
   rebrandProductName,
+  rebrandSourceText,
 } from "./avicode-rebrand-copy.ts";
 
 const repoRoot = NodePath.resolve(import.meta.dirname, "../..");
 const appDir = (app: string) => NodePath.join(repoRoot, "apps", app);
+type TestPlugin = {
+  load: (id: string) => string | null;
+  transform: { handler: (code: string, id: string) => { code: string } | null };
+};
 const pluginFor = (app: string) =>
-  aviCodeRebrandPlugin(NodeURL.pathToFileURL(`${appDir(app)}/`)) as unknown as {
-    load: (id: string) => string | null;
-    transform: { handler: (code: string, id: string) => { code: string } | null };
-  };
+  aviCodeRebrandPlugin(NodeURL.pathToFileURL(`${appDir(app)}/`)) as unknown as TestPlugin;
+const rewriterFor = (plugin: TestPlugin, source: string) => (file: string) =>
+  plugin.transform.handler(source, NodePath.join(repoRoot, file))?.code;
 
 describe("rebrandProductName", () => {
   it("renames the app and keeps names that still mean T3 Code", () => {
@@ -28,6 +33,31 @@ describe("rebrandProductName", () => {
       "Drop T3 Code or VS Code .json files",
     );
     expect(rebrandProductName("Enable T3 Code SnapShots")).toBe("Enable T3 Code SnapShots");
+    expect(rebrandProductName('const PREFIX = "T3 Code · ";')).toBe('const PREFIX = "T3 Code · ";');
+    expect(rebrandProductName("Managed by T3 Code · v1.")).toBe("Managed by Avi Code 2 · v1.");
+    expect(rebrandProductName("Install T3 Code for GitHub")).toBe("Install T3 Code for GitHub");
+    expect(rebrandProductName("T3 Code Relay API")).toBe("T3 Code Relay API");
+  });
+});
+
+describe("rebrandSourceText", () => {
+  const repo = "https://github.com/TheDarkPhantom/avicode";
+
+  it("points upstream's site pages at the fork and keeps its services", () => {
+    expect(rebrandSourceText('"https://t3.codes/download"')).toBe(`"${repo}/releases/latest"`);
+    expect(rebrandSourceText('"https://t3.codes/privacy-policy"')).toBe(`"${repo}"`);
+    expect(rebrandSourceText("Created in [T3 Code](https://t3.codes).")).toBe(
+      `Created in [Avi Code 2](${repo}).`,
+    );
+    expect(rebrandSourceText("See https://t3.codes for docs")).toBe(`See ${repo} for docs`);
+    const kept = [
+      "https://app.t3.codes",
+      "https://ingest.t3.codes",
+      "https://t3.codes/install.sh",
+      "https://t3.codes/schema/t3.json",
+      "noreply@t3.codes",
+    ];
+    for (const text of kept) expect(rebrandSourceText(text)).toBe(text);
   });
 });
 
@@ -36,13 +66,25 @@ describe("aviCodeRebrandPlugin", () => {
   const source = 'gt("Restart T3 Code.")';
 
   it("rewrites the sources GT scans and nothing else", () => {
-    const rewrite = (file: string) =>
-      plugin.transform.handler(source, NodePath.join(repoRoot, file))?.code;
+    const rewrite = rewriterFor(plugin, source);
     expect(rewrite("apps/web/src/a.tsx")).toBe('gt("Restart Avi Code 2.")');
     expect(rewrite("packages/client-runtime/src/a.ts?query")).toBe('gt("Restart Avi Code 2.")');
+    expect(rewrite("packages/contracts/src/a.ts")).toBe('gt("Restart Avi Code 2.")');
     expect(rewrite("apps/web/src/a.test.tsx")).toBeUndefined();
     expect(rewrite("apps/server/src/a.ts")).toBeUndefined();
     expect(rewrite("apps/web/src/components/changelog/ChangelogPage.tsx")).toBeUndefined();
+  });
+
+  it("rewrites the server and package sources in the server bundle", () => {
+    const rewrite = rewriterFor(
+      aviCodeServerRebrandPlugin() as unknown as TestPlugin,
+      '"Update T3 Code on host."',
+    );
+    expect(rewrite("apps/server/src/a.ts")).toBe('"Update Avi Code 2 on host."');
+    expect(rewrite("packages/contracts/src/a.ts")).toBe('"Update Avi Code 2 on host."');
+    expect(rewrite("apps/server/src/a.test.ts")).toBeUndefined();
+    expect(rewrite("apps/server/src/triage/triagePrompt.ts")).toBeUndefined();
+    expect(rewrite("apps/web/src/a.ts")).toBeUndefined();
   });
 
   it.each(["web", "desktop"])("rehashes the %s catalogs to the rewritten English", (app) => {

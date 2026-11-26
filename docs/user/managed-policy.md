@@ -64,12 +64,12 @@ administrators.
 become arrays. To make the payload from a policy file you checked, run
 `plutil -convert xml1 -o com.advisoravi.avicode2.plist policy.json` and upload the result, or run
 `t3 policy templates <directory> --policy policy.json` to write a complete
-`macos/t3code.mobileconfig`. Install it as
+`macos/avicode2.mobileconfig`. Install it as
 a device profile, since T3 Code ignores user profiles, and deploy only one profile for this domain.
 A profile cannot hold `null`, so use a policy file if a setting's value must be `null`.
 
 **Windows Group Policy.** Run `t3 policy templates <directory>` and copy
-`windows/t3code.admx` and `windows/en-US/t3code.adml` into your `PolicyDefinitions` folder or
+`windows/avicode2.admx` and `windows/en-US/avicode2.adml` into your `PolicyDefinitions` folder or
 central store, or import them into Intune. The policies appear under Computer Configuration >
 Administrative Templates > T3 Code. Set **Organization** whenever you set any other T3 Code policy.
 Locks and provider fields go in the two JSON policies, as the same objects a policy file would hold.

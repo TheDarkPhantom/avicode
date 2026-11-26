@@ -90,7 +90,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))((it) => {
       );
 
       assert.include(
-        yield* fs.readFileString(path.join(home, "out", "macos", "t3code.mobileconfig")),
+        yield* fs.readFileString(path.join(home, "out", "macos", "avicode2.mobileconfig")),
         "Tilde Corp",
       );
     }),

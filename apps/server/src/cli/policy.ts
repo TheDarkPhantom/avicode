@@ -9,6 +9,7 @@ import * as References from "effect/References";
 import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { listManageableSettings } from "../policy/managedSettings.ts";
@@ -153,10 +154,12 @@ const templatesCommand = Command.make("templates", {
         return yield* new CliError.UserError({ cause: document, userMessage: profile.reason });
       }
       const outputDir = yield* expandHomePath(directory);
+      // Avi Code addition: template files named for Avi Code 2.
+      const name = AVICODE_IDENTITY.homeDirectoryName.slice(1);
       const files = [
-        [path.join(outputDir, "windows", "t3code.admx"), windowsAdmx()],
-        [path.join(outputDir, "windows", "en-US", "t3code.adml"), windowsAdml()],
-        [path.join(outputDir, "macos", "t3code.mobileconfig"), profile.profile],
+        [path.join(outputDir, "windows", `${name}.admx`), windowsAdmx()],
+        [path.join(outputDir, "windows", "en-US", `${name}.adml`), windowsAdml()],
+        [path.join(outputDir, "macos", `${name}.mobileconfig`), profile.profile],
       ] as const;
       for (const [file, contents] of files) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
