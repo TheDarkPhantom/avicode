@@ -55,6 +55,18 @@
         {
           "file": "apps/web/public/manifest.webmanifest",
           "values": ["\"name\": \"Avi Code 2\"", "\"short_name\": \"Avi Code 2\""]
+        },
+        {
+          "file": "apps/server/vite.config.ts",
+          "values": ["aviCodeServerRebrandPlugin(),"]
+        },
+        {
+          "file": "apps/desktop/vite.config.ts",
+          "values": ["plugins: [aviCodeRebrandPlugin(new URL(\".\", import.meta.url))],"]
+        },
+        {
+          "file": "apps/web/vite.config.ts",
+          "values": ["aviCodeRebrandPlugin("]
         }
       ]
     },

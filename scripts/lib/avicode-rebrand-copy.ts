@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - Vite's build plugin runs before an Effect runtime exists.
 /**
- * Upstream's UI copy says "T3 Code" in English source strings, and GT keys every translation by a
- * hash of that English. This plugin rewrites the name in the files GT scans at build time and
- * rehashes the catalogs to match, so upstream's sources and catalogs merge untouched.
+ * Upstream's copy says "T3 Code" in English source strings, and GT keys every translation by a hash
+ * of that English. These plugins rewrite the name in app and package sources at build time and
+ * rehash the catalogs to match, so upstream's sources and catalogs merge untouched.
  */
 import * as NodeFS from "node:fs";
 import * as NodeModule from "node:module";
@@ -13,23 +13,58 @@ import type { Plugin } from "vite-plus";
 
 import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 
-// Names that still mean T3 Code: the server's peer session label, T3 Code theme files and the
-// GNOME extension's registered name.
-const UPSTREAM_NAME = /T3 Code(?! · …| or VS Code| SnapShots)/g;
+// Names that still mean T3 Code: the peer link label prefix an upstream peer strips, T3 Code theme
+// files, the GNOME extension, upstream's GitHub App and its relay API.
+const UPSTREAM_NAME = /T3 Code(?! · (?:…|")| or VS Code| SnapShots| for GitHub| Relay API)/g;
 
-// Its "T3 Code" headings name upstream's changelog sections.
-const UNTOUCHED_FILES = ["apps/web/src/components/changelog/ChangelogPage.tsx"];
+// Upstream's site pages. Its install scripts, schema, hosted app and endpoints stay.
+const UPSTREAM_SITE = /https:\/\/t3\.codes(?:\/(download|privacy-policy))?(?![\w/.-])/g;
+const FORK_REPOSITORY_URL = `https://github.com/${AVICODE_IDENTITY.releaseSlug}`;
+const FORK_SITE_PAGES: Readonly<Record<string, string>> = {
+  download: `${FORK_REPOSITORY_URL}/releases/latest`,
+};
+
+const UNTOUCHED_FILES = [
+  // Its "T3 Code" headings name upstream's changelog sections.
+  "apps/web/src/components/changelog/ChangelogPage.tsx",
+  // Must match upstream's PLAYBOOK.md byte for byte, or the triage agent follows upstream's copy.
+  "apps/server/src/triage/triagePrompt.ts",
+];
 
 const REPO_ROOT = NodePath.resolve(import.meta.dirname, "../..");
 const SOURCE_FILE = /\.tsx?(?:\?|$)/;
 const TEST_FILE = /\.test\.tsx?$/;
+const REBRANDED_TEXT = /T3 Code|https:\/\/t3\.codes/;
 
 type HashMessage = (message: unknown, options: { readonly $format: string }) => string;
 
 export const rebrandProductName = (text: string): string =>
   text.replace(UPSTREAM_NAME, AVICODE_IDENTITY.productName);
 
+export const rebrandSourceText = (text: string): string =>
+  rebrandProductName(text).replace(
+    UPSTREAM_SITE,
+    (_url, page?: string) => (page && FORK_SITE_PAGES[page]) ?? FORK_REPOSITORY_URL,
+  );
+
 const normalize = (file: string) => NodePath.resolve(file.split("?", 1)[0]!).replaceAll("\\", "/");
+const repoDir = (dir: string) => `${normalize(NodePath.join(REPO_ROOT, dir))}/`;
+
+const PACKAGES_ROOT = repoDir("packages");
+
+/** Rewrites the non-test sources under `roots`. */
+function rebrandSources(roots: readonly string[]): NonNullable<Plugin["transform"]> {
+  const untouched = UNTOUCHED_FILES.map((file) => normalize(NodePath.join(REPO_ROOT, file)));
+  return {
+    filter: { id: SOURCE_FILE, code: REBRANDED_TEXT },
+    handler(code, id) {
+      const file = normalize(id);
+      if (TEST_FILE.test(file) || untouched.includes(file)) return null;
+      if (!roots.some((root) => file.startsWith(root))) return null;
+      return { code: rebrandSourceText(code), map: null };
+    },
+  };
+}
 
 export function loadHashMessage(appDir: string): HashMessage {
   const fromApp = NodeModule.createRequire(NodePath.join(appDir, "package.json"));
@@ -51,7 +86,7 @@ function rebrandedKeys(
   const keys = new Map<string, string>();
   for (const [key, value] of Object.entries(source)) {
     const text = JSON.stringify(value);
-    const rebranded = rebrandProductName(text);
+    const rebranded = rebrandSourceText(text);
     if (rebranded === text) continue;
     // Strings come from gt()/msg() (ICU) or plain <T> children (JSX). An entry with $context hashes
     // neither way and stays under its old key, so other languages show it in English.
@@ -62,7 +97,7 @@ function rebrandedKeys(
 }
 
 function rebrandCatalog(raw: string, keys: ReadonlyMap<string, string>): string {
-  const catalog: Record<string, unknown> = JSON.parse(rebrandProductName(raw));
+  const catalog: Record<string, unknown> = JSON.parse(rebrandSourceText(raw));
   return JSON.stringify(
     Object.fromEntries(
       Object.entries(catalog).map(([key, value]) => [keys.get(key) ?? key, value]),
@@ -70,14 +105,16 @@ function rebrandCatalog(raw: string, keys: ReadonlyMap<string, string>): string 
   );
 }
 
-/** `appDir` holds the app's gt.config.json, which names the scanned sources and the catalogs. */
+/**
+ * `appDir` holds the app's gt.config.json, which names the scanned sources and the catalogs. Package
+ * sources outside those globs are rewritten too; their strings are not in the catalogs.
+ */
 export function aviCodeRebrandPlugin(appDir: URL): Plugin {
   const dir = NodeURL.fileURLToPath(appDir);
   const config = JSON.parse(NodeFS.readFileSync(NodePath.join(dir, "gt.config.json"), "utf8"));
   const roots = (config.src as string[])
     .filter((glob) => !glob.startsWith("!"))
     .map((glob) => `${normalize(NodePath.join(dir, glob.slice(0, glob.indexOf("*"))))}/`);
-  const untouched = UNTOUCHED_FILES.map((file) => normalize(NodePath.join(REPO_ROOT, file)));
   const catalogPath = (locale: string) =>
     normalize(NodePath.join(dir, config.files.gt.output.replace("[locale]", locale)));
   const catalogs = new Set(
@@ -99,14 +136,15 @@ export function aviCodeRebrandPlugin(appDir: URL): Plugin {
       );
       return rebrandCatalog(NodeFS.readFileSync(file, "utf8"), keys);
     },
-    transform: {
-      filter: { id: SOURCE_FILE, code: "T3 Code" },
-      handler(code, id) {
-        const file = normalize(id);
-        if (TEST_FILE.test(file) || untouched.includes(file)) return null;
-        if (!roots.some((root) => file.startsWith(root))) return null;
-        return { code: rebrandProductName(code), map: null };
-      },
-    },
+    transform: rebrandSources([...roots, PACKAGES_ROOT]),
+  };
+}
+
+/** The server has no GT catalogs. Its `vp pack` build is the only place this runs, never tests. */
+export function aviCodeServerRebrandPlugin(): Plugin {
+  return {
+    name: "avicode:rebrand-server-copy",
+    enforce: "pre",
+    transform: rebrandSources([repoDir("apps/server/src"), PACKAGES_ROOT]),
   };
 }

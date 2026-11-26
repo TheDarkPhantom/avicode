@@ -121,6 +121,8 @@ export default defineConfig({
         "src/snapShot/RegionSnapShotWorker.ts",
         "src/snapShot/SnapShotAccessibilityWorker.ts",
       ],
+      // Avi Code addition: the workers bundle package copy too.
+      plugins: [aviCodeRebrandPlugin(new URL(".", import.meta.url))],
       clean: false,
       deps: {
         alwaysBundle: (id) => !id.startsWith("node:") && !isMainProcessExternal(id),

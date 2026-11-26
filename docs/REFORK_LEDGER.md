@@ -43,8 +43,8 @@ Short version:
 - Hide T3 Connect, hosted app and relay. Tailscale and LAN keep working.
 - Repoint the admin policy file and registry key to Avi Code paths.
 - Keep the `avicode_desktop` Codex originator.
-- Rename "T3 Code" in UI copy at build time (`scripts/lib/avicode-rebrand-copy.ts`), not in the
-  committed sources or catalogs.
+- Rename "T3 Code" in web, desktop and server copy at build time
+  (`scripts/lib/avicode-rebrand-copy.ts`), not in the committed sources or catalogs.
 
 **Features**
 
