@@ -7,6 +7,7 @@ import {
   AVICODE_NOTIFICATION_SOUND_LABELS,
   type NotificationSoundKind,
 } from "../../avicode/notificationSounds";
+import { QuickSendChipsRow } from "../../avicode/QuickSendChipsSettings";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { playNotificationSound, unlockNotificationAudio } from "../../threadNotifications";
 import { Button } from "../ui/button";
@@ -189,6 +190,7 @@ export function AviCodeSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="avicode-chats" title={gt("Chats")}>
         <StartInPlanModeRow />
+        <QuickSendChipsRow />
       </SettingsSection>
       <SettingsSection id="avicode-privacy" title={gt("Privacy")}>
         <WindowTitleNamesRow />

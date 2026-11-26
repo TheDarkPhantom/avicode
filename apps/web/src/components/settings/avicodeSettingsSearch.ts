@@ -17,6 +17,12 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("plan mode new chat thread default interaction mode build")],
   },
   {
+    id: "avicode-quick-send-chips",
+    title: msg("Quick-send chips"),
+    to: "/settings/avicode",
+    searchTerms: [msg("chips shortcut quick send message prompt composer button")],
+  },
+  {
     id: "avicode-notification-sound-input",
     title: msg("Sound when an agent needs you"),
     to: "/settings/avicode",
