@@ -83,6 +83,7 @@ import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
+import { UsageByRepository } from "~/avicode/UsageByRepository";
 import {
   costTypeSegments,
   modelShare,
@@ -574,6 +575,14 @@ export function UsagePage() {
                 refreshingUsage={refreshingUsage}
                 showChatGptSharing={showChatGptSharing}
                 onSelectModel={selectUsageModel}
+              />
+            )}
+            {/* Avi Code addition */}
+            {showingLimits ? null : (
+              <UsageByRepository
+                environments={selectedEnvironments}
+                window={shownWindow}
+                metric={metric === "tokens" ? "tokens" : "cost"}
               />
             )}
           </WorkspacePageContainer>

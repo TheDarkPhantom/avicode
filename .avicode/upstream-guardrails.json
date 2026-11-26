@@ -254,6 +254,58 @@
       ]
     },
     {
+      "id": "claude-sign-in",
+      "why": "Claude sign-in from Settings joins the Claude driver at two upstream sites a sync could drop. An unused auth would fail lint.",
+      "requiredFiles": ["apps/server/src/provider/avicode/ClaudeAuth.ts"],
+      "requiredText": [
+        {
+          "file": "apps/server/src/provider/Drivers/ClaudeDriver.ts",
+          "values": [
+            "stampInstanceIdentity(withClaudeSignInSetup(draft));",
+            "const auth = yield* makeClaudeAuth({"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "usage-by-repository",
+      "why": "Usage by repository joins upstream's RPC group, server, authorization and Usage page at single sites a sync could drop.",
+      "requiredFiles": [
+        "packages/contracts/src/avicodeProjectUsage.ts",
+        "apps/server/src/usage/avicode/ProjectUsageService.ts",
+        "apps/web/src/avicode/UsageByRepository.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "packages/contracts/src/rpc.ts",
+          "values": [
+            "export * from \"./avicodeProjectUsage.ts\";",
+            "  ...AVICODE_WS_METHODS,",
+            "  WsAviCodeGetProjectUsageRpc,"
+          ]
+        },
+        {
+          "file": "apps/server/src/ws.ts",
+          "values": ["[WS_METHODS.avicodeGetProjectUsage]: (input) => projectUsage.read(input),"]
+        },
+        {
+          "file": "apps/server/src/server.ts",
+          "values": ["Layer.provideMerge(ProjectUsageService.layer),"]
+        },
+        {
+          "file": "apps/server/src/auth/RpcAuthorization.ts",
+          "values": ["[WS_METHODS.avicodeGetProjectUsage]: AuthDiagnosticsReadScope,"]
+        },
+        {
+          "file": "apps/web/src/components/usage/UsagePage.tsx",
+          "values": [
+            "import { UsageByRepository } from \"~/avicode/UsageByRepository\";",
+            "<UsageByRepository"
+          ]
+        }
+      ]
+    },
+    {
       "id": "thread-close-reopen-keys",
       "why": "Ctrl+W archives and Ctrl+Shift+T reopens archived threads through upstream keybinding sites.",
       "requiredFiles": [
@@ -316,7 +368,9 @@
       "apps/web/src/avicode",
       "apps/web/src/components/settings/AviCodeSettingsPanel.tsx",
       "apps/web/src/components/settings/avicodeSettingsSearch.ts",
-      "packages/contracts/src/avicodeSettings.ts"
+      "packages/contracts/src/avicodeSettings.ts",
+      "packages/contracts/src/avicodeProjectUsage.ts",
+      "apps/server/src/usage/avicode"
     ],
     "allowedLines": {
       "packages/shared/src/avicodeIdentity.ts": [

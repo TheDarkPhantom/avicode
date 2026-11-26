@@ -54,5 +54,7 @@ Upstream: t3code 0.1.12
 - Pick the Oxblood, Midnight, Forest, Violet or Graphite theme in light or dark (#327)
 - Send saved messages in one click with chips under the message box (#329)
 - Pick a different sound for when an agent needs you and when it finishes (#328)
+- Sign in to each Claude account from its provider settings instead of a terminal command (#330)
+- See token usage and cost per repository and account on the Usage page (#332)
 - Ctrl+W archives the open thread once no terminal or panel tab is left to close (#331)
 - Ctrl+Shift+T reopens your last archived threads once no closed tab is left to reopen (#331)

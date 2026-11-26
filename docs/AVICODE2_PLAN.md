@@ -100,7 +100,7 @@ Made 2026-11-25.
 | Ctrl+W closes the thread, Ctrl+Shift+T reopens the last archived thread | Port the fork version                   |
 | Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Port as upstream theme data             |
 | Notification sound picker, plan mode as default                         | Port                                    |
-| Per-repo and per-credential usage                                       | Port later                              |
+| Per-repo and per-credential usage                                       | Ported (#332)                           |
 | Named sidebar folders                                                   | Rebuild later on upstream's new sidebar |
 | Flat "all threads by recent activity" list                              | Drop                                    |
 | Reply styles per turn                                                   | Port later                              |
@@ -181,13 +181,14 @@ In order. Each is one PR with a changelog entry.
 | 9   | One git write operation at a time per repo                                | free  |
 | 10  | Settings still load when one value is invalid                             | free  |
 | 11  | Preview port list hides Windows services and noise                        | free  |
-| 12  | Claude sign-in from Settings                                              | cheap |
+| 12  | Claude sign-in from Settings. Done (#330)                                 | cheap |
 | 13  | Higher input cap (600k characters; upstream has 120k)                     | cheap |
 | 14  | Dead-worktree and low-disk monitor                                        | free  |
 | 15  | Projects collapsed by default, expand/collapse all (check upstream first) | cheap |
 | 16  | Archived page sorting, Ctrl+K finds archived threads                      | cheap |
+| 18  | Per-repo and per-credential usage. Done (#332)                            | cheap |
 
-Later: per-repo usage, sidebar folders, reply styles, latest thought on sidebar rows, Files panel
+Later: sidebar folders, reply styles, latest thought on sidebar rows, Files panel
 create/rename/delete.
 
 ## Step 6: history import

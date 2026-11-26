@@ -412,6 +412,9 @@ import {
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+// Avi Code addition: usage by repository.
+import { AVICODE_WS_METHODS, WsAviCodeGetProjectUsageRpc } from "./avicodeProjectUsage.ts";
+export * from "./avicodeProjectUsage.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -637,6 +640,7 @@ export const WS_METHODS = {
   serverReportClientActivity: "server.reportClientActivity",
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
+  ...AVICODE_WS_METHODS,
 
   workflowsSubscribe: "workflows.subscribe",
   workflowsCounts: "workflows.counts",
@@ -2556,6 +2560,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerPrepareTriageRpc,
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
+  WsAviCodeGetProjectUsageRpc,
   WsServerSignalProcessRpc,
   WsWorkflowsSubscribeRpc,
   WsWorkflowsCountsRpc,

@@ -61,9 +61,12 @@ import {
 import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
+  makeClaudeEnvironment,
   mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
+import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
+import { makeClaudeAuth, withClaudeSignInSetup } from "../avicode/ClaudeAuth.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { makeClaudeMaintenanceResolution } from "./ClaudeMaintenance.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
@@ -147,13 +150,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ? configDir
         : undefined,
     );
-    const stampIdentity = withInstanceIdentity({
+    const stampInstanceIdentity = withInstanceIdentity({
       instanceId,
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
       continuationGroupKey,
     });
+    // Avi Code addition: Claude sign-in from Settings.
+    const stampIdentity = (draft: ServerProviderDraft) =>
+      stampInstanceIdentity(withClaudeSignInSetup(draft));
 
     const scopedLimitNames = yield* makeClaudeScopedLimitNames;
     // The SDK's user source is the host's home, not a custom one; same rule as the adapter.
@@ -417,9 +423,24 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       ),
     );
 
+    // Avi Code addition: Claude sign-in from Settings.
+    const auth = yield* makeClaudeAuth({
+      instanceId,
+      enabled,
+      binaryPath: effectiveConfig.binaryPath,
+      configDir,
+      environment: yield* makeClaudeEnvironment(effectiveConfig, processEnv),
+      cwd: stateDir,
+      onChanged: Cache.invalidateAll(capabilitiesProbeCache).pipe(
+        Effect.andThen(snapshot.refresh),
+        Effect.asVoid,
+      ),
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
     return {
       instanceId,
       driverKind: DRIVER_KIND,
+      auth,
       continuationIdentity: {
         ...fallbackContinuationIdentity,
         continuationKey: continuationGroupKey,
