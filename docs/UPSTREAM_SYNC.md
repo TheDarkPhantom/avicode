@@ -35,7 +35,9 @@ workflow uses it. Without it, close and reopen the sync PR to start checks.
 
 ## Reviewing a sync PR
 
-- Required checks are green.
+- Required checks are green. `AviCode boundaries` (`vp run check:avicode`) fails when the merge
+  dropped a protected fork value such as the app name, appId or the telemetry default. Restore the
+  value; change `.avicode/upstream-guardrails.json` only when the change is deliberate.
 - Fork-owned files still work, and every edit to an upstream file is still a single call site marked
   "Avi Code addition".
 - Merge with `gh pr merge --merge --delete-branch`. Never squash: the merge commit is what records

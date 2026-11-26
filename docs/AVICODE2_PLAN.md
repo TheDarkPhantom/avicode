@@ -17,7 +17,7 @@ feature inventory behind it.
 | 3    | Branches: freeze the old fork, make the re-fork `main`               | Done (PR #307)                 |
 | 4    | Identity and CI: Avi Code 2 installs side by side, checks run again  | Next                           |
 | 5    | Feature ports                                                        | After step 4                   |
-| 6    | One-time history import on first launch                              | After step 4                   |
+| 6    | One-time history import on first launch                              | Done                           |
 | 7    | Restore `main` protection, turn the right workflows back on          | With step 4                    |
 | 8    | Use Avi Code 2 daily next to the old app, then uninstall the old app | Last                           |
 
@@ -191,13 +191,22 @@ create/rename/delete.
 
 ## Step 6: history import
 
-On first launch of Avi Code 2:
+Built in `apps/server/src/persistence/avicode/legacyAviCodeImport.ts`, called once from
+`Sqlite.ts` before upstream's V2 database setup. On Avi Code 2's first start with the default data
+home (never dev or `--base-dir` homes):
 
-1. Snapshot `~/.avicode/userdata/state.sqlite` with `VACUUM INTO` into `~/.avicode2/userdata`. The
-   source is never written.
-2. Run the conversion from step 2, map thread context, keep usage rows in a side table.
-3. Copy provider instances, keybindings, secrets, client settings and attachments.
-4. Let upstream's normal startup migrate and lazily import threads.
+1. Snapshot `~/.avicode/userdata/state.sqlite` with `VACUUM INTO` from a read-only connection into
+   `~/.avicode2/userdata/statev2.sqlite`. The source is never written.
+2. Check that migration records 1 to 34 match upstream by name, then delete the old fork's records
+   above 34. Every column stays: upstream's migrations check for existing columns, and the fork-only
+   data (lineage, reply styles, thread context, per-repo usage) stays in place for later ports.
+3. Copy `settings.json` (provider instances), `client-settings.json`, `keybindings.json`,
+   `secrets` and `attachments` if absent. `environment-id` and window state are not copied.
+4. Write `avicode-legacy-import.json` so it never runs again, then let upstream migrate and import
+   threads lazily.
+
+Tested against a 9.1 GB copy: 1,684 threads imported in 50 seconds, upstream migrations in 23,
+old threads open with messages, provider and worktree intact, and the source checksum unchanged.
 
 ## Rules that keep the fork thin
 

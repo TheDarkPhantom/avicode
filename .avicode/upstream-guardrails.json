@@ -1,0 +1,147 @@
+{
+  "version": 2,
+  "boundaries": [
+    {
+      "id": "identity",
+      "why": "Avi Code 2 installs next to T3 Code and the old Avi Code, and releases only from this fork.",
+      "requiredFiles": [
+        "packages/shared/src/avicodeIdentity.ts",
+        "apps/desktop/package.json",
+        "scripts/build-desktop-artifact.ts"
+      ],
+      "requiredText": [
+        {
+          "file": "packages/shared/src/avicodeIdentity.ts",
+          "values": [
+            "productName: \"Avi Code 2\"",
+            "appId: \"com.advisoravi.avicode2\"",
+            "homeDirectoryName: \".avicode2\"",
+            "sessionOriginator: \"avicode_desktop\"",
+            "releaseOwner: \"TheDarkPhantom\"",
+            "releaseSlug: \"TheDarkPhantom/avicode\""
+          ]
+        },
+        {
+          "file": "apps/desktop/package.json",
+          "values": ["\"productName\": \"Avi Code 2\""]
+        },
+        {
+          "file": "scripts/build-desktop-artifact.ts",
+          "values": [
+            "const DESKTOP_APP_ID = AVICODE_IDENTITY.appId;",
+            "AVICODE_IDENTITY.releaseSlug.toLowerCase()",
+            "executableName: AVICODE_IDENTITY.executableName"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "branding",
+      "why": "Upstream ships T3 Code's logo and name in the renderer.",
+      "requiredFiles": [
+        "assets/prod/logo.svg",
+        "apps/web/index.html",
+        "apps/web/public/manifest.webmanifest"
+      ],
+      "requiredText": [
+        {
+          "file": "assets/prod/logo.svg",
+          "values": ["#0C0A0A", "#DE5257", "#C99A2E", "#EDE7E3", "#4F9D69"]
+        },
+        {
+          "file": "apps/web/index.html",
+          "values": ["<title>Avi Code 2</title>"]
+        },
+        {
+          "file": "apps/web/public/manifest.webmanifest",
+          "values": ["\"name\": \"Avi Code 2\"", "\"short_name\": \"Avi Code 2\""]
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "why": "Releases are built by hand, never marked Latest, and carry no update feed.",
+      "requiredFiles": [".github/workflows/avicode-release.yml"],
+      "manualOnlyWorkflows": [".github/workflows/avicode-release.yml"],
+      "requiredText": [
+        {
+          "file": ".github/workflows/avicode-release.yml",
+          "values": [
+            "github.repository == 'TheDarkPhantom/avicode'",
+            "--latest=false",
+            "T3CODE_DESKTOP_UPDATE_REPOSITORY: none/none"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "upstream-sync",
+      "why": "Upstream syncs arrive as reviewed PRs and never merge or release on their own.",
+      "requiredFiles": [
+        ".github/workflows/sync-upstream.yml",
+        ".github/workflows/avicode-guardrails.yml",
+        "scripts/avicode/check-upstream-guardrails.mjs",
+        "docs/UPSTREAM_SYNC.md"
+      ],
+      "requiredText": [
+        {
+          "file": ".github/workflows/sync-upstream.yml",
+          "values": ["pingdotgg/t3code", "git fetch --no-tags upstream", "git merge --no-ff"],
+          "forbiddenValues": ["gh pr merge", "--auto", "workflow_run:", "create-release"]
+        }
+      ]
+    },
+    {
+      "id": "changelog",
+      "why": "The in-app changelog page reads the fork's CHANGELOG.md.",
+      "requiredFiles": [
+        "CHANGELOG.md",
+        "apps/web/src/changelog/parseChangelog.ts",
+        "apps/web/src/routes/_chat.changelog.tsx"
+      ]
+    },
+    {
+      "id": "privacy",
+      "why": "Analytics stay off by default and the app does not promote T3 services.",
+      "requiredFiles": [
+        "apps/server/src/telemetry/AnalyticsService.ts",
+        "apps/web/src/routes/__root.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/server/src/telemetry/AnalyticsService.ts",
+          "values": [
+            "Avi Code addition: analytics stay off unless T3CODE_TELEMETRY_ENABLED opts in.",
+            "const enabledByDefault = false;"
+          ]
+        },
+        {
+          "file": "packages/shared/src/avicodeIdentity.ts",
+          "values": ["showsUpstreamPromotions: false"]
+        },
+        {
+          "file": "apps/web/src/routes/__root.tsx",
+          "values": [
+            "AVICODE_IDENTITY.showsUpstreamPromotions ? <ConnectOnboardingDialog /> : null"
+          ]
+        }
+      ]
+    }
+  ],
+  "brandBan": {
+    "text": "T3 Code",
+    "why": "TRADEMARK.md requires our own branding in fork-owned files. Allow only factual attribution.",
+    "paths": [
+      "scripts/avicode",
+      "packages/shared/src/avicodeIdentity.ts",
+      "apps/web/src/changelog",
+      "apps/web/src/components/changelog"
+    ],
+    "allowedLines": {
+      "packages/shared/src/avicodeIdentity.ts": [
+        "/** T3 Connect onboarding, the mobile app row and the GitHub star prompt promote T3 Code. */"
+      ],
+      "apps/web/src/components/changelog/ChangelogPage.tsx": ["const UPSTREAM_NAME = \"T3 Code\";"]
+    }
+  }
+}
