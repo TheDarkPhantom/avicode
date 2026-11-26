@@ -11,6 +11,12 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("window title privacy time tracker ALFRED ActivityWatch project name")],
   },
   {
+    id: "avicode-start-in-plan-mode",
+    title: msg("Start new chats in plan mode"),
+    to: "/settings/avicode",
+    searchTerms: [msg("plan mode new chat thread default interaction mode build")],
+  },
+  {
     id: "avicode-notification-sound-input",
     title: msg("Sound when an agent needs you"),
     to: "/settings/avicode",

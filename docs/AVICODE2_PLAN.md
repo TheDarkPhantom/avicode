@@ -171,7 +171,7 @@ In order. Each is one PR with a changelog entry.
 | #   | Feature                                                                   | Cost  |
 | --- | ------------------------------------------------------------------------- | ----- |
 | 1   | Quick-send chips                                                          | cheap |
-| 2   | Start new chats in plan mode                                              | cheap |
+| 2   | Start new chats in plan mode. Done (#325)                                 | cheap |
 | 3   | Ctrl+W closes thread, Ctrl+Shift+T reopens archived                       | cheap |
 | 4   | Mouse back/forward buttons, Alt+Left/Right                                | cheap |
 | 5   | Colour themes as upstream theme data                                      | cheap |

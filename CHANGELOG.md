@@ -50,4 +50,5 @@ Upstream: t3code 0.1.12
 - Menus, dialogs and messages say Avi Code 2 instead of T3 Code in every language (#322)
 - Open a project's folder in File Explorer from its right-click menu in the sidebar (#324)
 - Keep the sites you open often as bookmarks on the built-in browser's new tab page (#326)
+- Start every new chat in plan mode with a toggle in Settings > Avi Code (#325)
 - Pick a different sound for when an agent needs you and when it finishes (#328)
