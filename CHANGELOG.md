@@ -49,3 +49,4 @@ Upstream: t3code 0.1.12
 - The app uses the Avi Code icon and name everywhere (#314)
 - Menus, dialogs and messages say Avi Code 2 instead of T3 Code in every language (#322)
 - Open a project's folder in File Explorer from its right-click menu in the sidebar (#324)
+- Keep the sites you open often as bookmarks on the built-in browser's new tab page (#326)
