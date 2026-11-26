@@ -13044,5 +13044,21 @@
   "1bb281652110a45d": ["Upp till ", { "i": 1, "k": "_gt_value_1", "v": "v" }, " chips"],
   "226cb5e8c09af744": "Ett annat chip har redan den här etiketten.",
   "36436a006289430b": "Snabbsändningschips",
-  "7fa2fe33beab7959": "chips genväg snabbsändning meddelande prompt inmatning knapp"
+  "7fa2fe33beab7959": "chips genväg snabbsändning meddelande prompt inmatning knapp",
+  "aaea665388b4a4f4": "Standard",
+  "0a796a0eb90890e4": "Sten",
+  "ad030468f7f54879": "Marimba",
+  "7fb100248916a7fd": "Knäpp",
+  "f868405ee3fdb046": "Glas",
+  "037fcad2e01aefb1": "Klocka",
+  "bb7d02e10d4aa493": "Spelas när en tråd behöver svar eller godkännande, om aviseringsljud är på.",
+  "73e58a146862b0ef": "Spelas när en tråd är klar, om aviseringsljud är på.",
+  "652be25646ce33bf": "Återställ ljudet för ”behöver dig” till standard",
+  "e12b6f2749eddb8f": "Återställ ljudet för ”klar” till standard",
+  "4837cf021644e27b": "Ljud när en agent behöver dig",
+  "d3c7fc2c999ba235": "Ljud när en agent är klar",
+  "c3c5efa1981f9f58": "Spela upp ljud",
+  "f618adf017a8be06": "Aviseringsljud",
+  "ea8a237ec8762fe8": "aviseringsljud varning klocka svar godkännande väntar",
+  "7cac31b88c132462": "aviseringsljud varning klocka klar färdig slutförd"
 }

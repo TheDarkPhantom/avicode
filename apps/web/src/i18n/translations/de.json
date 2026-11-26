@@ -13037,5 +13037,21 @@
   "1bb281652110a45d": ["Bis zu ", { "i": 1, "k": "_gt_value_1", "v": "v" }, " Chips"],
   "226cb5e8c09af744": "Ein anderer Chip hat bereits diese Bezeichnung.",
   "36436a006289430b": "Schnellversand-Chips",
-  "7fa2fe33beab7959": "Chips Kürzel Schnellversand Nachricht Prompt Eingabefeld Schaltfläche"
+  "7fa2fe33beab7959": "Chips Kürzel Schnellversand Nachricht Prompt Eingabefeld Schaltfläche",
+  "aaea665388b4a4f4": "Standard",
+  "0a796a0eb90890e4": "Kiesel",
+  "ad030468f7f54879": "Marimba",
+  "7fb100248916a7fd": "Zupfen",
+  "f868405ee3fdb046": "Glas",
+  "037fcad2e01aefb1": "Glocke",
+  "bb7d02e10d4aa493": "Ertönt, wenn ein Thread eine Eingabe oder Freigabe braucht, sofern der Benachrichtigungston an ist.",
+  "73e58a146862b0ef": "Ertönt, wenn ein Thread fertig ist, sofern der Benachrichtigungston an ist.",
+  "652be25646ce33bf": "Ton für „braucht dich“ auf Standard zurücksetzen",
+  "e12b6f2749eddb8f": "Ton für „fertig“ auf Standard zurücksetzen",
+  "4837cf021644e27b": "Ton, wenn ein Agent dich braucht",
+  "d3c7fc2c999ba235": "Ton, wenn ein Agent fertig ist",
+  "c3c5efa1981f9f58": "Ton abspielen",
+  "f618adf017a8be06": "Benachrichtigungstöne",
+  "ea8a237ec8762fe8": "Benachrichtigungston Hinweis Glocke Eingabe Freigabe wartet",
+  "7cac31b88c132462": "Benachrichtigungston Hinweis Glocke fertig abgeschlossen"
 }

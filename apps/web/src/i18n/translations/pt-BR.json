@@ -13037,5 +13037,21 @@
   "1bb281652110a45d": ["Até ", { "i": 1, "k": "_gt_value_1", "v": "v" }, " chips"],
   "226cb5e8c09af744": "Outro chip já tem este rótulo.",
   "36436a006289430b": "Chips de envio rápido",
-  "7fa2fe33beab7959": "chips atalho envio rápido mensagem prompt editor botão"
+  "7fa2fe33beab7959": "chips atalho envio rápido mensagem prompt editor botão",
+  "aaea665388b4a4f4": "Padrão",
+  "0a796a0eb90890e4": "Seixo",
+  "ad030468f7f54879": "Marimba",
+  "7fb100248916a7fd": "Dedilhado",
+  "f868405ee3fdb046": "Vidro",
+  "037fcad2e01aefb1": "Sino",
+  "bb7d02e10d4aa493": "Toca quando um thread precisa de uma resposta ou aprovação, se o som de notificação estiver ativado.",
+  "73e58a146862b0ef": "Toca quando um thread termina, se o som de notificação estiver ativado.",
+  "652be25646ce33bf": "Redefinir o som de atenção para o padrão",
+  "e12b6f2749eddb8f": "Redefinir o som de conclusão para o padrão",
+  "4837cf021644e27b": "Som quando um agente precisa de você",
+  "d3c7fc2c999ba235": "Som quando um agente termina",
+  "c3c5efa1981f9f58": "Tocar som",
+  "f618adf017a8be06": "Sons de notificação",
+  "ea8a237ec8762fe8": "som notificação alerta sino resposta aprovação aguardando",
+  "7cac31b88c132462": "som notificação alerta sino feito terminado conclusão"
 }
