@@ -15,10 +15,10 @@ feature inventory behind it.
 | 1    | Inventory every old fork feature against upstream                    | Done (`docs/REFORK_LEDGER.md`) |
 | 2    | Prove old history can carry over                                     | Done, works                    |
 | 3    | Branches: freeze the old fork, make the re-fork `main`               | Done (PR #307)                 |
-| 4    | Identity and CI: Avi Code 2 installs side by side, checks run again  | Next                           |
-| 5    | Feature ports                                                        | After step 4                   |
+| 4    | Identity and CI: Avi Code 2 installs side by side, checks run again  | Done (#309 to #323, #334)      |
+| 5    | Feature ports                                                        | In progress, 10 of 18 done     |
 | 6    | One-time history import on first launch                              | Done                           |
-| 7    | Restore `main` protection, turn the right workflows back on          | With step 4                    |
+| 7    | Restore `main` protection, turn the right workflows back on          | Done                           |
 | 8    | Use Avi Code 2 daily next to the old app, then uninstall the old app | Last                           |
 
 ## Why re-fork
@@ -90,16 +90,16 @@ Made 2026-11-25.
 - Admin policy file and registry key repointed to Avi Code paths, so Avi Code 2 doesn't obey T3
   Code's admin policy.
 - Keep the `avicode_desktop` Codex originator (ALFRED reads it).
-- UI copy says Avi Code 2. A build step renames "T3 Code" in the sources GT scans and rehashes the
-  catalogs to match, so upstream's strings and catalogs merge untouched.
+- Copy says Avi Code 2. A build step renames "T3 Code" in web, desktop and server sources and
+  rehashes the catalogs to match, so upstream's strings and catalogs merge untouched.
 
 **Features**
 
 | Feature                                                                 | Decision                                |
 | ----------------------------------------------------------------------- | --------------------------------------- |
-| Ctrl+W closes the thread, Ctrl+Shift+T reopens the last archived thread | Port the fork version                   |
-| Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Port as upstream theme data             |
-| Notification sound picker, plan mode as default                         | Port                                    |
+| Ctrl+W closes the thread, Ctrl+Shift+T reopens the last archived thread | Ported (#331)                           |
+| Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Ported as upstream theme data (#327)    |
+| Notification sound picker, plan mode as default                         | Ported (#328, #325)                     |
 | Per-repo and per-credential usage                                       | Ported (#332)                           |
 | Named sidebar folders                                                   | Ported, Labs boring sidebar only (#333) |
 | Flat "all threads by recent activity" list                              | Drop                                    |
@@ -128,18 +128,19 @@ file was opened read-only and never written.
 ## Step 3 result: branches and repo settings
 
 - `main` = the re-fork (PR #307). `legacy/v1` = the frozen old fork.
-- `main`'s six required checks (`Check`, `Test`, `Release Smoke`, `AviCode boundaries`, `AviCode
-  desktop smoke`, `AviCode Windows x64 package`) are lifted until CI is ported. The rest of the
-  protection stays: PRs required, conversations resolved, no force push.
-- 27 upstream workflows are disabled in repo settings, not deleted, so upstream syncs don't
-  conflict on them. Only `Agent Context Budget` and `PR Size` are active. CI and Release are among
-  the disabled ones until step 4 ports them.
+- `main` requires four checks again: `Check`, `Test`, `Release Smoke` and `AviCode boundaries`.
+  The old fork's desktop smoke and Windows package checks are gone; the manual `Avi Code release`
+  workflow builds the installer instead. PRs required, conversations resolved, no force push.
+- Unwanted upstream workflows are disabled in repo settings, not deleted, so upstream syncs don't
+  conflict on them. Active: `CI`, `Avi Code guardrails`, `Avi Code release`, `Agent Context
+  Budget` and `PR Size`. Upstream's `Release` and `Release desktop build` stay disabled.
 - Branches from the old fork (open worktrees) no longer merge into `main`.
 
 ## Step 4: identity and CI
 
-Order matters: nothing gets installed from `main` until this lands, because builds are still branded
-T3 Code.
+Done. Identity #312, CI #309, release workflow #315 (#317, #318), changelog page #311, guardrails
+#320, settings page #321, telemetry and promotions #316, admin policy #323, rebranded copy #322 and
+#334, fork docs #310 and #313.
 
 1. Shared identity module (`packages/shared/src/avicodeIdentity.ts`) wired into every place upstream
    hardcodes T3 Code. The full file list is in the ledger, section 4.
@@ -162,7 +163,8 @@ T3 Code.
 13. Fork docs: `CLAUDE.md` and the Avi Code overrides in `AGENTS.md`, `docs/UPSTREAM_SYNC.md`
     rewritten for this model.
 
-Then: restore the six required checks and re-enable Release.
+Required checks are back (see step 3). The fork releases through `Avi Code release`, not upstream's
+`Release`.
 
 ## Step 5: feature ports
 
@@ -174,10 +176,10 @@ In order. Each is one PR with a changelog entry.
 | 2   | Start new chats in plan mode. Done (#325)                                 | cheap |
 | 3   | Ctrl+W closes thread, Ctrl+Shift+T reopens archived. Done (#331)          | cheap |
 | 4   | Mouse back/forward buttons, Alt+Left/Right                                | cheap |
-| 5   | Colour themes as upstream theme data                                      | cheap |
-| 6   | Preview bookmarks bar                                                     | cheap |
-| 7   | Open project folder in the file manager from the sidebar                  | cheap |
-| 8   | Notification sound picker                                                 | cheap |
+| 5   | Colour themes as upstream theme data. Done (#327)                         | cheap |
+| 6   | Preview bookmarks bar. Done (#326)                                        | cheap |
+| 7   | Open project folder in the file manager from the sidebar. Done (#324)     | cheap |
+| 8   | Notification sound picker. Done (#328)                                    | cheap |
 | 9   | One git write operation at a time per repo                                | free  |
 | 10  | Settings still load when one value is invalid                             | free  |
 | 11  | Preview port list hides Windows services and noise                        | free  |
