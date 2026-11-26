@@ -16,6 +16,7 @@ import {
   FileDiffIcon,
   FolderTreeIcon,
   GitBranchIcon,
+  GitForkIcon,
   GlobeIcon,
   InfoIcon,
   MessageSquareTextIcon,
@@ -115,6 +116,8 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/labs": FlaskConicalIcon,
   "/settings/about": InfoIcon,
   "/settings/archived": ArchiveIcon,
+  // Avi Code addition
+  "/settings/avicode": GitForkIcon,
 };
 
 // Detail pages without a nav entry highlight the page that links to them.

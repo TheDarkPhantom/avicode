@@ -1,3 +1,7 @@
+import {
+  AVICODE_CLIENT_SETTINGS_FIELDS,
+  AVICODE_CLIENT_SETTINGS_PATCH_FIELDS,
+} from "./avicodeSettings.ts";
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import {
   AuthOrchestrationOperateScope,
@@ -617,6 +621,8 @@ export const ClientSettingsSchema = Schema.Struct({
   // Opt-in TeX typesetting in rendered Markdown. Off keeps math parsing and
   // KaTeX out of the render path entirely.
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Avi Code addition
+  ...AVICODE_CLIENT_SETTINGS_FIELDS,
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -2195,5 +2201,7 @@ export const ClientSettingsPatch = Schema.Struct({
   snapShotAnimations: Schema.optionalKey(Schema.Boolean),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
+  // Avi Code addition
+  ...AVICODE_CLIENT_SETTINGS_PATCH_FIELDS,
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

@@ -15,6 +15,7 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import type { MessageResolver } from "../../i18n/messages";
 import { commandLabel } from "./KeybindingsSettings.logic";
+import { AVICODE_SETTINGS_SEARCH_ITEMS } from "./avicodeSettingsSearch";
 import type { ResolvedSettingsScope } from "./settingsScope";
 
 export type SettingsPath =
@@ -40,7 +41,9 @@ export type SettingsPath =
   | "/settings/maintenance"
   | "/settings/labs"
   | "/settings/about"
-  | "/settings/archived";
+  | "/settings/archived"
+  // Avi Code addition
+  | "/settings/avicode";
 
 export type SettingsSearchScope =
   | "environment"
@@ -120,6 +123,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/about": msg("About"),
   "/settings/voice": msg("Voice"),
   "/settings/archived": msg("Archive"),
+  // Avi Code addition
+  "/settings/avicode": msg("Avi Code"),
 };
 
 /** Sidebar labels; an entry of its own lets a translator shorten one below its page title. */
@@ -173,7 +178,14 @@ const ALL_SETTINGS_NAV_GROUPS: ReadonlyArray<SettingsNavGroup> = [
   {
     heading: msg("More"),
     headingHidden: true,
-    paths: ["/settings/maintenance", "/settings/labs", "/settings/about", "/settings/archived"],
+    paths: [
+      "/settings/maintenance",
+      "/settings/labs",
+      // Avi Code addition
+      "/settings/avicode",
+      "/settings/about",
+      "/settings/archived",
+    ],
   },
 ];
 
@@ -1525,6 +1537,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/archived",
     searchTerms: [msg("restore reopen deleted history projects")],
   },
+  // Avi Code addition
+  ...AVICODE_SETTINGS_SEARCH_ITEMS,
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
 export type SettingsSearchItemId = (typeof SETTINGS_SEARCH_ITEMS)[number]["id"];
@@ -1555,6 +1569,8 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/labs": null,
   "/settings/about": null,
   "/settings/archived": "project-defaults",
+  // Avi Code addition
+  "/settings/avicode": null,
 };
 
 const RENAMED_SETTINGS_PATHS: Readonly<Record<string, SettingsPath>> = {

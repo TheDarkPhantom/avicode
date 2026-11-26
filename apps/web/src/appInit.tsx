@@ -30,6 +30,7 @@ import { startThreadNotifications } from "./components/ThreadNotificationCoordin
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName, resolveWindowTitle } from "./branding.logic";
+import { avicodeWindowTitleNames } from "./avicode/windowTitleNames";
 import { isElectron } from "./env";
 import {
   subscribeComposerDraftModelReconciliation,
@@ -178,8 +179,11 @@ function startDocumentTitle(router: AppRouter): void {
         primaryServerVersion:
           appAtomRegistry.get(primaryServerConfigAtom)?.environment.serverVersion ?? null,
       }),
-      projectTitle: project?.title ?? null,
-      threadTitle: thread?.title ?? null,
+      // Avi Code addition: the user can keep project and thread names out of the title.
+      ...avicodeWindowTitleNames(
+        { projectTitle: project?.title ?? null, threadTitle: thread?.title ?? null },
+        getClientSettings(),
+      ),
       ...(getClientSettings().screenReaderWindowTitle && {
         screenReader: {
           threadStatus: windowTitleThreadStatus(thread),

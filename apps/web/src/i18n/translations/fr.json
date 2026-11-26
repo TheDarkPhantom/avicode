@@ -12982,5 +12982,21 @@
   "3230203820653db1": "Journal des modifications",
   "ce831ba6bf54da86": "Chaque version indique ce que {fork} a modifié et ce que la synchronisation avec {upstream} a apporté, avec le nom de leurs auteurs.",
   "08a8d3e436c4a95f": "Aucune version n’a encore été enregistrée.",
-  "4c383bef3119c376": "Voyez ce qui a changé dans chaque version."
+  "4c383bef3119c376": "Voyez ce qui a changé dans chaque version.",
+  "53ff1767fbd5f03f": "Les outils de suivi du temps comme ALFRED et ActivityWatch lisent le titre de la fenêtre pour noter sur quoi vous travaillez. Désactivé, le titre n’affiche que le nom de l’app.",
+  "df3fcf27fab758f7": "Rétablir les noms du titre de la fenêtre par défaut",
+  "5f0dbb2b2c4f56a0": "Afficher le dépôt et la conversation dans le titre de la fenêtre",
+  "a248beb127b9a957": "Confidentialité",
+  "c72f0c35b8c24398": [
+    "Voyez ce qui a changé dans chaque version dans le",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "journal des modifications"
+    },
+    "."
+  ],
+  "dc68c9db002502ab": "titre de fenêtre confidentialité suivi du temps ALFRED ActivityWatch projet nom",
+  "39cfa5ac5f752754": "Avi Code"
 }

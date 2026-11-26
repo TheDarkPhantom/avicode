@@ -12989,5 +12989,21 @@
   "3230203820653db1": "Ändringslogg",
   "ce831ba6bf54da86": "Varje version visar vad {fork} ändrade och vad synkningen med {upstream} förde in, med upphovspersonen angiven.",
   "08a8d3e436c4a95f": "Inga versioner har registrerats än.",
-  "4c383bef3119c376": "Se vad som ändrades i varje version."
+  "4c383bef3119c376": "Se vad som ändrades i varje version.",
+  "53ff1767fbd5f03f": "Tidsspårare som ALFRED och ActivityWatch läser fönstertiteln för att logga vad du arbetar med. Avstängt visar titeln bara appens namn.",
+  "df3fcf27fab758f7": "Återställ namnen i fönstertiteln till standard",
+  "5f0dbb2b2c4f56a0": "Visa repo och tråd i fönstertiteln",
+  "a248beb127b9a957": "Integritet",
+  "c72f0c35b8c24398": [
+    "Se vad som ändrades i varje version i",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "ändringsloggen"
+    },
+    "."
+  ],
+  "dc68c9db002502ab": "fönstertitel integritet tidsspårning ALFRED ActivityWatch projekt namn",
+  "39cfa5ac5f752754": "Avi Code"
 }
