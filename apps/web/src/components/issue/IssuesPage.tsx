@@ -82,6 +82,7 @@ import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { isElectron } from "~/env";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
+import { withoutCommand } from "~/avicode/threadCloseReopen";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
 import {
@@ -484,7 +485,8 @@ export function IssuesPage() {
 
   const onRightPanelKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || isCommandPaletteOpen() || panelSurface === null) return;
-    const command = resolveShortcutCommand(event, keybindings, {
+    // Avi Code addition: no thread here, so mod+w's thread.archive rule must not take the key.
+    const command = resolveShortcutCommand(event, withoutCommand(keybindings, "thread.archive"), {
       context: { ...getShortcutContext(), rightPanelOpen: rightPanelState.isOpen },
     });
     if (command === "rightPanel.close" && !rightPanelState.isOpen) return;

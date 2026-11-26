@@ -13021,5 +13021,7 @@
   "07276419347a221b": "Reset start new chats in plan mode to default",
   "c9dc6958e232062e": "Start new chats in plan mode",
   "175257f0e58a0e31": "Chats",
-  "be449da5417e4a13": "plan mode new chat thread default interaction mode build"
+  "be449da5417e4a13": "plan mode new chat thread default interaction mode build",
+  "38f98ce310906fc4": "Thread: Archive",
+  "65dca4cf709c80e0": "Thread: Reopen Last Archived"
 }
