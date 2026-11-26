@@ -48,3 +48,4 @@ Upstream: t3code 0.1.12
 - Usage analytics stay off unless you opt in (#316)
 - The app uses the Avi Code icon and name everywhere (#314)
 - Menus, dialogs and messages say Avi Code 2 instead of T3 Code in every language (#322)
+- Start every new chat in plan mode with a toggle in Settings > Avi Code (#325)
