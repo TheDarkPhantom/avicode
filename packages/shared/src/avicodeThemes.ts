@@ -42,9 +42,10 @@ const OXBLOOD_DARK: LegacyPalette = {
   foreground: "#f1e9e4",
   card: "#160d0f",
   popover: "#1a1012",
-  primary: "#de5257",
+  // The old #de5257 gives white labels 3.9:1; this is the lightest shade that reaches 4.5:1.
+  primary: "#c84a4e",
   primaryForeground: "#ffffff",
-  primaryHover: "#c5494e",
+  primaryHover: "#b14246",
   secondary: "#201416",
   muted: "#1d1314",
   mutedForeground: "#a79994",
