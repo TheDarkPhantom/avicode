@@ -129,10 +129,11 @@
     },
     {
       "id": "avicode-settings",
-      "why": "Fork settings join upstream at single sites a sync could drop. Time trackers rely on the window title toggle.",
+      "why": "Fork settings join upstream at single sites a sync could drop. Time trackers rely on the window title toggle, and new chats read the plan mode setting.",
       "requiredFiles": [
         "packages/contracts/src/avicodeSettings.ts",
         "apps/web/src/avicode/windowTitleNames.ts",
+        "apps/web/src/avicode/newThreadInteractionMode.ts",
         "apps/web/src/components/settings/AviCodeSettingsPanel.tsx",
         "apps/web/src/routes/_chat.settings.avicode.tsx"
       ],
@@ -151,6 +152,20 @@
         {
           "file": "apps/web/src/components/settings/settingsSearch.ts",
           "values": ["\"/settings/avicode\",", "...AVICODE_SETTINGS_SEARCH_ITEMS,"]
+        },
+        {
+          "file": "apps/web/src/composerDraftStore.ts",
+          "values": ["existingThread?.interactionMode ??", "resolveInitialInteractionMode(),"]
+        },
+        {
+          "file": "apps/web/src/hooks/useHandleNewThread.ts",
+          "values": ["const carryInteractionMode = resolveNewThreadInteractionMode("]
+        },
+        {
+          "file": "apps/web/src/hooks/useSettings.ts",
+          "values": [
+            "registerStartInPlanModeReader(() => clientSettingsSnapshot.aviCodeNewThreadsStartInPlanMode);"
+          ]
         }
       ]
     },
