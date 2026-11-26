@@ -306,6 +306,57 @@
       ]
     },
     {
+      "id": "thread-close-reopen-keys",
+      "why": "Ctrl+W archives and Ctrl+Shift+T reopens archived threads through upstream keybinding sites.",
+      "requiredFiles": [
+        "apps/web/src/avicode/threadCloseReopen.ts",
+        "apps/web/src/avicode/useThreadArchiveShortcuts.ts",
+        "apps/web/src/avicode/useReopenLastArchivedThreadShortcut.ts"
+      ],
+      "requiredText": [
+        {
+          "file": "packages/contracts/src/keybindings.ts",
+          "values": ["\"thread.archive\",", "\"thread.reopenLastArchived\","]
+        },
+        {
+          "file": "packages/shared/src/keybindings.ts",
+          "values": [
+            "{ key: \"mod+w\", command: \"thread.archive\", when: \"!terminalFocus && !rightPanelOpen\" },"
+          ]
+        },
+        {
+          "file": "apps/web/src/components/ChatView.tsx",
+          "values": [
+            "const threadArchiveShortcuts = useThreadArchiveShortcuts({",
+            "...threadArchiveShortcuts,"
+          ]
+        },
+        {
+          "file": "apps/web/src/components/ReopenClosedViewShortcut.tsx",
+          "values": [
+            "useReopenLastArchivedThreadShortcut({ keybindings, terminalOpen, previewOpen });",
+            "withoutCommand(keybindings, \"thread.reopenLastArchived\"),"
+          ]
+        },
+        {
+          "file": "apps/web/src/components/pullRequest/PullRequestsPage.tsx",
+          "values": ["withoutCommand(keybindings, \"thread.archive\")"]
+        },
+        {
+          "file": "apps/web/src/components/issue/IssuesPage.tsx",
+          "values": ["withoutCommand(keybindings, \"thread.archive\")"]
+        },
+        {
+          "file": "apps/web/src/components/settings/KeybindingsSettings.logic.ts",
+          "values": ["\"thread.archive\": msg(\"Thread: Archive\"),"]
+        },
+        {
+          "file": "apps/web/src/components/CommandPaletteThreadActions.tsx",
+          "values": ["archive: \"thread.archive\","]
+        }
+      ]
+    },
+    {
       "id": "sidebar-folders",
       "why": "User-named sidebar folders join the boring sidebar at single upstream sites a sync could drop: the shelf list, its render loop, the project menu and the name dialog mount.",
       "requiredFiles": [

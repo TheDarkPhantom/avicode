@@ -172,7 +172,7 @@ In order. Each is one PR with a changelog entry.
 | --- | ------------------------------------------------------------------------- | ----- |
 | 1   | Quick-send chips. Done (#329)                                             | cheap |
 | 2   | Start new chats in plan mode. Done (#325)                                 | cheap |
-| 3   | Ctrl+W closes thread, Ctrl+Shift+T reopens archived                       | cheap |
+| 3   | Ctrl+W closes thread, Ctrl+Shift+T reopens archived. Done (#331)          | cheap |
 | 4   | Mouse back/forward buttons, Alt+Left/Right                                | cheap |
 | 5   | Colour themes as upstream theme data                                      | cheap |
 | 6   | Preview bookmarks bar                                                     | cheap |

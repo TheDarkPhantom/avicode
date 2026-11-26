@@ -56,6 +56,7 @@ const SHORTCUTS: Partial<Record<ThreadActionMenuId, KeybindingCommand>> = {
   pin: "thread.pin",
   unpin: "thread.pin",
   "regenerate-title": "thread.regenerateTitle",
+  archive: "thread.archive", // Avi Code addition
 };
 
 /** The open thread's menu actions (settle, pin, snooze, archive...) as palette rows. */

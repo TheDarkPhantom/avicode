@@ -96,6 +96,7 @@ import { RightPanelTabs } from "../RightPanelTabs";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { isElectron } from "~/env";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
+import { withoutCommand } from "~/avicode/threadCloseReopen";
 import { registerCommands } from "~/shortcuts/dispatcher";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "../chat/PanelLayoutControls";
@@ -1564,7 +1565,8 @@ export function PullRequestsPage() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
-      const command = resolveShortcutCommand(event, keybindings, {
+      // Avi Code addition: no thread here, so mod+w's thread.archive rule must not take the key.
+      const command = resolveShortcutCommand(event, withoutCommand(keybindings, "thread.archive"), {
         context: getShortcutContext(),
       });
       if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);

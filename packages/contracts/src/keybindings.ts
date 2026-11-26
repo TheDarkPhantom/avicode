@@ -45,6 +45,9 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.pin",
   "thread.regenerateTitle",
   "thread.undo",
+  // Avi Code addition: archive the open thread, and reopen the last archived one.
+  "thread.archive",
+  "thread.reopenLastArchived",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 
