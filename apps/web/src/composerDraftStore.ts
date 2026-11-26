@@ -56,6 +56,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
+import { resolveInitialInteractionMode } from "./avicode/newThreadInteractionMode";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
 import {
@@ -1780,8 +1781,11 @@ function createDraftThreadState(
         : {}),
     createdAt: options?.createdAt ?? existingThread?.createdAt ?? new Date().toISOString(),
     runtimeMode: options?.runtimeMode ?? existingThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+    // Avi Code addition: new chats can start in plan mode.
     interactionMode:
-      options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
+      options?.interactionMode ??
+      existingThread?.interactionMode ??
+      resolveInitialInteractionMode(),
     branch: nextBranch,
     worktreePath: nextWorktreePath,
     envMode:

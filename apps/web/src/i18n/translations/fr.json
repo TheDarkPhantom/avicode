@@ -12998,5 +12998,10 @@
     "."
   ],
   "dc68c9db002502ab": "titre de fenêtre confidentialité suivi du temps ALFRED ActivityWatch projet nom",
-  "39cfa5ac5f752754": "Avi Code"
+  "39cfa5ac5f752754": "Avi Code",
+  "8102f6f22f334607": "Les nouvelles conversations s’ouvrent en mode Plan au lieu de reprendre le mode de la conversation en cours. Vous pouvez toujours passer une conversation en Build.",
+  "07276419347a221b": "Réinitialiser le démarrage des nouvelles conversations en mode Plan",
+  "c9dc6958e232062e": "Démarrer les nouvelles conversations en mode Plan",
+  "175257f0e58a0e31": "Conversations",
+  "be449da5417e4a13": "mode Plan nouvelle conversation fil par défaut mode d’interaction build"
 }

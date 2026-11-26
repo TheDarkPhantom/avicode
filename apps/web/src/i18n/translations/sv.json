@@ -13005,5 +13005,10 @@
     "."
   ],
   "dc68c9db002502ab": "fönstertitel integritet tidsspårning ALFRED ActivityWatch projekt namn",
-  "39cfa5ac5f752754": "Avi Code"
+  "39cfa5ac5f752754": "Avi Code",
+  "8102f6f22f334607": "Nya chattar öppnas i Plan-läge i stället för att ta över läget från chatten du är i. Du kan fortfarande byta valfri chatt till Build.",
+  "07276419347a221b": "Återställ starta nya chattar i Plan-läge till standard",
+  "c9dc6958e232062e": "Starta nya chattar i Plan-läge",
+  "175257f0e58a0e31": "Chattar",
+  "be449da5417e4a13": "Plan-läge ny chatt tråd standard interaktionsläge build"
 }
