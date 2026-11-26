@@ -15,6 +15,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import { AVICODE_IDENTITY } from "./avicodeIdentity.ts";
 import * as HostProcess from "./HostProcess.ts";
 
 export class ManagedPolicyFileError extends Schema.TaggedError<ManagedPolicyFileError>()(
@@ -36,13 +37,13 @@ export class ManagedPolicyFileError extends Schema.TaggedError<ManagedPolicyFile
 export function managedPolicyPath(platform: NodeJS.Platform): string {
   switch (platform) {
     case "darwin":
-      return "/Library/Application Support/T3Code/policy.json";
+      return `/Library/Application Support/${AVICODE_IDENTITY.executableName}/policy.json`;
     case "win32":
       // Not ProgramData, where a user can create the folder first and own it; and not
       // %ProgramFiles%, which a user can point somewhere they write.
-      return "C:\\Program Files\\T3Code\\policy.json";
+      return `C:\\Program Files\\${AVICODE_IDENTITY.executableName}\\policy.json`;
     default:
-      return "/etc/t3code/policy.json";
+      return `/etc/${AVICODE_IDENTITY.userDataDirectoryName}/policy.json`;
   }
 }
 
@@ -95,9 +96,8 @@ export const readManagedPolicyFile = Effect.fn("readManagedPolicyFile")(function
 });
 
 /** Where a configuration profile's managed preferences land on macOS. */
-export const MACOS_MANAGED_PREFERENCES_PATH =
-  "/Library/Managed Preferences/com.t3tools.t3code.plist";
-const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\T3Tools\\T3Code";
+export const MACOS_MANAGED_PREFERENCES_PATH = `/Library/Managed Preferences/${AVICODE_IDENTITY.appId}.plist`;
+const WINDOWS_POLICY_SUBKEY = `SOFTWARE\\Policies\\${AVICODE_IDENTITY.policyVendor}\\${AVICODE_IDENTITY.executableName}`;
 /**
  * The registry key Group Policy and Intune write to on Windows. It holds either the Group Policy
  * template's values, one per control, or a `Policy` string with the whole policy as JSON.

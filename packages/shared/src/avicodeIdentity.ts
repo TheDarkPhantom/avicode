@@ -6,6 +6,8 @@
 export const AVICODE_IDENTITY = Object.freeze({
   productName: "Avi Code 2",
   companyName: "Advisor Avi",
+  /** Vendor segment of the admin policy registry key and Group Policy namespace. */
+  policyVendor: "AdvisorAvi",
   appId: "com.advisoravi.avicode2",
   developmentAppId: "com.advisoravi.avicode2.dev",
   protocol: "avicode2",

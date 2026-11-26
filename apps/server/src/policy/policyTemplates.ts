@@ -1,4 +1,5 @@
 import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 import {
   WINDOWS_POLICY_KEY,
   WINDOWS_POLICY_GROUPS,
@@ -249,7 +250,7 @@ export function windowsAdmx(): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
   <policyNamespaces>
-    <target prefix="t3code" namespace="T3Tools.Policies.T3Code" />
+    <target prefix="t3code" namespace="${AVICODE_IDENTITY.policyVendor}.Policies.${AVICODE_IDENTITY.executableName}" />
   </policyNamespaces>
   <resources minRequiredRevision="1.0" />
   <supportedOn>
@@ -282,8 +283,8 @@ const presentationElement = (element: Element) => {
 /** The en-US strings and dialog layouts for `windowsAdmx`. */
 export function windowsAdml(): string {
   const strings: Array<readonly [string, string]> = [
-    ["T3Code", "T3 Code"],
-    ["SUPPORTED_T3Code", "T3 Code with managed policy support"],
+    ["T3Code", AVICODE_IDENTITY.productName],
+    ["SUPPORTED_T3Code", `${AVICODE_IDENTITY.productName} with managed policy support`],
   ];
   const presentations: Array<string> = [];
   for (const policy of policies()) {
@@ -303,8 +304,8 @@ export function windowsAdml(): string {
   }
   return `<?xml version="1.0" encoding="utf-8"?>
 <policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
-  <displayName>T3 Code</displayName>
-  <description>Policies for T3 Code</description>
+  <displayName>${AVICODE_IDENTITY.productName}</displayName>
+  <description>Policies for ${AVICODE_IDENTITY.productName}</description>
   <resources>
     <stringTable>
 ${strings.map(([id, text]) => `      <string id="${id}">${escapeXml(text)}</string>`).join("\n")}
@@ -349,7 +350,7 @@ const nullPath = (
   return undefined;
 };
 
-/** A device configuration profile that installs `document` for `com.t3tools.t3code`. */
+/** A device configuration profile that installs `document` for the app's bundle id. */
 export function macosProfile(
   document: ManagedPolicyDocument,
   uuids: { readonly profile: string; readonly payload: string },
@@ -369,17 +370,17 @@ export function macosProfile(
   const profile = {
     PayloadContent: [
       {
-        PayloadDisplayName: "T3 Code policy",
-        PayloadIdentifier: `com.t3tools.t3code.policy.${uuids.payload}`,
-        PayloadType: "com.t3tools.t3code",
+        PayloadDisplayName: `${AVICODE_IDENTITY.productName} policy`,
+        PayloadIdentifier: `${AVICODE_IDENTITY.appId}.policy.${uuids.payload}`,
+        PayloadType: AVICODE_IDENTITY.appId,
         PayloadUUID: uuids.payload,
         PayloadVersion: 1,
         ...document,
       },
     ],
-    PayloadDescription: "Configures T3 Code for every user on this Mac.",
-    PayloadDisplayName: `T3 Code policy for ${document.organization}`,
-    PayloadIdentifier: `com.t3tools.t3code.policy`,
+    PayloadDescription: `Configures ${AVICODE_IDENTITY.productName} for every user on this Mac.`,
+    PayloadDisplayName: `${AVICODE_IDENTITY.productName} policy for ${document.organization}`,
+    PayloadIdentifier: `${AVICODE_IDENTITY.appId}.policy`,
     PayloadOrganization: document.organization,
     PayloadScope: "System",
     PayloadType: "Configuration",
