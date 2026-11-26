@@ -146,7 +146,10 @@ T3 Code.
 3. appId, protocol, `AviCode2.exe`, own updater cache folder, `avicode` CLI command.
 4. Brand assets and exporter, plus upstream's 192/512 web icons.
 5. Avi Code 2 name, favicons and window title in the UI.
-6. Release workflow: manual only, same repo, never marked Latest; updater turned off.
+6. Release workflow: `.github/workflows/avicode-release.yml`, run by hand with a version. It builds
+   the Windows installer on a GitHub Windows runner (local builds need Visual Studio Build Tools),
+   uploads it as a run artifact, and with `publish` attaches it to a pre-release tagged
+   `avicode2-v<version>`. The build has no update feed, so the updater is off.
 7. CI on GitHub-hosted runners, with job names matching the six required checks.
 8. Guardrails checker plus `check:avicode` and `test:avicode`.
 9. In-app changelog page and `CHANGELOG.md` format, starting at `0.1.12-avicode.1`.

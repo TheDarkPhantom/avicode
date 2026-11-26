@@ -1,0 +1,87 @@
+name: Avi Code release
+
+# Builds the Avi Code 2 Windows installer by hand. Installers are sent to people directly, so the
+# build carries no update feed and the app's updater stays off. Publishing creates a GitHub
+# pre-release that is never marked Latest, so old Avi Code installs never pick it up.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 0.1.12-avicode.1"
+        required: true
+        type: string
+      publish:
+        description: "Also attach the installer to a GitHub pre-release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64 installer
+    if: github.repository == 'TheDarkPhantom/avicode'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      T3CODE_DESKTOP_VERSION: ${{ inputs.version }}
+      # Any repository other than this one makes the build omit the update feed.
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: none/none
+      T3CODE_DESKTOP_OUTPUT_DIR: ${{ github.workspace }}\avicode-release
+    steps:
+      - name: Check version
+        shell: bash
+        run: |
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-avicode\.[0-9]+$ ]] || {
+            echo "Version must look like 0.1.12-avicode.1" >&2; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Add the Rust Windows target
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Install
+        run: vp install
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter "@t3tools/desktop" ensure:electron
+
+      - name: Build installer
+        run: vp run dist:desktop:win:x64
+
+      - name: Upload installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AviCode2-${{ inputs.version }}-win-x64
+          path: |
+            avicode-release/*.exe
+            avicode-release/*.blockmap
+          if-no-files-found: error
+
+      - name: Publish pre-release
+        if: inputs.publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="avicode2-v${{ inputs.version }}"
+          gh release create "$tag" avicode-release/*.exe \
+            --target "$GITHUB_SHA" \
+            --title "Avi Code 2 ${{ inputs.version }}" \
+            --notes "Avi Code 2 ${{ inputs.version }}. What changed is in the app under Settings, About, Changelog." \
+            --prerelease --latest=false
