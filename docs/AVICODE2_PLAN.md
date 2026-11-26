@@ -181,7 +181,7 @@ In order. Each is one PR with a changelog entry.
 | 9   | One git write operation at a time per repo                                | free  |
 | 10  | Settings still load when one value is invalid                             | free  |
 | 11  | Preview port list hides Windows services and noise                        | free  |
-| 12  | Claude sign-in from Settings                                              | cheap |
+| 12  | Claude sign-in from Settings. Done (#330)                                 | cheap |
 | 13  | Higher input cap (600k characters; upstream has 120k)                     | cheap |
 | 14  | Dead-worktree and low-disk monitor                                        | free  |
 | 15  | Projects collapsed by default, expand/collapse all (check upstream first) | cheap |
