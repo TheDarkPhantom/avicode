@@ -1,3 +1,6 @@
+// Avi Code addition
+import { AVICODE_THEME_IDS, createAvicodeThemes } from "./avicodeThemes.ts";
+
 export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
 export const MOBILE_DEFAULT_THEME_ID = "t3-code";
@@ -15,6 +18,8 @@ export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "t3-ocean",
   "t3-ember",
   "t3-iris",
+  // Avi Code addition
+  ...AVICODE_THEME_IDS,
 ]);
 
 /** The mobile default id is valid in saved themes but cannot be published because web/desktop cannot resolve it. */
@@ -910,12 +915,19 @@ export const IRIS_THEME: ThemeDefinition = {
   sidebarArtwork: true,
 };
 
+// Avi Code addition
+export const AVICODE_THEMES = createAvicodeThemes(
+  T3_CODE_LIGHT_THEME_COLORS,
+  T3_CODE_DARK_THEME_COLORS,
+);
+
 export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  ...AVICODE_THEMES,
 ];
 
 export function getThemeColorsForAppearance(

@@ -196,6 +196,25 @@
           ]
         }
       ]
+    },
+    {
+      "id": "color-themes",
+      "why": "The first Avi Code's colour themes join upstream's built-in themes at three upstream sites.",
+      "requiredFiles": ["packages/shared/src/avicodeThemes.ts"],
+      "requiredText": [
+        {
+          "file": "packages/shared/src/themePalettes.ts",
+          "values": ["...AVICODE_THEME_IDS,", "...AVICODE_THEMES,"]
+        },
+        {
+          "file": "apps/web/src/components/settings/ThemeSettings.tsx",
+          "values": ["...AVICODE_THEMES,"]
+        },
+        {
+          "file": "apps/web/index.html",
+          "values": ["\"avicode-oxblood\": {", "\"avicode-graphite\": {"]
+        }
+      ]
     }
   ],
   "brandBan": {
