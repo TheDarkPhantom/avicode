@@ -1,3 +1,4 @@
+import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
@@ -2569,7 +2570,7 @@ export function AboutSettingsPanel() {
           </>
         )}
         <ChangelogSettingsRow />
-        <MobileAppSettingsRow />
+        {AVICODE_IDENTITY.showsUpstreamPromotions ? <MobileAppSettingsRow /> : null}
         {primaryEnvironmentId === null ? null : (
           <SettingsRow
             {...setting("welcome-page")}

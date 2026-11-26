@@ -1,3 +1,4 @@
+import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
@@ -1671,7 +1672,7 @@ export function useComposerSend(input: ComposerSendInput) {
         ) {
           handleNewThreadInActiveProject();
         }
-        void recordPromptSent(environmentId);
+        if (AVICODE_IDENTITY.showsUpstreamPromotions) void recordPromptSent(environmentId);
       }
     }
 

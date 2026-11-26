@@ -22,6 +22,8 @@ export const AVICODE_IDENTITY = Object.freeze({
   releaseRepository: "avicode",
   releaseSlug: "TheDarkPhantom/avicode",
   upstreamRepository: "pingdotgg/t3code",
+  /** T3 Connect onboarding, the mobile app row and the GitHub star prompt promote T3 Code. */
+  showsUpstreamPromotions: false as boolean,
   /** The first Avi Code, frozen on `legacy/v1`. Its data is read once for the history import. */
   legacy: Object.freeze({
     productName: "Avi Code",
