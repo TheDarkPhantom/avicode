@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import { defaultInclude, defineConfig } from "vite-plus";
 import { Rolldown } from "vite-plus/pack";
 
+import { aviCodeRebrandPlugin } from "../../scripts/lib/avicode-rebrand-copy.ts";
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
@@ -97,6 +98,7 @@ export default defineConfig({
       define: publicConfigDefine,
       outputOptions: { codeSplitting: false },
       entry: ["src/main.ts"],
+      plugins: [aviCodeRebrandPlugin(new URL(".", import.meta.url))],
       clean: true,
       deps: {
         alwaysBundle: (id) => !id.startsWith("node:") && !isMainProcessExternal(id),
