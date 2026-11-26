@@ -24,6 +24,9 @@ Add another Claude instance in **Settings > Providers**:
 | Claude Work     | `claude`    | Leave empty            |
 | Claude Personal | `claude`    | `~/.claude_personal`   |
 
+Or skip the command: open the instance in **Settings > Providers** and choose **Sign in**. The
+login runs in a terminal there, already pointed at that instance's config folder.
+
 On mobile, tap **Add Claude account** in **Settings > Providers** and enter a name and the
 config folder. The login itself still happens on the environment's machine.
 
