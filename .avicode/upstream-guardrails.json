@@ -254,6 +254,20 @@
       ]
     },
     {
+      "id": "claude-sign-in",
+      "why": "Claude sign-in from Settings joins the Claude driver at two upstream sites a sync could drop. An unused auth would fail lint.",
+      "requiredFiles": ["apps/server/src/provider/avicode/ClaudeAuth.ts"],
+      "requiredText": [
+        {
+          "file": "apps/server/src/provider/Drivers/ClaudeDriver.ts",
+          "values": [
+            "stampInstanceIdentity(withClaudeSignInSetup(draft));",
+            "const auth = yield* makeClaudeAuth({"
+          ]
+        }
+      ]
+    },
+    {
       "id": "usage-by-repository",
       "why": "Usage by repository joins upstream's RPC group, server, authorization and Usage page at single sites a sync could drop.",
       "requiredFiles": [
