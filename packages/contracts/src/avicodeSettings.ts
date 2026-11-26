@@ -58,6 +58,10 @@ export const AVICODE_CLIENT_SETTINGS_FIELDS = {
   aviCodeNotificationSoundCompletion: AviCodeNotificationSound.pipe(
     Schema.withDecodingDefault(Effect.succeed("default" as const)),
   ),
+  /** A collapsed sidebar folder still lists its chats that need you. */
+  aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 };
 
 export const AVICODE_CLIENT_SETTINGS_PATCH_FIELDS = {
@@ -66,4 +70,5 @@ export const AVICODE_CLIENT_SETTINGS_PATCH_FIELDS = {
   aviCodeChips: Schema.optionalKey(AviCodeChips),
   aviCodeNotificationSoundInput: Schema.optionalKey(AviCodeNotificationSound),
   aviCodeNotificationSoundCompletion: Schema.optionalKey(AviCodeNotificationSound),
+  aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.optionalKey(Schema.Boolean),
 };

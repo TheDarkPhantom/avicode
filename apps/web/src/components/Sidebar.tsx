@@ -286,6 +286,12 @@ import {
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
 } from "./sidebar/SidebarProjectFolderHeader";
+// Avi Code addition: user-named sidebar folders.
+import { SidebarFolderHeader } from "../avicode/SidebarFolderHeader";
+import { layoutSidebarFolders } from "../avicode/sidebarFolderLayout";
+import { handleSidebarFolderMenuChoice, sidebarFolderMenuItem } from "../avicode/sidebarFolderMenu";
+import { SidebarFolderNameDialog } from "../avicode/SidebarFolderNameDialog";
+import { useSidebarFolderLayoutInput } from "../avicode/useSidebarFolderLayoutInput";
 import {
   SidebarDragBoundary,
   SidebarSectionHeader,
@@ -463,6 +469,12 @@ function useSidebarThreads(input: {
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
     useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+  // Avi Code addition: user-named folders group the project shelves.
+  const sidebarFolderInput = useSidebarFolderLayoutInput({
+    routeThreadKey: routeRowThreadKey,
+    scoped: scopedProjectKeys !== null,
+    active: folderGroups !== null,
+  });
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -544,7 +556,7 @@ function useSidebarThreads(input: {
   const visibleWorkingThreads = workingShelfExpanded
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
-  const projectFolders =
+  const upstreamProjectFolders =
     folderGroups === null
       ? null
       : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty).map((folder) => {
@@ -564,6 +576,9 @@ function useSidebarThreads(input: {
               : EMPTY_THREADS,
           };
         });
+  // Avi Code addition: user folders reorder, collapse and hide project shelves.
+  const sidebarFolderLayout = layoutSidebarFolders(upstreamProjectFolders, sidebarFolderInput);
+  const projectFolders = sidebarFolderLayout?.shelves ?? null;
   const orderedThreads = [
     ...pinnedThreads,
     ...(projectFolders === null
@@ -610,6 +625,7 @@ function useSidebarThreads(input: {
     workingShelfExpanded,
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
     projectFolders,
+    sidebarFolderLayout,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
       setProjectExpanded(keys, !resolveProjectExpanded(projectExpandedById, keys));
@@ -1326,6 +1342,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       : { id: "pin", label: gt("Pin project"), icon: "pin" },
                   ]
                 : []),
+              // Avi Code addition: move the project into a user folder.
+              sidebarFolderMenuItem(group, messages),
               { id: "project-settings", label: gt("Project settings"), icon: "settings" },
             ],
             position,
@@ -1333,6 +1351,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ),
         );
         if (clicked._tag === "Failure") return;
+        if (clicked.value !== null && handleSidebarFolderMenuChoice(clicked.value, group)) return;
         switch (clicked.value) {
           case "new-thread":
             startThreadInProjectFolder(group);
@@ -1381,6 +1400,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     workingShelfExpanded,
     toggleWorkingShelf,
     projectFolders,
+    sidebarFolderLayout,
     toggleProjectFolder,
     renderedSettledThreads,
     visibleSnoozedThreads,
@@ -3678,7 +3698,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           continue;
                         }
                         if (projectFolders !== null && item.marker === "active-placeholder") {
-                          for (const folder of projectFolders) {
+                          // Avi Code addition: user folder headers sit among the project shelves.
+                          for (const entry of sidebarFolderLayout?.entries ?? []) {
+                            if (entry.kind === "folder") {
+                              items.push(
+                                <SidebarFolderHeader
+                                  key={`avicode-folder:${entry.folder.id}`}
+                                  folder={entry.folder}
+                                  hiddenThreadCount={entry.hiddenThreadCount}
+                                  dot={entry.dot}
+                                />,
+                              );
+                              continue;
+                            }
+                            const folder = entry.shelf;
                             items.push(
                               <SidebarProjectFolderHeader
                                 key={`project-folder:${folder.group.projectKey}`}
@@ -3851,6 +3884,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
+      {/* Avi Code addition: names new and renamed sidebar folders. */}
+      <SidebarFolderNameDialog />
     </SidebarFolderDrop>
   );
 }

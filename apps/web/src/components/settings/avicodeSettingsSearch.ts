@@ -34,4 +34,16 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     to: "/settings/avicode",
     searchTerms: [msg("notification sound alert chime done finished completion")],
   },
+  {
+    id: "avicode-sidebar-folders",
+    title: msg("Sidebar folders"),
+    to: "/settings/avicode",
+    searchTerms: [msg("folders group projects sidebar hide show restore reorder")],
+  },
+  {
+    id: "avicode-sidebar-folder-attention",
+    title: msg("Keep chats that need you visible under collapsed folders"),
+    to: "/settings/avicode",
+    searchTerms: [msg("collapsed folder attention approval input failed plan ready sidebar")],
+  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
