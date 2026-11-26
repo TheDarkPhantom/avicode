@@ -10,6 +10,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { hasPendingMigrations, runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
+import { importLegacyAviCode } from "./avicode/legacyAviCodeImport.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerOwnership from "../serverOwnership.ts";
 
@@ -145,6 +146,8 @@ const makeLayerConfig = <E, R>(
   Layer.unwrap(
     Effect.gen(function* () {
       const { dbPath } = yield* ServerConfig.ServerConfig;
+      // Avi Code addition: the first start imports the first Avi Code's history.
+      yield* importLegacyAviCode(dbPath).pipe(Effect.ignore({ log: true }));
       yield* initializeV2Database(dbPath);
       return fromPath(dbPath);
     }),
