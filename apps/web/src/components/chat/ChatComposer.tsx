@@ -1,3 +1,4 @@
+import { ComposerChipRow } from "~/avicode/ComposerChipRow";
 import { copySnapshot } from "./copySnapshot";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
@@ -2435,6 +2436,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return true;
   };
   const submitComposerStable = useStableCallback(submitComposer);
+  // Avi Code addition: a quick-send chip sends its text as if it were typed.
+  const pickComposerChip = useStableCallback((text: string) => {
+    promptRef.current = text;
+    setPrompt(text);
+    submitComposer();
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed submission handler to the asynchronous dictation completion
   useLayoutEffect(() => {
     submitComposerRef.current = (mode, intent, options) =>
@@ -4045,6 +4052,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               </div>
             ) : null}
+
+            {/* Avi Code addition */}
+            <ComposerChipRow
+              prompt={prompt}
+              hasPendingApproval={isComposerApprovalState}
+              pendingUserInputCount={pendingUserInputs.length}
+              projectSelectionRequired={projectSelectionRequired}
+              noProviderAvailable={noProviderAvailable}
+              disabled={isSendDisabled}
+              onPick={pickComposerChip}
+            />
 
             {isComposerCollapsedMobile && speechInput.state.phase === "idle" ? null : (
               <div

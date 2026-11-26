@@ -16,4 +16,10 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     to: "/settings/avicode",
     searchTerms: [msg("plan mode new chat thread default interaction mode build")],
   },
+  {
+    id: "avicode-quick-send-chips",
+    title: msg("Quick-send chips"),
+    to: "/settings/avicode",
+    searchTerms: [msg("chips shortcut quick send message prompt composer button")],
+  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
