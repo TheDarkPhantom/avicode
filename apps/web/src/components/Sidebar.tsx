@@ -104,7 +104,7 @@ import {
   threadTraversalDirectionFromCommand,
 } from "../keybindings";
 import { isModelPickerOpen } from "../modelPickerVisibility";
-import { isMacPlatform } from "~/lib/utils";
+import { getLocalFileManagerName, isMacPlatform } from "~/lib/utils";
 import { readLocalApi } from "../localApi";
 import { configuredHostedAppUrl } from "../hostedPairing";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
@@ -163,6 +163,8 @@ import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/older
 import { useThreadSearch } from "../state/queries";
 import { threadTriagePermitted, useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
+import { shellEnvironment } from "../state/shell";
+import { useAtomCommand } from "../state/use-atom-command";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
@@ -1262,6 +1264,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setProjectGroupPinned,
     toggleProjectGroupPin,
   } = useProjectPin();
+  const openProjectInFileManager = useAtomCommand(shellEnvironment.openInEditor, {
+    label: "open project in file manager",
+  });
   const handleProjectSettings = useStableCallback(
     (
       event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLInputElement>,
@@ -1300,6 +1305,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             [
               { id: "new-thread", label: gt("New thread") },
               { id: "copy-path", label: gt("Copy path") },
+              // Avi Code addition: open the project folder in the OS file manager.
+              ...(serverConfigs
+                .get(group.environmentId)
+                ?.availableEditors.includes("file-manager") &&
+              readEnvironmentScope(group.environmentId, AuthOrchestrationOperateScope)
+                ? [
+                    {
+                      id: "open-file-manager",
+                      label: gt("Open in {app}", {
+                        app: getLocalFileManagerName(navigator.platform, messages),
+                      }),
+                    },
+                  ]
+                : []),
               ...(canPinProject(group)
                 ? [
                     group.pinned
@@ -1320,6 +1339,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "copy-path":
             copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
+            return;
+          case "open-file-manager":
+            void openProjectInFileManager({
+              environmentId: group.environmentId,
+              input: { cwd: group.workspaceRoot, editor: "file-manager" },
+            });
             return;
           case "pin":
           case "unpin":
