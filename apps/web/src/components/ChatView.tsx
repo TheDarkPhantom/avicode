@@ -412,6 +412,7 @@ import {
 import { useDraftHeroLayoutTransition } from "./chat/useDraftHeroLayoutTransition";
 import { useLocalDispatchState } from "./chat/useLocalDispatchState";
 import { draftFanoutSelectionsAtom, draftSendState } from "./chat/chatViewSend";
+import { useThreadArchiveShortcuts } from "../avicode/useThreadArchiveShortcuts";
 import {
   isCompactCommandMessage,
   type LocalThreadErrorEntry,
@@ -2928,6 +2929,13 @@ export default function ChatView(props: ChatViewProps) {
     }
   });
 
+  // Avi Code addition
+  const threadArchiveShortcuts = useThreadArchiveShortcuts({
+    threadRef: isServerThread ? activeThreadRef : null,
+    keybindings,
+    getShortcutContext,
+    closeRightPanel: rightPanelShortcuts["rightPanel.close"],
+  });
   useChatShortcuts({
     enabled: activeThreadId !== null && !backgroundThread,
     embedded,
@@ -2946,6 +2954,7 @@ export default function ChatView(props: ChatViewProps) {
       ...terminalShortcuts,
       ...rightPanelShortcuts,
       ...threadLifecycleShortcuts,
+      ...threadArchiveShortcuts,
       "thread.copyReference": ({ event }) => {
         if (!event.repeat) copyActiveThreadReference();
       },

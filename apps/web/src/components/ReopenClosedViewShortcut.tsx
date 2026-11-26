@@ -11,6 +11,8 @@ import { linkOptions, useNavigate, useParams, useRouter } from "@tanstack/react-
 import { useGT } from "gt-react";
 import { useEffect, useEffectEvent, useRef } from "react";
 
+import { withoutCommand } from "../avicode/threadCloseReopen";
+import { useReopenLastArchivedThreadShortcut } from "../avicode/useReopenLastArchivedThreadShortcut";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useClosedViewStore } from "../closedViewStore";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -98,6 +100,8 @@ export function ReopenClosedViewShortcut() {
     (state) => selectActiveRightPanel(state.byThreadKey, threadRef) === "preview",
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  // Avi Code addition: with nothing closed left to reopen, reopen the last archived thread.
+  useReopenLastArchivedThreadShortcut({ keybindings, terminalOpen, previewOpen });
   const hasHistory = useClosedViewStore((state) => state.entries.length > 0);
   const openPreview = useAtomCommand(previewEnvironment.open);
   const pending = useRef(Promise.resolve());
@@ -223,16 +227,21 @@ export function ReopenClosedViewShortcut() {
         (event.target instanceof HTMLElement && event.target.closest("[data-keybinding-capture]"))
       )
         return;
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: {
-          terminalFocus: isTerminalFocused(),
-          terminalOpen,
-          previewFocus: isPreviewFocused(),
-          previewOpen,
-          editableFocus: isEditableFocused(event.target),
-          modelPickerOpen: isModelPickerOpen(),
+      // Avi Code addition: a reopen-archived rule on the same key reopens closed views first.
+      const command = resolveShortcutCommand(
+        event,
+        withoutCommand(keybindings, "thread.reopenLastArchived"),
+        {
+          context: {
+            terminalFocus: isTerminalFocused(),
+            terminalOpen,
+            previewFocus: isPreviewFocused(),
+            previewOpen,
+            editableFocus: isEditableFocused(event.target),
+            modelPickerOpen: isModelPickerOpen(),
+          },
         },
-      });
+      );
       if (command !== "view.reopenClosed") return;
       event.preventDefault();
       event.stopPropagation();
