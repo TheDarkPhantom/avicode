@@ -56,3 +56,5 @@ Upstream: t3code 0.1.12
 - Pick a different sound for when an agent needs you and when it finishes (#328)
 - Sign in to each Claude account from its provider settings instead of a terminal command (#330)
 - See token usage and cost per repository and account on the Usage page (#332)
+- In the boring sidebar, group projects into named folders you can collapse, hide and reorder (#333)
+- Keep chats that need you in view under a collapsed sidebar folder with a new setting (#333)

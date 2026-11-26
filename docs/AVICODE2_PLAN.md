@@ -101,7 +101,7 @@ Made 2026-11-25.
 | Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Port as upstream theme data             |
 | Notification sound picker, plan mode as default                         | Port                                    |
 | Per-repo and per-credential usage                                       | Ported (#332)                           |
-| Named sidebar folders                                                   | Rebuild later on upstream's new sidebar |
+| Named sidebar folders                                                   | Ported, Labs boring sidebar only (#333) |
 | Flat "all threads by recent activity" list                              | Drop                                    |
 | Reply styles per turn                                                   | Port later                              |
 | Latest agent thought on sidebar rows                                    | Port later                              |
@@ -187,9 +187,9 @@ In order. Each is one PR with a changelog entry.
 | 15  | Projects collapsed by default, expand/collapse all (check upstream first) | cheap |
 | 16  | Archived page sorting, Ctrl+K finds archived threads                      | cheap |
 | 18  | Per-repo and per-credential usage. Done (#332)                            | cheap |
+| 19  | Named sidebar folders on the boring sidebar. Done (#333)                  | large |
 
-Later: sidebar folders, reply styles, latest thought on sidebar rows, Files panel
-create/rename/delete.
+Later: reply styles, latest thought on sidebar rows, Files panel create/rename/delete.
 
 ## Step 6: history import
 
