@@ -203,6 +203,20 @@
       ]
     },
     {
+      "id": "notification-sounds",
+      "why": "The picked notification sounds replace upstream's bundled ones at one site a sync could drop.",
+      "requiredFiles": ["apps/web/src/avicode/notificationSounds.ts"],
+      "requiredText": [
+        {
+          "file": "apps/web/src/threadNotifications.ts",
+          "values": [
+            "const aviCodeSound = avicodeNotificationSoundFor(kind, getClientSettings());",
+            "return playAviCodeNotificationSound(context, kind, aviCodeSound, shouldPlay);"
+          ]
+        }
+      ]
+    },
+    {
       "id": "preview-bookmarks",
       "why": "The bookmarks bar joins the preview's new-tab page at one site a sync could drop.",
       "requiredFiles": [

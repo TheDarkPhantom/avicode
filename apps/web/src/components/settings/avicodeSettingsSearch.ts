@@ -22,4 +22,16 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     to: "/settings/avicode",
     searchTerms: [msg("chips shortcut quick send message prompt composer button")],
   },
+  {
+    id: "avicode-notification-sound-input",
+    title: msg("Sound when an agent needs you"),
+    to: "/settings/avicode",
+    searchTerms: [msg("notification sound alert chime input approval waiting")],
+  },
+  {
+    id: "avicode-notification-sound-completion",
+    title: msg("Sound when an agent finishes"),
+    to: "/settings/avicode",
+    searchTerms: [msg("notification sound alert chime done finished completion")],
+  },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;

@@ -24,6 +24,17 @@ export const DEFAULT_AVICODE_CHIPS: ReadonlyArray<AviCodeChip> = [
 
 const AviCodeChips = Schema.Array(AviCodeChip).check(Schema.isMaxLength(AVICODE_CHIP_MAX));
 
+/** `default` keeps upstream's bundled sound; the rest are synthesised presets. */
+export const AviCodeNotificationSound = Schema.Literals([
+  "default",
+  "pebble",
+  "marimba",
+  "pluck",
+  "glass",
+  "chime",
+]);
+export type AviCodeNotificationSound = typeof AviCodeNotificationSound.Type;
+
 /**
  * Avi Code client settings, spread into `ClientSettingsSchema` and `ClientSettingsPatch`. The
  * `aviCode` prefix keeps them clear of upstream's keys.
@@ -41,10 +52,18 @@ export const AVICODE_CLIENT_SETTINGS_FIELDS = {
   aviCodeChips: AviCodeChips.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_CHIPS)),
   ),
+  aviCodeNotificationSoundInput: AviCodeNotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("default" as const)),
+  ),
+  aviCodeNotificationSoundCompletion: AviCodeNotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("default" as const)),
+  ),
 };
 
 export const AVICODE_CLIENT_SETTINGS_PATCH_FIELDS = {
   aviCodeWindowTitleShowNames: Schema.optionalKey(Schema.Boolean),
   aviCodeNewThreadsStartInPlanMode: Schema.optionalKey(Schema.Boolean),
   aviCodeChips: Schema.optionalKey(AviCodeChips),
+  aviCodeNotificationSoundInput: Schema.optionalKey(AviCodeNotificationSound),
+  aviCodeNotificationSoundCompletion: Schema.optionalKey(AviCodeNotificationSound),
 };
