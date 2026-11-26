@@ -126,6 +126,33 @@
           ]
         }
       ]
+    },
+    {
+      "id": "avicode-settings",
+      "why": "Fork settings join upstream at single sites a sync could drop. Time trackers rely on the window title toggle.",
+      "requiredFiles": [
+        "packages/contracts/src/avicodeSettings.ts",
+        "apps/web/src/avicode/windowTitleNames.ts",
+        "apps/web/src/components/settings/AviCodeSettingsPanel.tsx",
+        "apps/web/src/routes/_chat.settings.avicode.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "packages/contracts/src/settings.ts",
+          "values": [
+            "...AVICODE_CLIENT_SETTINGS_FIELDS,",
+            "...AVICODE_CLIENT_SETTINGS_PATCH_FIELDS,"
+          ]
+        },
+        {
+          "file": "apps/web/src/appInit.tsx",
+          "values": ["...avicodeWindowTitleNames("]
+        },
+        {
+          "file": "apps/web/src/components/settings/settingsSearch.ts",
+          "values": ["\"/settings/avicode\",", "...AVICODE_SETTINGS_SEARCH_ITEMS,"]
+        }
+      ]
     }
   ],
   "brandBan": {
@@ -135,7 +162,11 @@
       "scripts/avicode",
       "packages/shared/src/avicodeIdentity.ts",
       "apps/web/src/changelog",
-      "apps/web/src/components/changelog"
+      "apps/web/src/components/changelog",
+      "apps/web/src/avicode",
+      "apps/web/src/components/settings/AviCodeSettingsPanel.tsx",
+      "apps/web/src/components/settings/avicodeSettingsSearch.ts",
+      "packages/contracts/src/avicodeSettings.ts"
     ],
     "allowedLines": {
       "packages/shared/src/avicodeIdentity.ts": [
