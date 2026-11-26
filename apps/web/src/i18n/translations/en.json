@@ -13016,5 +13016,10 @@
   "d59aeef7ef08c892": "Edit",
   "9861a2beb702d912": "Remove",
   "283f5c40cec3fbd5": "Bookmarks",
-  "1917f1746b698ff8": "Add bookmark"
+  "1917f1746b698ff8": "Add bookmark",
+  "8102f6f22f334607": "New chats open in plan mode instead of copying the mode of the chat you are in. You can still switch any chat to Build.",
+  "07276419347a221b": "Reset start new chats in plan mode to default",
+  "c9dc6958e232062e": "Start new chats in plan mode",
+  "175257f0e58a0e31": "Chats",
+  "be449da5417e4a13": "plan mode new chat thread default interaction mode build"
 }

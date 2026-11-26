@@ -52,6 +52,7 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { getClientSettings, useClientSettings } from "./useSettings";
+import { resolveNewThreadInteractionMode } from "../avicode/newThreadInteractionMode";
 import { getLocalStorageItem, useLocalStorage } from "./useLocalStorage";
 import * as Schema from "effect/Schema";
 import { useAtomValue } from "@effect/atom-react";
@@ -190,11 +191,13 @@ export function createNewThreadHandler(router: AnyRouter) {
       ? (carrySourceComposer?.modelSelectionByProvider[composerActiveProvider] ?? null)
       : null;
     const carryModelSelection = composerModelSelection ?? carrySourceShell?.modelSelection ?? null;
-    const carryInteractionMode =
+    // Avi Code addition: the start-in-plan-mode setting beats the carried mode.
+    const carryInteractionMode = resolveNewThreadInteractionMode(
       carrySourceComposer?.interactionMode ??
-      carrySourceShell?.interactionMode ??
-      carrySourceDraft?.interactionMode ??
-      null;
+        carrySourceShell?.interactionMode ??
+        carrySourceDraft?.interactionMode ??
+        null,
+    );
     const project = projects.find(
       (candidate) =>
         candidate.id === projectRef.projectId &&
