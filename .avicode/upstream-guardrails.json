@@ -153,6 +153,16 @@
           "values": ["\"/settings/avicode\",", "...AVICODE_SETTINGS_SEARCH_ITEMS,"]
         }
       ]
+    },
+    {
+      "id": "sidebar-project-menu",
+      "why": "The sidebar project menu opens the folder in the OS file manager, added at one upstream site.",
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/Sidebar.tsx",
+          "values": ["id: \"open-file-manager\",", "case \"open-file-manager\":"]
+        }
+      ]
     }
   ],
   "brandBan": {
