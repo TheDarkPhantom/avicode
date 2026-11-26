@@ -3,6 +3,8 @@ import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { parseUrl } from "@t3tools/shared/url";
 import { Globe, History, RadioTower } from "lucide-react";
 
+import { PreviewBookmarksBar } from "~/avicode/PreviewBookmarksBar";
+
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
 import { DiscoveryList } from "../ui/discovery-list";
@@ -20,7 +22,21 @@ interface Props {
   onOpenUrl: (url: string) => void;
 }
 
-export function PreviewEmptyState({
+// Avi Code addition: the bookmarks bar heads the new-tab page in both of its states.
+export function PreviewEmptyState(props: Props) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-border/60 px-4 py-2">
+        <PreviewBookmarksBar threadRef={props.threadRef} onOpenUrl={props.onOpenUrl} />
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <PreviewEmptyStateContent {...props} />
+      </div>
+    </div>
+  );
+}
+
+function PreviewEmptyStateContent({
   threadRef,
   environmentId,
   configuredUrls,

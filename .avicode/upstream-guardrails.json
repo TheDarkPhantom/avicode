@@ -153,6 +153,24 @@
           "values": ["\"/settings/avicode\",", "...AVICODE_SETTINGS_SEARCH_ITEMS,"]
         }
       ]
+    },
+    {
+      "id": "preview-bookmarks",
+      "why": "The bookmarks bar joins the preview's new-tab page at one site a sync could drop.",
+      "requiredFiles": [
+        "apps/web/src/avicode/browserBookmarksStore.ts",
+        "apps/web/src/avicode/PreviewBookmarksBar.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/preview/PreviewEmptyState.tsx",
+          "values": [
+            "import { PreviewBookmarksBar } from \"~/avicode/PreviewBookmarksBar\";",
+            "<PreviewBookmarksBar threadRef={props.threadRef} onOpenUrl={props.onOpenUrl} />",
+            "<PreviewEmptyStateContent {...props} />"
+          ]
+        }
+      ]
     }
   ],
   "brandBan": {
