@@ -15,6 +15,7 @@ import pdfjsPkg from "pdfjs-dist/package.json" with { type: "json" };
 
 import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 
+import { aviCodeRebrandPlugin } from "../../scripts/lib/avicode-rebrand-copy";
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { resolveTaggedSourceVersion } from "../../scripts/lib/tagged-source-version";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
@@ -323,6 +324,7 @@ export default defineConfig(({ command }) => {
     },
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      aviCodeRebrandPlugin(new URL(".", import.meta.url)),
       bootstrapTitlePlugin(),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),

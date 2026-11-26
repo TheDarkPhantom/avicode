@@ -90,7 +90,8 @@ Made 2026-11-25.
 - Admin policy file and registry key repointed to Avi Code paths, so Avi Code 2 doesn't obey T3
   Code's admin policy.
 - Keep the `avicode_desktop` Codex originator (ALFRED reads it).
-- Rebrand all 10 translation files when translations are generated.
+- UI copy says Avi Code 2. A build step renames "T3 Code" in the sources GT scans and rehashes the
+  catalogs to match, so upstream's strings and catalogs merge untouched.
 
 **Features**
 

@@ -54,6 +54,9 @@ workflow uses it. Without it, close and reopen the sync PR to start checks.
   migrator skips every id at or below the highest recorded one, so a fork id there would eventually
   hide an upstream migration. With a separate ledger, upstream's migrations merge untouched and run
   in their own order.
+- **Leave upstream's "T3 Code" copy alone.** `scripts/lib/avicode-rebrand-copy.ts` renames it in
+  the web and desktop builds and rehashes the translation catalogs, so new upstream strings are
+  covered too. Editing source strings or catalogs to rebrand would conflict on every sync.
 - **Prefer new files to edits.** Conflicts only happen where the fork edits upstream files, so keep
   those edits to single call sites.
 
