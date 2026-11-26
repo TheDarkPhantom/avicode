@@ -1,3 +1,4 @@
+import { AVICODE_IDENTITY } from "@t3tools/shared/avicodeIdentity";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
@@ -195,7 +196,7 @@ function RootRouteBranch() {
       ) : null}
       {isElectron ? <RunningThreadKeepAlive /> : null}
       <RelayClientInstallDialog />
-      <ConnectOnboardingDialog />
+      {AVICODE_IDENTITY.showsUpstreamPromotions ? <ConnectOnboardingDialog /> : null}
       <SshPasswordPromptDialog />
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />
