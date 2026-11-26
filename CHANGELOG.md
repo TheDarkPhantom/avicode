@@ -43,4 +43,5 @@ Upstream: t3code 0.1.12
 ### Avi Code
 
 - Avi Code 2 starts from upstream T3 Code 0.1.12 (#307)
+- Usage analytics stay off unless you opt in (#316)
 - The app uses the Avi Code icon and name everywhere (#314)
