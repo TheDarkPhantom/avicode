@@ -2,6 +2,8 @@ import {
   AVICODE_CLIENT_SETTINGS_FIELDS,
   AVICODE_CLIENT_SETTINGS_PATCH_FIELDS,
 } from "./avicodeSettings.ts";
+// Avi Code addition: fork setting schemas reach clients through this entry point.
+export * from "./avicodeSettings.ts";
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import {
   AuthOrchestrationOperateScope,

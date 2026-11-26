@@ -52,3 +52,4 @@ Upstream: t3code 0.1.12
 - Keep the sites you open often as bookmarks on the built-in browser's new tab page (#326)
 - Start every new chat in plan mode with a toggle in Settings > Avi Code (#325)
 - Pick the Oxblood, Midnight, Forest, Violet or Graphite theme in light or dark (#327)
+- Send saved messages in one click with chips under the message box (#329)

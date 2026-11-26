@@ -2,6 +2,7 @@ import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { Link } from "@tanstack/react-router";
 import { T, useGT } from "gt-react";
 
+import { QuickSendChipsRow } from "../../avicode/QuickSendChipsSettings";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { Switch } from "../ui/switch";
 import {
@@ -93,6 +94,7 @@ export function AviCodeSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="avicode-chats" title={gt("Chats")}>
         <StartInPlanModeRow />
+        <QuickSendChipsRow />
       </SettingsSection>
       <SettingsSection id="avicode-privacy" title={gt("Privacy")}>
         <WindowTitleNamesRow />
