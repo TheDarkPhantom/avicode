@@ -168,6 +168,34 @@
           ]
         }
       ]
+    },
+    {
+      "id": "sidebar-project-menu",
+      "why": "The sidebar project menu opens the folder in the OS file manager, added at one upstream site.",
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/Sidebar.tsx",
+          "values": ["id: \"open-file-manager\",", "case \"open-file-manager\":"]
+        }
+      ]
+    },
+    {
+      "id": "preview-bookmarks",
+      "why": "The bookmarks bar joins the preview's new-tab page at one site a sync could drop.",
+      "requiredFiles": [
+        "apps/web/src/avicode/browserBookmarksStore.ts",
+        "apps/web/src/avicode/PreviewBookmarksBar.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/preview/PreviewEmptyState.tsx",
+          "values": [
+            "import { PreviewBookmarksBar } from \"~/avicode/PreviewBookmarksBar\";",
+            "<PreviewBookmarksBar threadRef={props.threadRef} onOpenUrl={props.onOpenUrl} />",
+            "<PreviewEmptyStateContent {...props} />"
+          ]
+        }
+      ]
     }
   ],
   "brandBan": {
