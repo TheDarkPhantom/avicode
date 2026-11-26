@@ -46,11 +46,11 @@ Every user on the machine can read the policy, so do not put credentials in it.
 
 Use one of these per machine:
 
-| OS      | Native policy                                                                                        | Policy file                                       |
-| ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| macOS   | Configuration profile for `com.t3tools.t3code`                                                       | `/Library/Application Support/T3Code/policy.json` |
-| Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\T3Tools\T3Code`) | `C:\Program Files\T3Code\policy.json`             |
-| Linux   |                                                                                                      | `/etc/t3code/policy.json`                         |
+| OS      | Native policy                                                                                             | Policy file                                         |
+| ------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| macOS   | Configuration profile for `com.advisoravi.avicode2`                                                       | `/Library/Application Support/AviCode2/policy.json` |
+| Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\AdvisorAvi\AviCode2`) | `C:\Program Files\AviCode2\policy.json`             |
+| Linux   |                                                                                                           | `/etc/avicode2/policy.json`                         |
 
 T3 Code does not merge sources. If a machine has both a native policy and a policy file, T3 Code
 refuses to start until you remove one.
@@ -59,10 +59,10 @@ refuses to start until you remove one.
 administrators.
 
 **macOS configuration profile.** Add a custom settings payload for the preference domain
-`com.t3tools.t3code`. The payload's keys are the policy's top-level keys (`schemaVersion`,
+`com.advisoravi.avicode2`. The payload's keys are the policy's top-level keys (`schemaVersion`,
 `organization`, `supportUrl`, `settings`, `limits`); JSON objects become dictionaries and lists
 become arrays. To make the payload from a policy file you checked, run
-`plutil -convert xml1 -o com.t3tools.t3code.plist policy.json` and upload the result, or run
+`plutil -convert xml1 -o com.advisoravi.avicode2.plist policy.json` and upload the result, or run
 `t3 policy templates <directory> --policy policy.json` to write a complete
 `macos/t3code.mobileconfig`. Install it as
 a device profile, since T3 Code ignores user profiles, and deploy only one profile for this domain.
@@ -87,8 +87,8 @@ PowerShell, as an administrator:
 
 ```powershell
 $json = (Get-Content -Raw -Encoding UTF8 policy.json) -replace '\r?\n\s*', ''
-New-Item -Path HKLM:\SOFTWARE\Policies\T3Tools\T3Code -Force | Out-Null
-Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\T3Tools\T3Code -Name Policy -Value $json -Type String
+New-Item -Path HKLM:\SOFTWARE\Policies\AdvisorAvi\AviCode2 -Force | Out-Null
+Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\AdvisorAvi\AviCode2 -Name Policy -Value $json -Type String
 ```
 
 ## Check what the server loaded
@@ -304,7 +304,7 @@ own configuration, such as `~/.claude`, and which a user can also run outside T3
 those CLIs, use their own managed configuration, such as Claude Code's managed settings.
 
 On a managed Windows machine, the desktop app does not run a WSL environment. A T3 Code server a
-user starts inside WSL reads `/etc/t3code/policy.json` in that distro, not the Windows policy.
+user starts inside WSL reads `/etc/avicode2/policy.json` in that distro, not the Windows policy.
 Deploy the policy file there too if your users run T3 Code in WSL.
 
 Without `remote`, T3 Code does not expose the server, but a user can still forward its local port
