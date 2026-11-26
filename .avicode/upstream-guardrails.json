@@ -266,6 +266,33 @@
           ]
         }
       ]
+    },
+    {
+      "id": "sidebar-folders",
+      "why": "User-named sidebar folders join the boring sidebar at single upstream sites a sync could drop: the shelf list, its render loop, the project menu and the name dialog mount.",
+      "requiredFiles": [
+        "apps/web/src/avicode/sidebarFolders.ts",
+        "apps/web/src/avicode/sidebarFolderLayout.ts",
+        "apps/web/src/avicode/SidebarFolderHeader.tsx",
+        "apps/web/src/avicode/SidebarFoldersSettings.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/Sidebar.tsx",
+          "values": [
+            "const sidebarFolderLayout = layoutSidebarFolders(upstreamProjectFolders, sidebarFolderInput);",
+            "const projectFolders = sidebarFolderLayout?.shelves ?? null;",
+            "for (const entry of sidebarFolderLayout?.entries ?? []) {",
+            "sidebarFolderMenuItem(group, messages),",
+            "if (clicked.value !== null && handleSidebarFolderMenuChoice(clicked.value, group)) return;",
+            "<SidebarFolderNameDialog />"
+          ]
+        },
+        {
+          "file": "apps/web/src/components/settings/AviCodeSettingsPanel.tsx",
+          "values": ["<SidebarFoldersRow />", "<SidebarFolderAttentionRow />"]
+        }
+      ]
     }
   ],
   "brandBan": {
