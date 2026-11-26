@@ -170,12 +170,49 @@
       ]
     },
     {
+      "id": "quick-send-chips",
+      "why": "Quick-send chips join the composer at one site a sync could drop.",
+      "requiredFiles": [
+        "apps/web/src/avicode/composerChips.ts",
+        "apps/web/src/avicode/ComposerChipRow.tsx",
+        "apps/web/src/avicode/QuickSendChipsSettings.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/chat/ChatComposer.tsx",
+          "values": [
+            "import { ComposerChipRow } from \"~/avicode/ComposerChipRow\";",
+            "const pickComposerChip = useStableCallback((text: string) => {",
+            "onPick={pickComposerChip}"
+          ]
+        },
+        {
+          "file": "packages/contracts/src/settings.ts",
+          "values": ["export * from \"./avicodeSettings.ts\";"]
+        }
+      ]
+    },
+    {
       "id": "sidebar-project-menu",
       "why": "The sidebar project menu opens the folder in the OS file manager, added at one upstream site.",
       "requiredText": [
         {
           "file": "apps/web/src/components/Sidebar.tsx",
           "values": ["id: \"open-file-manager\",", "case \"open-file-manager\":"]
+        }
+      ]
+    },
+    {
+      "id": "notification-sounds",
+      "why": "The picked notification sounds replace upstream's bundled ones at one site a sync could drop.",
+      "requiredFiles": ["apps/web/src/avicode/notificationSounds.ts"],
+      "requiredText": [
+        {
+          "file": "apps/web/src/threadNotifications.ts",
+          "values": [
+            "const aviCodeSound = avicodeNotificationSoundFor(kind, getClientSettings());",
+            "return playAviCodeNotificationSound(context, kind, aviCodeSound, shouldPlay);"
+          ]
         }
       ]
     },
