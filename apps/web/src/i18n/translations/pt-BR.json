@@ -12982,5 +12982,21 @@
   "3230203820653db1": "Registro de alterações",
   "ce831ba6bf54da86": "Cada versão lista o que o {fork} mudou e o que a sincronização com o {upstream} trouxe, com crédito a quem escreveu.",
   "08a8d3e436c4a95f": "Nenhuma versão foi registrada ainda.",
-  "4c383bef3119c376": "Veja o que mudou em cada versão."
+  "4c383bef3119c376": "Veja o que mudou em cada versão.",
+  "53ff1767fbd5f03f": "Rastreadores de tempo como ALFRED e ActivityWatch leem o título da janela para registrar no que você trabalha. Desativado, o título mostra só o nome do app.",
+  "df3fcf27fab758f7": "Redefinir os nomes do título da janela para o padrão",
+  "5f0dbb2b2c4f56a0": "Mostrar repositório e thread no título da janela",
+  "a248beb127b9a957": "Privacidade",
+  "c72f0c35b8c24398": [
+    "Veja o que mudou em cada versão no",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "registro de alterações"
+    },
+    "."
+  ],
+  "dc68c9db002502ab": "título da janela privacidade rastreador de tempo ALFRED ActivityWatch projeto nome",
+  "39cfa5ac5f752754": "Avi Code"
 }

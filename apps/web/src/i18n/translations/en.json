@@ -12991,5 +12991,21 @@
   "3230203820653db1": "Changelog",
   "ce831ba6bf54da86": "Each release lists what {fork} changed and what syncing with {upstream} brought in, credited to whoever wrote it.",
   "08a8d3e436c4a95f": "No releases have been recorded yet.",
-  "4c383bef3119c376": "See what changed in each version."
+  "4c383bef3119c376": "See what changed in each version.",
+  "53ff1767fbd5f03f": "Time trackers like ALFRED and ActivityWatch read the window title to log what you work on. Off, the title shows only the app name.",
+  "df3fcf27fab758f7": "Reset window title names to default",
+  "5f0dbb2b2c4f56a0": "Show repository and thread in the window title",
+  "a248beb127b9a957": "Privacy",
+  "c72f0c35b8c24398": [
+    "See what changed in each version in the",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "changelog"
+    },
+    "."
+  ],
+  "dc68c9db002502ab": "window title privacy time tracker ALFRED ActivityWatch project name",
+  "39cfa5ac5f752754": "Avi Code"
 }

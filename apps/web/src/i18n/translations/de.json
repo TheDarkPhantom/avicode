@@ -12982,5 +12982,21 @@
   "3230203820653db1": "Änderungsprotokoll",
   "ce831ba6bf54da86": "Jede Version listet, was {fork} geändert hat und was die Synchronisierung mit {upstream} gebracht hat, jeweils mit Angabe der Urheber.",
   "08a8d3e436c4a95f": "Es wurden noch keine Versionen erfasst.",
-  "4c383bef3119c376": "Sieh dir an, was sich in jeder Version geändert hat."
+  "4c383bef3119c376": "Sieh dir an, was sich in jeder Version geändert hat.",
+  "53ff1767fbd5f03f": "Zeiterfassungen wie ALFRED und ActivityWatch lesen den Fenstertitel, um festzuhalten, woran du arbeitest. Ausgeschaltet zeigt der Titel nur den App-Namen.",
+  "df3fcf27fab758f7": "Namen im Fenstertitel auf Standard zurücksetzen",
+  "5f0dbb2b2c4f56a0": "Repository und Thread im Fenstertitel anzeigen",
+  "a248beb127b9a957": "Datenschutz",
+  "c72f0c35b8c24398": [
+    "Was sich in jeder Version geändert hat, steht im",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Änderungsprotokoll"
+    },
+    "."
+  ],
+  "dc68c9db002502ab": "Fenstertitel Datenschutz Zeiterfassung ALFRED ActivityWatch Projekt Name",
+  "39cfa5ac5f752754": "Avi Code"
 }

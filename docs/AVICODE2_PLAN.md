@@ -154,7 +154,8 @@ T3 Code.
 8. Guardrails checker plus `check:avicode` and `test:avicode`.
 9. In-app changelog page and `CHANGELOG.md` format, starting at `0.1.12-avicode.1`.
 10. Window title with repo and thread (for ALFRED and time trackers), plus its privacy toggle.
-11. Slim Avi Code settings page for the fork toggles.
+    Done (#321): upstream's title already carries both names; the toggle is new.
+11. Slim Avi Code settings page for the fork toggles. Done (#321).
 12. Telemetry off, T3 Connect and hosted app hidden, admin policy repointed, translations
     rebranded.
 13. Fork docs: `CLAUDE.md` and the Avi Code overrides in `AGENTS.md`, `docs/UPSTREAM_SYNC.md`

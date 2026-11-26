@@ -12977,5 +12977,21 @@
   "3230203820653db1": "Registro de cambios",
   "ce831ba6bf54da86": "Cada versión indica qué cambió {fork} y qué trajo la sincronización con {upstream}, con el crédito de quien lo escribió.",
   "08a8d3e436c4a95f": "Todavía no se ha registrado ninguna versión.",
-  "4c383bef3119c376": "Consulta qué cambió en cada versión."
+  "4c383bef3119c376": "Consulta qué cambió en cada versión.",
+  "53ff1767fbd5f03f": "Los registradores de tiempo como ALFRED y ActivityWatch leen el título de la ventana para registrar en qué trabajas. Desactivado, el título solo muestra el nombre de la app.",
+  "df3fcf27fab758f7": "Restablecer los nombres del título de la ventana al valor predeterminado",
+  "5f0dbb2b2c4f56a0": "Mostrar el repositorio y el hilo en el título de la ventana",
+  "a248beb127b9a957": "Privacidad",
+  "c72f0c35b8c24398": [
+    "Consulta qué cambió en cada versión en el",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "registro de cambios"
+    },
+    "."
+  ],
+  "dc68c9db002502ab": "título de ventana privacidad registro de tiempo ALFRED ActivityWatch proyecto nombre",
+  "39cfa5ac5f752754": "Avi Code"
 }
