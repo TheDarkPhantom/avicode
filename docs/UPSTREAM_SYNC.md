@@ -58,6 +58,10 @@ workflow uses it. Without it, close and reopen the sync PR to start checks.
   and points upstream's site links at this repo, in the web, desktop and server builds (app and
   `packages/` sources) and rehashes the translation catalogs, so new upstream strings are covered
   too. Editing source strings or catalogs to rebrand would conflict on every sync.
+- **Logos are not copy.** The rewrite only sees the words "T3 Code". Upstream's "T3" logo is an SVG
+  (`T3Wordmark`, which the fork re-exports as the Avi Code glyph) and its app icons are image files.
+  After a sync, check new uses of either and point them at `apps/web/src/avicode/AviCodeBrand.tsx`
+  or the Avi Code icon set.
 - **Prefer new files to edits.** Conflicts only happen where the fork edits upstream files, so keep
   those edits to single call sites.
 
