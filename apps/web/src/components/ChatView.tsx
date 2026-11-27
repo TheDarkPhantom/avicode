@@ -2952,6 +2952,7 @@ export default function ChatView(props: ChatViewProps) {
       if (!activeRightPanelSurface) return false;
       if (!event.repeat) closeActiveRightPanelSurfaceStable();
     },
+    toggleSettled: threadLifecycleShortcuts["thread.settle"],
   });
   useChatShortcuts({
     enabled: activeThreadId !== null && !backgroundThread,

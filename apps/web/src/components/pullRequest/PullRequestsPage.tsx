@@ -1570,10 +1570,14 @@ export function PullRequestsPage() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
-      // Avi Code addition: no thread here, so mod+w's thread.archive rule must not take the key.
-      const command = resolveShortcutCommand(event, withoutCommand(keybindings, "thread.archive"), {
-        context: getShortcutContext(),
-      });
+      // Avi Code addition: no thread here, so mod+w's thread rules must not take the key.
+      const command = resolveShortcutCommand(
+        event,
+        withoutCommand(keybindings, "thread.settle", "thread.archive"),
+        {
+          context: getShortcutContext(),
+        },
+      );
       if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);
       if (command === "rightPanel.toggle") toggleRightPanelFromShortcut(event);
       if (command === "rightPanel.toggleMaximized") toggleRightPanelMaximizedFromShortcut(event);

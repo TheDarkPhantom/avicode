@@ -88,8 +88,8 @@ The last matching rule in `keybindings.json` wins, even across different command
 
 ## Reserved and platform shortcuts
 
-- `mod+w` (desktop) closes the focused terminal, the selected range of right-panel tabs, or the active tab if there is no range. When nothing remains to close, it archives the open thread (`thread.archive`); it never closes the window. On web, browsers intercept `mod+w`. Rebind `rightPanel.close`, `thread.archive` and `terminal.close` to a shortcut such as `alt+w`.
-- `mod+shift+t`: Reopens the last closed panel tab (files, diffs, PRs, browsers, devices) in order. Browser tabs reopen as fresh sessions. Once no closed tab is left, it reopens the thread you archived last, and each further press reopens the one archived before it. `thread.reopenLastArchived` does only that, for a key of its own. Rebind on web if your browser intercepts it.
+- `mod+w` (desktop) closes the focused terminal, the selected range of right-panel tabs, or the active tab if there is no range. When nothing remains to close, it settles the open thread (`thread.settle`), moving on to the next one; it never un-settles a thread or closes the window. On web, browsers intercept `mod+w`. Rebind `rightPanel.close`, `thread.settle` and `terminal.close` to a shortcut such as `alt+w`.
+- `mod+shift+t`: Reopens the last closed panel tab (files, diffs, PRs, browsers, devices) in order. Browser tabs reopen as fresh sessions. Once no closed tab is left, it un-settles and opens the thread you settled last, and each further press un-settles the one settled before it. `thread.reopenLastArchived` reopens the thread you archived last instead, for a key of its own. Rebind on web if your browser intercepts it.
 - Keep `!terminalFocus` when remapping shortcuts that shouldn't intercept terminal input. `sidebar.toggle` ignores `Ctrl+B` inside terminals so `tmux` keeps its prefix (`Cmd+B` still works on macOS).
 
 ## Desktop quit shortcut
