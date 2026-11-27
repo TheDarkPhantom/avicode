@@ -1565,6 +1565,16 @@
   "9861a2beb702d912": "Remover",
   "283f5c40cec3fbd5": "Favoritos",
   "1917f1746b698ff8": "Adicionar favorito",
+  "2f597c348841e65c": "Threads resolvidas e arquivadas em {project}",
+  "6572f44f2b8f030d": "Threads resolvidas e arquivadas",
+  "b9b34ce02a3a5f8b": "Concluídas",
+  "4ff72c2acc7f6656": "Carregando…",
+  "ff0ecab0a975b3d8": "Nenhuma thread resolvida",
+  "c10fd362bc560a20": "Mostrar mais resolvidas ({count} a mais)",
+  "9ffac526802b79e6": "Arquivadas",
+  "3ce9741f164fb944": "Não foi possível carregar as threads arquivadas",
+  "ad25ae072f65b934": "Nenhuma thread arquivada",
+  "4e2db06056916310": "Mostrar mais arquivadas ({count} a mais)",
   "dba0310bcb0e2131": "Azul",
   "fe8a649c97f3a932": "Verde",
   "785cb56dff9f9083": "Azul-petróleo",
@@ -1639,10 +1649,10 @@
   "b4ae29a86f8a6ade": "Tokens",
   "74dadde9f8390c68": "Turnos",
   "49c4cd88ca4d260a": "Nenhuma atividade nesta janela.",
-  "8e4a82fb94d107bb": "Falha ao desarquivar a thread",
   "6c13d520b6601f65": "Arquivar a thread \"{title}\"?",
   "83e50f9b118a7a0a": "Thread arquivada, mas a navegação falhou",
   "da43691fb8ad8006": "Falha ao arquivar a thread",
+  "8e4a82fb94d107bb": "Falha ao desarquivar a thread",
   "6dff8d487001c6cf": "Responsivo",
   "f5f61c338cc5aeb5": "Barra de dispositivos do navegador",
   "3b4eb5b5ec5e60cb": "Predefinição de dispositivo do navegador",
@@ -2783,7 +2793,6 @@
   "db8f17154d4f0cfa": "Ativas",
   "9578dc3e84f82081": "Trabalhando",
   "a202dad5b0a0aa56": "Adiadas",
-  "b9b34ce02a3a5f8b": "Concluídas",
   "dfcce8b35ce4fb90": "Carregando",
   "fcaffe60c85338e2": "Não foi possível carregar threads mais antigas. Tentar novamente",
   "43acfc82011a8fc2": "{count, plural, one {Mostrar mais {count}} other {Mostrar mais {count}}}",
@@ -3368,10 +3377,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "no computador que abriu esta página"
-      ]
+      "c": [" ", "no computador que abriu esta página"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3383,10 +3389,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· quem executar recebe este acesso"
-      ]
+      "c": [" ", "· quem executar recebe este acesso"]
     }
   ],
   "c54cc9c75db9dc58": "Aprove apenas um login que você acabou de iniciar.",
@@ -5825,7 +5828,6 @@
   "3c3e2a86f7fb439d": "Falha ao copiar a menção",
   "b3a779a7cf9fccab": "Abra um chat deste projeto e tente novamente.",
   "e3796d26e9912913": "O chat não está pronto para receber entrada agora.",
-  "4ff72c2acc7f6656": "Carregando…",
   "69858f722a57708c": "Pesquisar arquivos de {projectName}",
   "e1e1094e43a5f3d7": "{error} Clique para tentar novamente.",
   "ddb58ada5516a46d": "Arquivos de {projectName}",
@@ -7804,8 +7806,6 @@
   "d6b75f6c2f576a2c": "Excluir {title}",
   "41935b6ab025a13d": "Falha na ação da thread arquivada",
   "4568f63340b7a586": "Carregando as threads arquivadas",
-  "3ce9741f164fb944": "Não foi possível carregar as threads arquivadas",
-  "ad25ae072f65b934": "Nenhuma thread arquivada",
   "4e690f420bcbdb5d": "Verificando os ambientes conectados.",
   "89d08a5be3347890": "As threads arquivadas aparecerão aqui.",
   "5d3ed45f43611ff4": [

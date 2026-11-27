@@ -191,7 +191,7 @@ In order. Each is one PR with a changelog entry.
 | 13  | Higher input cap (600k characters; upstream has 120k)                     | cheap |
 | 14  | Dead-worktree and low-disk monitor                                        | free  |
 | 15  | Projects collapsed by default, expand/collapse all (check upstream first) | cheap |
-| 16  | Archived page sorting, Ctrl+K finds archived threads                      | cheap |
+| 16  | Archived page sorting, Ctrl+K finds archived threads. Folder menu (#342)  | cheap |
 | 18  | Per-repo and per-credential usage. Done (#332)                            | cheap |
 | 19  | Named sidebar folders on the boring sidebar. Done (#333)                  | large |
 

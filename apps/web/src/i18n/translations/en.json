@@ -1565,6 +1565,16 @@
   "9861a2beb702d912": "Remove",
   "283f5c40cec3fbd5": "Bookmarks",
   "1917f1746b698ff8": "Add bookmark",
+  "2f597c348841e65c": "Settled and archived threads in {project}",
+  "6572f44f2b8f030d": "Settled and archived threads",
+  "b9b34ce02a3a5f8b": "Settled",
+  "4ff72c2acc7f6656": "Loading…",
+  "ff0ecab0a975b3d8": "No settled threads",
+  "c10fd362bc560a20": "Show more settled ({count} more)",
+  "9ffac526802b79e6": "Archived",
+  "3ce9741f164fb944": "Could not load archived threads",
+  "ad25ae072f65b934": "No archived threads",
+  "4e2db06056916310": "Show more archived ({count} more)",
   "dba0310bcb0e2131": "Blue",
   "fe8a649c97f3a932": "Green",
   "785cb56dff9f9083": "Teal",
@@ -1639,10 +1649,10 @@
   "b4ae29a86f8a6ade": "Tokens",
   "74dadde9f8390c68": "Turns",
   "49c4cd88ca4d260a": "No activity in this window.",
-  "8e4a82fb94d107bb": "Failed to unarchive thread",
   "6c13d520b6601f65": "Archive thread \"{title}\"?",
   "83e50f9b118a7a0a": "Thread archived, but navigation failed",
   "da43691fb8ad8006": "Failed to archive thread",
+  "8e4a82fb94d107bb": "Failed to unarchive thread",
   "6dff8d487001c6cf": "Responsive",
   "f5f61c338cc5aeb5": "Browser device toolbar",
   "3b4eb5b5ec5e60cb": "Browser device preset",
@@ -2783,7 +2793,6 @@
   "db8f17154d4f0cfa": "Active",
   "9578dc3e84f82081": "Working",
   "a202dad5b0a0aa56": "Snoozed",
-  "b9b34ce02a3a5f8b": "Settled",
   "dfcce8b35ce4fb90": "Loading",
   "fcaffe60c85338e2": "Could not load older threads. Retry",
   "43acfc82011a8fc2": "{count, plural, one {Show {count} more} other {Show {count} more}}",
@@ -3368,10 +3377,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "on the computer that opened this page"
-      ]
+      "c": [" ", "on the computer that opened this page"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3383,10 +3389,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· whoever runs it gets this access"
-      ]
+      "c": [" ", "· whoever runs it gets this access"]
     }
   ],
   "c54cc9c75db9dc58": "Only approve a sign-in you just started.",
@@ -5827,7 +5830,6 @@
   "3c3e2a86f7fb439d": "Failed to copy mention",
   "b3a779a7cf9fccab": "Open a chat for this project and try again.",
   "e3796d26e9912913": "The chat isn't ready to accept input right now.",
-  "4ff72c2acc7f6656": "Loading…",
   "69858f722a57708c": "Search {projectName} files",
   "e1e1094e43a5f3d7": "{error} Click to retry.",
   "ddb58ada5516a46d": "{projectName} files",
@@ -7810,8 +7812,6 @@
   "d6b75f6c2f576a2c": "Delete {title}",
   "41935b6ab025a13d": "Archived thread action failed",
   "4568f63340b7a586": "Loading archived threads",
-  "3ce9741f164fb944": "Could not load archived threads",
-  "ad25ae072f65b934": "No archived threads",
   "4e690f420bcbdb5d": "Checking connected environments.",
   "89d08a5be3347890": "Archived threads will appear here.",
   "5d3ed45f43611ff4": [

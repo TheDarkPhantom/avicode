@@ -1565,6 +1565,16 @@
   "9861a2beb702d912": "Entfernen",
   "283f5c40cec3fbd5": "Lesezeichen",
   "1917f1746b698ff8": "Lesezeichen hinzufügen",
+  "2f597c348841e65c": "Erledigte und archivierte Threads in {project}",
+  "6572f44f2b8f030d": "Erledigte und archivierte Threads",
+  "b9b34ce02a3a5f8b": "Erledigt",
+  "4ff72c2acc7f6656": "Wird geladen…",
+  "ff0ecab0a975b3d8": "Keine erledigten Threads",
+  "c10fd362bc560a20": "Mehr erledigte anzeigen ({count} weitere)",
+  "9ffac526802b79e6": "Archiviert",
+  "3ce9741f164fb944": "Archivierte Threads konnten nicht geladen werden",
+  "ad25ae072f65b934": "Keine archivierten Threads",
+  "4e2db06056916310": "Mehr archivierte anzeigen ({count} weitere)",
   "dba0310bcb0e2131": "Blau",
   "fe8a649c97f3a932": "Grün",
   "785cb56dff9f9083": "Petrol",
@@ -1639,10 +1649,10 @@
   "b4ae29a86f8a6ade": "Tokens",
   "74dadde9f8390c68": "Runden",
   "49c4cd88ca4d260a": "Keine Aktivität in diesem Zeitraum.",
-  "8e4a82fb94d107bb": "Thread konnte nicht aus dem Archiv geholt werden",
   "6c13d520b6601f65": "Thread „{title}“ archivieren?",
   "83e50f9b118a7a0a": "Thread archiviert, aber die Navigation ist fehlgeschlagen",
   "da43691fb8ad8006": "Thread konnte nicht archiviert werden",
+  "8e4a82fb94d107bb": "Thread konnte nicht aus dem Archiv geholt werden",
   "6dff8d487001c6cf": "Responsiv",
   "f5f61c338cc5aeb5": "Browser-Gerätesymbolleiste",
   "3b4eb5b5ec5e60cb": "Browser-Gerätevorlage",
@@ -2783,7 +2793,6 @@
   "db8f17154d4f0cfa": "Aktiv",
   "9578dc3e84f82081": "In Arbeit",
   "a202dad5b0a0aa56": "Zurückgestellt",
-  "b9b34ce02a3a5f8b": "Erledigt",
   "dfcce8b35ce4fb90": "Wird geladen",
   "fcaffe60c85338e2": "Ältere Threads konnten nicht geladen werden. Erneut versuchen",
   "43acfc82011a8fc2": "{count, plural, one {{count} weiteren anzeigen} other {{count} weitere anzeigen}}",
@@ -3369,10 +3378,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "auf dem Computer, der diese Seite geöffnet hat"
-      ]
+      "c": [" ", "auf dem Computer, der diese Seite geöffnet hat"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3384,10 +3390,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· wer es ausführt, erhält diesen Zugriff"
-      ]
+      "c": [" ", "· wer es ausführt, erhält diesen Zugriff"]
     }
   ],
   "c54cc9c75db9dc58": "Genehmige nur eine Anmeldung, die du gerade selbst gestartet hast.",
@@ -5826,7 +5829,6 @@
   "3c3e2a86f7fb439d": "Erwähnung konnte nicht kopiert werden",
   "b3a779a7cf9fccab": "Öffne einen Chat für dieses Projekt und versuche es erneut.",
   "e3796d26e9912913": "Der Chat kann gerade keine Eingaben annehmen.",
-  "4ff72c2acc7f6656": "Wird geladen…",
   "69858f722a57708c": "Dateien von {projectName} durchsuchen",
   "e1e1094e43a5f3d7": "{error} Klicke zum Wiederholen.",
   "ddb58ada5516a46d": "Dateien von {projectName}",
@@ -7803,8 +7805,6 @@
   "d6b75f6c2f576a2c": "{title} löschen",
   "41935b6ab025a13d": "Aktion für archivierten Thread fehlgeschlagen",
   "4568f63340b7a586": "Archivierte Threads werden geladen",
-  "3ce9741f164fb944": "Archivierte Threads konnten nicht geladen werden",
-  "ad25ae072f65b934": "Keine archivierten Threads",
   "4e690f420bcbdb5d": "Verbundene Umgebungen werden geprüft.",
   "89d08a5be3347890": "Archivierte Threads erscheinen hier.",
   "5d3ed45f43611ff4": [

@@ -1565,6 +1565,16 @@
   "9861a2beb702d912": "Supprimer",
   "283f5c40cec3fbd5": "Favoris",
   "1917f1746b698ff8": "Ajouter un favori",
+  "2f597c348841e65c": "Fils réglés et archivés dans {project}",
+  "6572f44f2b8f030d": "Fils réglés et archivés",
+  "b9b34ce02a3a5f8b": "Clos",
+  "4ff72c2acc7f6656": "Chargement…",
+  "ff0ecab0a975b3d8": "Aucun fil réglé",
+  "c10fd362bc560a20": "Afficher plus de fils réglés ({count} de plus)",
+  "9ffac526802b79e6": "Archivés",
+  "3ce9741f164fb944": "Impossible de charger les fils archivés",
+  "ad25ae072f65b934": "Aucun fil archivé",
+  "4e2db06056916310": "Afficher plus de fils archivés ({count} de plus)",
   "dba0310bcb0e2131": "Bleu",
   "fe8a649c97f3a932": "Vert",
   "785cb56dff9f9083": "Bleu canard",
@@ -1639,10 +1649,10 @@
   "b4ae29a86f8a6ade": "Tokens",
   "74dadde9f8390c68": "Tours",
   "49c4cd88ca4d260a": "Aucune activité dans cette fenêtre.",
-  "8e4a82fb94d107bb": "Échec du désarchivage du fil",
   "6c13d520b6601f65": "Archiver le fil « {title} » ?",
   "83e50f9b118a7a0a": "Fil archivé, mais la navigation a échoué",
   "da43691fb8ad8006": "Échec de l’archivage du fil",
+  "8e4a82fb94d107bb": "Échec du désarchivage du fil",
   "6dff8d487001c6cf": "Adaptatif",
   "f5f61c338cc5aeb5": "Barre d’outils des appareils du navigateur",
   "3b4eb5b5ec5e60cb": "Préréglage d’appareil du navigateur",
@@ -2783,7 +2793,6 @@
   "db8f17154d4f0cfa": "Actifs",
   "9578dc3e84f82081": "En cours",
   "a202dad5b0a0aa56": "Reportés",
-  "b9b34ce02a3a5f8b": "Clos",
   "dfcce8b35ce4fb90": "Chargement",
   "fcaffe60c85338e2": "Impossible de charger les fils plus anciens. Réessayer",
   "43acfc82011a8fc2": "{count, plural, one {Afficher {count} de plus} other {Afficher {count} de plus}}",
@@ -3368,10 +3377,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "sur l’ordinateur qui a ouvert cette page"
-      ]
+      "c": [" ", "sur l’ordinateur qui a ouvert cette page"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3383,10 +3389,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· quiconque l’exécute obtient cet accès"
-      ]
+      "c": [" ", "· quiconque l’exécute obtient cet accès"]
     }
   ],
   "c54cc9c75db9dc58": "N’approuvez qu’une connexion que vous venez de lancer.",
@@ -5826,7 +5829,6 @@
   "3c3e2a86f7fb439d": "Échec de la copie de la mention",
   "b3a779a7cf9fccab": "Ouvrez une discussion pour ce projet et réessayez.",
   "e3796d26e9912913": "La discussion n’est pas prête à recevoir une saisie pour le moment.",
-  "4ff72c2acc7f6656": "Chargement…",
   "69858f722a57708c": "Rechercher dans les fichiers de {projectName}",
   "e1e1094e43a5f3d7": "{error} Cliquez pour réessayer.",
   "ddb58ada5516a46d": "Fichiers de {projectName}",
@@ -7805,8 +7807,6 @@
   "d6b75f6c2f576a2c": "Supprimer {title}",
   "41935b6ab025a13d": "Échec de l’action sur le fil archivé",
   "4568f63340b7a586": "Chargement des fils archivés",
-  "3ce9741f164fb944": "Impossible de charger les fils archivés",
-  "ad25ae072f65b934": "Aucun fil archivé",
   "4e690f420bcbdb5d": "Vérification des environnements connectés.",
   "89d08a5be3347890": "Les fils archivés apparaîtront ici.",
   "5d3ed45f43611ff4": [

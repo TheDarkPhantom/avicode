@@ -1565,6 +1565,16 @@
   "9861a2beb702d912": "Quitar",
   "283f5c40cec3fbd5": "Marcadores",
   "1917f1746b698ff8": "Añadir marcador",
+  "2f597c348841e65c": "Hilos resueltos y archivados en {project}",
+  "6572f44f2b8f030d": "Hilos resueltos y archivados",
+  "b9b34ce02a3a5f8b": "Resueltos",
+  "4ff72c2acc7f6656": "Cargando…",
+  "ff0ecab0a975b3d8": "No hay hilos resueltos",
+  "c10fd362bc560a20": "Mostrar más resueltos ({count} más)",
+  "9ffac526802b79e6": "Archivados",
+  "3ce9741f164fb944": "No se pudieron cargar los hilos archivados",
+  "ad25ae072f65b934": "No hay hilos archivados",
+  "4e2db06056916310": "Mostrar más archivados ({count} más)",
   "dba0310bcb0e2131": "Azul",
   "fe8a649c97f3a932": "Verde",
   "785cb56dff9f9083": "Verde azulado",
@@ -1639,10 +1649,10 @@
   "b4ae29a86f8a6ade": "Tokens",
   "74dadde9f8390c68": "Turnos",
   "49c4cd88ca4d260a": "No hay actividad en esta ventana.",
-  "8e4a82fb94d107bb": "No se pudo desarchivar el hilo",
   "6c13d520b6601f65": "¿Archivar el hilo \"{title}\"?",
   "83e50f9b118a7a0a": "Hilo archivado, pero falló la navegación",
   "da43691fb8ad8006": "No se pudo archivar el hilo",
+  "8e4a82fb94d107bb": "No se pudo desarchivar el hilo",
   "6dff8d487001c6cf": "Adaptable",
   "f5f61c338cc5aeb5": "Barra de dispositivos del navegador",
   "3b4eb5b5ec5e60cb": "Dispositivo predefinido del navegador",
@@ -2783,7 +2793,6 @@
   "db8f17154d4f0cfa": "Activos",
   "9578dc3e84f82081": "En curso",
   "a202dad5b0a0aa56": "Pospuestos",
-  "b9b34ce02a3a5f8b": "Resueltos",
   "dfcce8b35ce4fb90": "Cargando",
   "fcaffe60c85338e2": "No se pudieron cargar los hilos anteriores. Reintentar",
   "43acfc82011a8fc2": "{count, plural, one {Mostrar {count} más} other {Mostrar {count} más}}",
@@ -3368,10 +3377,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "en el ordenador que abrió esta página"
-      ]
+      "c": [" ", "en el ordenador que abrió esta página"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3383,10 +3389,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· quien lo ejecute obtiene este acceso"
-      ]
+      "c": [" ", "· quien lo ejecute obtiene este acceso"]
     }
   ],
   "c54cc9c75db9dc58": "Aprueba solo un inicio de sesión que acabes de iniciar.",
@@ -5825,7 +5828,6 @@
   "3c3e2a86f7fb439d": "No se pudo copiar la mención",
   "b3a779a7cf9fccab": "Abre un chat para este proyecto y vuelve a intentarlo.",
   "e3796d26e9912913": "El chat no está listo para aceptar entradas ahora mismo.",
-  "4ff72c2acc7f6656": "Cargando…",
   "69858f722a57708c": "Buscar archivos de {projectName}",
   "e1e1094e43a5f3d7": "{error} Haz clic para reintentarlo.",
   "ddb58ada5516a46d": "Archivos de {projectName}",
@@ -7804,8 +7806,6 @@
   "d6b75f6c2f576a2c": "Eliminar {title}",
   "41935b6ab025a13d": "Falló la acción sobre el hilo archivado",
   "4568f63340b7a586": "Cargando hilos archivados",
-  "3ce9741f164fb944": "No se pudieron cargar los hilos archivados",
-  "ad25ae072f65b934": "No hay hilos archivados",
   "4e690f420bcbdb5d": "Comprobando los entornos conectados.",
   "89d08a5be3347890": "Los hilos archivados aparecerán aquí.",
   "5d3ed45f43611ff4": [
