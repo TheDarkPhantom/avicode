@@ -24,6 +24,41 @@ import { useSearchableSetting } from "./settingsSearch";
 
 const DEFAULT_SHOW_NAMES = DEFAULT_CLIENT_SETTINGS.aviCodeWindowTitleShowNames;
 const DEFAULT_START_IN_PLAN_MODE = DEFAULT_CLIENT_SETTINGS.aviCodeNewThreadsStartInPlanMode;
+const DEFAULT_SHOW_THREAD_DETAILS = DEFAULT_CLIENT_SETTINGS.aviCodeShowThreadDetails;
+
+function ShowThreadDetailsRow() {
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  const showThreadDetails = useClientSettings((settings) => settings.aviCodeShowThreadDetails);
+  return (
+    <SettingsRow
+      {...setting("avicode-show-thread-details")}
+      devicePreference
+      description={gt(
+        "Off, every chat opens with its details card closed. Open it for one chat with the details button in the chat header.",
+      )}
+      resetAction={
+        showThreadDetails !== DEFAULT_SHOW_THREAD_DETAILS ? (
+          <SettingResetButton
+            ariaLabel={gt("Reset show thread details to default")}
+            onClick={() =>
+              void updateClientSettings({ aviCodeShowThreadDetails: DEFAULT_SHOW_THREAD_DETAILS })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={showThreadDetails}
+          onCheckedChange={(checked) =>
+            void updateClientSettings({ aviCodeShowThreadDetails: Boolean(checked) })
+          }
+          aria-label={gt("Show thread details")}
+        />
+      }
+    />
+  );
+}
 
 function StartInPlanModeRow() {
   const setting = useSearchableSetting();
@@ -191,6 +226,7 @@ export function AviCodeSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="avicode-chats" title={gt("Chats")}>
         <StartInPlanModeRow />
+        <ShowThreadDetailsRow />
         <QuickSendChipsRow />
       </SettingsSection>
       <SettingsSection id="avicode-sidebar" title={gt("Sidebar folders")}>

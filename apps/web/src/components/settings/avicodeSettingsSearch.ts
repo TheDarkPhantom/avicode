@@ -17,6 +17,12 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("plan mode new chat thread default interaction mode build")],
   },
   {
+    id: "avicode-show-thread-details",
+    title: msg("Show thread details"),
+    to: "/settings/avicode",
+    searchTerms: [msg("thread details card panel hide collapse branch worktree scripts space")],
+  },
+  {
     id: "avicode-quick-send-chips",
     title: msg("Quick-send chips"),
     to: "/settings/avicode",

@@ -58,6 +58,7 @@ Upstream: t3code 0.1.12
 - See token usage and cost per repository and account on the Usage page (#332)
 - Ctrl+W archives the open thread once no terminal or panel tab is left to close (#331)
 - Ctrl+Shift+T reopens your last archived threads once no closed tab is left to reopen (#331)
+- Keep the thread details card closed in every chat with a toggle in Settings > Avi Code
 - In the boring sidebar, group projects into named folders you can collapse, hide and reorder (#333)
 - Keep chats that need you in view under a collapsed sidebar folder with a new setting (#333)
 - Server messages, sign-in pages and setting help say Avi Code 2 instead of T3 Code (#334)

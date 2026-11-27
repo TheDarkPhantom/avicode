@@ -9,6 +9,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { useClosedViewStore } from "./closedViewStore";
+import {
+  onThreadDetailsDefaultChange,
+  readThreadDetailsOpenByDefault,
+} from "./avicode/threadDetailsDefault";
 import { m } from "./i18n/messages";
 import { resolveStorage } from "./lib/storage";
 import type { LinkedThreadTarget } from "@t3tools/client-runtime/linked-thread";
@@ -279,10 +283,17 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
   surfaces: [],
 };
 
-const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
+const OPEN_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
   inlineOpen: true,
   popoverOpen: false,
 };
+const CLOSED_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
+  inlineOpen: false,
+  popoverOpen: false,
+};
+// Avi Code addition: the inline card's default follows the "Show thread details" setting.
+const defaultThreadPanelVisibility = (): ThreadPanelVisibility =>
+  readThreadDetailsOpenByDefault() ? OPEN_THREAD_PANEL_VISIBILITY : CLOSED_THREAD_PANEL_VISIBILITY;
 
 const singletonSurface = (
   kind: Exclude<
@@ -453,9 +464,10 @@ const updateThreadPanelVisibilityMap = (
   threadKey: string,
   updater: (current: ThreadPanelVisibility) => ThreadPanelVisibility,
 ): Record<string, ThreadPanelVisibility> => {
-  const current = byThreadKey[threadKey] ?? DEFAULT_THREAD_PANEL_VISIBILITY;
+  const fallback = defaultThreadPanelVisibility();
+  const current = byThreadKey[threadKey] ?? fallback;
   const next = updater(current);
-  if (next.inlineOpen && !next.popoverOpen) {
+  if (next.inlineOpen === fallback.inlineOpen && !next.popoverOpen) {
     if (!(threadKey in byThreadKey)) return byThreadKey;
     const { [threadKey]: _removed, ...rest } = byThreadKey;
     return rest;
@@ -1409,6 +1421,13 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
   ),
 );
 
+// Avi Code addition: selectors fall back to the setting, so a new map makes them read it again.
+onThreadDetailsDefaultChange(() =>
+  useRightPanelStore.setState((state) => ({
+    threadPanelVisibilityByThreadKey: { ...state.threadPanelVisibilityByThreadKey },
+  })),
+);
+
 useRightPanelStore.subscribe((next, previous) => {
   if (next.closeRevisionByThreadKey === previous.closeRevisionByThreadKey) return;
   for (const [threadKey, revision] of Object.entries(next.closeRevisionByThreadKey)) {
@@ -1447,8 +1466,8 @@ export function selectThreadPanelVisibility(
   byThreadKey: Record<string, ThreadPanelVisibility>,
   ref: ScopedThreadRef | null | undefined,
 ): ThreadPanelVisibility {
-  if (!ref) return DEFAULT_THREAD_PANEL_VISIBILITY;
-  return byThreadKey[scopedThreadKey(ref)] ?? DEFAULT_THREAD_PANEL_VISIBILITY;
+  if (!ref) return defaultThreadPanelVisibility();
+  return byThreadKey[scopedThreadKey(ref)] ?? defaultThreadPanelVisibility();
 }
 
 export function selectThreadPanelOpen(

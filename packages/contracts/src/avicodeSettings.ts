@@ -58,6 +58,8 @@ export const AVICODE_CLIENT_SETTINGS_FIELDS = {
   aviCodeNotificationSoundCompletion: AviCodeNotificationSound.pipe(
     Schema.withDecodingDefault(Effect.succeed("default" as const)),
   ),
+  /** Off, every chat opens with its details card closed until the user opens it there. */
+  aviCodeShowThreadDetails: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** A collapsed sidebar folder still lists its chats that need you. */
   aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -71,4 +73,5 @@ export const AVICODE_CLIENT_SETTINGS_PATCH_FIELDS = {
   aviCodeNotificationSoundInput: Schema.optionalKey(AviCodeNotificationSound),
   aviCodeNotificationSoundCompletion: Schema.optionalKey(AviCodeNotificationSound),
   aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.optionalKey(Schema.Boolean),
+  aviCodeShowThreadDetails: Schema.optionalKey(Schema.Boolean),
 };
