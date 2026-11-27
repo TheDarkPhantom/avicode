@@ -10,16 +10,16 @@ feature inventory behind it.
 
 ## Status
 
-| Step | What                                                                 | State                          |
-| ---- | -------------------------------------------------------------------- | ------------------------------ |
-| 1    | Inventory every old fork feature against upstream                    | Done (`docs/REFORK_LEDGER.md`) |
-| 2    | Prove old history can carry over                                     | Done, works                    |
-| 3    | Branches: freeze the old fork, make the re-fork `main`               | Done (PR #307)                 |
-| 4    | Identity and CI: Avi Code 2 installs side by side, checks run again  | Done (#309 to #323, #334)      |
-| 5    | Feature ports                                                        | In progress, 10 of 18 done     |
-| 6    | One-time history import on first launch                              | Done                           |
-| 7    | Restore `main` protection, turn the right workflows back on          | Done                           |
-| 8    | Use Avi Code 2 daily next to the old app, then uninstall the old app | Last                           |
+| Step | What                                                                 | State                           |
+| ---- | -------------------------------------------------------------------- | ------------------------------- |
+| 1    | Inventory every old fork feature against upstream                    | Done (`docs/REFORK_LEDGER.md`)  |
+| 2    | Prove old history can carry over                                     | Done, works                     |
+| 3    | Branches: freeze the old fork, make the re-fork `main`               | Done (PR #307)                  |
+| 4    | Identity and CI: Avi Code 2 installs side by side, checks run again  | Done (#309 to #323, #334, #336) |
+| 5    | Feature ports                                                        | In progress, 10 of 18 done      |
+| 6    | One-time history import on first launch                              | Done                            |
+| 7    | Restore `main` protection, turn the right workflows back on          | Done                            |
+| 8    | Use Avi Code 2 daily next to the old app, then uninstall the old app | Last                            |
 
 ## Why re-fork
 
@@ -91,7 +91,9 @@ Made 2026-11-25.
   Code's admin policy.
 - Keep the `avicode_desktop` Codex originator (ALFRED reads it).
 - Copy says Avi Code 2. A build step renames "T3 Code" in web, desktop and server sources and
-  rehashes the catalogs to match, so upstream's strings and catalogs merge untouched.
+  rehashes the catalogs to match, so upstream's strings and catalogs merge untouched. The build
+  step can't reach upstream's "T3" SVG wordmark, so its call sites use
+  `apps/web/src/avicode/AviCodeBrand.tsx` instead.
 
 **Features**
 
@@ -140,7 +142,9 @@ file was opened read-only and never written.
 
 Done. Identity #312, CI #309, release workflow #315 (#317, #318), changelog page #311, guardrails
 #320, settings page #321, telemetry and promotions #316, admin policy #323, rebranded copy #322 and
-#334, fork docs #310 and #313.
+#334, Avi Code logo in place of the T3 wordmark #336, fork docs #310 and #313. The
+`0.1.12-avicode.3` installer was installed and checked on 2026-11-27: no T3 Code name or logo left
+in the app.
 
 1. Shared identity module (`packages/shared/src/avicodeIdentity.ts`) wired into every place upstream
    hardcodes T3 Code. The full file list is in the ledger, section 4.
