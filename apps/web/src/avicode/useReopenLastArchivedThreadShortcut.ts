@@ -20,7 +20,7 @@ import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { readProjects } from "../state/entities";
+import { readProjects, readThreadShells } from "../state/entities";
 import { orchestrationEnvironment } from "../state/orchestration";
 import { environmentShell } from "../state/shell";
 import { threadEnvironment } from "../state/threads";
@@ -30,13 +30,15 @@ import { buildThreadRouteParams } from "../threadRoutes";
 import {
   type ArchivedThreads,
   pickLastArchivedThread,
+  pickLastSettledThread,
   resolveReopenTarget,
 } from "./threadCloseReopen";
 
 /**
- * Unarchives and opens the most recently archived thread for `thread.reopenLastArchived`, and
- * for `view.reopenClosed` once no closed tab or view is left (see `resolveReopenTarget`). Each
- * press reads the archive fresh, so repeated presses walk back through it.
+ * Once no closed tab or view is left (see `resolveReopenTarget`), `view.reopenClosed`
+ * un-settles and opens the most recently settled thread, and `thread.reopenLastArchived`
+ * unarchives and opens the most recently archived one. Each press reads them fresh, so repeated
+ * presses walk back through them.
  */
 export function useReopenLastArchivedThreadShortcut(input: {
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -47,6 +49,7 @@ export function useReopenLastArchivedThreadShortcut(input: {
   const navigate = useNavigate();
   // useThreadActions().unarchiveThread does the same, but carries its many hooks into the root.
   const unarchive = useOrchestrationCommand(threadEnvironment.unarchive, { reportFailure: false });
+  const unsettle = useOrchestrationCommand(threadEnvironment.unsettle, { reportFailure: false });
   const loadArchived = useAtomQueryRunner(orchestrationEnvironment.archivedShellSnapshot, {
     reportFailure: false,
     refresh: true,
@@ -97,6 +100,33 @@ export function useReopenLastArchivedThreadShortcut(input: {
     );
   });
 
+  const reunsettled = useRef(new Set<string>());
+  const unsettleLast = useEffectEvent(async () => {
+    const last = pickLastSettledThread(readThreadShells(), reunsettled.current);
+    if (!last) return;
+    reunsettled.current.add(last.archiveKey);
+    const { ref } = last;
+    ThreadUndo.invalidate("settle", scopedThreadKey(ref));
+    const result = await unsettle({
+      environmentId: ref.environmentId,
+      input: { threadId: ref.threadId, reason: "user" },
+    });
+    if (result._tag === "Success") {
+      await navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+      return;
+    }
+    reunsettled.current.delete(last.archiveKey);
+    if (isAtomCommandInterrupted(result)) return;
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: m(msg("Failed to un-settle thread")),
+        description:
+          thrownErrorMessage(squashAtomCommandFailure(result), m) ?? m(msg("An error occurred.")),
+      }),
+    );
+  });
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for the reopen-archived-thread shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -115,13 +145,13 @@ export function useReopenLastArchivedThreadShortcut(input: {
         modelPickerOpen: isModelPickerOpen(),
       };
       const closedViewCount = useClosedViewStore.getState().entries.length;
-      if (resolveReopenTarget(event, keybindings, context, closedViewCount) !== "archived-thread") {
-        return;
-      }
+      const target = resolveReopenTarget(event, keybindings, context, closedViewCount);
+      if (target !== "archived-thread" && target !== "settled-thread") return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;
-      pending.current = pending.current.then(() => reopenNext()).catch(() => undefined);
+      const reopen = target === "archived-thread" ? reopenNext : unsettleLast;
+      pending.current = pending.current.then(() => reopen()).catch(() => undefined);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);

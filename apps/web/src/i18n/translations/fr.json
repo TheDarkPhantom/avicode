@@ -13092,5 +13092,10 @@
   "271f0c8feb90e014": "Désactivé, chaque chat s'ouvre avec sa carte de détails fermée. Ouvrez-la pour un chat avec le bouton de détails de l'en-tête.",
   "9c2b11c4afde4916": "Réinitialiser afficher les détails du fil par défaut",
   "22df1575e8ae427c": "Afficher les détails du fil",
-  "7059d50db542db5b": "détails fil carte panneau masquer replier branche worktree scripts espace"
+  "7059d50db542db5b": "détails fil carte panneau masquer replier branche worktree scripts espace",
+  "40f4a1285c058689": "Après {days} jours",
+  "4415d877e90b2ca7": "Les fils clos sont archivés s’ils restent clos aussi longtemps. Les fils dans lesquels une tâche planifiée publie sont conservés.",
+  "bb614bc6dffe1301": "Réinitialiser l’archivage des fils clos",
+  "bdb22e8ed3dcdcf1": "Archiver les fils clos",
+  "802b56c4669c0273": "archiver automatiquement fils clos jours nettoyage barre latérale ctrl w fermer"
 }

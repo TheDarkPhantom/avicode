@@ -299,6 +299,35 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
+  // Avi Code addition
+  it.effect("gives mod+w its settle rule when thread.settle is customized", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      const keybindings = yield* Keybindings.Keybindings;
+      const terminalClose = {
+        key: "mod+w",
+        command: "terminal.close",
+        when: "terminalFocus",
+      } as const;
+      const customSettle = {
+        key: "mod+shift+e",
+        command: "thread.settle",
+        when: "!terminalFocus",
+      } as const;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [terminalClose, customSettle]);
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.deepStrictEqual(
+        persisted.filter((entry) => entry.command === "thread.settle"),
+        [
+          { key: "mod+w", command: "thread.settle", when: "!terminalFocus && !rightPanelOpen" },
+          customSettle,
+        ],
+      );
+    }).pipe(Effect.provide(layerKeybindings())),
+  );
+
   it.effect("leaves a customized command without the late default", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;

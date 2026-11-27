@@ -13101,5 +13101,10 @@
   "271f0c8feb90e014": "Off, every chat opens with its details card closed. Open it for one chat with the details button in the chat header.",
   "9c2b11c4afde4916": "Reset show thread details to default",
   "22df1575e8ae427c": "Show thread details",
-  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space"
+  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space",
+  "40f4a1285c058689": "After {days} days",
+  "4415d877e90b2ca7": "Settled threads are archived once they stay settled this long. Threads a scheduled task posts into are kept.",
+  "bb614bc6dffe1301": "Reset archive settled threads to default",
+  "bdb22e8ed3dcdcf1": "Archive settled threads",
+  "802b56c4669c0273": "auto archive settled threads days cleanup sidebar ctrl w close"
 }

@@ -13092,5 +13092,10 @@
   "271f0c8feb90e014": "Desativado, cada chat abre com o cartão de detalhes fechado. Abra-o em um chat pelo botão de detalhes no cabeçalho.",
   "9c2b11c4afde4916": "Redefinir mostrar detalhes da conversa para o padrão",
   "22df1575e8ae427c": "Mostrar detalhes da conversa",
-  "7059d50db542db5b": "detalhes conversa cartão painel ocultar recolher branch worktree scripts espaço"
+  "7059d50db542db5b": "detalhes conversa cartão painel ocultar recolher branch worktree scripts espaço",
+  "40f4a1285c058689": "Após {days} dias",
+  "4415d877e90b2ca7": "Threads concluídas são arquivadas quando continuam concluídas por esse tempo. Threads em que uma tarefa agendada publica são mantidas.",
+  "bb614bc6dffe1301": "Redefinir arquivar threads concluídas para o padrão",
+  "bdb22e8ed3dcdcf1": "Arquivar threads concluídas",
+  "802b56c4669c0273": "arquivar automaticamente threads concluídas dias limpeza barra lateral ctrl w fechar"
 }

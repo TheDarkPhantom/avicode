@@ -2935,6 +2935,7 @@ export default function ChatView(props: ChatViewProps) {
     keybindings,
     getShortcutContext,
     closeRightPanel: rightPanelShortcuts["rightPanel.close"],
+    toggleSettled: threadLifecycleShortcuts["thread.settle"],
   });
   useChatShortcuts({
     enabled: activeThreadId !== null && !backgroundThread,
