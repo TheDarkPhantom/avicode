@@ -340,6 +340,38 @@
       ]
     },
     {
+      "id": "composer-usage-meters",
+      "why": "The composer's usage meters join upstream's RPC group, server, authorization, chat view and composer footer at single sites a sync could drop.",
+      "requiredFiles": [
+        "apps/web/src/avicode/ComposerUsageMeters.tsx",
+        "apps/web/src/avicode/threadUsageState.ts"
+      ],
+      "requiredText": [
+        {
+          "file": "packages/contracts/src/rpc.ts",
+          "values": ["  WsAviCodeGetThreadUsageRpc,"]
+        },
+        {
+          "file": "apps/server/src/ws.ts",
+          "values": [
+            "[WS_METHODS.avicodeGetThreadUsage]: (input) => projectUsage.readThread(input),"
+          ]
+        },
+        {
+          "file": "apps/server/src/auth/RpcAuthorization.ts",
+          "values": ["[WS_METHODS.avicodeGetThreadUsage]: AuthDiagnosticsReadScope,"]
+        },
+        {
+          "file": "apps/web/src/components/chat/ChatComposer.tsx",
+          "values": ["<ComposerUsageMeters {...props.aviCodeUsageMeters} />"]
+        },
+        {
+          "file": "apps/web/src/components/ChatView.tsx",
+          "values": ["aviCodeUsageMeters={{"]
+        }
+      ]
+    },
+    {
       "id": "thread-close-reopen-keys",
       "why": "Ctrl+W settles and Ctrl+Shift+T un-settles or reopens archived threads through upstream keybinding sites.",
       "requiredFiles": [

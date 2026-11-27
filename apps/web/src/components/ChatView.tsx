@@ -3985,6 +3985,22 @@ export default function ChatView(props: ChatViewProps) {
                                 onPageScrollKeyUp={onComposerPageScrollKeyUpStable}
                                 onPageScrollRelease={onComposerPageScrollReleaseStable}
                                 onCompactContext={onComposerCompactContextStable}
+                                // Avi Code addition: usage meters beside the attach button.
+                                aviCodeUsageMeters={{
+                                  environmentId,
+                                  threadId: isServerThread ? (activeThread?.id ?? null) : null,
+                                  runRevision: `${activeLatestRun?.runId ?? ""}:${activeLatestRun?.completedAt ?? ""}`,
+                                  contextWindow: activeContextWindow,
+                                  onCompact: onComposerCompactContextStable,
+                                  compactDisabled,
+                                  usage: {
+                                    providerInstanceId: activeProviderInstanceId,
+                                    model: activeUsageModel,
+                                    providers: providerStatuses,
+                                    sources:
+                                      serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
+                                  },
+                                }}
                                 onSend={onComposerSendStable}
                                 captureDetachedSend={captureDetachedSend}
                                 onResume={onComposerResumeStable}

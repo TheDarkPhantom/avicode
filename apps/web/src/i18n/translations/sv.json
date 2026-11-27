@@ -13110,5 +13110,18 @@
   "4415d877e90b2ca7": "Klara trådar arkiveras när de har varit klara så här länge. Trådar som en schemalagd uppgift skriver i behålls.",
   "bb614bc6dffe1301": "Återställ arkivering av klara trådar till standard",
   "bdb22e8ed3dcdcf1": "Arkivera klara trådar",
-  "802b56c4669c0273": "arkivera automatiskt klara trådar dagar rensa sidofält ctrl w stäng"
+  "802b56c4669c0273": "arkivera automatiskt klara trådar dagar rensa sidofält ctrl w stäng",
+  "a1df10224843de4b": "Kontextfönster: {used} % använt",
+  "276e898b23f797b5": "Kontextfönster: {usedTokens} tokens använda",
+  "47233ef369410b52": "Komprimera kontext",
+  "a56300d38f97b4fc": "Trådanvändning: {tokens} tokens",
+  "f6ede6253e822e9f": "Trådanvändning: {tokens} tokens, cirka {cost}",
+  "fdbdaf07838884e0": "Trådanvändning",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} tur} other {{count} turer}}",
+  "5142b3a21348886f": "Indata",
+  "22b823c910096367": "Cacheläsningar",
+  "43eca69b9434ba07": "Cacheskrivningar",
+  "b832101b2c66904b": "Uppskattad kostnad",
+  "b446f84a7a32ff83": "{count, plural, one {{count} tur har inget känt pris och räknas inte in i kostnaden.} other {{count} turer har inget känt pris och räknas inte in i kostnaden.}}",
+  "8581c17b15355090": "Användningsgränser: {left} % kvar"
 }
