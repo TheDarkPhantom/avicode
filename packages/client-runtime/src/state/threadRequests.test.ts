@@ -945,4 +945,5 @@ it("splits a megabyte of approval text the same way as a short one", () => {
   // Every other character named: one run each.
   expect(count(fill("a\r"))).toEqual([size, size / 2]);
   expect(count(fill("a"))).toEqual([1, 0]);
-});
+  // Avi Code addition: this fork's CI runners take 3.5 to 5.6 s here, past the 5 s default.
+}, 20_000);
