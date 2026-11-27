@@ -949,7 +949,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
                 "systemctl --user restart avicode2.service",
               ]
             : [
-                "launchctl bootout --wait gui/501/com.t3tools.avicode2.service",
+                "launchctl bootout --wait gui/501/com.advisoravi.avicode2.service",
                 `launchctl bootstrap gui/501 ${plan.unitPath}`,
               ],
         );
@@ -1552,7 +1552,7 @@ process.disconnect();
 
       expect(
         plan.unitPath.endsWith(
-          path.join("Library", "LaunchAgents", "com.t3tools.avicode2.service.plist"),
+          path.join("Library", "LaunchAgents", "com.advisoravi.avicode2.service.plist"),
         ),
       ).toBe(true);
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
@@ -1586,9 +1586,9 @@ process.disconnect();
       expect((yield* service.status).installed).toBe(false);
       expect(commands.some((command) => command.startsWith("systemctl "))).toBe(false);
       // launchd can take 90s to bootout; the runner's 60s default could let bootstrap race it.
-      expect(timeouts.get("launchctl bootout --wait gui/501/com.t3tools.avicode2.service")).toEqual(
-        Duration.seconds(120),
-      );
+      expect(
+        timeouts.get("launchctl bootout --wait gui/501/com.advisoravi.avicode2.service"),
+      ).toEqual(Duration.seconds(120));
     }),
   );
 
@@ -1811,7 +1811,7 @@ process.disconnect();
     Effect.gen(function* () {
       const { service, control } = yield* makeHarness("darwin");
       yield* service.install();
-      control.failCommand = "launchctl bootout --wait gui/501/com.t3tools.avicode2.service";
+      control.failCommand = "launchctl bootout --wait gui/501/com.advisoravi.avicode2.service";
 
       yield* service.install();
       expect((yield* service.status).current).toBe(true);
