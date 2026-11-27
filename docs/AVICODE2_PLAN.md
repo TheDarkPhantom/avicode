@@ -103,7 +103,7 @@ Made 2026-11-25.
 | Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Ported as upstream theme data (#327)    |
 | Notification sound picker, plan mode as default                         | Ported (#328, #325)                     |
 | Per-repo and per-credential usage                                       | Ported (#332)                           |
-| Composer usage meters: context window, thread cost, usage limits        | Ported                                  |
+| Composer usage meters: context window, thread cost, usage limits        | Ported (#344)                           |
 | Named sidebar folders                                                   | Ported, Labs boring sidebar only (#333) |
 | Flat "all threads by recent activity" list                              | Drop                                    |
 | Reply styles per turn                                                   | Port later                              |
