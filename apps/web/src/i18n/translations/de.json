@@ -13092,5 +13092,11 @@
   "271f0c8feb90e014": "Aus: Jeder Chat öffnet sich mit geschlossener Detailkarte. Öffne sie für einen Chat mit der Details-Schaltfläche in der Chat-Kopfzeile.",
   "9c2b11c4afde4916": "Thread-Details anzeigen auf Standard zurücksetzen",
   "22df1575e8ae427c": "Thread-Details anzeigen",
-  "7059d50db542db5b": "Thread Details Karte Panel ausblenden einklappen Branch Worktree Skripte Platz"
+  "7059d50db542db5b": "Thread Details Karte Panel ausblenden einklappen Branch Worktree Skripte Platz",
+  "2f597c348841e65c": "Erledigte und archivierte Threads in {project}",
+  "6572f44f2b8f030d": "Erledigte und archivierte Threads",
+  "ff0ecab0a975b3d8": "Keine erledigten Threads",
+  "c10fd362bc560a20": "Mehr erledigte anzeigen ({count} weitere)",
+  "9ffac526802b79e6": "Archiviert",
+  "4e2db06056916310": "Mehr archivierte anzeigen ({count} weitere)"
 }

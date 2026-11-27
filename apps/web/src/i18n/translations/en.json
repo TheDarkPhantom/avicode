@@ -13101,5 +13101,11 @@
   "271f0c8feb90e014": "Off, every chat opens with its details card closed. Open it for one chat with the details button in the chat header.",
   "9c2b11c4afde4916": "Reset show thread details to default",
   "22df1575e8ae427c": "Show thread details",
-  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space"
+  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space",
+  "2f597c348841e65c": "Settled and archived threads in {project}",
+  "6572f44f2b8f030d": "Settled and archived threads",
+  "ff0ecab0a975b3d8": "No settled threads",
+  "c10fd362bc560a20": "Show more settled ({count} more)",
+  "9ffac526802b79e6": "Archived",
+  "4e2db06056916310": "Show more archived ({count} more)"
 }
