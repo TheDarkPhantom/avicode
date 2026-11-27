@@ -277,7 +277,13 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         control.linger = "yes";
         control.managerReachable ||= control.lingerStartsManager;
       }
-      if (!failed && command === "systemctl --user enable avicode2.service") control.enabled = true;
+      if (
+        !failed &&
+        (command === "systemctl --user enable avicode2.service" ||
+          command.startsWith("launchctl enable "))
+      ) {
+        control.enabled = true;
+      }
       const taskMissing =
         input.command === SCHTASKS && input.args[0] !== "/Create" && control.task === undefined;
       if (input.command === SCHTASKS && !failed) {
@@ -291,14 +297,25 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         if (input.args[0] === "/Delete") delete control.task;
         if (input.args[0] === "/End") control.launcher?.close();
       }
-      if (!refusedStart && !failed && command.startsWith("systemctl --user restart "))
+      if (
+        !refusedStart &&
+        !failed &&
+        (command.startsWith("systemctl --user restart ") ||
+          command.startsWith("launchctl bootstrap "))
+      ) {
         control.active = true;
+      }
       // The manager loads units only from its own unit directory.
       const unitOutsideManager =
         command === "systemctl --user enable avicode2.service" &&
         !(yield* fs.exists(path.join(managerUnitDir, "avicode2.service")));
       // A timed-out stop may still stop the service.
-      if (command === "systemctl --user stop avicode2.service") control.active = false;
+      if (
+        command === "systemctl --user stop avicode2.service" ||
+        command.startsWith("launchctl bootout --wait ")
+      ) {
+        control.active = false;
+      }
       if (
         control.stateAfterStop !== undefined &&
         (command === "systemctl --user stop avicode2.service" ||
@@ -327,11 +344,13 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                   : (control.task?.xml ?? "")
                 : input.command === "loginctl" && input.args[0] === "show-user"
                   ? `${control.linger ?? ""}\n`
-                  : input.args[1] === "is-enabled"
-                    ? control.enabled
-                      ? "enabled\n"
-                      : "disabled\n"
-                    : "",
+                  : input.command === "launchctl" && input.args[0] === "print-disabled"
+                    ? `disabled services = {\n\t"${BootService.BOOT_SERVICE_LAUNCHD_LABEL}" => ${control.enabled ? "enabled" : "disabled"}\n}\n`
+                    : input.args[1] === "is-enabled"
+                      ? control.enabled
+                        ? "enabled\n"
+                        : "disabled\n"
+                      : "",
         stderr: "",
         code: ChildProcessSpawner.ExitCode(
           taskMissing && input.args.includes("/HRESULT")
@@ -346,6 +365,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                   input.args[0] === "show-user" &&
                   control.linger === undefined) ||
                 (input.args[1] === "is-active" && !control.active) ||
+                (input.command === "launchctl" && input.args[0] === "print" && !control.active) ||
                 (input.args[1] === "is-enabled" && !control.enabled)
               ? 1
               : 0,
@@ -929,7 +949,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
                 "systemctl --user restart avicode2.service",
               ]
             : [
-                "launchctl bootout --wait gui/501/com.advisoravi.avicode2.service",
+                "launchctl bootout --wait gui/501/com.t3tools.avicode2.service",
                 `launchctl bootstrap gui/501 ${plan.unitPath}`,
               ],
         );
@@ -1525,14 +1545,14 @@ process.disconnect();
 
   it.effect("installs, reports current state, and uninstalls on macOS", () =>
     Effect.gen(function* () {
-      const { service, fs, statePath, commands, timeouts, runtime, markersAtStop } =
+      const { service, fs, statePath, commands, timeouts, runtime, markersAtStop, control } =
         yield* makeHarness("darwin");
       const path = yield* Path.Path;
       const plan = yield* service.install();
 
       expect(
         plan.unitPath.endsWith(
-          path.join("Library", "LaunchAgents", "com.advisoravi.avicode2.service.plist"),
+          path.join("Library", "LaunchAgents", "com.t3tools.avicode2.service.plist"),
         ),
       ).toBe(true);
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
@@ -1548,6 +1568,13 @@ process.disconnect();
       expect(yield* service.status).toMatchObject({
         current: true,
         installedVersion: "1.2.3",
+        problems: [],
+      });
+      control.active = false;
+      control.enabled = false;
+      expect(yield* service.status).toMatchObject({
+        current: false,
+        problems: ["service-disabled", "service-stopped"],
       });
       const relayMarker = path.join(plan.baseDir, "runtime", DESKTOP_UPDATE_RESTART_MARKER_FILE);
       expect(yield* service.restart).toBe("restarted");
@@ -1559,9 +1586,9 @@ process.disconnect();
       expect((yield* service.status).installed).toBe(false);
       expect(commands.some((command) => command.startsWith("systemctl "))).toBe(false);
       // launchd can take 90s to bootout; the runner's 60s default could let bootstrap race it.
-      expect(
-        timeouts.get("launchctl bootout --wait gui/501/com.advisoravi.avicode2.service"),
-      ).toEqual(Duration.seconds(120));
+      expect(timeouts.get("launchctl bootout --wait gui/501/com.t3tools.avicode2.service")).toEqual(
+        Duration.seconds(120),
+      );
     }),
   );
 
@@ -1784,7 +1811,7 @@ process.disconnect();
     Effect.gen(function* () {
       const { service, control } = yield* makeHarness("darwin");
       yield* service.install();
-      control.failCommand = "launchctl bootout --wait gui/501/com.advisoravi.avicode2.service";
+      control.failCommand = "launchctl bootout --wait gui/501/com.t3tools.avicode2.service";
 
       yield* service.install();
       expect((yield* service.status).current).toBe(true);
@@ -1803,7 +1830,7 @@ process.disconnect();
       expect((yield* service.install().pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
       expect(yield* service.status).toMatchObject({
         current: false,
-        problems: ["restart-pending"],
+        problems: ["service-stopped", "restart-pending"],
       });
       expect(yield* fs.readFileString(markerPath)).toBe("1.2.3\n");
 
