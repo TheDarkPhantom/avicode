@@ -64,4 +64,4 @@ Upstream: t3code 0.1.12
 - Server messages, sign-in pages and setting help say Avi Code 2 instead of T3 Code (#334)
 - The sidebar, sign-in pages and chat rows show the Avi Code icon and name, not the T3 logo (#336)
 - A new Avi Code 2 icon that stays sharp on the Windows taskbar and in browser tabs (#339)
-- Hover a boring sidebar folder to find and reopen that project's settled and archived threads
+- Hover a boring sidebar folder to reopen that project's settled and archived threads (#342)
