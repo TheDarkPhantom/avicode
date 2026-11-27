@@ -41,7 +41,7 @@ export const selectArchivableSettledThreadIds = Effect.fn(
   return rows.map((row) => ThreadId.make(row.thread_id));
 });
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const random = yield* SecureRandom.SecureRandom;

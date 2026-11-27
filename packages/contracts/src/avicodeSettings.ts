@@ -76,8 +76,8 @@ export const AVICODE_CLIENT_SETTINGS_PATCH_FIELDS = {
   aviCodeShowThreadDetails: Schema.optionalKey(Schema.Boolean),
 };
 
-export const MIN_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 1;
-export const MAX_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 365;
+const MIN_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 1;
+const MAX_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 365;
 export const DEFAULT_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 14;
 
 const AviCodeArchiveSettledAfterDays = Schema.Int.check(
