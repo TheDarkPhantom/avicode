@@ -6,6 +6,7 @@
     "prepare": "vp config --no-agent",
     "dev": "node scripts/dev-runner.ts dev",
     "profile:startup": "node scripts/profile-startup.mjs",
+    "avicode:icons": "node scripts/avicode/export-avicode-icons.mjs",
     "avicode:convert-legacy-db": "node scripts/avicode/convert-legacy-db.mjs",
     "check:avicode": "node scripts/avicode/check-upstream-guardrails.mjs",
     "test:avicode": "node --test scripts/avicode/check-upstream-guardrails.node-test.mjs",

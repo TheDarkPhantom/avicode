@@ -1,8 +1,8 @@
 # Brand icons
 
 Avi Code 2 renders its icons from `prod/logo.svg`, plus `prod/logo-24.svg` and `prod/logo-16.svg`
-for the 24 and 16 px sizes, where the full mark is unreadable. Run
-`node scripts/avicode/export-avicode-icons.mjs` after changing them. It works on Windows and writes
+for the 24 and 16 px sizes, where the full mark is unreadable. Run `vp run avicode:icons` after
+changing them. It works on Windows and writes
 the production and development icon sets and the `apps/web/public` copies. Don't run
 `vp run icons:export`: it rebuilds those files from upstream's Icon Composer projects.
 
