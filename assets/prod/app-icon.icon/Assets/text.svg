@@ -1,6 +1,12 @@
-<svg width="92" height="92" viewBox="0 0 92 92" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M23 29L8 46L23 63" stroke="#DE5257" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M69 29L84 46L69 63" stroke="#DE5257" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M29 65L43 25H49L63 65" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 51H56" stroke="#C99A2E" stroke-width="6" stroke-linecap="round"/>
+<svg width="92" height="92" viewBox="24 24 208 208" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bracket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF7A59"/>
+      <stop offset="1" stop-color="#D9304A"/>
+    </linearGradient>
+  </defs>
+  <path d="M55.3 100.9L34.3 131.9L55.3 162.9M200.7 100.9L221.7 131.9L200.7 162.9" stroke="url(#bracket)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M84.8 167L110.9 89H124.2L150.3 167" stroke="#F6F0EA" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M99.2 140.5H135.9" stroke="#F6F0EA" stroke-width="14.25" stroke-linecap="round"/>
+  <path d="M154.8 90.9C156.7 85.2 162.4 83.3 166.2 83.3C171.9 83.3 175.7 87.1 175.7 91.9C175.7 96.6 171.9 99.5 167.1 103.3L155.8 111.8H176.6" stroke="#F6F0EA" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

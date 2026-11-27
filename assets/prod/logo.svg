@@ -1,9 +1,22 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" rx="224" fill="#0C0A0A"/>
-  <rect x="44" y="44" width="936" height="936" rx="188" stroke="#262020" stroke-width="28"/>
-  <path d="M294 315L142 512L294 709" stroke="#DE5257" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M730 315L882 512L730 709" stroke="#DE5257" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M348 704L486 314H538L676 704" stroke="#EDE7E3" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M409 567H615" stroke="#C99A2E" stroke-width="58" stroke-linecap="round"/>
-  <path d="M512 235V170M512 854V789" stroke="#4F9D69" stroke-width="30" stroke-linecap="round"/>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241D1F"/>
+      <stop offset="1" stop-color="#0E0B0C"/>
+    </linearGradient>
+    <linearGradient id="bracket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF7A59"/>
+      <stop offset="1" stop-color="#D9304A"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#tile)"/>
+  <rect x="9.5" y="9.5" width="237" height="237" rx="54.5" stroke="url(#rim)" stroke-width="3"/>
+  <path d="M55.3 100.9L34.3 131.9L55.3 162.9M200.7 100.9L221.7 131.9L200.7 162.9" stroke="url(#bracket)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M84.8 167L110.9 89H124.2L150.3 167" stroke="#F6F0EA" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M99.2 140.5H135.9" stroke="#F6F0EA" stroke-width="14.25" stroke-linecap="round"/>
+  <path d="M154.8 90.9C156.7 85.2 162.4 83.3 166.2 83.3C171.9 83.3 175.7 87.1 175.7 91.9C175.7 96.6 171.9 99.5 167.1 103.3L155.8 111.8H176.6" stroke="#F6F0EA" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

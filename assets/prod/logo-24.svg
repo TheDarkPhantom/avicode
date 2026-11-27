@@ -1,0 +1,21 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241D1F"/>
+      <stop offset="1" stop-color="#0E0B0C"/>
+    </linearGradient>
+    <linearGradient id="bracket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF7A59"/>
+      <stop offset="1" stop-color="#D9304A"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#tile)"/>
+  <rect x="9.5" y="9.5" width="237" height="237" rx="54.5" stroke="url(#rim)" stroke-width="3"/>
+  <path d="M68 90L36 130L68 170M188 90L220 130L188 170" stroke="url(#bracket)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M90 180L121 80H135L166 180" stroke="#F6F0EA" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M106 148H150" stroke="#F6F0EA" stroke-width="20" stroke-linecap="round"/>
+</svg>

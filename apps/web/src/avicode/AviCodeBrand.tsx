@@ -4,20 +4,20 @@ import { APP_BASE_NAME } from "~/branding";
 import { T3AppIcon } from "~/components/T3AppIcon";
 import { cn } from "~/lib/utils";
 
-/** The app icon (`assets/prod/logo.svg`) drawn in one colour, for spots upstream draws its T3 glyph. */
+/** The small app icon (`assets/prod/logo-24.svg`) in one colour, for spots upstream draws its T3 glyph. */
 export function AviCodeGlyph(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
       {...props}
-      viewBox="100 270 824 484"
+      viewBox="22 66 212 128"
       fill="none"
       stroke="currentColor"
       strokeLinecap="round"
       strokeLinejoin="round"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M294 315L142 512L294 709M730 315L882 512L730 709" strokeWidth="80" />
-      <path d="M348 704L486 314H538L676 704M409 567H615" strokeWidth="76" />
+      <path d="M68 90L36 130L68 170M188 90L220 130L188 170" strokeWidth="26" />
+      <path d="M90 180L121 80H135L166 180M106 148H150" strokeWidth="26" />
     </svg>
   );
 }
