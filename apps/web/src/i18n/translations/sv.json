@@ -13099,5 +13099,18 @@
   "271f0c8feb90e014": "Av öppnas varje chatt med detaljkortet stängt. Öppna det för en chatt med detaljknappen i chattens rubrik.",
   "9c2b11c4afde4916": "Återställ visa tråddetaljer till standard",
   "22df1575e8ae427c": "Visa tråddetaljer",
-  "7059d50db542db5b": "tråd detaljer kort panel dölj fäll ihop gren worktree skript utrymme"
+  "7059d50db542db5b": "tråd detaljer kort panel dölj fäll ihop gren worktree skript utrymme",
+  "a1df10224843de4b": "Kontextfönster: {used} % använt",
+  "276e898b23f797b5": "Kontextfönster: {usedTokens} tokens använda",
+  "47233ef369410b52": "Komprimera kontext",
+  "a56300d38f97b4fc": "Trådanvändning: {tokens} tokens",
+  "f6ede6253e822e9f": "Trådanvändning: {tokens} tokens, cirka {cost}",
+  "fdbdaf07838884e0": "Trådanvändning",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} tur} other {{count} turer}}",
+  "5142b3a21348886f": "Indata",
+  "22b823c910096367": "Cacheläsningar",
+  "43eca69b9434ba07": "Cacheskrivningar",
+  "b832101b2c66904b": "Uppskattad kostnad",
+  "b446f84a7a32ff83": "{count, plural, one {{count} tur har inget känt pris och räknas inte in i kostnaden.} other {{count} turer har inget känt pris och räknas inte in i kostnaden.}}",
+  "8581c17b15355090": "Användningsgränser: {left} % kvar"
 }

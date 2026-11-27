@@ -104,6 +104,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverGetUsageSummary]: "server",
   [WS_METHODS.serverRefreshUsageRates]: "server",
   [WS_METHODS.avicodeGetProjectUsage]: "server", // Avi Code addition
+  [WS_METHODS.avicodeGetThreadUsage]: "server", // Avi Code addition
   [WS_METHODS.serverSignalProcess]: "server",
   [WS_METHODS.serverReportClientActivity]: "server",
   [WS_METHODS.workflowsSubscribe]: "workflows",

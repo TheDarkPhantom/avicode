@@ -13101,5 +13101,18 @@
   "271f0c8feb90e014": "Off, every chat opens with its details card closed. Open it for one chat with the details button in the chat header.",
   "9c2b11c4afde4916": "Reset show thread details to default",
   "22df1575e8ae427c": "Show thread details",
-  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space"
+  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space",
+  "a1df10224843de4b": "Context window: {used}% used",
+  "276e898b23f797b5": "Context window: {usedTokens} tokens used",
+  "47233ef369410b52": "Compact context",
+  "a56300d38f97b4fc": "Thread usage: {tokens} tokens",
+  "f6ede6253e822e9f": "Thread usage: {tokens} tokens, about {cost}",
+  "fdbdaf07838884e0": "Thread usage",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} turn} other {{count} turns}}",
+  "5142b3a21348886f": "Input",
+  "22b823c910096367": "Cache reads",
+  "43eca69b9434ba07": "Cache writes",
+  "b832101b2c66904b": "Estimated cost",
+  "b446f84a7a32ff83": "{count, plural, one {{count} turn has no known price and is left out of the cost.} other {{count} turns have no known price and are left out of the cost.}}",
+  "8581c17b15355090": "Usage limits: {left}% left"
 }

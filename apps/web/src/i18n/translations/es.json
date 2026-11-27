@@ -13087,5 +13087,18 @@
   "271f0c8feb90e014": "Desactivado, cada chat se abre con su tarjeta de detalles cerrada. Ábrela en un chat con el botón de detalles de la cabecera.",
   "9c2b11c4afde4916": "Restablecer mostrar detalles del hilo al valor predeterminado",
   "22df1575e8ae427c": "Mostrar detalles del hilo",
-  "7059d50db542db5b": "detalles hilo tarjeta panel ocultar contraer rama worktree scripts espacio"
+  "7059d50db542db5b": "detalles hilo tarjeta panel ocultar contraer rama worktree scripts espacio",
+  "a1df10224843de4b": "Ventana de contexto: {used} % usado",
+  "276e898b23f797b5": "Ventana de contexto: {usedTokens} tokens usados",
+  "47233ef369410b52": "Compactar contexto",
+  "a56300d38f97b4fc": "Uso del hilo: {tokens} tokens",
+  "f6ede6253e822e9f": "Uso del hilo: {tokens} tokens, unos {cost}",
+  "fdbdaf07838884e0": "Uso del hilo",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} turno} other {{count} turnos}}",
+  "5142b3a21348886f": "Entrada",
+  "22b823c910096367": "Lecturas de caché",
+  "43eca69b9434ba07": "Escrituras de caché",
+  "b832101b2c66904b": "Coste estimado",
+  "b446f84a7a32ff83": "{count, plural, one {{count} turno no tiene precio conocido y queda fuera del coste.} other {{count} turnos no tienen precio conocido y quedan fuera del coste.}}",
+  "8581c17b15355090": "Límites de uso: queda un {left} %"
 }

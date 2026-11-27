@@ -1,4 +1,5 @@
 import { ComposerChipRow } from "~/avicode/ComposerChipRow";
+import { ComposerUsageMeters, type ComposerUsageMetersProps } from "~/avicode/ComposerUsageMeters";
 import { copySnapshot } from "./copySnapshot";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
@@ -473,6 +474,8 @@ export interface ChatComposerProps {
   onRestoreEditingQueuedAttachment?: ((attachment: ContractChatAttachment) => void) | undefined;
 
   onCompactContext: () => void;
+  /** Avi Code addition */
+  aviCodeUsageMeters: ComposerUsageMetersProps;
   onSend: (
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -4078,6 +4081,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {composerAttachButton && !dictationTakesFooter ? (
                   <div className="me-2">{composerAttachButton}</div>
                 ) : null}
+                {/* Avi Code addition */}
+                {dictationTakesFooter ? null : (
+                  <ComposerUsageMeters {...props.aviCodeUsageMeters} />
+                )}
                 <div
                   data-chat-composer-actions="right"
                   data-chat-composer-transition-actions="true"

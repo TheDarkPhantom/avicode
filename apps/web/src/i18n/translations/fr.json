@@ -13092,5 +13092,18 @@
   "271f0c8feb90e014": "Désactivé, chaque chat s'ouvre avec sa carte de détails fermée. Ouvrez-la pour un chat avec le bouton de détails de l'en-tête.",
   "9c2b11c4afde4916": "Réinitialiser afficher les détails du fil par défaut",
   "22df1575e8ae427c": "Afficher les détails du fil",
-  "7059d50db542db5b": "détails fil carte panneau masquer replier branche worktree scripts espace"
+  "7059d50db542db5b": "détails fil carte panneau masquer replier branche worktree scripts espace",
+  "a1df10224843de4b": "Fenêtre de contexte : {used} % utilisés",
+  "276e898b23f797b5": "Fenêtre de contexte : {usedTokens} tokens utilisés",
+  "47233ef369410b52": "Compacter le contexte",
+  "a56300d38f97b4fc": "Utilisation du fil : {tokens} tokens",
+  "f6ede6253e822e9f": "Utilisation du fil : {tokens} tokens, environ {cost}",
+  "fdbdaf07838884e0": "Utilisation du fil",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} tour} other {{count} tours}}",
+  "5142b3a21348886f": "Entrée",
+  "22b823c910096367": "Lectures du cache",
+  "43eca69b9434ba07": "Écritures du cache",
+  "b832101b2c66904b": "Coût estimé",
+  "b446f84a7a32ff83": "{count, plural, one {{count} tour n’a pas de prix connu et n’est pas compté dans le coût.} other {{count} tours n’ont pas de prix connu et ne sont pas comptés dans le coût.}}",
+  "8581c17b15355090": "Limites d’utilisation : {left} % restants"
 }

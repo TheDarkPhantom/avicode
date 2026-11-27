@@ -13092,5 +13092,18 @@
   "271f0c8feb90e014": "Desativado, cada chat abre com o cartão de detalhes fechado. Abra-o em um chat pelo botão de detalhes no cabeçalho.",
   "9c2b11c4afde4916": "Redefinir mostrar detalhes da conversa para o padrão",
   "22df1575e8ae427c": "Mostrar detalhes da conversa",
-  "7059d50db542db5b": "detalhes conversa cartão painel ocultar recolher branch worktree scripts espaço"
+  "7059d50db542db5b": "detalhes conversa cartão painel ocultar recolher branch worktree scripts espaço",
+  "a1df10224843de4b": "Janela de contexto: {used}% usado",
+  "276e898b23f797b5": "Janela de contexto: {usedTokens} tokens usados",
+  "47233ef369410b52": "Compactar contexto",
+  "a56300d38f97b4fc": "Uso da conversa: {tokens} tokens",
+  "f6ede6253e822e9f": "Uso da conversa: {tokens} tokens, cerca de {cost}",
+  "fdbdaf07838884e0": "Uso da conversa",
+  "af1b37a01a6b26ba": "{count, plural, one {{count} turno} other {{count} turnos}}",
+  "5142b3a21348886f": "Entrada",
+  "22b823c910096367": "Leituras de cache",
+  "43eca69b9434ba07": "Gravações de cache",
+  "b832101b2c66904b": "Custo estimado",
+  "b446f84a7a32ff83": "{count, plural, one {{count} turno não tem preço conhecido e fica fora do custo.} other {{count} turnos não têm preço conhecido e ficam fora do custo.}}",
+  "8581c17b15355090": "Limites de uso: {left}% restantes"
 }
