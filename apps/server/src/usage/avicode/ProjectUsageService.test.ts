@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import type { ProjectUsageInput, ProjectUsageSummary } from "@t3tools/contracts";
-import { UsageDay } from "@t3tools/contracts";
+import { ThreadId, UsageDay } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -409,6 +409,73 @@ describe("ProjectUsageService", () => {
         ["claude-test-model", 1],
         ["mystery-model", 1],
       ]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("adds up every turn of one thread, with the first Avi Code's rows", () =>
+    Effect.gen(function* () {
+      yield* seedAlpha;
+      yield* seedThread({
+        threadId: "thread-other",
+        projectId: "project-alpha",
+        providerThreadId: "provider-other",
+        instanceId: "claudeAgent_lawrence",
+        driver: "claudeAgent",
+      });
+      yield* seedTurn({
+        threadId: "thread-other",
+        providerThreadId: "provider-other",
+        completedAt: "2026-11-10T00:00:00.000Z",
+        model: "claude-test-model",
+        inputTokens: 5_000,
+        outputTokens: 5_000,
+      });
+      yield* createLegacyUsageTable;
+      yield* seedLegacyUsage({
+        turnId: "legacy-claude",
+        threadId: "thread-alpha",
+        instanceId: "claudeAgent_lawrence",
+        driver: "claudeAgent",
+        model: "claude-test-model",
+        inputTokens: 10,
+        cachedInputTokens: 20,
+        cacheCreationTokens: 30,
+        outputTokens: 40,
+        costUsd: 1.5,
+        createdAt: "2026-01-05T00:00:00.000Z",
+      });
+
+      const summary = yield* Effect.flatMap(ProjectUsageService.ProjectUsageService, (service) =>
+        service.readThread({ threadId: ThreadId.make("thread-alpha") }),
+      );
+      // No date window: October's turn counts, the local command and the other thread do not.
+      const priced = summary.entries.find((entry) => entry.model === "claude-test-model");
+      assert.deepInclude(priced, {
+        turns: 4,
+        inputTokens: 302_059,
+        cachedInputTokens: 420,
+        cacheCreationTokens: 130,
+        outputTokens: 2_139,
+        unpricedTurns: 0,
+      });
+      assert.closeTo(
+        priced!.costUsd!,
+        STANDARD_TURN_COST + LONG_TURN_COST + 999 * 1e-6 + 999 * 2e-6 + 1.5,
+        1e-9,
+      );
+      const unpriced = summary.entries.find((entry) => entry.model === "mystery-model");
+      assert.deepInclude(unpriced, { turns: 1, costUsd: null, unpricedTurns: 1 });
+      assert.lengthOf(summary.entries, 2);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("reads no entries for a thread without turns", () =>
+    Effect.gen(function* () {
+      yield* seedAlpha;
+      const summary = yield* Effect.flatMap(ProjectUsageService.ProjectUsageService, (service) =>
+        service.readThread({ threadId: ThreadId.make("thread-new") }),
+      );
+      assert.deepStrictEqual(summary.entries, []);
     }).pipe(Effect.provide(testLayer)),
   );
 

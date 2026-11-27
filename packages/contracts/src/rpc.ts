@@ -415,7 +415,11 @@ import {
 } from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 // Avi Code addition: usage by repository.
-import { AVICODE_WS_METHODS, WsAviCodeGetProjectUsageRpc } from "./avicodeProjectUsage.ts";
+import {
+  AVICODE_WS_METHODS,
+  WsAviCodeGetProjectUsageRpc,
+  WsAviCodeGetThreadUsageRpc,
+} from "./avicodeProjectUsage.ts";
 export * from "./avicodeProjectUsage.ts";
 import {
   StorageCleanupReport,
@@ -2583,6 +2587,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
   WsAviCodeGetProjectUsageRpc,
+  WsAviCodeGetThreadUsageRpc,
   WsServerSignalProcessRpc,
   WsWorkflowsSubscribeRpc,
   WsWorkflowsCountsRpc,

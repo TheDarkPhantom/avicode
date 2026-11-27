@@ -2892,6 +2892,7 @@ export const layerWsRpc = (
         [WS_METHODS.serverRefreshUsageRates]: (_input) => usage.refreshRates,
         // Avi Code addition: usage by repository.
         [WS_METHODS.avicodeGetProjectUsage]: (input) => projectUsage.read(input),
+        [WS_METHODS.avicodeGetThreadUsage]: (input) => projectUsage.readThread(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),

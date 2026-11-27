@@ -2,11 +2,12 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as Schema from "effect/Schema";
 
 import { EnvironmentAuthorizationError } from "./auth.ts";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { UsageDay } from "./usage.ts";
 
 export const AVICODE_WS_METHODS = {
   avicodeGetProjectUsage: "avicode.getProjectUsage",
+  avicodeGetThreadUsage: "avicode.getThreadUsage",
 } as const;
 
 /** The Usage page's window: whole days in `timeZone`, or the exact instants when both are set. */
@@ -50,6 +51,16 @@ export const ProjectUsageSummary = Schema.Struct({
 });
 export type ProjectUsageSummary = typeof ProjectUsageSummary.Type;
 
+/** Every turn one thread has recorded, split by provider account and model like a repository. */
+export const ThreadUsageInput = Schema.Struct({ threadId: ThreadId });
+export type ThreadUsageInput = typeof ThreadUsageInput.Type;
+
+export const ThreadUsageSummary = Schema.Struct({
+  readAt: Schema.String,
+  entries: Schema.Array(ProjectUsageEntry),
+});
+export type ThreadUsageSummary = typeof ThreadUsageSummary.Type;
+
 export class ProjectUsageReadError extends Schema.TaggedError<ProjectUsageReadError>()(
   "ProjectUsageReadError",
   {
@@ -67,5 +78,11 @@ export class ProjectUsageReadError extends Schema.TaggedError<ProjectUsageReadEr
 export const WsAviCodeGetProjectUsageRpc = Rpc.make(AVICODE_WS_METHODS.avicodeGetProjectUsage, {
   payload: ProjectUsageInput,
   success: ProjectUsageSummary,
+  error: Schema.Union([EnvironmentAuthorizationError, ProjectUsageReadError]),
+});
+
+export const WsAviCodeGetThreadUsageRpc = Rpc.make(AVICODE_WS_METHODS.avicodeGetThreadUsage, {
+  payload: ThreadUsageInput,
+  success: ThreadUsageSummary,
   error: Schema.Union([EnvironmentAuthorizationError, ProjectUsageReadError]),
 });

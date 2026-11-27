@@ -1,5 +1,5 @@
 /**
- * Token usage and cost per repository, split by provider account and model.
+ * Token usage and cost per repository, and for one thread, split by provider account and model.
  *
  * Reads Avi Code 2's provider turns and, when the first Avi Code's history was imported, its
  * `provider_instance_usage` rows. Both are grouped in SQL; only the groups leave the database.
@@ -12,6 +12,8 @@ import {
   type ProjectUsageInput,
   type ProjectUsageProject,
   type ProjectUsageSummary,
+  type ThreadUsageInput,
+  type ThreadUsageSummary,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
@@ -23,6 +25,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -74,6 +77,9 @@ export class ProjectUsageService extends Context.Service<
     readonly read: (
       input: ProjectUsageInput,
     ) => Effect.Effect<ProjectUsageSummary, ProjectUsageReadError>;
+    readonly readThread: (
+      input: ThreadUsageInput,
+    ) => Effect.Effect<ThreadUsageSummary, ProjectUsageReadError>;
   }
 >()("t3/usage/avicode/ProjectUsageService") {}
 
@@ -185,7 +191,14 @@ const make = Effect.gen(function* () {
   const queryFailed = (cause: unknown) =>
     new ProjectUsageReadError({ reason: "queryFailed", cause });
 
-  const readTurnGroups = (since: string, until: string, thresholdsJson: string) =>
+  const turnsInWindow = (since: string, until: string) => sql`
+    COALESCE(turn.completed_at, turn.started_at) >= ${since}
+      AND COALESCE(turn.completed_at, turn.started_at) < ${until}
+  `;
+  const legacyInWindow = (since: string, until: string) =>
+    sql`usage.created_at >= ${since} AND usage.created_at < ${until}`;
+
+  const readTurnGroups = (where: Statement.Fragment, thresholdsJson: string) =>
     sql<TurnGroupRow>`
       WITH turns AS (
         SELECT
@@ -203,8 +216,7 @@ const make = Effect.gen(function* () {
           COALESCE(json_extract(turn.payload_json, '$.turnTokenUsage.outputTokens'), 0)
             AS output_tokens
         FROM orchestration_v2_projection_provider_turns AS turn
-        WHERE COALESCE(turn.completed_at, turn.started_at) >= ${since}
-          AND COALESCE(turn.completed_at, turn.started_at) < ${until}
+        WHERE ${where}
           AND json_extract(turn.payload_json, '$.turnTokenUsage') IS NOT NULL
           AND COALESCE(json_extract(turn.payload_json, '$.turnTokenUsage.localCommand'), 0) = 0
       )
@@ -229,7 +241,7 @@ const make = Effect.gen(function* () {
     `;
 
   // The first Avi Code stored Claude's input without cache reads and writes, and Codex's with them.
-  const readLegacyGroups = (since: string, until: string) =>
+  const readLegacyGroups = (where: Statement.Fragment) =>
     sql<LegacyGroupRow>`
       SELECT
         COALESCE(thread.project_id, legacy_thread.project_id) AS "projectId",
@@ -249,7 +261,7 @@ const make = Effect.gen(function* () {
       FROM provider_instance_usage AS usage
       LEFT JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = usage.thread_id
       LEFT JOIN projection_threads AS legacy_thread ON legacy_thread.thread_id = usage.thread_id
-      WHERE usage.created_at >= ${since} AND usage.created_at < ${until}
+      WHERE ${where}
       GROUP BY 1, 2, 3, 4
     `;
 
@@ -265,10 +277,12 @@ const make = Effect.gen(function* () {
       WHERE project_id IN (SELECT value FROM json_each(${encodeJson(projectIds)}))
     `;
 
-  const read = Effect.fn("ProjectUsageService.read")(function* (input: ProjectUsageInput) {
-    const bounds = windowBounds(input);
-    if (bounds === null) return yield* new ProjectUsageReadError({ reason: "invalidWindow" });
-
+  /** Prices the matching turns and merges them with the legacy rows, one entry per account and model in each bucket. */
+  const readEntries = Effect.fn("ProjectUsageService.readEntries")(function* (filter: {
+    readonly turns: Statement.Fragment;
+    readonly legacy: Statement.Fragment;
+    readonly bucketOf: (row: GroupRow) => string | null;
+  }) {
     const rates = yield* loadRates();
     const settings = yield* settingsService.getSettings.pipe(Effect.option);
     const overrides = createOverrideRateTable(
@@ -278,31 +292,20 @@ const make = Effect.gen(function* () {
       Option.match(settings, { onNone: () => ({}), onSome: (s) => s.usageModelAliases }),
     );
 
-    const { turnGroups, legacyGroups, projects } = yield* Effect.gen(function* () {
-      const turnGroups = yield* readTurnGroups(
-        bounds.since,
-        bounds.until,
-        encodeJson(contextThresholds(rates)),
-      );
-      const legacyGroups = (yield* hasLegacyUsage)
-        ? yield* readLegacyGroups(bounds.since, bounds.until)
-        : [];
-      const projectIds = new Set(
-        [...turnGroups, ...legacyGroups].flatMap((row) =>
-          row.projectId === null ? [] : [row.projectId],
-        ),
-      );
-      const projects = projectIds.size === 0 ? [] : yield* readProjects([...projectIds]);
-      return { turnGroups, legacyGroups, projects };
+    const { turnGroups, legacyGroups } = yield* Effect.gen(function* () {
+      const turnGroups = yield* readTurnGroups(filter.turns, encodeJson(contextThresholds(rates)));
+      const legacyGroups = (yield* hasLegacyUsage) ? yield* readLegacyGroups(filter.legacy) : [];
+      return { turnGroups, legacyGroups };
     }).pipe(NodeSqliteClient.readOnly, Effect.mapError(queryFailed));
 
-    const byProject = new Map<string | null, Map<string, ProjectUsageEntry>>();
+    const buckets = new Map<string | null, Map<string, ProjectUsageEntry>>();
     const add = (row: GroupRow, costUsd: number | null, unpricedTurns: number) => {
       const model = row.model === null ? null : (aliases.get(row.model) ?? row.model);
-      let entries = byProject.get(row.projectId);
+      const bucket = filter.bucketOf(row);
+      let entries = buckets.get(bucket);
       if (entries === undefined) {
         entries = new Map();
-        byProject.set(row.projectId, entries);
+        buckets.set(bucket, entries);
       }
       const key = `${row.providerInstanceId}\0${row.driver}\0${model ?? ""}`;
       const existing = entries.get(key);
@@ -325,6 +328,28 @@ const make = Effect.gen(function* () {
       add(row, costUsd, costUsd === null ? row.turns : 0);
     }
     for (const row of legacyGroups) add(row, row.costUsd, row.unpricedTurns);
+    return buckets;
+  });
+
+  const read = Effect.fn("ProjectUsageService.read")(function* (input: ProjectUsageInput) {
+    const bounds = windowBounds(input);
+    if (bounds === null) return yield* new ProjectUsageReadError({ reason: "invalidWindow" });
+
+    const byProject = yield* readEntries({
+      turns: turnsInWindow(bounds.since, bounds.until),
+      legacy: legacyInWindow(bounds.since, bounds.until),
+      bucketOf: (row) => row.projectId,
+    });
+    const projectIds = [...byProject.keys()].flatMap((projectId) =>
+      projectId === null ? [] : [projectId],
+    );
+    const projects =
+      projectIds.length === 0
+        ? []
+        : yield* readProjects(projectIds).pipe(
+            NodeSqliteClient.readOnly,
+            Effect.mapError(queryFailed),
+          );
 
     const projectRows = new Map(projects.map((project) => [project.projectId, project]));
     const summaryProjects: ProjectUsageProject[] = [...byProject].map(([projectId, entries]) => {
@@ -340,7 +365,19 @@ const make = Effect.gen(function* () {
     return { readAt, projects: summaryProjects };
   });
 
-  return ProjectUsageService.of({ read });
+  const readThread = Effect.fn("ProjectUsageService.readThread")(function* (
+    input: ThreadUsageInput,
+  ) {
+    const byThread = yield* readEntries({
+      turns: sql`turn.thread_id = ${input.threadId}`,
+      legacy: sql`usage.thread_id = ${input.threadId}`,
+      bucketOf: () => null,
+    });
+    const readAt = DateTime.formatIso(yield* DateTime.now);
+    return { readAt, entries: [...(byThread.get(null)?.values() ?? [])] };
+  });
+
+  return ProjectUsageService.of({ read, readThread });
 });
 
 export const layer = Layer.effect(ProjectUsageService, make);
