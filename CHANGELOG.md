@@ -42,8 +42,8 @@ Upstream: t3code 0.1.12
 
 ### Avi Code
 
-- Ctrl+W settles the open thread instead of archiving it, and Ctrl+Shift+T un-settles it
-- Threads settled for 14 days archive themselves; change or turn off in Settings > Avi Code
+- Ctrl+W settles the open thread instead of archiving it, and Ctrl+Shift+T un-settles it (#343)
+- Threads settled for 14 days archive themselves; change or turn off in Settings > Avi Code (#343)
 - Avi Code 2 starts from upstream T3 Code 0.1.12 (#307)
 - Keep repository and thread names out of the window title in Settings > Avi Code (#321)
 - The first start brings over your Avi Code threads, providers and settings (#319)

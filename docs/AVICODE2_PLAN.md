@@ -99,7 +99,7 @@ Made 2026-11-25.
 
 | Feature                                                                 | Decision                                |
 | ----------------------------------------------------------------------- | --------------------------------------- |
-| Ctrl+W settles the thread, Ctrl+Shift+T un-settles the last settled one | Ported (#331), settles since this PR    |
+| Ctrl+W settles the thread, Ctrl+Shift+T un-settles the last settled one | Ported (#331), settles since #343       |
 | Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Ported as upstream theme data (#327)    |
 | Notification sound picker, plan mode as default                         | Ported (#328, #325)                     |
 | Per-repo and per-credential usage                                       | Ported (#332)                           |
@@ -178,7 +178,7 @@ In order. Each is one PR with a changelog entry.
 | --- | ------------------------------------------------------------------------- | ----- |
 | 1   | Quick-send chips. Done (#329)                                             | cheap |
 | 2   | Start new chats in plan mode. Done (#325)                                 | cheap |
-| 3   | Ctrl+W settles thread, Ctrl+Shift+T un-settles. Done (#331)               | cheap |
+| 3   | Ctrl+W settles thread, Ctrl+Shift+T un-settles. Done (#331, #343)         | cheap |
 | 4   | Mouse back/forward buttons, Alt+Left/Right                                | cheap |
 | 5   | Colour themes as upstream theme data. Done (#327)                         | cheap |
 | 6   | Preview bookmarks bar. Done (#326)                                        | cheap |
@@ -195,7 +195,7 @@ In order. Each is one PR with a changelog entry.
 | 18  | Per-repo and per-credential usage. Done (#332)                            | cheap |
 | 19  | Named sidebar folders on the boring sidebar. Done (#333)                  | large |
 
-Settled threads archive themselves after 14 days by default (Settings > Avi Code).
+Settled threads archive themselves after 14 days by default (Settings > Avi Code). Done (#343)
 
 Later: reply styles, latest thought on sidebar rows, Files panel create/rename/delete.
 
