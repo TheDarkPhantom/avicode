@@ -16,8 +16,9 @@ import { describe, expect, it } from "vite-plus/test";
 import { resolveShortcutCommand, type ShortcutEventLike } from "../keybindings";
 import {
   type ArchivedThreads,
-  closeOrArchiveSteps,
+  closeThreadSteps,
   pickLastArchivedThread,
+  pickLastSettledThread,
   resolveReopenTarget,
   withoutCommand,
 } from "./threadCloseReopen";
@@ -36,7 +37,7 @@ const withoutRule = (rules: ReadonlyArray<KeybindingRule>, command: KeybindingCo
   rules.filter((rule) => rule.command !== command);
 
 describe("mod+w defaults", () => {
-  it("closes the terminal, then the right panel, then archives the thread", () => {
+  it("closes the terminal, then the right panel, then settles the thread", () => {
     expect(
       resolveShortcutCommand(
         ctrlW,
@@ -64,7 +65,7 @@ describe("mod+w defaults", () => {
         defaults,
         options({ terminalFocus: false, rightPanelOpen: false }),
       ),
-    ).toBe("thread.archive");
+    ).toBe("thread.settle");
   });
 
   it("keeps mod+shift+t on reopen closed view", () => {
@@ -74,9 +75,17 @@ describe("mod+w defaults", () => {
 
 // The server backfills a new default ahead of the rules already in a user's keybindings.json.
 const backfilled = compileResolvedKeybindingsConfig([
-  ...DEFAULT_KEYBINDINGS.filter((rule) => rule.command === "thread.archive"),
-  ...DEFAULT_KEYBINDINGS.filter((rule) => rule.command !== "thread.archive"),
+  ...DEFAULT_KEYBINDINGS.filter((rule) => rule.command === "thread.settle"),
+  ...DEFAULT_KEYBINDINGS.filter((rule) => rule.command !== "thread.settle"),
 ]);
+// A custom thread.settle rule drops the default ones; the server's late default restores mod+w's.
+const customSettle = mergeWithDefaultKeybindings(
+  compileResolvedKeybindingsConfig([
+    { key: "mod+w", command: "thread.settle", when: "!terminalFocus && !rightPanelOpen" },
+    { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
+    { key: "mod+shift+e", command: "thread.settle", when: "!terminalFocus" },
+  ]),
+);
 // The old Avi Code's rules, which the first start copies; the client puts custom rules last.
 const legacy = mergeWithDefaultKeybindings(
   compileResolvedKeybindingsConfig([
@@ -85,46 +94,61 @@ const legacy = mergeWithDefaultKeybindings(
     { key: "mod+shift+t", command: "thread.reopenLastArchived", when: "!terminalFocus" },
   ]),
 );
+const ctrlShiftE: ShortcutEventLike = { ...ctrlW, key: "E", shiftKey: true };
 
-describe("closeOrArchiveSteps", () => {
-  // The handler closes the tab whenever `close` holds, so `archive` with a panel open is moot.
+describe("closeThreadSteps", () => {
   it.each([
-    ["default", defaults, false],
-    ["backfilled", backfilled, false],
-    ["old Avi Code", legacy, true],
-  ])("closes a panel tab first, then archives, with %s keybindings", (_name, keybindings, moot) => {
+    ["default", defaults],
+    ["backfilled", backfilled],
+    ["custom settle", customSettle],
+  ])("closes a panel tab first, then settles, with %s keybindings", (_name, keybindings) => {
     expect(
-      closeOrArchiveSteps(ctrlW, keybindings, { terminalFocus: false, rightPanelOpen: true }),
-    ).toEqual({ close: true, archive: moot });
+      closeThreadSteps(ctrlW, keybindings, { terminalFocus: false, rightPanelOpen: false }),
+    ).toEqual({ close: true, fallback: "settle" });
     expect(
-      closeOrArchiveSteps(ctrlW, keybindings, { terminalFocus: false, rightPanelOpen: false }),
-    ).toEqual({ close: true, archive: true });
-    expect(
-      closeOrArchiveSteps(ctrlW, keybindings, { terminalFocus: true, rightPanelOpen: false }),
-    ).toEqual({ close: false, archive: false });
+      closeThreadSteps(ctrlW, keybindings, { terminalFocus: true, rightPanelOpen: false }),
+    ).toEqual({ close: false, fallback: null });
   });
 
-  it("does not archive once the user moves the archive shortcut elsewhere", () => {
+  it("archives with the old Avi Code's keybindings", () => {
+    expect(closeThreadSteps(ctrlW, legacy, { terminalFocus: false, rightPanelOpen: true })).toEqual(
+      { close: true, fallback: "archive" },
+    );
+    expect(
+      closeThreadSteps(ctrlW, legacy, { terminalFocus: false, rightPanelOpen: false }),
+    ).toEqual({ close: true, fallback: "archive" });
+  });
+
+  it("marks a settle-only key as not a close key, so it may un-settle", () => {
+    expect(closeThreadSteps(ctrlShiftE, customSettle, { terminalFocus: false })).toEqual({
+      close: false,
+      fallback: "settle",
+    });
+  });
+
+  it("does not settle once the user moves the settle shortcut elsewhere", () => {
     const rebound = compileResolvedKeybindingsConfig([
-      ...withoutRule(DEFAULT_KEYBINDINGS, "thread.archive"),
-      { key: "mod+shift+w", command: "thread.archive" },
+      ...withoutRule(DEFAULT_KEYBINDINGS, "thread.settle"),
+      { key: "mod+shift+w", command: "thread.settle" },
     ]);
     const context = { terminalFocus: false, rightPanelOpen: false };
-    expect(closeOrArchiveSteps(ctrlW, rebound, context)).toEqual({ close: true, archive: false });
-    expect(closeOrArchiveSteps({ ...ctrlW, key: "W", shiftKey: true }, rebound, context)).toEqual({
+    expect(closeThreadSteps(ctrlW, rebound, context)).toEqual({ close: true, fallback: null });
+    expect(closeThreadSteps({ ...ctrlW, key: "W", shiftKey: true }, rebound, context)).toEqual({
       close: false,
-      archive: true,
+      fallback: "settle",
     });
   });
 });
 
 describe("resolveReopenTarget", () => {
-  it.each([
-    ["default", defaults],
-    ["old Avi Code", legacy],
-  ])("reopens closed views first, then archived threads, with %s keybindings", (_name, kb) => {
-    expect(resolveReopenTarget(ctrlShiftT, kb, {}, 2)).toBe("closed-view");
-    expect(resolveReopenTarget(ctrlShiftT, kb, {}, 0)).toBe("archived-thread");
+  it("reopens closed views first, then settled threads, by default", () => {
+    expect(resolveReopenTarget(ctrlShiftT, defaults, {}, 2)).toBe("closed-view");
+    expect(resolveReopenTarget(ctrlShiftT, defaults, {}, 0)).toBe("settled-thread");
+  });
+
+  it("reopens closed views first, then archived threads, with the old Avi Code's keybindings", () => {
+    expect(resolveReopenTarget(ctrlShiftT, legacy, {}, 2)).toBe("closed-view");
+    expect(resolveReopenTarget(ctrlShiftT, legacy, {}, 0)).toBe("archived-thread");
   });
 
   it("agrees with the closed-view listener, which resolves without reopen-archived rules", () => {
@@ -218,5 +242,46 @@ describe("pickLastArchivedThread", () => {
       new Set([before!.archiveKey]),
     );
     expect(again?.ref.threadId).toBe("a");
+  });
+});
+
+describe("pickLastSettledThread", () => {
+  const local = EnvironmentId.make("local");
+  const thread = (
+    id: string,
+    settledAt: string | null,
+    overrides: Partial<Parameters<typeof pickLastSettledThread>[0][number]> = {},
+  ): Parameters<typeof pickLastSettledThread>[0][number] => ({
+    environmentId: local,
+    id: ThreadId.make(id),
+    archivedAt: null,
+    settledOverride: settledAt === null ? null : "settled",
+    settledAt,
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
+    ...overrides,
+  });
+
+  it("walks back through settled threads, newest first, skipping unlisted ones", () => {
+    const threads = [
+      thread("a", "2026-03-01T00:00:00.000Z"),
+      thread("b", "2026-03-02T00:00:00.000Z"),
+      thread("active", null),
+      thread("archived", "2026-03-04T00:00:00.000Z", { archivedAt: "2026-03-05T00:00:00.000Z" }),
+      thread("side", "2026-03-04T00:00:00.000Z", {
+        lineage: {
+          parentThreadId: null,
+          relationshipToParent: null,
+          rootThreadId: ThreadId.make("side"),
+          sideChat: true,
+        },
+      }),
+    ];
+    const first = pickLastSettledThread(threads, new Set());
+    expect(first?.ref).toEqual(scopeThreadRef(local, ThreadId.make("b")));
+    const second = pickLastSettledThread(threads, new Set([first!.archiveKey]));
+    expect(second?.ref.threadId).toBe("a");
+    expect(pickLastSettledThread(threads, new Set([first!.archiveKey, second!.archiveKey]))).toBe(
+      null,
+    );
   });
 });

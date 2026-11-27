@@ -76,8 +76,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "ctrl+alt+[", command: "terminal.previous", when: "terminalFocus && !isMac" },
   { key: "ctrl+alt+]", command: "terminal.next", when: "terminalFocus && !isMac" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
-  // Avi Code addition: with no terminal or panel to close, mod+w archives the thread.
-  { key: "mod+w", command: "thread.archive", when: "!terminalFocus && !rightPanelOpen" },
+  // Avi Code addition: with no terminal or panel to close, mod+w settles the thread.
+  { key: "mod+w", command: "thread.settle", when: "!terminalFocus && !rightPanelOpen" },
   { key: "mod+shift+t", command: "view.reopenClosed" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },

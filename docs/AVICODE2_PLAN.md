@@ -99,7 +99,7 @@ Made 2026-11-25.
 
 | Feature                                                                 | Decision                                |
 | ----------------------------------------------------------------------- | --------------------------------------- |
-| Ctrl+W closes the thread, Ctrl+Shift+T reopens the last archived thread | Ported (#331)                           |
+| Ctrl+W settles the thread, Ctrl+Shift+T un-settles the last settled one | Ported (#331), settles since #343       |
 | Colour themes (Oxblood, Midnight, Forest, Violet, Graphite)             | Ported as upstream theme data (#327)    |
 | Notification sound picker, plan mode as default                         | Ported (#328, #325)                     |
 | Per-repo and per-credential usage                                       | Ported (#332)                           |
@@ -179,7 +179,7 @@ In order. Each is one PR with a changelog entry.
 | --- | ------------------------------------------------------------------------- | ----- |
 | 1   | Quick-send chips. Done (#329)                                             | cheap |
 | 2   | Start new chats in plan mode. Done (#325)                                 | cheap |
-| 3   | Ctrl+W closes thread, Ctrl+Shift+T reopens archived. Done (#331)          | cheap |
+| 3   | Ctrl+W settles thread, Ctrl+Shift+T un-settles. Done (#331, #343)         | cheap |
 | 4   | Mouse back/forward buttons, Alt+Left/Right                                | cheap |
 | 5   | Colour themes as upstream theme data. Done (#327)                         | cheap |
 | 6   | Preview bookmarks bar. Done (#326)                                        | cheap |
@@ -192,9 +192,11 @@ In order. Each is one PR with a changelog entry.
 | 13  | Higher input cap (600k characters; upstream has 120k)                     | cheap |
 | 14  | Dead-worktree and low-disk monitor                                        | free  |
 | 15  | Projects collapsed by default, expand/collapse all (check upstream first) | cheap |
-| 16  | Archived page sorting, Ctrl+K finds archived threads                      | cheap |
+| 16  | Archived page sorting, Ctrl+K finds archived threads. Folder menu (#342)  | cheap |
 | 18  | Per-repo and per-credential usage. Done (#332)                            | cheap |
 | 19  | Named sidebar folders on the boring sidebar. Done (#333)                  | large |
+
+Settled threads archive themselves after 14 days by default (Settings > Avi Code). Done (#343)
 
 Later: reply styles, latest thought on sidebar rows, Files panel create/rename/delete.
 

@@ -23,6 +23,12 @@ export const AVICODE_SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("thread details card panel hide collapse branch worktree scripts space")],
   },
   {
+    id: "avicode-archive-settled-threads",
+    title: msg("Archive settled threads"),
+    to: "/settings/avicode",
+    searchTerms: [msg("auto archive settled threads days cleanup sidebar ctrl w close")],
+  },
+  {
     id: "avicode-quick-send-chips",
     title: msg("Quick-send chips"),
     to: "/settings/avicode",

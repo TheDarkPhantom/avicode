@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { T, useGT, useMessages } from "gt-react";
 import { PlayIcon } from "lucide-react";
 
+import { ArchiveSettledThreadsRow } from "../../avicode/ArchiveSettledSettings";
 import {
   AVICODE_NOTIFICATION_SOUND_LABELS,
   type NotificationSoundKind,
@@ -228,6 +229,7 @@ export function AviCodeSettingsPanel() {
         <StartInPlanModeRow />
         <ShowThreadDetailsRow />
         <QuickSendChipsRow />
+        <ArchiveSettledThreadsRow />
       </SettingsSection>
       <SettingsSection id="avicode-sidebar" title={gt("Sidebar folders")}>
         <SidebarFoldersRow />

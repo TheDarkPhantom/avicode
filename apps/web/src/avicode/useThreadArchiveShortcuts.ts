@@ -21,14 +21,14 @@ import type { ShortcutMatchContext } from "../keybindings";
 import { readLocalApi } from "../localApi";
 import { readThreadShell } from "../state/entities";
 import { readEnvironmentScope } from "../state/session";
-import { closeOrArchiveSteps } from "./threadCloseReopen";
+import { closeThreadSteps } from "./threadCloseReopen";
 
 type ChatShortcutHandler = NonNullable<ChatShortcutCommands["thread.archive"]>;
 
 /**
- * `rightPanel.close` and `thread.archive` for the open chat as one handler: a key bound to both
- * closes the panel tab first and archives the thread when there is none (see
- * `closeOrArchiveSteps`).
+ * `rightPanel.close`, `thread.settle` and `thread.archive` for the open chat as one handler: a
+ * key bound to the close and a thread rule closes the panel tab first and settles or archives
+ * the thread when there is none (see `closeThreadSteps`). A close key never un-settles.
  */
 export function useThreadArchiveShortcuts(input: {
   /** Null for a local draft, which has nothing to archive. */
@@ -36,6 +36,8 @@ export function useThreadArchiveShortcuts(input: {
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly getShortcutContext: (target: EventTarget | null) => ShortcutMatchContext;
   readonly closeRightPanel: ChatShortcutHandler;
+  /** Settles the open thread, or un-settles it when it is settled. */
+  readonly toggleSettled: ChatShortcutHandler;
 }): ChatShortcutCommands {
   const { archiveThread } = useThreadActions();
   const confirmThreadArchive = useClientSettings((settings) => settings.confirmThreadArchive);
@@ -81,15 +83,23 @@ export function useThreadArchiveShortcuts(input: {
     });
   };
 
-  const closeOrArchive: ChatShortcutHandler = (context) => {
-    const steps = closeOrArchiveSteps(
+  const closeOrSettle: ChatShortcutHandler = (context) => {
+    const steps = closeThreadSteps(
       context.event,
       input.keybindings,
       input.getShortcutContext(context.event.target),
     );
     if (steps.close && input.closeRightPanel(context) !== false) return;
-    return steps.archive ? archive(context) : false;
+    if (steps.fallback === "archive") return archive(context);
+    if (steps.fallback !== "settle") return false;
+    const thread = input.threadRef ? readThreadShell(input.threadRef) : null;
+    if (steps.close && thread?.settledOverride === "settled") return;
+    return input.toggleSettled(context);
   };
 
-  return { "rightPanel.close": closeOrArchive, "thread.archive": closeOrArchive };
+  return {
+    "rightPanel.close": closeOrSettle,
+    "thread.settle": closeOrSettle,
+    "thread.archive": closeOrSettle,
+  };
 }
