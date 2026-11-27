@@ -13098,5 +13098,10 @@
   "ff0ecab0a975b3d8": "Nenhuma thread resolvida",
   "c10fd362bc560a20": "Mostrar mais resolvidas ({count} a mais)",
   "9ffac526802b79e6": "Arquivadas",
-  "4e2db06056916310": "Mostrar mais arquivadas ({count} a mais)"
+  "4e2db06056916310": "Mostrar mais arquivadas ({count} a mais)",
+  "40f4a1285c058689": "Após {days} dias",
+  "4415d877e90b2ca7": "Threads concluídas são arquivadas quando continuam concluídas por esse tempo. Threads em que uma tarefa agendada publica são mantidas.",
+  "bb614bc6dffe1301": "Redefinir arquivar threads concluídas para o padrão",
+  "bdb22e8ed3dcdcf1": "Arquivar threads concluídas",
+  "802b56c4669c0273": "arquivar automaticamente threads concluídas dias limpeza barra lateral ctrl w fechar"
 }

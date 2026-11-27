@@ -13105,5 +13105,10 @@
   "ff0ecab0a975b3d8": "Inga avklarade trådar",
   "c10fd362bc560a20": "Visa fler avklarade ({count} till)",
   "9ffac526802b79e6": "Arkiverade",
-  "4e2db06056916310": "Visa fler arkiverade ({count} till)"
+  "4e2db06056916310": "Visa fler arkiverade ({count} till)",
+  "40f4a1285c058689": "Efter {days} dagar",
+  "4415d877e90b2ca7": "Klara trådar arkiveras när de har varit klara så här länge. Trådar som en schemalagd uppgift skriver i behålls.",
+  "bb614bc6dffe1301": "Återställ arkivering av klara trådar till standard",
+  "bdb22e8ed3dcdcf1": "Arkivera klara trådar",
+  "802b56c4669c0273": "arkivera automatiskt klara trådar dagar rensa sidofält ctrl w stäng"
 }

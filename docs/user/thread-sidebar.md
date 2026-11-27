@@ -239,6 +239,10 @@ sidebar and search and shows only in **Settings → Archive**, where you can una
 delete it. It refuses new messages, including ones from agents and scheduled tasks, until you
 unarchive it. Removing a project deletes its threads either way.
 
+A thread that stays settled for 14 days is archived automatically. Change the wait or turn it off
+with **Archive settled threads** in **Settings → Avi Code**. Threads a scheduled task posts into are
+never archived this way.
+
 A scheduled task that posts into one thread keeps running after you archive that thread, and
 each run fails. Settle the thread instead, or move or pause the task in **Settings → Scheduled
 tasks**.

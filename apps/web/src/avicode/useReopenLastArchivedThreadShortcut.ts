@@ -8,21 +8,24 @@ import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { readProjects } from "../state/entities";
+import { readProjects, readThreadShells } from "../state/entities";
 import { orchestrationEnvironment } from "../state/orchestration";
 import { environmentShell } from "../state/shell";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import {
   type ArchivedThreads,
   pickLastArchivedThread,
+  pickLastSettledThread,
   resolveReopenTarget,
 } from "./threadCloseReopen";
 import { useUnarchiveAndOpenThread } from "./useUnarchiveAndOpenThread";
+import { useUnsettleAndOpenThread } from "./useUnsettleAndOpenThread";
 
 /**
- * Unarchives and opens the most recently archived thread for `thread.reopenLastArchived`, and
- * for `view.reopenClosed` once no closed tab or view is left (see `resolveReopenTarget`). Each
- * press reads the archive fresh, so repeated presses walk back through it.
+ * Once no closed tab or view is left (see `resolveReopenTarget`), `view.reopenClosed`
+ * un-settles and opens the most recently settled thread, and `thread.reopenLastArchived`
+ * unarchives and opens the most recently archived one. Each press reads them fresh, so repeated
+ * presses walk back through them.
  */
 export function useReopenLastArchivedThreadShortcut(input: {
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -31,6 +34,7 @@ export function useReopenLastArchivedThreadShortcut(input: {
 }) {
   const { keybindings, terminalOpen, previewOpen } = input;
   const unarchiveAndOpen = useUnarchiveAndOpenThread();
+  const unsettleAndOpen = useUnsettleAndOpenThread();
   const loadArchived = useAtomQueryRunner(orchestrationEnvironment.archivedShellSnapshot, {
     reportFailure: false,
     refresh: true,
@@ -61,6 +65,14 @@ export function useReopenLastArchivedThreadShortcut(input: {
     if (!(await unarchiveAndOpen(last.ref))) reopened.current.delete(last.archiveKey);
   });
 
+  const reunsettled = useRef(new Set<string>());
+  const unsettleLast = useEffectEvent(async () => {
+    const last = pickLastSettledThread(readThreadShells(), reunsettled.current);
+    if (!last) return;
+    reunsettled.current.add(last.archiveKey);
+    if (!(await unsettleAndOpen(last.ref))) reunsettled.current.delete(last.archiveKey);
+  });
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for the reopen-archived-thread shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -79,13 +91,13 @@ export function useReopenLastArchivedThreadShortcut(input: {
         modelPickerOpen: isModelPickerOpen(),
       };
       const closedViewCount = useClosedViewStore.getState().entries.length;
-      if (resolveReopenTarget(event, keybindings, context, closedViewCount) !== "archived-thread") {
-        return;
-      }
+      const target = resolveReopenTarget(event, keybindings, context, closedViewCount);
+      if (target !== "archived-thread" && target !== "settled-thread") return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;
-      pending.current = pending.current.then(() => reopenNext()).catch(() => undefined);
+      const reopen = target === "archived-thread" ? reopenNext : unsettleLast;
+      pending.current = pending.current.then(() => reopen()).catch(() => undefined);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);

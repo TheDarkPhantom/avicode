@@ -485,10 +485,14 @@ export function IssuesPage() {
 
   const onRightPanelKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || isCommandPaletteOpen() || panelSurface === null) return;
-    // Avi Code addition: no thread here, so mod+w's thread.archive rule must not take the key.
-    const command = resolveShortcutCommand(event, withoutCommand(keybindings, "thread.archive"), {
-      context: { ...getShortcutContext(), rightPanelOpen: rightPanelState.isOpen },
-    });
+    // Avi Code addition: no thread here, so mod+w's thread rules must not take the key.
+    const command = resolveShortcutCommand(
+      event,
+      withoutCommand(keybindings, "thread.settle", "thread.archive"),
+      {
+        context: { ...getShortcutContext(), rightPanelOpen: rightPanelState.isOpen },
+      },
+    );
     if (command === "rightPanel.close" && !rightPanelState.isOpen) return;
     if (command !== "rightPanel.toggle" && command !== "rightPanel.close") return;
     event.preventDefault();

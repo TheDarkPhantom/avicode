@@ -112,6 +112,12 @@ const LATE_DEFAULT_KEYBINDINGS: ReadonlyArray<{
       when: "composerFocus && draftThreadRoute",
     },
   },
+  // Avi Code addition: a custom thread.settle rule drops every default one, mod+w's with it.
+  {
+    id: "avicode.thread.settle:mod+w",
+    alongside: { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
+    rule: { key: "mod+w", command: "thread.settle", when: "!terminalFocus && !rightPanelOpen" },
+  },
 ];
 
 function keybindingShortcutContext(rule: KeybindingRule): string | null {

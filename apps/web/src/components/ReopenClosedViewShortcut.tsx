@@ -100,7 +100,7 @@ export function ReopenClosedViewShortcut() {
     (state) => selectActiveRightPanel(state.byThreadKey, threadRef) === "preview",
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  // Avi Code addition: with nothing closed left to reopen, reopen the last archived thread.
+  // Avi Code addition: with nothing closed left to reopen, un-settle the last settled thread.
   useReopenLastArchivedThreadShortcut({ keybindings, terminalOpen, previewOpen });
   const hasHistory = useClosedViewStore((state) => state.entries.length > 0);
   const openPreview = useAtomCommand(previewEnvironment.open);

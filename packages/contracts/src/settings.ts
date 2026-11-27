@@ -1,6 +1,8 @@
 import {
   AVICODE_CLIENT_SETTINGS_FIELDS,
   AVICODE_CLIENT_SETTINGS_PATCH_FIELDS,
+  AVICODE_SERVER_SETTINGS_FIELDS,
+  AVICODE_SERVER_SETTINGS_PATCH_FIELDS,
 } from "./avicodeSettings.ts";
 // Avi Code addition: fork setting schemas reach clients through this entry point.
 export * from "./avicodeSettings.ts";
@@ -1649,6 +1651,8 @@ export const ServerSettings = Schema.Struct({
 
   /** Sent by the Usage tab with each summary request to this environment; edit in settings.json. Invalid values are ignored. */
   usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
+  // Avi Code addition
+  ...AVICODE_SERVER_SETTINGS_FIELDS,
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -2040,6 +2044,8 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+  // Avi Code addition
+  ...AVICODE_SERVER_SETTINGS_PATCH_FIELDS,
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

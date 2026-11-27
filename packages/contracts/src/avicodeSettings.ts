@@ -75,3 +75,26 @@ export const AVICODE_CLIENT_SETTINGS_PATCH_FIELDS = {
   aviCodeSidebarShowAttentionUnderCollapsedFolders: Schema.optionalKey(Schema.Boolean),
   aviCodeShowThreadDetails: Schema.optionalKey(Schema.Boolean),
 };
+
+const MIN_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 1;
+const MAX_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 365;
+export const DEFAULT_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS = 14;
+
+const AviCodeArchiveSettledAfterDays = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS,
+    maximum: MAX_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS,
+  }),
+);
+
+/** Avi Code server settings, spread into `ServerSettings` and `ServerSettingsPatch`. */
+export const AVICODE_SERVER_SETTINGS_FIELDS = {
+  /** Days a thread stays settled before the server archives it. Null keeps settled threads. */
+  aviCodeArchiveSettledAfterDays: Schema.NullOr(AviCodeArchiveSettledAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AVICODE_ARCHIVE_SETTLED_AFTER_DAYS)),
+  ),
+};
+
+export const AVICODE_SERVER_SETTINGS_PATCH_FIELDS = {
+  aviCodeArchiveSettledAfterDays: Schema.optionalKey(Schema.NullOr(AviCodeArchiveSettledAfterDays)),
+};

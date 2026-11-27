@@ -341,7 +341,7 @@
     },
     {
       "id": "thread-close-reopen-keys",
-      "why": "Ctrl+W archives and Ctrl+Shift+T reopens archived threads through upstream keybinding sites.",
+      "why": "Ctrl+W settles and Ctrl+Shift+T un-settles or reopens archived threads through upstream keybinding sites.",
       "requiredFiles": [
         "apps/web/src/avicode/threadCloseReopen.ts",
         "apps/web/src/avicode/useThreadArchiveShortcuts.ts",
@@ -355,13 +355,14 @@
         {
           "file": "packages/shared/src/keybindings.ts",
           "values": [
-            "{ key: \"mod+w\", command: \"thread.archive\", when: \"!terminalFocus && !rightPanelOpen\" },"
+            "{ key: \"mod+w\", command: \"thread.settle\", when: \"!terminalFocus && !rightPanelOpen\" },"
           ]
         },
         {
           "file": "apps/web/src/components/ChatView.tsx",
           "values": [
             "const threadArchiveShortcuts = useThreadArchiveShortcuts({",
+            "toggleSettled: threadLifecycleShortcuts[\"thread.settle\"],",
             "...threadArchiveShortcuts,"
           ]
         },
@@ -374,11 +375,11 @@
         },
         {
           "file": "apps/web/src/components/pullRequest/PullRequestsPage.tsx",
-          "values": ["withoutCommand(keybindings, \"thread.archive\")"]
+          "values": ["withoutCommand(keybindings, \"thread.settle\", \"thread.archive\")"]
         },
         {
           "file": "apps/web/src/components/issue/IssuesPage.tsx",
-          "values": ["withoutCommand(keybindings, \"thread.archive\")"]
+          "values": ["withoutCommand(keybindings, \"thread.settle\", \"thread.archive\")"]
         },
         {
           "file": "apps/web/src/components/settings/KeybindingsSettings.logic.ts",
@@ -387,6 +388,31 @@
         {
           "file": "apps/web/src/components/CommandPaletteThreadActions.tsx",
           "values": ["archive: \"thread.archive\","]
+        }
+      ]
+    },
+    {
+      "id": "settled-thread-archive",
+      "why": "Settled threads archive after a set number of days, and mod+w keeps its settle rule for customized keybindings, through single upstream sites.",
+      "requiredFiles": [
+        "apps/server/src/avicode/SettledThreadArchiver.ts",
+        "apps/web/src/avicode/ArchiveSettledSettings.tsx"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/server/src/server.ts",
+          "values": ["SettledThreadArchiver.layer, // Avi Code addition"]
+        },
+        {
+          "file": "apps/server/src/keybindings.ts",
+          "values": ["id: \"avicode.thread.settle:mod+w\","]
+        },
+        {
+          "file": "packages/contracts/src/settings.ts",
+          "values": [
+            "...AVICODE_SERVER_SETTINGS_FIELDS,",
+            "...AVICODE_SERVER_SETTINGS_PATCH_FIELDS,"
+          ]
         }
       ]
     },
