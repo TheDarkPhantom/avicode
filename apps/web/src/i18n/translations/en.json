@@ -13097,5 +13097,9 @@
   "f78351c1ec851a52": "No folders yet.",
   "e04561aaccc44aa4": "Sidebar folders",
   "63058b21e605ce78": "folders group projects sidebar hide show restore reorder",
-  "10740e06e132a480": "collapsed folder attention approval input failed plan ready sidebar"
+  "10740e06e132a480": "collapsed folder attention approval input failed plan ready sidebar",
+  "271f0c8feb90e014": "Off, every chat opens with its details card closed. Open it for one chat with the details button in the chat header.",
+  "9c2b11c4afde4916": "Reset show thread details to default",
+  "22df1575e8ae427c": "Show thread details",
+  "7059d50db542db5b": "thread details card panel hide collapse branch worktree scripts space"
 }

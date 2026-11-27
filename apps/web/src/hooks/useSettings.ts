@@ -66,6 +66,7 @@ import {
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { registerStartInPlanModeReader } from "~/avicode/newThreadInteractionMode";
+import { registerShowThreadDetailsSource } from "~/avicode/threadDetailsDefault";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
 
@@ -100,6 +101,13 @@ function getClientSettingsSnapshot(): ClientSettings {
 
 // Avi Code addition: composerDraftStore reads this without importing this module.
 registerStartInPlanModeReader(() => clientSettingsSnapshot.aviCodeNewThreadsStartInPlanMode);
+registerShowThreadDetailsSource(
+  () => clientSettingsSnapshot.aviCodeShowThreadDetails,
+  (listener) => {
+    clientSettingsListeners.add(listener);
+    return () => clientSettingsListeners.delete(listener);
+  },
+);
 
 function replaceClientSettingsSnapshot(settings: ClientSettings): void {
   clientSettingsSnapshot = settings;
