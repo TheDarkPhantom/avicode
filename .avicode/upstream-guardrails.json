@@ -40,6 +40,9 @@
       "why": "Upstream ships T3 Code's logo and name in the renderer.",
       "requiredFiles": [
         "assets/prod/logo.svg",
+        "assets/prod/logo-24.svg",
+        "assets/prod/logo-16.svg",
+        "scripts/avicode/export-avicode-icons.mjs",
         "apps/web/index.html",
         "apps/web/public/manifest.webmanifest",
         "apps/web/src/avicode/AviCodeBrand.tsx"
@@ -47,7 +50,7 @@
       "requiredText": [
         {
           "file": "assets/prod/logo.svg",
-          "values": ["#0C0A0A", "#DE5257", "#C99A2E", "#EDE7E3", "#4F9D69"]
+          "values": ["#241D1F", "#FF7A59", "#D9304A", "#F6F0EA"]
         },
         {
           "file": "apps/web/index.html",

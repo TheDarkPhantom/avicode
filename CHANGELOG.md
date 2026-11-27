@@ -63,3 +63,4 @@ Upstream: t3code 0.1.12
 - Keep chats that need you in view under a collapsed sidebar folder with a new setting (#333)
 - Server messages, sign-in pages and setting help say Avi Code 2 instead of T3 Code (#334)
 - The sidebar, sign-in pages and chat rows show the Avi Code icon and name, not the T3 logo (#336)
+- A new Avi Code 2 icon that stays sharp on the Windows taskbar and in browser tabs (#339)
