@@ -13092,5 +13092,11 @@
   "271f0c8feb90e014": "Désactivé, chaque chat s'ouvre avec sa carte de détails fermée. Ouvrez-la pour un chat avec le bouton de détails de l'en-tête.",
   "9c2b11c4afde4916": "Réinitialiser afficher les détails du fil par défaut",
   "22df1575e8ae427c": "Afficher les détails du fil",
-  "7059d50db542db5b": "détails fil carte panneau masquer replier branche worktree scripts espace"
+  "7059d50db542db5b": "détails fil carte panneau masquer replier branche worktree scripts espace",
+  "2f597c348841e65c": "Fils réglés et archivés dans {project}",
+  "6572f44f2b8f030d": "Fils réglés et archivés",
+  "ff0ecab0a975b3d8": "Aucun fil réglé",
+  "c10fd362bc560a20": "Afficher plus de fils réglés ({count} de plus)",
+  "9ffac526802b79e6": "Archivés",
+  "4e2db06056916310": "Afficher plus de fils archivés ({count} de plus)"
 }

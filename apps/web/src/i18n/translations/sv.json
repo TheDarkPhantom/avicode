@@ -13099,5 +13099,11 @@
   "271f0c8feb90e014": "Av öppnas varje chatt med detaljkortet stängt. Öppna det för en chatt med detaljknappen i chattens rubrik.",
   "9c2b11c4afde4916": "Återställ visa tråddetaljer till standard",
   "22df1575e8ae427c": "Visa tråddetaljer",
-  "7059d50db542db5b": "tråd detaljer kort panel dölj fäll ihop gren worktree skript utrymme"
+  "7059d50db542db5b": "tråd detaljer kort panel dölj fäll ihop gren worktree skript utrymme",
+  "2f597c348841e65c": "Avklarade och arkiverade trådar i {project}",
+  "6572f44f2b8f030d": "Avklarade och arkiverade trådar",
+  "ff0ecab0a975b3d8": "Inga avklarade trådar",
+  "c10fd362bc560a20": "Visa fler avklarade ({count} till)",
+  "9ffac526802b79e6": "Arkiverade",
+  "4e2db06056916310": "Visa fler arkiverade ({count} till)"
 }

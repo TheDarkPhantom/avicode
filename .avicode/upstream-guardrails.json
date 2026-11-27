@@ -416,6 +416,20 @@
           "values": ["<SidebarFoldersRow />", "<SidebarFolderAttentionRow />"]
         }
       ]
+    },
+    {
+      "id": "project-archived-threads-menu",
+      "why": "A boring sidebar folder lists its project's settled and archived threads from one upstream header site.",
+      "requiredFiles": [
+        "apps/web/src/avicode/ProjectArchivedThreadsMenu.tsx",
+        "apps/web/src/avicode/useUnarchiveAndOpenThread.ts"
+      ],
+      "requiredText": [
+        {
+          "file": "apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx",
+          "values": ["<ProjectArchivedThreadsMenu group={group} actionFor={rowId} />"]
+        }
+      ]
     }
   ],
   "brandBan": {
