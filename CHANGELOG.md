@@ -43,6 +43,7 @@ Upstream: t3code 0.1.12
 ### Avi Code
 
 - Avi Code 2 starts from upstream T3 Code 0.1.12 (#307)
+- Threads in the sidebar sit nearly flush left instead of indented under the project name
 - Keep repository and thread names out of the window title in Settings > Avi Code (#321)
 - The first start brings over your Avi Code threads, providers and settings (#319)
 - Usage analytics stay off unless you opt in (#316)
