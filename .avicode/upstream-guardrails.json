@@ -41,7 +41,8 @@
       "requiredFiles": [
         "assets/prod/logo.svg",
         "apps/web/index.html",
-        "apps/web/public/manifest.webmanifest"
+        "apps/web/public/manifest.webmanifest",
+        "apps/web/src/avicode/AviCodeBrand.tsx"
       ],
       "requiredText": [
         {
@@ -55,6 +56,18 @@
         {
           "file": "apps/web/public/manifest.webmanifest",
           "values": ["\"name\": \"Avi Code 2\"", "\"short_name\": \"Avi Code 2\""]
+        },
+        {
+          "file": "apps/web/src/components/sidebar/SidebarChrome.tsx",
+          "values": ["<AviCodeBrandName"]
+        },
+        {
+          "file": "apps/web/src/components/ui/standalone-page.tsx",
+          "values": ["<AviCodeBrandName"]
+        },
+        {
+          "file": "apps/web/src/components/T3Wordmark.tsx",
+          "values": ["export { AviCodeGlyph as T3Wordmark }"]
         },
         {
           "file": "apps/server/vite.config.ts",
