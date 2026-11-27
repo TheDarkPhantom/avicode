@@ -45,6 +45,7 @@ Upstream: t3code 0.1.12
 - Ctrl+W settles the open thread instead of archiving it, and Ctrl+Shift+T un-settles it (#343)
 - Threads settled for 14 days archive themselves; change or turn off in Settings > Avi Code (#343)
 - Avi Code 2 starts from upstream T3 Code 0.1.12 (#307)
+- Threads in the sidebar sit nearly flush left instead of indented under the project name (#340)
 - Keep repository and thread names out of the window title in Settings > Avi Code (#321)
 - The first start brings over your Avi Code threads, providers and settings (#319)
 - Usage analytics stay off unless you opt in (#316)
@@ -66,3 +67,4 @@ Upstream: t3code 0.1.12
 - Server messages, sign-in pages and setting help say Avi Code 2 instead of T3 Code (#334)
 - The sidebar, sign-in pages and chat rows show the Avi Code icon and name, not the T3 logo (#336)
 - A new Avi Code 2 icon that stays sharp on the Windows taskbar and in browser tabs (#339)
+- Hover a boring sidebar folder to reopen that project's settled and archived threads (#342)
